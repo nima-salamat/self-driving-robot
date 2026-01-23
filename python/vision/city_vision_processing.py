@@ -5,6 +5,7 @@ from config_city import (
 
 import config_city as conf
 
+
 import math
 import cv2
 import numpy as np
@@ -187,10 +188,11 @@ class VisionProcessor:
         rl_x_mid = self._best_mid_x(rl_lines, width * abs(conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI), height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
         ll_x_mid = self._best_mid_x(ll_lines, width * abs(conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI), height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
 
-        rl_x_mid_full = (rl_left + rl_x_mid) if rl_x_mid is not None else None
-        ll_x_mid_full = (ll_left + ll_x_mid) if ll_x_mid is not None else None
+        rl_x_mid_full = rl_x_mid
+        ll_x_mid_full = ll_x_mid
 
-        frame_center = (ll_right + rl_left) / 2
+        frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2
+
         if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):
             lane_type = "both"
             self.rroi_unseen_counter -= 1
@@ -212,24 +214,23 @@ class VisionProcessor:
         self.rroi_unseen_counter = max(0, min(self.max_unseen_counter, self.rroi_unseen_counter))
         self.lroi_unseen_counter = max(0, min(self.max_unseen_counter, self.lroi_unseen_counter))
 
-        rl_roi_center = (rl_left + rl_right) / 2.0
-        ll_roi_center = (ll_left + ll_right) / 2.0
+        rl_roi_center = abs(rl_left - rl_right) / 2.0
+        ll_roi_center = abs(ll_left - ll_right) / 2.0
 
         if rl_x_mid_full is None and ll_x_mid_full is not None:
-            rl_x_mid_full = rl_roi_center
+            rl_x_mid_full = ll_x_mid_full
         if ll_x_mid_full is None and rl_x_mid_full is not None:
-            ll_x_mid_full = ll_roi_center 
+            ll_x_mid_full = rl_x_mid_full
 
         if lane_type in ("both", "only_right", "only_left"):
-            lane_center = (rl_x_mid_full + ll_x_mid_full) / 2.0
+            lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
         else:
             lane_center = frame_center
             
         min_error = frame_center - (ll_right + rl_right) / 2
         max_error = frame_center - (ll_left + rl_left) / 2 
         
-        error = frame_center - lane_center
-        
+        error = -lane_center
         
         if error < 0:
             kp = (180 - SERVO_CENTER) / abs(min_error) 
@@ -237,11 +238,7 @@ class VisionProcessor:
             kp = SERVO_CENTER / abs(max_error)
         else:
             kp = 0
-            
-        
-        kp = math.log(abs(kp+0.0001),2) * (kp/abs(kp+0.0001))
 
-            
         # kp = LOW_KP if abs(error) < 25 else HIGH_KP
         if SERVO_DIRECTION == "ltr":
             steering_angle = SERVO_CENTER - kp * error
@@ -254,7 +251,6 @@ class VisionProcessor:
         steering_angle = int(max(MIN_SERVO_ANGLE, min(MAX_SERVO_ANGLE, steering_angle)))
         
         if lane_type == "none":
-        
                steering_angle = 150
         else:
           steering_angle = self.last_steering * 0.3 + 0.7*  steering_angle
