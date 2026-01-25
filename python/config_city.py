@@ -3,8 +3,12 @@
 # =========================
 
 # --- Camera Defaults ---
-default_width = 380
-default_height = 230
+
+CAM_WIDTH = 640
+CAM_HEIGHT = 480
+
+resize_width = 380
+resize_height = 230
 CAMERA_PITCH_DEG = -40 # camera angle in real world
 CAMERA_HEIGHT = 27 # height of camera in real world
 

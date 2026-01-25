@@ -17,7 +17,7 @@ from traffic_sign_detector.detector import localization as sign_detector
 from traffic_sign_detector.detector import get_model
 from controller import controller
 from config_city import (
-    SPEED, default_height, default_width, SERVO_CENTER,
+    SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
 from stream import start_stream
 import logging
@@ -86,11 +86,10 @@ class Robot:
                     self.control.set_angle(SERVO_CENTER)
                     time.sleep(0.01)
                     
-                    frame_at = self.camera.capture_frame(resize=False)
+                    frame, frame_resized = self.camera.capture_frame(with_resize=True)
 
-                    frame = cv2.resize(frame_at, (default_width, default_height), interpolation=cv2.INTER_AREA)
 
-                    result = self.vision.detect(frame)
+                    result = self.vision.detect(frame_resized)
                     
                     if config_city.STREAM:
                         curr_time = time.time()
@@ -110,11 +109,9 @@ class Robot:
                 crosswalk = False
                 
                 if self.crosswalk_time_start == 0: # 3 sec
-                    frame_at = self.camera.capture_frame(resize=False)
-
-                    frame = cv2.resize(frame_at, (default_width, default_height), interpolation=cv2.INTER_AREA)
-
-                    result = self.vision.detect(frame)
+                    frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                
+                    result = self.vision.detect(frame_resized)
         
                     angle = result.get("steering_angle")
             
@@ -122,7 +119,7 @@ class Robot:
                     
                     if config_city.WITH_APRILTAG:
                         
-                        tags, frame_at, largest_tag = self.apriltag_detector.detect(frame_at)
+                        tags, frame_at, largest_tag = self.apriltag_detector.detect(frame)
                         
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
@@ -149,7 +146,6 @@ class Robot:
                                 tag_id = STOP
                                 stop_seen = True
                                 self.stop_last_seen = time.time()
-                            print(text)
                         if tag_id is not None:
                             self.last_tag = tag_id 
                                                
@@ -181,11 +177,10 @@ class Robot:
                 else: # not 3 sec
                     self.control.stop()
                     time.sleep(0.1)
-                    frame_at = self.camera.capture_frame(resize=False)
+                    frame, _ = self.camera.capture_frame(with_resize=False)
                     self.check_crosswalk()
                     if config_city.STREAM:
-                        config_city.debug_frame_buffer = frame_at
-                    
+                        config_city.debug_frame_buffer = frame
                     continue
                 
                 if crosswalk and time.time() - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
