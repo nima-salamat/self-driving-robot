@@ -16,7 +16,9 @@ from vision.apriltag import ApriltagDetector
 from traffic_sign_detector.detector import localization as sign_detector
 from traffic_sign_detector.detector import get_model
 from controller import controller
-from config_city import SPEED, default_height, default_width, SERVO_CENTER
+from config_city import (
+    SPEED, default_height, default_width, SERVO_CENTER,
+    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
 from stream import start_stream
 import logging
 import cv2
@@ -54,15 +56,15 @@ class Robot:
                 self.crosswalk_time_start = 0
                 logger.debug(f"navigate with tag: {self.last_tag}")
                 # Navigate based on last tag detected
-                if self.last_tag == 2:
+                if self.last_tag == TURN_RIGHT:
                      time.sleep(0.1)
                      self.control.forward_pulse(f"f {SPEED} 5 90 f {SPEED} 4 140")
                      time.sleep(0.1)
-                elif self.last_tag == 3:
+                elif self.last_tag == TURN_LEFT:
                     time.sleep(0.1)
                     self.control.forward_pulse(f"f {SPEED} 6 90 f {SPEED} 4 60")
                     time.sleep(0.1)
-                elif self.last_tag == 4:
+                elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
                     self.control.forward_pulse(f"f {SPEED} 9 95")
                     time.sleep(0.1)
@@ -125,7 +127,7 @@ class Robot:
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
                             if largest_tag["corners"][1][1] > 180:  
-                                if tag_id == 5:
+                                if tag_id == STOP:
                                         stop_seen = True
                                         self.stop_last_seen = time.time()
 
@@ -138,13 +140,13 @@ class Robot:
                             coordinate, image, sign_type, text = sign_detector(frame, model=self.model)
 
                             if text == "TURN LEFT":
-                                tag_id = 3
+                                tag_id = TURN_LEFT
                             elif text == "TURN RIGHT":
-                                tag_id = 2
+                                tag_id = TURN_RIGHT
                             elif text == "STRAIGHT":
-                                tag_id = 4
+                                tag_id = STRAIGHT
                             elif text == "STOP":
-                                tag_id = 5
+                                tag_id = STOP
                                 stop_seen = True
                                 self.stop_last_seen = time.time()
                             print(text)
