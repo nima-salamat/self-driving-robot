@@ -138,8 +138,7 @@ class Robot:
                         tag_id = None
                         if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                             read_sign_counter = 0
-                            coordinate, image, sign_type, text = sign_detector(frame, model=self.model)
-
+                            coordinate, debug_frame, sign_type, text = sign_detector(frame, debug_frame=debug_frame, model=self.model)
                             if text == "TURN LEFT":
                                 tag_id = TURN_LEFT
                             elif text == "TURN RIGHT":

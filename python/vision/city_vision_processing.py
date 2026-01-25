@@ -213,7 +213,6 @@ class VisionProcessor:
         
         self.rroi_unseen_counter = max(0, min(self.max_unseen_counter, self.rroi_unseen_counter))
         self.lroi_unseen_counter = max(0, min(self.max_unseen_counter, self.lroi_unseen_counter))
-        print(self.rroi_unseen_counter, self.lroi_unseen_counter, lane_type)
 
         rl_roi_center = abs(rl_left - rl_right) / 2.0
         ll_roi_center = abs(ll_left - ll_right) / 2.0

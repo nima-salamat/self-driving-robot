@@ -213,7 +213,7 @@ def getLabel(model, data):
     return int(model.predict(hog_descriptors)[0])
 
 # ----------------- Localization -----------------
-def localization(image, model, min_size_components=300, similitary_contour_with_circle=0.65):
+def localization(image, model, debug_frame, min_size_components=300, similitary_contour_with_circle=0.65):
     original_image = image.copy()
     binary_image = preprocess_image(image)
     binary_image = removeSmallComponents(binary_image, min_size_components)
@@ -244,8 +244,12 @@ def localization(image, model, min_size_components=300, similitary_contour_with_
         sign_type = int(label)
         text = SIGNS[sign_type] if 0 <= sign_type < len(SIGNS) else "UNKNOWN"
         
-    
-    return coordinate, original_image, sign_type, text
+    if debug_frame is not None and coordinate is not None:
+        cv2.rectangle(debug_frame, coordinate[0], coordinate[1], (0,255,0), 1)
+        cv2.putText(debug_frame, text, (coordinate[0][0], coordinate[0][1]-15),
+                    cv2.FONT_HERSHEY_PLAIN, 1, (0,0,255),2)
+
+    return coordinate, debug_frame, sign_type, text
 
 
 
