@@ -50,19 +50,19 @@ class Camera:
         if self.pi_mode:
             try:
                 config = self.picam.create_preview_configuration(
-                    main={"size": (680, 420), "format": "RGB888"}
+                    main={"size": (self.width, self.height), "format": "RGB888"}
                 )
                 self.picam.configure(config)
                 
                 # Try to set controls, but continue if it fails
                 try:
-#                     self.picam.set_controls({
-#        "AeEnable": True,
-#     "AwbEnable": True,
-#     "AnalogueGain": 3.0, 
-#     "ExposureTime": 50000,  
-   
-# })                
+                    #                     self.picam.set_controls({
+                    #        "AeEnable": True,
+                    #     "AwbEnable": True,
+                    #     "AnalogueGain": 3.0, 
+                    #     "ExposureTime": 50000,  
+                    
+                    # })                
                     pass
 
 
