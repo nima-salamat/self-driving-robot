@@ -1,9 +1,19 @@
 import serial
 import threading
 import time
+import os
+import functools
 from serial import SerialException
-
 serial_lock = threading.Lock()
+
+def if_is_not_windows(fn):
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        if os.name == "nt":
+            return
+        else:
+            return fn(self, *args, **kwargs)
+    return wrapper
 
 class ArduinoConnection:
     def __init__(self, port="/dev/ttyUSB0", baudrate=115200, timeout=1, max_retries=3, reboot_wait=2.0):
@@ -15,6 +25,7 @@ class ArduinoConnection:
         self.serial_connection = None
         self.init_serial_connection()
 
+    @if_is_not_windows
     def init_serial_connection(self, reopen=False):
         try:
             if reopen and self.serial_connection:
@@ -31,6 +42,7 @@ class ArduinoConnection:
             self.serial_connection = None
             return False
 
+    @if_is_not_windows
     def send_command(self, command):
         if isinstance(command, str):
             command = command.encode()
@@ -56,13 +68,14 @@ class ArduinoConnection:
                     pass
                 time.sleep(0.1)
         return False
-    
+
+    @if_is_not_windows
     def read_command(self):
         if self.serial_connection and self.serial_connection.is_open:
             return self.serial_connection.readline().decode("utf-8").strip()
         return ""
 
-    
+    @if_is_not_windows
     def close(self):
         if self.serial_connection:
             try:
