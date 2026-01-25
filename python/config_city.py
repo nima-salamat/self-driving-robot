@@ -94,3 +94,9 @@ RUN_LVL = "MOVE" # it can be MOVE or STOP
 
 # Change Configs based on json file
 CHANGE_WITH_JSON = True
+
+# Set use sign or apriltag detector
+WITH_SIGN = True
+WITH_APRILTAG = not WITH_SIGN
+
+READ_SIGN_THRESHOLD = 5

@@ -13,6 +13,8 @@ if config_city.CHANGE_WITH_JSON:
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
+from traffic_sign_detector.detector import localization as sign_detector
+from traffic_sign_detector.detector import get_model
 from controller import controller
 from config_city import SPEED, default_height, default_width, SERVO_CENTER
 from stream import start_stream
@@ -30,13 +32,13 @@ class Robot:
     def __init__(self):
         self.camera = Camera()
         self.control = controller
-
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector()
         self.crosswalk_time_start = 0
         self.crosswalk_last_seen = 0
         self.last_tag = None
         self.stop_last_seen = None
+        self.model = get_model() if config_city.WITH_SIGN else None
         
     def check_crosswalk(self):
         now = time.time()
@@ -72,9 +74,9 @@ class Robot:
     def run(self):
         logger.info("starting")
         prev_time = time.time()
+        read_sign_counter = 0
         try:
             while True:
-                
                 if config_city.RUN_LVL == "STOP":
                     time.sleep(0.01)
                     self.control.stop()
@@ -99,10 +101,10 @@ class Robot:
                         config_city.debug_frame_buffer = display_frame
                     continue
                 
-                tag = False
+                stop_seen = False
                 if config_city.DEBUG:
                     cv2.waitKey(1)
-                angle=90
+                angle=SERVO_CENTER
                 crosswalk = False
                 
                 if self.crosswalk_time_start == 0: # 3 sec
@@ -116,18 +118,41 @@ class Robot:
             
                     crosswalk = result.get("crosswalk", False)
                     
-                    tags, frame_at, largest_tag = self.apriltag_detector.detect(frame_at)
-                    
-                    if largest_tag is not None:
-                        tag_id = largest_tag["id"]
-                        if largest_tag["corners"][1][1] > 180:  
-                            if tag_id == 5:
-                                    tag = True
-                                    self.stop_last_seen = time.time()
+                    if config_city.WITH_APRILTAG:
+                        
+                        tags, frame_at, largest_tag = self.apriltag_detector.detect(frame_at)
+                        
+                        if largest_tag is not None:
+                            tag_id = largest_tag["id"]
+                            if largest_tag["corners"][1][1] > 180:  
+                                if tag_id == 5:
+                                        stop_seen = True
+                                        self.stop_last_seen = time.time()
 
-                            self.last_tag = tag_id       
-                                      
-                    if tag or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1):
+                                self.last_tag = tag_id   
+                    elif config_city.WITH_SIGN:
+                        read_sign_counter += 1
+                        tag_id = None
+                        if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
+                            read_sign_counter = 0
+                            coordinate, image, sign_type, text = sign_detector(frame, model=self.model)
+
+                            if text == "TURN LEFT":
+                                tag_id = 3
+                            elif text == "TURN RIGHT":
+                                tag_id = 2
+                            elif text == "STRAIGHT":
+                                tag_id = 4
+                            elif text == "STOP":
+                                tag_id = 5
+                                stop_seen = True
+                                self.stop_last_seen = time.time()
+                            print(text)
+                        if tag_id is not None:
+                            self.last_tag = tag_id 
+                                               
+                                     
+                    if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1):
                         self.control.stop()
                         time.sleep(0.01)
                         continue
