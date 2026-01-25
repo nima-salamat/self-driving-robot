@@ -17,7 +17,7 @@ class ApriltagDetector:
         self.aruco_params = aruco.DetectorParameters()
         logger.info("ArUco AprilTag 36h11 dictionary initialized")
 
-    def detect(self, frame):
+    def detect(self, frame, debug_frame):
         if frame is None or frame.size == 0:
             return [], frame, None
 
@@ -73,14 +73,15 @@ class ApriltagDetector:
                     "corners": c_global,
                     "center": [(min_x + max_x) / 2, (min_y + max_y) / 2]
                 })
-
-                # Draw box + ID on full frame
-                cv2.polylines(frame, [c_global.astype(int)], True, (0,255,0), 2)
-                cv2.putText(
-                    frame, f"ID:{ids[i][0]}",
-                    (int((min_x+max_x)/2), int((min_y+max_y)/2)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2
-                )
+                
+                if (conf.STREAM or conf.DEBUG) and debug_frame is not None:
+                    # Draw box + ID on full frame
+                    cv2.polylines(debug_frame, [c_global.astype(int)], True, (0,255,0), 2)
+                    cv2.putText(
+                        debug_frame, f"ID:{ids[i][0]}",
+                        (int((min_x+max_x)/2), int((min_y+max_y)/2)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2
+                    )
 
         max_area = 0
         largest_tag = None
@@ -94,6 +95,7 @@ class ApriltagDetector:
         # -----------------------------
         # 5) Draw ROI box on the frame
         # -----------------------------
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        if (conf.STREAM or conf.DEBUG) and debug_frame is not None:
+            cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
 
-        return detected_tags, frame, largest_tag
+        return detected_tags, debug_frame, largest_tag

@@ -110,8 +110,12 @@ class Robot:
                 
                 if self.crosswalk_time_start == 0: # 3 sec
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                
-                    result = self.vision.detect(frame_resized)
+                    if config_city.STREAM or config_city.DEBUG:
+                        debug_frame = frame.copy()
+                    else:
+                        debug_frame = None
+                    
+                    result = self.vision.detect(frame_resized, debug_frame)
         
                     angle = result.get("steering_angle")
             
@@ -119,7 +123,7 @@ class Robot:
                     
                     if config_city.WITH_APRILTAG:
                         
-                        tags, frame_at, largest_tag = self.apriltag_detector.detect(frame)
+                        tags, frame_at, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
                         
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]

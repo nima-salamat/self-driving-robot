@@ -83,7 +83,7 @@ class VisionProcessor:
 
         return best_x_mid
 
-    def detect(self, frame):
+    def detect(self, frame, debug_frame):
         height, width = frame.shape[:2]
 
         # --- ROI pixel bounds ---
@@ -213,6 +213,7 @@ class VisionProcessor:
         
         self.rroi_unseen_counter = max(0, min(self.max_unseen_counter, self.rroi_unseen_counter))
         self.lroi_unseen_counter = max(0, min(self.max_unseen_counter, self.lroi_unseen_counter))
+        print(self.rroi_unseen_counter, self.lroi_unseen_counter, lane_type)
 
         rl_roi_center = abs(rl_left - rl_right) / 2.0
         ll_roi_center = abs(ll_left - ll_right) / 2.0
@@ -263,7 +264,17 @@ class VisionProcessor:
         debug = {"rl_draw": None, "ll_draw": None, "combined": None, "crosswalk_draw": None}
 
         if conf.DEBUG or conf.STREAM:
-            vis = frame.copy()
+            vis = debug_frame
+            h_dbg, w_dbg = vis.shape[:2]
+            rl_top, rl_bottom = int(conf.RL_TOP_ROI * h_dbg), int(conf.RL_BOTTOM_ROI * h_dbg)
+            rl_left, rl_right = int(conf.RL_LEFT_ROI * w_dbg), int(conf.RL_RIGHT_ROI * w_dbg)
+            ll_top, ll_bottom = int(conf.LL_TOP_ROI * h_dbg), int(conf.LL_BOTTOM_ROI * h_dbg)
+            ll_left, ll_right = int(conf.LL_LEFT_ROI * w_dbg), int(conf.LL_RIGHT_ROI * w_dbg)
+            cw_top, cw_bottom = int(conf.CW_TOP_ROI * h_dbg), int(conf.CW_BOTTOM_ROI * h_dbg)
+            cw_left, cw_right = int(conf.CW_LEFT_ROI * w_dbg), int(conf.CW_RIGHT_ROI * w_dbg)
+            
+            rl_right += int((1 - conf.RL_RIGHT_ROI) * w_dbg * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
+            ll_left += int((0 - conf.LL_LEFT_ROI) * h_dbg *1 / self.max_unseen_counter * self.lroi_unseen_counter)
 
             # ROI boxes
             cv2.rectangle(vis, (rl_left, rl_top), (rl_right, rl_bottom), (255, 0, 0), 1)
