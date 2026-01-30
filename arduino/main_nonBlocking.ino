@@ -2,7 +2,7 @@
    Outputs telemetry: "lane motion Rdistance Ldistance arduino_fps is_moving_with_pulse"
    - Rdistance = right sensor (cm) or -1 if no echo
    - Ldistance = left sensor (cm) or -1 if no echo
-   - arduino_fps = number of status lines printed per second
+   - arduino_fps = real loop() frequency (Hz)
    - is_moving_with_pulse = 1 if currently moving by pulses, 0 otherwise
 */
 
@@ -16,7 +16,7 @@
    ========================= */
 const unsigned long ULTRA_INTERVAL_MS = 120UL;   // how often each ultrasonic sensor is sampled (ms)
 const unsigned long ULTRA_TIMEOUT_US  = 30000UL; // 30 ms timeout for echo
-const unsigned long STATUS_INTERVAL_MS = 100UL;  // how often we print telemetry (ms)
+const unsigned long STATUS_INTERVAL_MS = 50UL;  // how often we print telemetry (ms)
 
 /* =========================
    MOTOR PINS
@@ -181,12 +181,16 @@ String inputString = "";
 bool stringComplete = false;
 
 /* =========================
+   LOOP FREQUENCY (REAL)
+   ========================= */
+unsigned long loopCounter = 0;
+unsigned long lastLoopHzTime = 0;
+unsigned int loopHz = 0;
+
+/* =========================
    TELEMETRY
    ========================= */
 unsigned long lastStatusSend = 0;
-unsigned long lastFpsReset = 0;
-unsigned int statusFrameCount = 0;
-unsigned int lastComputedFps = 0;
 
 /* =========================
    FUNCTION DECLARATIONS
@@ -223,7 +227,7 @@ void setup() {
   myServo.attach(SERVO_PIN);
   myServo.write(servoCurrent);
 
-  lastFpsReset = millis();
+  lastLoopHzTime = millis();
 }
 
 /* =========================
@@ -317,15 +321,6 @@ char motionChar() {
 }
 
 void sendStatus() {
-  // compute fps (frames per second) as number of status messages printed in last 1 second
-  unsigned long now = millis();
-  statusFrameCount++;
-  if (now - lastFpsReset >= 1000UL) {
-    lastComputedFps = statusFrameCount;
-    statusFrameCount = 0;
-    lastFpsReset = now;
-  }
-
   int rdist = ultraRight.getCm();
   int ldist = ultraLeft.getCm();
 
@@ -339,7 +334,7 @@ void sendStatus() {
   Serial.print(' ');
   Serial.print(ldist);       // left distance next (Ldistance)
   Serial.print(' ');
-  Serial.print(lastComputedFps);
+  Serial.print(loopHz);
   Serial.print(' ');
   Serial.println(movingByPulses ? 1 : 0);
 }
@@ -348,7 +343,14 @@ void sendStatus() {
    MAIN LOOP
    ========================= */
 void loop() {
+  // count loop iterations to compute real loop frequency
+  loopCounter++;
   unsigned long nowMs = millis();
+  if (nowMs - lastLoopHzTime >= 1000UL) {
+    loopHz = (unsigned int)loopCounter;
+    loopCounter = 0;
+    lastLoopHzTime = nowMs;
+  }
 
   // update ultrasonic sensors (non-blocking)
   // Trigger/update left and right every ULTRA_INTERVAL_MS.
