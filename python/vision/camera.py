@@ -38,11 +38,11 @@ class Camera:
                 logger.error(f"Failed to initialize Picamera2: {e}")
                 logger.info("Falling back to OpenCV")
                 self.pi_mode = False
-                self.cap = cv2.VideoCapture(0)
+                self.cap = cv2.VideoCapture(conf.USBCAM_ADDR)
                 self.setup_camera()
         else:
             self.pi_mode = False
-            self.cap = cv2.VideoCapture(0)
+            self.cap = cv2.VideoCapture(conf.USBCAM_ADDR)
             self.setup_camera()
             logger.info("Using OpenCV VideoCapture")
 
@@ -82,7 +82,7 @@ class Camera:
             # OpenCV camera setup
             if not self.cap.isOpened():
                 # Try to reopen
-                self.cap = cv2.VideoCapture(0)
+                self.cap = cv2.VideoCapture(conf.USBCAM_ADDR)
                 
             if not self.cap.isOpened():
                 logger.error("Failed to open webcam (index 0)")
