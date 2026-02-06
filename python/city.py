@@ -126,7 +126,7 @@ class Robot:
                     
                     if config_city.WITH_APRILTAG:
                         
-                        tags, frame_at, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
+                        tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
                         
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
@@ -135,7 +135,8 @@ class Robot:
                                         stop_seen = True
                                         self.stop_last_seen = time.time()
 
-                                self.last_tag = tag_id   
+                                self.last_tag = tag_id 
+                              
                     elif config_city.WITH_SIGN:
                         read_sign_counter += 1
                         tag_id = None
@@ -167,8 +168,7 @@ class Robot:
                             cv2.imshow("combined", debug.get("combined"))
                         if frame is not None:
                             cv2.imshow("frame", frame)
-                        if frame_at is not None:
-                            cv2.imshow("at", frame_at)
+                        
              
                     if config_city.STREAM:
                         curr_time = time.time()
@@ -183,10 +183,45 @@ class Robot:
                 else: # not 3 sec
                     self.control.stop()
                     time.sleep(0.1)
-                    frame, _ = self.camera.capture_frame(with_resize=False)
+                    
+                    frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    
                     self.check_crosswalk()
-                    if config_city.STREAM:
-                        config_city.debug_frame_buffer = frame
+                    
+                    if config_city.DEBUG or config_city.STREAM:
+                    
+                        debug_frame = frame.copy()
+                
+                        result = self.vision.detect(frame_resized, debug_frame)
+            
+                        angle = result.get("steering_angle")
+                
+                        crosswalk = result.get("crosswalk", False)
+                        
+                        if config_city.WITH_APRILTAG:
+                    
+                            tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
+                                
+                        elif config_city.WITH_SIGN:   
+                            coordinate, debug_frame, sign_type, text = sign_detector(frame, debug_frame=debug_frame, model=self.model)
+                            
+                        if config_city.DEBUG: 
+                            debug = result.get("debug") or {}
+                            if debug.get("combined") is not None:
+                                cv2.imshow("combined", debug.get("combined"))
+                            if frame is not None:
+                                cv2.imshow("frame", frame)
+                    
+                        if config_city.STREAM:
+                            curr_time = time.time()
+                            fps = 1.0 / (curr_time - prev_time)
+                            prev_time = curr_time
+                            debug = result.get("debug") or {}
+                            display_frame = debug.get("combined").copy()
+                            cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                            config_city.debug_frame_buffer = display_frame
+                    
                     continue
                 
                 if crosswalk and time.time() - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
