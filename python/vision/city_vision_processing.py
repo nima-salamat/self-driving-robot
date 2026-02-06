@@ -327,10 +327,7 @@ class VisionProcessor:
             # show lane center / frame center
             cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
             cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
-            
-            # crosswalk text and paste cw_debug into the cw ROI for inspection
-            cv2.putText(vis, f"crosswalk:{crosswalk}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-            
+                        
             if cw_lines is not None:
                 for line in cw_lines:
                     x1, y1, x2, y2 = scale(line[0])

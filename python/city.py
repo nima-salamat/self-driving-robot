@@ -25,6 +25,7 @@ from config_city import (
 from stream import start_stream
 import logging
 import cv2
+import numpy as np
 import time
 import threading
 import sys
@@ -157,10 +158,7 @@ class Robot:
                             self.last_tag = tag_id 
                                                
                                      
-                    if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1):
-                        self.control.stop()
-                        time.sleep(0.01)
-                        continue
+                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
                 
                     if config_city.DEBUG: 
                         debug = result.get("debug") or {}
@@ -176,9 +174,34 @@ class Robot:
                         prev_time = curr_time
                         debug = result.get("debug") or {}
                         display_frame = debug.get("combined").copy()
-                        cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+                        text = f"FPS: {fps:.1f}, Crosswalk:{crosswalk}, {status}, angle:{angle:.1f}"
+                        org = (10, 30)
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        scale = 0.6
+                        thickness = 2
+                        
+                        (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
+
+                        pad = 4
+                        x1, y1 = org[0]-pad, org[1]-text_height-pad
+                        x2, y2 = org[0]+text_width+pad, org[1]+baseline+pad
+
+                        roi = display_frame[max(0,y1):y2, max(0,x1):x2]
+
+                        if roi.size > 0:
+                            roi_blur = cv2.GaussianBlur(roi, (15,15), 0)
+                            roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
+                            display_frame[max(0,y1):y2, max(0,x1):x2] = roi_white
+
+                        cv2.putText(display_frame, text, (org[0], org[1]), font, scale, (0,0,0), thickness)
+
                         config_city.debug_frame_buffer = display_frame
+                        
+                    if status == "stopped":
+                        self.control.stop()
+                        time.sleep(0.01)
+                        continue
                     
                 else: # not 3 sec
                     self.control.stop()
@@ -218,8 +241,28 @@ class Robot:
                             prev_time = curr_time
                             debug = result.get("debug") or {}
                             display_frame = debug.get("combined").copy()
-                            cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+                            text = f"FPS: {fps:.1f}, Crosswalk:{crosswalk}, stopped, time elapsed:{time.time() - self.crosswalk_last_seen:.1f}"
+                            org = (10, 30)
+                            font = cv2.FONT_HERSHEY_SIMPLEX
+                            scale = 0.6
+                            thickness = 2
+                            
+                            (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
+
+                            pad = 4
+                            x1, y1 = org[0]-pad, org[1]-text_height-pad
+                            x2, y2 = org[0]+text_width+pad, org[1]+baseline+pad
+
+                            roi = display_frame[max(0,y1):y2, max(0,x1):x2]
+
+                            if roi.size > 0:
+                                roi_blur = cv2.GaussianBlur(roi, (15,15), 0)
+                                roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
+                                display_frame[max(0,y1):y2, max(0,x1):x2] = roi_white
+
+                            cv2.putText(display_frame, text, (org[0], org[1]), font, scale, (0,0,0), thickness)
+
                             config_city.debug_frame_buffer = display_frame
                     
                     continue
