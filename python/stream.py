@@ -865,13 +865,9 @@ def video_feed_frame():
     return Response(buffer.tobytes(), mimetype='image/jpeg')
 
 @app.route("/shutdown", methods=["POST"])
-def shutdown_route():
-    stop_event.set()
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func:
-        func()
-    logger.debug("Server shutting down...")
-    return "Server shutting down..."
+def shutdown():
+    os._exit(0)
+    return jsonify(success=True)
 
 def start_stream():
     app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
