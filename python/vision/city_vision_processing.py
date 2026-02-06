@@ -132,96 +132,60 @@ class VisionProcessor:
         rl_edge, rl_lines = process_roi(rl_frame)
         ll_edge, ll_lines = process_roi(ll_frame)
 
-        # -------------------------
-        # CROSSWALK DETECTION USING LSD
-        # -------------------------
+        # ---------------------
+        # CROSSWALK DETECTION
+        # ---------------------
         crosswalk = False
         cw_lines = []
 
         if cw_frame is not None:
-            # gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
-            # _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
-            # edges = cv2.Canny(gray, 100, 150)
-
-            # lsd = cv2.createLineSegmentDetector(0)
-            # lines, _, _, _ = lsd.detect(edges)
-            
-            # vertical = 0
-            # horizontal = 0
-            # cw_roi_diagonal = math.sqrt(math.pow(cw_right - cw_left, 2) + math.pow(cw_bottom - cw_top, 2))
-            # crosswalk_pixel_dist = (3.5 / 5) * (cw_bottom - cw_top) # number of pixels distance before horizontal line of crosswalk
-            # line_min_length = max(cw_roi_diagonal / 20, 10)
-            # lowest_horizontal_line = None
-            # if lines is not None:
-            #     for line in lines:
-            #         x0, y0, x1, y1 = line[0] 
-            #         slope = (y1 - y0) / (x1 - x0 + 1e-6)
-            #         angle = abs(np.arctan(slope) * 180 / np.pi)
-            #         length = math.hypot(x1 - x0, y1 - y0)
-                    
-            #         if length >= line_min_length:
-                    
-            #             if angle <= 30:
-            #                 horizontal += 1
-            #                 cw_lines.append(line)
-            #                 if lowest_horizontal_line is not None:
-            #                     if max(y0, y1) > max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]):
-            #                         lowest_horizontal_line = line
-            #                 else:
-            #                     lowest_horizontal_line = line
-                                    
-            #             elif angle >= 60:
-            #                 vertical += 1
-            #                 cw_lines.append(line)
-                        
-            # if vertical >= 3 and horizontal >= 2:
-            #     if lowest_horizontal_line is not None:
-            #         if max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]) > crosswalk_pixel_dist:
-            #             crosswalk = True
-            
-            crosswalk_pixel_dist = (1/2) * (cw_bottom - cw_top)
-            
             gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
-            blur = cv2.GaussianBlur(gray, (5, 5), 0)
-            edges = cv2.Canny(blur, 50, 150)
+            _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
+            edges = cv2.Canny(gray, 100, 150)
+
+            lsd = cv2.createLineSegmentDetector(0)
+            lines, _, _, _ = lsd.detect(edges)
             
+            vertical = 0
+            horizontal = 0
+            cw_roi_diagonal = math.sqrt(math.pow(cw_right - cw_left, 2) + math.pow(cw_bottom - cw_top, 2))
+            crosswalk_pixel_dist = (3.5 / 5) * (cw_bottom - cw_top) # number of pixels distance before horizontal line of crosswalk
+            line_min_length = max(cw_roi_diagonal / 20, 10)
+            lowest_horizontal_line = None
+            if lines is not None:
+                for line in lines:
+                    x0, y0, x1, y1 = line[0] 
+                    slope = (y1 - y0) / (x1 - x0 + 1e-6)
+                    angle = abs(np.arctan(slope) * 180 / np.pi)
+                    length = math.hypot(x1 - x0, y1 - y0)
+                    
+                    if length >= line_min_length:
+                    
+                        if angle <= 30:
+                            horizontal += 1
+                            cw_lines.append(line)
+                            if lowest_horizontal_line is not None:
+                                if max(y0, y1) > max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]):
+                                    lowest_horizontal_line = line
+                            else:
+                                lowest_horizontal_line = line
+                                    
+                        elif angle >= 60:
+                            vertical += 1
+                            cw_lines.append(line)
+                        
+            if vertical >= 3 and horizontal >= 2:
+                if lowest_horizontal_line is not None:
+                    if max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]) > crosswalk_pixel_dist:
+                        crosswalk = True
             
-
-            contours, _ = cv2.findContours(
-                edges,
-                cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE
-            )
-            
-
-            crosswalk = False
-            near_quads = 0
-            cnts = []
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if area < 800:
-                    continue
-
-                epsilon = 0.02 * cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, epsilon, True)
-
-                if len(approx) == 4:
-                    x, y, w, h = cv2.boundingRect(approx)
-
-                    if h >= crosswalk_pixel_dist:
-                        cnts.append((approx, near_quads+1))
-                        near_quads += 1
-
-            if near_quads >= 3:
-                crosswalk = True
-
             
                 
 
                             
-        # -------------------------
-        # LANE MIDPOINT (unchanged)
-        # -------------------------
+        # --------------
+        # LANE MIDPOINT 
+        # --------------
         rl_x_mid = self._best_mid_x(rl_lines, width * abs(conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI), height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
         ll_x_mid = self._best_mid_x(ll_lines, width * abs(conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI), height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
 
@@ -294,9 +258,9 @@ class VisionProcessor:
           self.last_steering = steering_angle
         
         
-        # -------------------------
+        # --------------
         # DEBUG DRAWING
-        # -------------------------
+        # --------------
         debug = {"rl_draw": None, "ll_draw": None, "combined": None, "crosswalk_draw": None}
         
         if conf.DEBUG or conf.STREAM:
@@ -367,30 +331,13 @@ class VisionProcessor:
             # crosswalk text and paste cw_debug into the cw ROI for inspection
             cv2.putText(vis, f"crosswalk:{crosswalk}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
             
-            if cnts is not None:
-                # for line in cw_lines:
-                #     x1, y1, x2, y2 = scale(line[0])
-                #     if cw_draw is not None:
-                #         cv2.line(cw_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                #     cv2.line(vis, (cw_left + (int(x1)), cw_top + int(y1)), (cw_left + int(x2), cw_top + int(y2)), (0,255,255), 2)
-                for approx, quad_id in cnts:
-                    cv2.drawContours(cw_draw, [approx], -1, (0, 255, 0), 3)
-
-                    M = cv2.moments(approx)
-                    if M["m00"] != 0:
-                        cx = int(M["m10"] / M["m00"])
-                        cy = int(M["m01"] / M["m00"])
-                        cv2.putText(
-                            cw_draw,
-                            f"{quad_id}",
-                            (cx - 10, cy),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.9,
-                            (0, 0, 255),
-                            2
-                        )
-
-
+            if cw_lines is not None:
+                for line in cw_lines:
+                    x1, y1, x2, y2 = scale(line[0])
+                    if cw_draw is not None:
+                        cv2.line(cw_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
+                    cv2.line(vis, (cw_left + (int(x1)), cw_top + int(y1)), (cw_left + int(x2), cw_top + int(y2)), (0,255,255), 2)
+                
             debug["rl_draw"] = rl_draw
             debug["ll_draw"] = ll_draw
             debug["cw_draw"] = cw_draw
