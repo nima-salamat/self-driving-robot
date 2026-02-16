@@ -4,3 +4,4 @@ __pycache__/*
 
 *.csv
 input_log.csv
+output
