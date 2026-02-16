@@ -13,6 +13,8 @@ try:
                     setattr(config_city, conf_name, value)
 except json.JSONDecodeError:
     pass
+
+from output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
@@ -32,6 +34,14 @@ import sys
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# keep defaults (config_city can override)
+OUTPUT_DIR = getattr(config_city, "OUTPUT_DIR", "output")
+VIDEO_FPS = getattr(config_city, "VIDEO_FPS", 20)
+VIDEO_CODEC = getattr(config_city, "VIDEO_CODEC", "mp4v")
+
+if not hasattr(config_city, "debug_frames_list") or not isinstance(config_city.debug_frames_list, list):
+    config_city.debug_frames_list = [None, None]
+
 config_city.DEBUG = False
 
 class Robot:
@@ -45,21 +55,25 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.model = get_model() if config_city.WITH_SIGN else None
-        
+
+        # OutputManager instance 
+        self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
+
+    def update_debug_frames(self, frame):
+        config_city.debug_frames_list.append(frame)
+
+
     def check_crosswalk(self):
         now = time.time()
         if now - self.crosswalk_last_seen>= config_city.CROSSWALK_THRESH_SPEND:
-            # Only reset the crosswalk timer if it's not already running
             self.crosswalk_time_start = now
             self.crosswalk_last_seen = now
 
-        # If crosswalk timer is running, check for elapsed time
         if self.crosswalk_time_start != 0:
             elapsed = now - self.crosswalk_time_start
             if elapsed >= config_city.CROSSWALK_SLEEP:
                 self.crosswalk_time_start = 0
                 logger.debug(f"navigate with tag: {self.last_tag}")
-                # Navigate based on last tag detected
                 if self.last_tag == TURN_RIGHT:
                      time.sleep(0.1)
                      self.control.forward_pulse(f"f {SPEED} 5 90 f {SPEED} 4 140")
@@ -76,7 +90,7 @@ class Robot:
                     time.sleep(0.1)
                     self.control.forward_pulse(f"f {SPEED}  10 95")
                     time.sleep(0.1)
-        
+
     def run(self):
         logger.info("starting")
         prev_time = time.time()
@@ -91,8 +105,6 @@ class Robot:
                     time.sleep(0.01)
                     
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
-
-
                     result = self.vision.detect(frame_resized)
                     
                     if config_city.STREAM:
@@ -103,7 +115,33 @@ class Robot:
                         display_frame = debug.get("combined").copy()
                         cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        config_city.debug_frame_buffer = display_frame
+                        
+                        config_city.debug_frames_list = []
+                        self.update_debug_frames(display_frame)
+                        self.update_debug_frames(frame)
+                        
+
+                        if getattr(config_city, "TAKE_PICTURE", False):
+                            try:
+                                self.output.save_image(display_frame)
+                            except Exception as e:
+                                logger.error(f"save_image failed: {e}")
+                            config_city.TAKE_PICTURE = False
+
+                        if getattr(config_city, "RECORD_VIDEO", False):
+                            if not self.output.is_recording():
+                                try:
+                                    self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
+                                except Exception as e:
+                                    logger.error(f"start_recording failed: {e}")
+                            self.output.write_frame(display_frame)
+                        else:
+                            if self.output.is_recording():
+                                try:
+                                    self.output.stop_recording()
+                                except Exception as e:
+                                    logger.error(f"stop_recording failed: {e}")
+
                     continue
                 
                 stop_seen = False
@@ -112,7 +150,7 @@ class Robot:
                 angle=SERVO_CENTER
                 crosswalk = False
                 
-                if self.crosswalk_time_start == 0: # 3 sec
+                if self.crosswalk_time_start == 0:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()
@@ -122,22 +160,17 @@ class Robot:
                     result = self.vision.detect(frame_resized, debug_frame)
         
                     angle = result.get("steering_angle")
-            
                     crosswalk = result.get("crosswalk", False)
                     
                     if config_city.WITH_APRILTAG:
-                        
                         tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
-                        
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
-                            if largest_tag["corners"][1][1] > 180:  
+                            if largest_tag["corners"][1][1] > 180:
                                 if tag_id == STOP:
-                                        stop_seen = True
-                                        self.stop_last_seen = time.time()
-
-                                self.last_tag = tag_id 
-                              
+                                    stop_seen = True
+                                    self.stop_last_seen = time.time()
+                                self.last_tag = tag_id
                     elif config_city.WITH_SIGN:
                         read_sign_counter += 1
                         tag_id = None
@@ -155,19 +188,17 @@ class Robot:
                                 stop_seen = True
                                 self.stop_last_seen = time.time()
                         if tag_id is not None:
-                            self.last_tag = tag_id 
-                                               
-                                     
+                            self.last_tag = tag_id
+
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
                 
-                    if config_city.DEBUG: 
+                    if config_city.DEBUG:
                         debug = result.get("debug") or {}
                         if debug.get("combined") is not None:
                             cv2.imshow("combined", debug.get("combined"))
                         if frame is not None:
                             cv2.imshow("frame", frame)
                         
-             
                     if config_city.STREAM:
                         curr_time = time.time()
                         fps = 1.0 / (curr_time - prev_time)
@@ -182,11 +213,9 @@ class Robot:
                         thickness = 2
                         
                         (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-
                         pad = 4
                         x1, y1 = org[0]-pad, org[1]-text_height-pad
                         x2, y2 = org[0]+text_width+pad, org[1]+baseline+pad
-
                         roi = display_frame[max(0,y1):y2, max(0,x1):x2]
 
                         if roi.size > 0:
@@ -196,45 +225,60 @@ class Robot:
 
                         cv2.putText(display_frame, text, (org[0], org[1]), font, scale, (0,0,0), thickness)
 
-                        config_city.debug_frame_buffer = display_frame
-                        
+                        config_city.debug_frames_list = []
+                        self.update_debug_frames(display_frame)
+                        self.update_debug_frames(frame)                        
+
+                        if getattr(config_city, "TAKE_PICTURE", False):
+                            try:
+                                self.output.save_image(display_frame)
+                            except Exception as e:
+                                logger.error(f"save_image failed: {e}")
+                            config_city.TAKE_PICTURE = False
+
+                        if getattr(config_city, "RECORD_VIDEO", False):
+                            if not self.output.is_recording():
+                                try:
+                                    self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
+                                except Exception as e:
+                                    logger.error(f"start_recording failed: {e}")
+                            self.output.write_frame(display_frame)
+                        else:
+                            if self.output.is_recording():
+                                try:
+                                    self.output.stop_recording()
+                                except Exception as e:
+                                    logger.error(f"stop_recording failed: {e}")
+
                     if status == "stopped":
                         self.control.stop()
                         time.sleep(0.01)
                         continue
                     
-                else: # not 3 sec
+                else:
                     self.control.stop()
                     time.sleep(0.1)
-                    
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                    
                     self.check_crosswalk()
                     
                     if config_city.DEBUG or config_city.STREAM:
-                    
                         debug_frame = frame.copy()
-                
                         result = self.vision.detect(frame_resized, debug_frame)
-            
                         angle = result.get("steering_angle")
-                
                         crosswalk = result.get("crosswalk", False)
-                        
+
                         if config_city.WITH_APRILTAG:
-                    
                             tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
-                                
-                        elif config_city.WITH_SIGN:   
+                        elif config_city.WITH_SIGN:
                             coordinate, debug_frame, sign_type, text = sign_detector(frame, debug_frame=debug_frame, model=self.model)
-                            
-                        if config_city.DEBUG: 
+
+                        if config_city.DEBUG:
                             debug = result.get("debug") or {}
                             if debug.get("combined") is not None:
                                 cv2.imshow("combined", debug.get("combined"))
                             if frame is not None:
                                 cv2.imshow("frame", frame)
-                    
+
                         if config_city.STREAM:
                             curr_time = time.time()
                             fps = 1.0 / (curr_time - prev_time)
@@ -249,11 +293,9 @@ class Robot:
                             thickness = 2
                             
                             (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-
                             pad = 4
                             x1, y1 = org[0]-pad, org[1]-text_height-pad
                             x2, y2 = org[0]+text_width+pad, org[1]+baseline+pad
-
                             roi = display_frame[max(0,y1):y2, max(0,x1):x2]
 
                             if roi.size > 0:
@@ -263,7 +305,30 @@ class Robot:
 
                             cv2.putText(display_frame, text, (org[0], org[1]), font, scale, (0,0,0), thickness)
 
-                            config_city.debug_frame_buffer = display_frame
+                            config_city.debug_frames_list = []
+                            self.update_debug_frames(display_frame)
+                            self.update_debug_frames(frame)  
+
+                            if getattr(config_city, "TAKE_PICTURE", False):
+                                try:
+                                    self.output.save_image(display_frame)
+                                except Exception as e:
+                                    logger.error(f"save_image failed: {e}")
+                                config_city.TAKE_PICTURE = False
+
+                            if getattr(config_city, "RECORD_VIDEO", False):
+                                if not self.output.is_recording():
+                                    try:
+                                        self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
+                                    except Exception as e:
+                                        logger.error(f"start_recording failed: {e}")
+                                self.output.write_frame(display_frame)
+                            else:
+                                if self.output.is_recording():
+                                    try:
+                                        self.output.stop_recording()
+                                    except Exception as e:
+                                        logger.error(f"stop_recording failed: {e}")
                     
                     continue
                 
@@ -284,7 +349,6 @@ class Robot:
         except Exception as e:
             logger.error(f"error {e}")
         finally:
-            
             self.close()
             logger.info("exited")
             
@@ -305,6 +369,12 @@ class Robot:
         _(self.control.set_angle)(90)
         _(self.camera.release)()
         _(self.control.connection.close)() # close serial connection
+
+        # release output manager resources
+        try:
+            self.output.close()
+        except Exception:
+            pass
         
         if config_city.DEBUG:
             _(cv2.destroyAllWindows)()
@@ -315,7 +385,7 @@ class Robot:
                 requests.post("http://127.0.0.1:5000/shutdown")
             except Exception:
                 pass
-        
+
             if flask_thread.is_alive():
                 flask_thread.join()
         sys.exit(0)

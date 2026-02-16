@@ -83,7 +83,11 @@ CROSSWALK_THRESH_SPEND = 8 # sec  - dont care if crosswalk seen before threshold
 
 # Stream (enable/disable) 
 STREAM = True
-debug_frame_buffer = None # global stream frame variable
+debug_frames_list = [] # global stream frame variable
+
+# tack snapshot and video of camera
+TAKE_PICTURE = False
+RECORD_VIDEO = False
 
 # Lane Width (distance between two lane in the track)
 LANE_WIDTH = 30 # cm
