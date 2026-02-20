@@ -5,6 +5,7 @@ from config_city import (
 
 import config_city as conf
 
+
 import math
 import cv2
 import numpy as np
@@ -40,14 +41,12 @@ class VisionProcessor:
             y_mid = (y1 + y2) / 2
             
             norm_length = min(length / max_length , 1)
-            norm_x_dist = min(abs(x_mid - roi_w_center) / roi_w_center, 1)
             norm_y = min(y_mid / roi_h_bottom, 1)
-            
+            norm_x_dist = min(1 - abs(x_mid - roi_w_center) / roi_w_center, 1)
             
             def angle_target_score(angle, target_angle, sigma=15):
                 diff = abs(angle - target_angle)
                 return math.exp(-(diff ** 2) / (2 * sigma ** 2))
-       
 
             def expected_lane_angle(side, h=CAMERA_HEIGHT, lane_width=LANE_WIDTH, camera_pitch_deg=CAMERA_PITCH_DEG):
  
@@ -73,7 +72,7 @@ class VisionProcessor:
 
             score = (
                 0.4 * norm_length +
-                0.3 * (1 - norm_x_dist) +
+                0.3 * (norm_x_dist)+
                 0.2 * norm_y +
                 0.1 * angle_score
             )
@@ -84,7 +83,7 @@ class VisionProcessor:
 
         return best_x_mid
 
-    def detect(self, frame):
+    def detect(self, frame, debug_frame):
         height, width = frame.shape[:2]
 
         # --- ROI pixel bounds ---
@@ -93,15 +92,15 @@ class VisionProcessor:
         ll_top, ll_bottom = int(conf.LL_TOP_ROI * height), int(conf.LL_BOTTOM_ROI * height)
         ll_left, ll_right = int(conf.LL_LEFT_ROI * width), int(conf.LL_RIGHT_ROI * width)
         
-        rl_right += int((1 - conf.RL_RIGHT_ROI) * width * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
-        ll_left += int((0 - conf.LL_LEFT_ROI) * width *1 / self.max_unseen_counter * self.lroi_unseen_counter)
+        rl_right_ = rl_right + int((1 - conf.RL_RIGHT_ROI) * width * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
+        ll_left_ = ll_left + int((0 - conf.LL_LEFT_ROI) * width *1 / self.max_unseen_counter * self.lroi_unseen_counter)
 
         cw_top, cw_bottom = int(conf.CW_TOP_ROI * height), int(conf.CW_BOTTOM_ROI * height)
         cw_left, cw_right = int(conf.CW_LEFT_ROI * width), int(conf.CW_RIGHT_ROI * width)
 
         # --- Crop ROIs (ROI-local coordinate space) ---
-        rl_frame = frame[rl_top:rl_bottom, rl_left:rl_right].copy()
-        ll_frame = frame[ll_top:ll_bottom, ll_left:ll_right].copy()
+        rl_frame = frame[rl_top:rl_bottom, rl_left:rl_right_].copy()
+        ll_frame = frame[ll_top:ll_bottom, ll_left_:ll_right].copy()
         cw_frame = frame[cw_top:cw_bottom, cw_left:cw_right].copy()
 
         rl_frame = rl_frame if (rl_frame is not None and rl_frame.size != 0) else None
@@ -112,8 +111,8 @@ class VisionProcessor:
         def process_roi(roi):
             if roi is None:
                 return None, None, None
-            roi_copy = roi.copy()
-            gray = cv2.cvtColor(roi_copy, cv2.COLOR_BGR2GRAY)
+            
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             _, gray = cv2.threshold(gray, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
         
             #gray = cv2.GaussianBlur(gray, (9, 9), 0)
@@ -127,15 +126,15 @@ class VisionProcessor:
             lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
                         minLineLength=5, maxLineGap=5)
 
-            return roi_copy, edges, lines
+            return edges, lines
 
 
-        rl_draw, rl_edge, rl_lines = process_roi(rl_frame)
-        ll_draw, ll_edge, ll_lines = process_roi(ll_frame)
+        rl_edge, rl_lines = process_roi(rl_frame)
+        ll_edge, ll_lines = process_roi(ll_frame)
 
-        # -------------------------
-        # CROSSWALK DETECTION USING LSD
-        # -------------------------
+        # ---------------------
+        # CROSSWALK DETECTION
+        # ---------------------
         crosswalk = False
         cw_lines = []
 
@@ -150,7 +149,7 @@ class VisionProcessor:
             vertical = 0
             horizontal = 0
             cw_roi_diagonal = math.sqrt(math.pow(cw_right - cw_left, 2) + math.pow(cw_bottom - cw_top, 2))
-            crosswalk_pixel_dist = (4 / 5) * (cw_bottom - cw_top) # number of pixels distance before horizontal line of crosswalk
+            crosswalk_pixel_dist = (3.5 / 5) * (cw_bottom - cw_top) # number of pixels distance before horizontal line of crosswalk
             line_min_length = max(cw_roi_diagonal / 20, 10)
             lowest_horizontal_line = None
             if lines is not None:
@@ -175,24 +174,26 @@ class VisionProcessor:
                             vertical += 1
                             cw_lines.append(line)
                         
-            if vertical > 3 and horizontal > 3:
+            if vertical >= 3 and horizontal >= 2:
                 if lowest_horizontal_line is not None:
                     if max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]) > crosswalk_pixel_dist:
                         crosswalk = True
             
+            
                 
 
                             
-        # -------------------------
-        # LANE MIDPOINT (unchanged)
-        # -------------------------
-        rl_x_mid = self._best_mid_x(rl_lines, rl_right - rl_left, rl_bottom - rl_top, "right")
-        ll_x_mid = self._best_mid_x(ll_lines, ll_right - ll_left, ll_bottom - ll_top, "left")
+        # --------------
+        # LANE MIDPOINT 
+        # --------------
+        rl_x_mid = self._best_mid_x(rl_lines, width * abs(conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI), height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
+        ll_x_mid = self._best_mid_x(ll_lines, width * abs(conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI), height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
 
-        rl_x_mid_full = (rl_left + rl_x_mid) if rl_x_mid is not None else None
-        ll_x_mid_full = (ll_left + ll_x_mid) if ll_x_mid is not None else None
+        rl_x_mid_full = rl_x_mid
+        ll_x_mid_full = ll_x_mid
 
-        frame_center = (ll_left + rl_right) / 2
+        frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2
+
         if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):
             lane_type = "both"
             self.rroi_unseen_counter -= 1
@@ -214,32 +215,31 @@ class VisionProcessor:
         self.rroi_unseen_counter = max(0, min(self.max_unseen_counter, self.rroi_unseen_counter))
         self.lroi_unseen_counter = max(0, min(self.max_unseen_counter, self.lroi_unseen_counter))
 
-        rl_roi_center = (rl_left + rl_right) / 2.0
-        ll_roi_center = (ll_left + ll_right) / 2.0
+        rl_roi_center = abs(rl_left - rl_right) / 2.0
+        ll_roi_center = abs(ll_left - ll_right) / 2.0
 
         if rl_x_mid_full is None and ll_x_mid_full is not None:
-            rl_x_mid_full = rl_roi_center + 5
+            rl_x_mid_full = ll_x_mid_full
         if ll_x_mid_full is None and rl_x_mid_full is not None:
-            ll_x_mid_full = ll_roi_center
+            ll_x_mid_full = rl_x_mid_full
 
         if lane_type in ("both", "only_right", "only_left"):
-            lane_center = (rl_x_mid_full + ll_x_mid_full) / 2.0
+            lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
         else:
             lane_center = frame_center
             
         min_error = frame_center - (ll_right + rl_right) / 2
         max_error = frame_center - (ll_left + rl_left) / 2 
         
-        error = frame_center - lane_center
-        
+        error = -lane_center
         
         if error < 0:
-            kp = (180 - SERVO_CENTER) / abs(min_error)
+            kp = (180 - SERVO_CENTER) / abs(min_error) 
         elif error > 0:
             kp = SERVO_CENTER / abs(max_error)
         else:
             kp = 0
-            
+
         # kp = LOW_KP if abs(error) < 25 else HIGH_KP
         if SERVO_DIRECTION == "ltr":
             steering_angle = SERVO_CENTER - kp * error
@@ -248,20 +248,54 @@ class VisionProcessor:
         else:
             # default assume ltr
             steering_angle = SERVO_CENTER - kp * error
-                   
-        
-        # if lane_type == "none":
-        #     steering_angle = 150
         
         steering_angle = int(max(MIN_SERVO_ANGLE, min(MAX_SERVO_ANGLE, steering_angle)))
-
-        # -------------------------
+        
+        if lane_type == "none":
+               steering_angle = 150
+        else:
+          steering_angle = self.last_steering * 0.3 + 0.7*  steering_angle
+          self.last_steering = steering_angle
+        
+        
+        # --------------
         # DEBUG DRAWING
-        # -------------------------
+        # --------------
         debug = {"rl_draw": None, "ll_draw": None, "combined": None, "crosswalk_draw": None}
-
+        
         if conf.DEBUG or conf.STREAM:
-            vis = frame.copy()
+            def scale(points):
+                result = []
+                for x in points:
+                    result.append((w_dbg / width) * x)
+                return result
+            vis = debug_frame
+            h_dbg, w_dbg = vis.shape[:2]
+            
+            rl_top, rl_bottom = int(conf.RL_TOP_ROI * h_dbg), int(conf.RL_BOTTOM_ROI * h_dbg)
+            rl_left, rl_right = int(conf.RL_LEFT_ROI * w_dbg), int(conf.RL_RIGHT_ROI * w_dbg)
+            ll_top, ll_bottom = int(conf.LL_TOP_ROI * h_dbg), int(conf.LL_BOTTOM_ROI * h_dbg)
+            ll_left, ll_right = int(conf.LL_LEFT_ROI * w_dbg), int(conf.LL_RIGHT_ROI * w_dbg)
+            cw_top, cw_bottom = int(conf.CW_TOP_ROI * h_dbg), int(conf.CW_BOTTOM_ROI * h_dbg)
+            cw_left, cw_right = int(conf.CW_LEFT_ROI * w_dbg), int(conf.CW_RIGHT_ROI * w_dbg)
+            
+            rl_right += int((1 - conf.RL_RIGHT_ROI) * w_dbg * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
+            ll_left += int((0 - conf.LL_LEFT_ROI) * h_dbg *1 / self.max_unseen_counter * self.lroi_unseen_counter)
+
+            rl_draw = debug_frame[rl_top:rl_bottom, rl_left:rl_right].copy()
+            ll_draw = debug_frame[ll_top:ll_bottom, ll_left:ll_right].copy()
+            cw_draw = debug_frame[cw_top:cw_bottom, cw_left:cw_right].copy()
+            
+            frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * h_dbg / 2
+            
+            rl_roi_center = abs(rl_left - rl_right) / 2.0
+            ll_roi_center = abs(ll_left - ll_right) / 2.0
+            if rl_x_mid_full is None and ll_x_mid_full is None:
+                lane_center = frame_center
+            else:
+                rl_x_mid_full = (w_dbg / width)*rl_x_mid_full
+                ll_x_mid_full = (w_dbg / width)*ll_x_mid_full
+                lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
 
             # ROI boxes
             cv2.rectangle(vis, (rl_left, rl_top), (rl_right, rl_bottom), (255, 0, 0), 1)
@@ -271,43 +305,39 @@ class VisionProcessor:
             # draw Hough lines from RL ROI (into global image)
             if rl_lines is not None:
                 for line in rl_lines:
-                    x1, y1, x2, y2 = line[0]
+                    x1, y1, x2, y2 = scale(line[0])
                     # draw on rl ROI copy if available
                     if rl_draw is not None:
                         cv2.line(rl_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
                     # draw on global vis (with offset)
                     cv2.line(vis, (rl_left + int(x1), rl_top + int(y1)), (rl_left + int(x2), rl_top + int(y2)), (0,255,0), 2)
-                if rl_x_mid_full is not None:
-                    cv2.circle(vis, (int(rl_x_mid_full), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
+                if rl_x_mid is not None:
+                    cv2.circle(vis, (int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
 
             # draw Hough lines from LL ROI
             if ll_lines is not None:
                 for line in ll_lines:
-                    x1, y1, x2, y2 = line[0]
+                    x1, y1, x2, y2 = scale(line[0])
                     if ll_draw is not None:
                         cv2.line(ll_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
                     cv2.line(vis, (ll_left + int(x1), ll_top + int(y1)), (ll_left + int(x2), ll_top + int(y2)), (0,255,0), 2)
-                if ll_x_mid_full is not None:
-                    cv2.circle(vis, (int(ll_x_mid_full), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
+                if ll_x_mid is not None:
+                    cv2.circle(vis, (int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
 
             # show lane center / frame center
-            cv2.line(vis, (int(frame_center), 0), (int(frame_center), height), (0,0,255), 1)
-            cv2.line(vis, (int(lane_center), 0), (int(lane_center), height), (255,0,255), 1)
-            
-            # crosswalk text and paste cw_debug into the cw ROI for inspection
-            cv2.putText(vis, f"crosswalk:{crosswalk}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-            
+            cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
+            cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
+                        
             if cw_lines is not None:
                 for line in cw_lines:
-                    x1, y1, x2, y2 = line[0]
-                    if cw_frame is not None:
-                        cv2.line(cw_frame, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                    cv2.line(vis, (cw_left + int(x1), cw_top + int(y1)), (cw_left + int(x2), cw_top + int(y2)), (0,255,255), 2)
-
-
+                    x1, y1, x2, y2 = scale(line[0])
+                    if cw_draw is not None:
+                        cv2.line(cw_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
+                    cv2.line(vis, (cw_left + (int(x1)), cw_top + int(y1)), (cw_left + int(x2), cw_top + int(y2)), (0,255,255), 2)
+                
             debug["rl_draw"] = rl_draw
             debug["ll_draw"] = ll_draw
-            debug["cw_draw"] = cw_frame
+            debug["cw_draw"] = cw_draw
             debug["combined"] = vis
 
         return {
@@ -317,3 +347,5 @@ class VisionProcessor:
             "crosswalk": crosswalk,
             "debug": debug
         }
+
+

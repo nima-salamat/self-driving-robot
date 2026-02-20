@@ -3,11 +3,15 @@
 # =========================
 
 # --- Camera Defaults ---
-default_width = 380
-default_height = 230
+
+CAM_WIDTH = 640
+CAM_HEIGHT = 480
+
+resize_width = 380
+resize_height = 230
 CAMERA_PITCH_DEG = -40 # camera angle in real world
 CAMERA_HEIGHT = 27 # height of camera in real world
-
+USBCAM_ADDR = 0
 
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
@@ -79,7 +83,11 @@ CROSSWALK_THRESH_SPEND = 8 # sec  - dont care if crosswalk seen before threshold
 
 # Stream (enable/disable) 
 STREAM = True
-debug_frame_buffer = None # global stream frame variable
+debug_frames_list = [] # global stream frame variable
+
+# tack snapshot and video of camera
+TAKE_PICTURE = False
+RECORD_VIDEO = False
 
 # Lane Width (distance between two lane in the track)
 LANE_WIDTH = 30 # cm
@@ -93,4 +101,16 @@ RUN_LVL = "MOVE" # it can be MOVE or STOP
 
 
 # Change Configs based on json file
-CHANGE_WITH_JSON = False
+CHANGE_WITH_JSON = True
+
+# Set use sign or apriltag detector
+WITH_SIGN = True
+WITH_APRILTAG = not WITH_SIGN
+
+READ_SIGN_THRESHOLD = 5
+
+# Sign or Tag id
+TURN_RIGHT = 2
+TURN_LEFT = 3
+STRAIGHT = 4
+STOP = 5
