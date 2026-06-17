@@ -1,5 +1,5 @@
 import time
-from utils.arduino_connection import ArduinoConnection
+from arduino.arduino_connection import ArduinoConnection
 import base_config as temp_conf
 
 if temp_conf.CONFIG_MODULE is not None:

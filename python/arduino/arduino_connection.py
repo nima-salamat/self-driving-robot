@@ -3,7 +3,6 @@ import threading
 import time
 import os
 import functools
-from serial import SerialException
 serial_lock = threading.Lock()
 
 def if_is_not_windows(fn):
@@ -38,7 +37,7 @@ class ArduinoConnection:
             self.serial_connection = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
             time.sleep(self.reboot_wait)  # allow Arduino to reboot
             return True
-        except SerialException:
+        except serial.SerialException:
             self.serial_connection = None
             return False
 
