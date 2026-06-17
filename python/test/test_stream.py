@@ -5,7 +5,7 @@ sys.path.append(prev_dir)
 
 
 import base_config
-import config_city 
+import modes.city.config_city as config_city 
 base_config.MODE="city"
 base_config.CONFIG_MODULE = config_city
 from vision import camera, city_vision_processing

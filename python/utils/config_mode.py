@@ -1,6 +1,6 @@
 import base_config
-import config_city 
-import config_race
+import modes.city.config_city as config_city 
+import modes.race.config_race as config_race
 
 
 

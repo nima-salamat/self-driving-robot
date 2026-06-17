@@ -1,12 +1,12 @@
 import cv2
 import numpy as np
-from config_city import (
+from modes.city.config_city import (
     TL_TOP_ROI,
     TL_BOTTOM_ROI,
     TL_LEFT_ROI,
     TL_RIGHT_ROI,
 )
-import config_city
+import modes.city.config_city as config_city
 
 class TrafficLightDetector:
     def __init__(self):

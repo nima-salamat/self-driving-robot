@@ -1,4 +1,4 @@
-import config_city 
+import modes.city.config_city as config_city 
 
 from utils.config_mode import set_city_mode
 set_city_mode()
@@ -13,7 +13,7 @@ from vision.apriltag import ApriltagDetector
 from traffic_sign_detector.detector import localization as sign_detector
 from traffic_sign_detector.detector import get_model
 from controller import controller
-from config_city import (
+from modes.city.config_city import (
     SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
 from stream import start_stream
@@ -379,7 +379,7 @@ class Robot:
                 flask_thread.join()
         sys.exit(0)
 
-if __name__ == '__main__':
+def start():
     if config_city.STREAM:
         flask_thread = threading.Thread(target=start_stream, daemon=False)
         flask_thread.start()

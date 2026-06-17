@@ -22,7 +22,7 @@ except Exception:
     cv2 = None
 
 try:
-    import config_city
+    import modes.city.config_city as config_city
 except Exception:
     class _Cfg: pass
     config_city = _Cfg()

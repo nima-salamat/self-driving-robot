@@ -1,4 +1,4 @@
-import config_race
+import modes.race.config_race as config_race
 
 from utils.config_mode import set_city_mode
 set_city_mode()
@@ -7,7 +7,7 @@ from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
 from controller import controller
-from config_race import SPEED, default_height, default_width
+from modes.race.config_race import SPEED, default_height, default_width
 import logging
 import cv2
 import time

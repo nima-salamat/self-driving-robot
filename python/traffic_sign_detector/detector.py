@@ -78,6 +78,9 @@ def get_hog() :
 
 
 def get_model(force_to_train=False):
+    import os
+    
+
     svm_file = "traffic_sign_detector/data_svm.dat"
 
     print(f"Loading existing SVM model from '{svm_file}' ...")

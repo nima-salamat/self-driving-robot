@@ -1,9 +1,9 @@
-from config_city import (
+from modes.city.config_city import (
     MAX_SERVO_ANGLE, MIN_SERVO_ANGLE, SERVO_CENTER, SERVO_DIRECTION,
     CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH
 )
 
-import config_city as conf
+import modes.city.config_city as conf
 
 
 import math

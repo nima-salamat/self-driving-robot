@@ -1,6 +1,6 @@
 import os
 import json
-import config_city
+import modes.city.config_city as config_city
 import base_config
 
 def load():
