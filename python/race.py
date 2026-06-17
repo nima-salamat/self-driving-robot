@@ -1,7 +1,5 @@
-import base_config
 import config_race
-base_config.MODE="race"
-base_config.CONFIG_MODULE = config_race
+
 
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor

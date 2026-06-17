@@ -1,7 +1,5 @@
-import base_config
 import config_city 
-base_config.MODE="city"
-base_config.CONFIG_MODULE = config_city
+
 import os
 import json
 try:
