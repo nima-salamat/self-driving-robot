@@ -14,7 +14,7 @@ try:
 except json.JSONDecodeError:
     pass
 
-from output_manager import OutputManager
+from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
@@ -105,20 +105,19 @@ class Robot:
                     time.sleep(0.01)
                     
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                    result = self.vision.detect(frame_resized)
+                    result = self.vision.detect(frame_resized, debug_frame)
                     
                     if config_city.STREAM:
                         curr_time = time.time()
                         fps = 1.0 / (curr_time - prev_time)
                         prev_time = curr_time
                         debug = result.get("debug") or {}
-                        display_frame = debug.get("combined").copy()
+                        display_frame = debug["combined"].copy()
                         cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                         
                         config_city.debug_frames_list = []
                         self.update_debug_frames(display_frame)
-                        self.update_debug_frames(frame)
                         
 
                         if getattr(config_city, "TAKE_PICTURE", False):
@@ -195,7 +194,7 @@ class Robot:
                     if config_city.DEBUG:
                         debug = result.get("debug") or {}
                         if debug.get("combined") is not None:
-                            cv2.imshow("combined", debug.get("combined"))
+                            cv2.imshow("combined", debug["combined"])
                         if frame is not None:
                             cv2.imshow("frame", frame)
                         
@@ -204,7 +203,7 @@ class Robot:
                         fps = 1.0 / (curr_time - prev_time)
                         prev_time = curr_time
                         debug = result.get("debug") or {}
-                        display_frame = debug.get("combined").copy()
+                        display_frame = debug["combined"].copy()
 
                         text = f"FPS: {fps:.1f}, Crosswalk:{crosswalk}, {status}, angle:{angle:.1f}"
                         org = (10, 30)
@@ -227,7 +226,6 @@ class Robot:
 
                         config_city.debug_frames_list = []
                         self.update_debug_frames(display_frame)
-                        self.update_debug_frames(frame)                        
 
                         if getattr(config_city, "TAKE_PICTURE", False):
                             try:
@@ -275,7 +273,7 @@ class Robot:
                         if config_city.DEBUG:
                             debug = result.get("debug") or {}
                             if debug.get("combined") is not None:
-                                cv2.imshow("combined", debug.get("combined"))
+                                cv2.imshow("combined", debug["combined"])
                             if frame is not None:
                                 cv2.imshow("frame", frame)
 
@@ -284,7 +282,7 @@ class Robot:
                             fps = 1.0 / (curr_time - prev_time)
                             prev_time = curr_time
                             debug = result.get("debug") or {}
-                            display_frame = debug.get("combined").copy()
+                            display_frame = debug["combined"].copy()
 
                             text = f"FPS: {fps:.1f}, Crosswalk:{crosswalk}, stopped, time elapsed:{time.time() - self.crosswalk_last_seen:.1f}"
                             org = (10, 30)
@@ -307,7 +305,6 @@ class Robot:
 
                             config_city.debug_frames_list = []
                             self.update_debug_frames(display_frame)
-                            self.update_debug_frames(frame)  
 
                             if getattr(config_city, "TAKE_PICTURE", False):
                                 try:
@@ -359,8 +356,8 @@ class Robot:
                 val = func(*args, **kwargs)
             except Exception:
                 pass
-            finally:
-                return val
+
+            return val
         return wrapper
         
     def close(self):
