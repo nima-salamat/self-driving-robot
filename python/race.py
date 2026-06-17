@@ -1,5 +1,7 @@
 import config_race
 
+from utils.config_mode import set_city_mode
+set_city_mode()
 
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
