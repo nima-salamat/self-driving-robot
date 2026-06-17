@@ -9,11 +9,22 @@ else:
     conf = temp_conf
 
 class RobotController:
+    _instance =  None
+    _initialized = False
     def __init__(self):
+        if self._initialized:
+            return
         self.connection = ArduinoConnection()
         self.current_angle = 90
         self.current_speed = 0
         self.pid = PIDController(1, 0, 0, 1, output_limits=(-80, 80))
+        self._initialized = True
+
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def _send_command(self, cmd: str):
         cmd = cmd.strip() + "\n" 
@@ -102,5 +113,3 @@ class RobotController:
     def set_angle_by_error(self, error):
         self.set_angle(self.calculate_angle_by_error(error))
 
-# instanciate the controller 
-controller = RobotController() # <- i don't like it

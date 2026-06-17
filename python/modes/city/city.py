@@ -12,7 +12,7 @@ from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
 from traffic_sign_detector.detector import localization as sign_detector
 from traffic_sign_detector.detector import get_model
-from controller import controller
+from controller import RobotController
 from modes.city.config_city import (
     SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
@@ -39,7 +39,7 @@ config_city.DEBUG = False
 class Robot:
     def __init__(self):
         self.camera = Camera()
-        self.control = controller
+        self.control = RobotController()
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector()
         self.crosswalk_time_start = 0
