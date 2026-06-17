@@ -1,13 +1,13 @@
+from base_config import BASE_DIR
 import cv2
 import numpy as np
-
+import os
 from math import sqrt
 
 #Parameter
 SIZE = 20
 CLASS_NUMBER = 8
-
-
+MODEL_PATH = os.path.join(BASE_DIR, "traffic_sign_detector", "data_svm.dat")
 
 SIGNS = [
          "ERROR",
@@ -78,10 +78,7 @@ def get_hog() :
 
 
 def get_model(force_to_train=False):
-    import os
-    
-
-    svm_file = "traffic_sign_detector/data_svm.dat"
+    svm_file = MODEL_PATH
 
     print(f"Loading existing SVM model from '{svm_file}' ...")
     model = SVM()

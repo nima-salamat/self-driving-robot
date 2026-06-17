@@ -1,6 +1,9 @@
 # =========================
 # config.py
 # =========================
+import pathlib
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 # --- Camera Defaults ---
 default_width = 380
