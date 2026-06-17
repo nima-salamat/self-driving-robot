@@ -345,7 +345,8 @@ class VisionProcessor:
             "error": error,
             "lane_type": lane_type,
             "crosswalk": crosswalk,
-            "debug": debug
+            "debug": debug,
+            "kp": kp
         }
 
 

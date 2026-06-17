@@ -1,5 +1,6 @@
 import time
 from arduino.arduino_connection import ArduinoConnection
+from controller.pid_controller import PIDController
 import base_config as temp_conf
 
 if temp_conf.CONFIG_MODULE is not None:
@@ -12,6 +13,7 @@ class RobotController:
         self.connection = ArduinoConnection()
         self.current_angle = 90
         self.current_speed = 0
+        self.pid = PIDController(1, 0, 0, 1, output_limits=(-80, 80))
 
     def _send_command(self, cmd: str):
         cmd = cmd.strip() + "\n" 
@@ -83,9 +85,22 @@ class RobotController:
             except:
                 return dict()
             
-        
         return dict()
-            
-        
+    
+    def update_kp(self, kp):
+        self.pid.kp = kp
 
-controller = RobotController()
+    def calculate_angle_by_error(self, error):
+        if conf.SERVO_DIRECTION == "ltr":
+            steering_angle = conf.SERVO_CENTER - self.pid.update(error)
+        else: # rtl
+            steering_angle = conf.SERVO_CENTER + self.pid.update(error)
+        
+        steering_angle = int(max(conf.MIN_SERVO_ANGLE, min(conf.MAX_SERVO_ANGLE, steering_angle)))
+        return steering_angle
+    
+    def set_angle_by_error(self, error):
+        self.set_angle(self.calculate_angle_by_error(error))
+
+# instanciate the controller 
+controller = RobotController() # <- i don't like it

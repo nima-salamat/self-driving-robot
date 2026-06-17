@@ -327,7 +327,8 @@ class Robot:
                     self.check_crosswalk()
                     continue
                 
-                self.control.set_angle(angle)
+                self.control.update_kp(result["kp"])
+                self.control.set_angle_by_error(result["error"])
                 time.sleep(0.01)
                 self.control.set_speed(SPEED)  
                 time.sleep(0.01)
