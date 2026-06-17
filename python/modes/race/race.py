@@ -100,6 +100,6 @@ class Robot:
         self.camera.release()
         cv2.destroyAllWindows()
 
-if __name__ == '__main__':
+def start():
     robot = Robot()
     robot.run()
