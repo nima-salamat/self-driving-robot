@@ -90,11 +90,11 @@ class Robot:
         try:
             while True:
                 if config_city.RUN_LVL == "STOP":
-                    time.sleep(0.01)
+                    time.sleep(config_city.DELAY)
                     self.control.stop()
-                    time.sleep(0.01)
+                    time.sleep(config_city.DELAY)
                     self.control.set_angle(SERVO_CENTER)
-                    time.sleep(0.01)
+                    time.sleep(config_city.DELAY)
                     
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     result = self.vision.detect(frame_resized, debug_frame)
@@ -242,7 +242,7 @@ class Robot:
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(0.01)
+                        time.sleep(config_city.DELAY)
                         continue
                     
                 else:
@@ -329,9 +329,9 @@ class Robot:
                 
                 self.control.update_kp(result["kp"])
                 self.control.set_angle_by_error(result["error"])
-                time.sleep(0.01)
+                time.sleep(config_city.DELAY)
                 self.control.set_speed(SPEED)  
-                time.sleep(0.01)
+                time.sleep(config_city.DELAY)
 
         except KeyboardInterrupt:
             logger.error("error KeyboardInterrupt")

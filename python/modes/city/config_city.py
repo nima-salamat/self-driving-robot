@@ -117,3 +117,6 @@ STOP = 5
 
 # without arduino
 WITHOUT_ARDUINO = False
+
+# sleep delay time
+DELAY = 0.005
