@@ -53,7 +53,13 @@ class Camera:
                     main={"size": (self.width, self.height), "format": "RGB888"}
                 )
                 self.picam.configure(config)
-                
+                self.picam.set_controls({
+                    "FrameRate": 60.0,
+                    "AeEnable": False,
+                    "AwbEnable": False,
+                    "ExposureTime": 16000,
+                    "AnalogueGain": 24.0,
+                })
                 # Try to set controls, but continue if it fails
                 try:
                     #                     self.picam.set_controls({
