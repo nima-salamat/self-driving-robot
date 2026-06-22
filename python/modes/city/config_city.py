@@ -114,3 +114,6 @@ TURN_RIGHT = 2
 TURN_LEFT = 3
 STRAIGHT = 4
 STOP = 5
+
+# without arduino
+WITHOUT_ARDUINO = False

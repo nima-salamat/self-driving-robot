@@ -12,5 +12,5 @@ if __name__ == '__main__':
 
     config.DEBUG = args.debug
     config.STREAM = args.stream
-    
+    config.WITHOUT_ARDUINO = args.without_arduino
     start()

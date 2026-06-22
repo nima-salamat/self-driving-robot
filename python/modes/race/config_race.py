@@ -72,3 +72,6 @@ CROSSWALK_THRESHOLD = 180
 
 # Run Level
 RUN_LVL = "MOVE" # it can be MOVE or STOP
+
+# without arduino
+WITHOUT_ARDUINO = False

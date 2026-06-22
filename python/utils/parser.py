@@ -7,7 +7,7 @@ def parse_args():
         "--mode",
         choices=["city", "race"],
         default="city",
-        help="Run mode"
+        help="Run mode."
     )
 
     parser.add_argument(
@@ -19,9 +19,16 @@ def parse_args():
 
     parser.add_argument(
         "--stream",
-        default=True,
+        default=False,
         action="store_true",
         help="Enable stream"
+    )
+
+    parser.add_argument(
+        "--without-arduino",
+        default=False,
+        action="store_true",
+        help="Without sending to arduino"
     )
 
     return parser.parse_args()
