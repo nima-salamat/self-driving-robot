@@ -1,18 +1,10 @@
 import serial
 import threading
 import time
-import os
-import functools
+from utils.decorators import if_is_not_windows
+
 serial_lock = threading.Lock()
 
-def if_is_not_windows(fn):
-    @functools.wraps(fn)
-    def wrapper(self, *args, **kwargs):
-        if os.name == "nt":
-            return
-        else:
-            return fn(self, *args, **kwargs)
-    return wrapper
 
 class ArduinoConnection:
     def __init__(self, port="/dev/ttyUSB0", baudrate=115200, timeout=1, max_retries=3, reboot_wait=2.0):
