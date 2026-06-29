@@ -140,10 +140,10 @@ class Robot:
                 if config_city.SHOW_FPS:
                     now = time.time()
                     if now >= 1 + prev_time:
-                        print(counter)
-                        counter = 0
+                        print("FPS:",fps_counter)
+                        fps_counter = 0
                         prev_time = now
-                    counter += 1
+                    fps_counter += 1
 
                 stop_seen = False
                 if config_city.DEBUG:
