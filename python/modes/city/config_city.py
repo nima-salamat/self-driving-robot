@@ -120,3 +120,6 @@ WITHOUT_ARDUINO = False
 
 # sleep delay time
 DELAY = 0.005
+
+# show fps
+SHOW_FPS = False

@@ -31,4 +31,11 @@ def parse_args():
         help="Without sending to arduino"
     )
 
+    parser.add_argument(
+        "--fps",
+        default=False,
+        action="store_true",
+        help="Avg fps"
+    )
+
     return parser.parse_args()

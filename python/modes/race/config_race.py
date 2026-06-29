@@ -75,3 +75,6 @@ RUN_LVL = "MOVE" # it can be MOVE or STOP
 
 # without arduino
 WITHOUT_ARDUINO = False
+
+# show fps
+SHOW_FPS = False

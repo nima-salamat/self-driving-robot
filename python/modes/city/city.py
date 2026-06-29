@@ -87,6 +87,8 @@ class Robot:
         logger.info("starting")
         prev_time = time.time()
         read_sign_counter = 0
+        prev_time_fps = time.time()
+        fps_counter = 0
         try:
             while True:
                 if config_city.RUN_LVL == "STOP":
@@ -135,6 +137,14 @@ class Robot:
 
                     continue
                 
+                if config_city.SHOW_FPS:
+                    now = time.time()
+                    if now >= 1 + prev_time:
+                        print(counter)
+                        counter = 0
+                        prev_time = now
+                    counter += 1
+
                 stop_seen = False
                 if config_city.DEBUG:
                     cv2.waitKey(1)
