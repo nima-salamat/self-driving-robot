@@ -337,8 +337,14 @@ class Robot:
                     self.check_crosswalk()
                     continue
                 
-                self.control.update_kp(result["kp"])
-                self.control.set_angle_by_error(result["error"])
+                if config_city.AUTO_UPDATE_KP:
+                    self.control.update_kp(result["kp"])
+                
+                if config_city.USE_PID:
+                    self.control.set_angle_by_error(result["error"])
+                else:
+                    self.control.set_angle(result["steering_angle"])
+                    
                 time.sleep(config_city.DELAY)
                 self.control.set_speed(SPEED)  
                 time.sleep(config_city.DELAY)

@@ -17,7 +17,7 @@ class RobotController:
         self.connection = ArduinoConnection()
         self.current_angle = 90
         self.current_speed = 0
-        self.pid = PIDController(1, 0, 0, 1, output_limits=(-80, 80))
+        self.pid = PIDController(conf.KP, conf.KI, conf.KD, conf.KT, output_limits=conf.OUTPUT_LIMITS)
         self._initialized = True
 
 
