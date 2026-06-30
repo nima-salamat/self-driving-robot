@@ -102,9 +102,9 @@ class RobotController:
         self.pid.kp = kp
 
     def calculate_angle_by_error(self, error):
-        if conf.SERVO_DIRECTION == "ltr":
+        if conf.SERVO_DIRECTION == "rtl":
             steering_angle = conf.SERVO_CENTER - self.pid.update(error)
-        else: # rtl
+        else: # ltr
             steering_angle = conf.SERVO_CENTER + self.pid.update(error)
         
         steering_angle = int(max(conf.MIN_SERVO_ANGLE, min(conf.MAX_SERVO_ANGLE, steering_angle)))
