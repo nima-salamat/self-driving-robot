@@ -4,38 +4,38 @@
 #include "Encoder.h"
 
 /* =========================
-   CONFIG
-   ========================= */
+CONFIG
+========================= */
 const unsigned long ULTRA_INTERVAL_MS = 120UL;
-const unsigned long ULTRA_TIMEOUT_US   = 30000UL;
+const unsigned long ULTRA_TIMEOUT_US  = 30000UL;
 const unsigned long STATUS_INTERVAL_MS = 50UL;
 
 /* =========================
-   TM1638 PINS
-   ========================= */
+TM1638 PINS
+========================= */
 const int TM_STB_PIN = 26;
 const int TM_CLK_PIN = 28;
 const int TM_DIO_PIN = 30;
 
 /* TM1638 keys
-   K1 -> force stop
-   K2 -> resume serial control
-   If your module wiring/key order differs, swap these two bits.
+K1 -> force stop
+K2 -> resume serial control
+If your module wiring/key order differs, swap these two bits.
 */
 const uint8_t TM_FORCE_STOP_KEY_BIT = 0; // K1
 const uint8_t TM_RESUME_KEY_BIT     = 7; // K2
 
 /* =========================
-   MOTOR PINS
-   ========================= */
+MOTOR PINS
+========================= */
 int IN1 = 10;
 int M1  = 12;
 int IN2 = 11;
 int M2  = 13;
 
 /* =========================
-   SERVO
-   ========================= */
+SERVO
+========================= */
 Servo myServo;
 int SERVO_PIN = 9;
 int servoCurrent = 90;
@@ -44,15 +44,15 @@ const int SERVO_MAX = 170;
 const int SERVO_CENTER = 90;
 
 /* =========================
-   ENCODER
-   ========================= */
+ENCODER
+========================= */
 const int REED_PIN = 2;
 const unsigned long DEBOUNCE_US = 0;
 Encoder encoder(REED_PIN, DEBOUNCE_US, FALLING);
 
 /* =========================
-   ULTRASONIC PINS
-   ========================= */
+ULTRASONIC PINS
+========================= */
 const int ULTRA_LEFT_TRIG  = 4;
 const int ULTRA_LEFT_ECHO  = 5;
 const int ULTRA_RIGHT_TRIG = 6;
@@ -64,8 +64,8 @@ const int STOP_DISTANCE_CM = 35;
 const int SIDE_RETURN_DISTANCE_CM = 20;
 
 /* =========================
-   TM1638 DRIVER
-   ========================= */
+TM1638 DRIVER
+========================= */
 class TM1638Panel {
 public:
   enum PanelMode {
@@ -364,8 +364,8 @@ private:
 TM1638Panel panel;
 
 /* =========================
-   NON-BLOCKING ULTRASONIC SENSOR
-   ========================= */
+NON-BLOCKING ULTRASONIC SENSOR
+========================= */
 enum USState { US_IDLE = 0, US_WAITING_ECHO };
 
 struct NBUltrasonic {
@@ -438,28 +438,28 @@ struct NBUltrasonic {
 };
 
 /* =========================
-   OBJECTS
-   ========================= */
+OBJECTS
+========================= */
 NBUltrasonic ultraLeft;
 NBUltrasonic ultraRight;
 NBUltrasonic ultraSide;
 
 /* =========================
-   MOTOR STATE
-   ========================= */
+MOTOR STATE
+========================= */
 bool movingByPulses = false;
 int targetPulses = 0;
 int currentMotorSpeed = 0;
 int motorDirection = 1;
 
 /* =========================
-   PULSE QUEUE
-   ========================= */
+PULSE QUEUE
+========================= */
 PulseQueue queue(16);
 
 /* =========================
-   LANE LOGIC
-   ========================= */
+LANE LOGIC
+========================= */
 bool lane_changing_mode = true;
 char lane = 'R';
 
@@ -473,28 +473,28 @@ LaneState laneState = LANE_NORMAL;
 unsigned long laneChangeStart = 0;
 
 /* =========================
-   SERIAL / CONTROL STATE
-   ========================= */
+SERIAL / CONTROL STATE
+========================= */
 String inputString = "";
 bool stringComplete = false;
 bool emergencyStopActive = false;
 uint8_t lastKeyMask = 0;
 
 /* =========================
-   LOOP FREQUENCY
-   ========================= */
+LOOP FREQUENCY
+========================= */
 unsigned long loopCounter = 0;
 unsigned long lastLoopHzTime = 0;
 unsigned int loopHz = 0;
 
 /* =========================
-   TELEMETRY
-   ========================= */
+TELEMETRY
+========================= */
 unsigned long lastStatusSend = 0;
 
 /* =========================
-   FUNCTION DECLARATIONS
-   ========================= */
+FUNCTION DECLARATIONS
+========================= */
 void stopMotor();
 void startServoMoveImmediate(int target);
 void startMotorByPulses(char dirChar, int speedVal, int pulses, int servoAngle);
@@ -510,8 +510,8 @@ void clearSerialBuffers();
 void handleTmButtons();
 
 /* =========================
-   SETUP
-   ========================= */
+SETUP
+========================= */
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}
@@ -537,8 +537,8 @@ void setup() {
 }
 
 /* =========================
-   HELPERS
-   ========================= */
+HELPERS
+========================= */
 int getPulseCount() {
   return encoder.getCount();
 }
@@ -593,9 +593,10 @@ void startMotorByPulses(char dirChar, int speedVal, int pulses, int servoAngle) 
 }
 
 /* =========================
-   FORCE STOP / RESUME
-   ========================= */
+FORCE STOP / RESUME
+========================= */
 void clearSerialBuffers() {
+  // Only used for hard stops now, clearing out pending instructions
   inputString = "";
   stringComplete = false;
 
@@ -627,8 +628,8 @@ void exitForceStop() {
 }
 
 /* =========================
-   TM1638 BUTTON HANDLING
-   ========================= */
+TM1638 BUTTON HANDLING
+========================= */
 void handleTmButtons() {
   uint8_t keys = panel.readButtons();
   uint8_t rising = keys & ~lastKeyMask;
@@ -644,8 +645,8 @@ void handleTmButtons() {
 }
 
 /* =========================
-   LANE FUNCTIONS
-   ========================= */
+LANE FUNCTIONS
+========================= */
 void startLaneChangeLeft() {
   if (laneState != LANE_NORMAL) return;
   queue.clear();
@@ -673,8 +674,8 @@ void finishLaneReturn() {
 }
 
 /* =========================
-   TELEMETRY HELPERS
-   ========================= */
+TELEMETRY HELPERS
+========================= */
 char motionChar() {
   if (currentMotorSpeed == 0) return 'S';
   if (currentMotorSpeed > 0) return 'F';
@@ -699,8 +700,8 @@ void sendStatus() {
 }
 
 /* =========================
-   MAIN LOOP
-   ========================= */
+MAIN LOOP
+========================= */
 void loop() {
   panel.update();
   handleTmButtons();
@@ -725,50 +726,54 @@ void loop() {
     return;
   }
 
+  // Serial Parser Logic
   if (stringComplete) {
-    inputString.trim();
-    String work = inputString;
-    work.toLowerCase();
+    // If moving by pulses, cleanly discard the complete message
+    if (movingByPulses) {
+      inputString = "";
+      stringComplete = false;
+    } else {
+      inputString.trim();
+      String work = inputString;
+      work.toLowerCase();
+      
+      // Clear for next message
+      inputString = "";
+      stringComplete = false;
 
-    if (work == "left") {
-      panel.setLeft();
+      if (work == "left") {
+        panel.setLeft();
+      }
+      else if (work == "right") {
+        panel.setRight();
+      }
+      else if (work == "stop") {
+        queue.clear();
+        stopMotor();
+        panel.setStop();
+      }
+      else if (work == "clear" || work == "clear leds" || work == "clearleds") {
+        panel.clearPanel();
+      }
+      else if (work == "allleds" || work == "all leds on") {
+        panel.allLedsOn();
+      }
+      else if (work == "resume") {
+        exitForceStop();
+      }
+      else if (work.startsWith("motor ")) {
+        setMotorSpeed(work.substring(6).toInt());
+      }
+      else if (work.startsWith("servo ")) {
+        startServoMoveImmediate(work.substring(6).toInt());
+      }
+      else {
+        queue.parseAndEnqueue(work);
+      }
     }
-    else if (work == "right") {
-      panel.setRight();
-    }
-    else if (work == "stop") {
-      queue.clear();
-      stopMotor();
-      panel.setStop();
-    }
-    else if (work == "clear" || work == "clear leds" || work == "clearleds") {
-      panel.clearPanel();
-    }
-    else if (work == "allleds" || work == "all leds on") {
-      panel.allLedsOn();
-    }
-    else if (work == "resume") {
-      exitForceStop();
-    }
-    else if (movingByPulses && looksLikePulseGroups(work)) {
-      queue.parseAndEnqueue(work);
-    }
-    else if (work.startsWith("motor ")) {
-      setMotorSpeed(work.substring(6).toInt());
-    }
-    else if (work.startsWith("servo ")) {
-      startServoMoveImmediate(work.substring(6).toInt());
-    }
-    else {
-      queue.parseAndEnqueue(work);
-    }
-
-    inputString = "";
-    stringComplete = false;
   }
 
   int distSide = ultraSide.getCm();
-
   int dl = ultraLeft.getCm();
   int dr = ultraRight.getCm();
   bool obstacle = (dl > 0 && dl <= STOP_DISTANCE_CM) || (dr > 0 && dr <= STOP_DISTANCE_CM);
@@ -812,8 +817,8 @@ void loop() {
 }
 
 /* =========================
-   SERIAL EVENT
-   ========================= */
+SERIAL EVENT
+========================= */
 void serialEvent() {
   while (Serial.available()) {
     char c = Serial.read();
@@ -831,8 +836,8 @@ void serialEvent() {
 }
 
 /* =========================
-   PARSER CHECK
-   ========================= */
+PARSER CHECK
+========================= */
 bool looksLikePulseGroups(const String &line) {
   if (line.length() == 0) return false;
   char c = tolower((unsigned char)line.charAt(0));
