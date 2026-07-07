@@ -127,3 +127,6 @@ KD = 0
 KT = 0
 OUTPUT_LIMITS = (-80, 80)
 AUTO_UPDATE_KP = False
+
+# lane detection method
+OLD_METHOD = True

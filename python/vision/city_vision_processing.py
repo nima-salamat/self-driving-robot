@@ -1,6 +1,6 @@
 from modes.city.config_city import (
     MAX_SERVO_ANGLE, MIN_SERVO_ANGLE, SERVO_CENTER, SERVO_DIRECTION,
-    CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH
+    CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH, OLD_METHOD
 )
 
 import modes.city.config_city as conf
@@ -109,24 +109,84 @@ class VisionProcessor:
 
         # --- Process ROI: gray -> blur -> edges -> HoughLinesP ---
         def process_roi(roi):
-            if roi is None:
-                return None, None
+            if OLD_METHOD:
+                    
+                if roi is None:
+                    return None, None
+                
+                gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+                _, gray = cv2.threshold(gray, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
             
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            _, gray = cv2.threshold(gray, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
-        
-            #gray = cv2.GaussianBlur(gray, (9, 9), 0)
-            # Step 3: Apply dilation to thicken the edges
-            #dilated_image = cv2.dilate(gray, None, iterations=1)
+                #gray = cv2.GaussianBlur(gray, (9, 9), 0)
+                # Step 3: Apply dilation to thicken the edges
+                #dilated_image = cv2.dilate(gray, None, iterations=1)
 
-            # Step 4: Apply erosion to refine the edges
-            #eroded_image = cv2.erode(dilated_image, None, iterations=1)
-            edges = cv2.Canny(gray, 100, 150)
-        
-            lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
-                        minLineLength=5, maxLineGap=5)
+                # Step 4: Apply erosion to refine the edges
+                #eroded_image = cv2.erode(dilated_image, None, iterations=1)
+                edges = cv2.Canny(gray, 100, 150)
+            
+                lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
+                            minLineLength=5, maxLineGap=5)
 
-            return edges, lines
+                return edges, lines
+            else:
+                if roi is None:
+                    return None, None
+
+                # Grayscale
+                gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+                # Blur
+                gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+                # Sobel
+                sobel_x = cv2.Sobel(
+                    gray,
+                    cv2.CV_32F,
+                    1,
+                    0,
+                    ksize=3
+                )
+
+                sobel_y = cv2.Sobel(
+                    gray,
+                    cv2.CV_32F,
+                    0,
+                    1,
+                    ksize=3
+                )
+
+                # Gradient magnitude
+                magnitude = cv2.magnitude(sobel_x, sobel_y)
+                magnitude = cv2.convertScaleAbs(magnitude)
+
+                # Threshold
+                _, edges = cv2.threshold(
+                    magnitude,
+                    conf.LANE_THRESHOLD,
+                    255,
+                    cv2.THRESH_BINARY
+                )
+
+                kernel = np.ones((3, 3), np.uint8)
+                edges = cv2.morphologyEx(
+                    edges,
+                    cv2.MORPH_CLOSE,
+                    kernel,
+                    iterations=1
+                )
+
+                # Hough
+                lines = cv2.HoughLinesP(
+                    edges,
+                    rho=1,
+                    theta=np.pi / 180,
+                    threshold=20,
+                    minLineLength=5,
+                    maxLineGap=5
+                )
+
+                return edges, lines
 
 
         rl_edge, rl_lines = process_roi(rl_frame)
