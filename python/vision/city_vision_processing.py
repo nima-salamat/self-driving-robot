@@ -110,7 +110,7 @@ class VisionProcessor:
         # --- Process ROI: gray -> blur -> edges -> HoughLinesP ---
         def process_roi(roi):
             if roi is None:
-                return None, None, None
+                return None, None
             
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             _, gray = cv2.threshold(gray, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
