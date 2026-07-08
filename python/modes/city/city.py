@@ -341,7 +341,7 @@ class Robot:
                     self.control.update_kp(result["kp"])
                 
                 if config_city.USE_PID:
-                    self.control.set_angle_by_error(result["error"])
+                    self.control.set_angle_by_error(result["error"], result["lane_type"])
                 else:
                     self.control.set_angle(result["steering_angle"])
                     
