@@ -12,9 +12,22 @@ USBCAM_ADDR = 0
 CAMERA_MODE = "picam"
 
 
-# --- Lane Detection Regions of Interest (ROIs) ---
+
+# --- ROI Shape Features ---
 # Values are normalized (0.0 – 1.0), multiplied by frame width/height
-# Tune these for your camera placement
+
+# Options: "rectangle" or "trapezoid"
+LANE_ROI_MODE = "trapezoid"  
+
+# Toggle for Crosswalk Trapezoid (True = Isosceles Trapezoid, False = Rectangle)
+CW_TRAPEZOID_MODE = True  
+
+# Top width factor for trapezoids (0.0 to 1.0)
+# 0.5 means the top edge will be 50% of the base width
+# با این مقادیر، فقط یک بخش کوچک مثلثی از گوشه‌های بیرونی کادر حذف می‌شود
+RL_TOP_WIDTH_FACTOR = 0.85   # سمت راست: ۱۵ درصد از بالا/بیرون بریده می‌شود
+LL_TOP_WIDTH_FACTOR = 0.85   # سمت چپ: ۱۵ درصد از بالا/بیرون بریده می‌شود
+CW_TOP_WIDTH_FACTOR = 0.90   # عابر پیاده: بالا فقط کمی باریک‌تر از پایین است
 
 # Right lane ROI (fraction of frame)
 RL_TOP_ROI = 0.8   # start 80% down from top
@@ -130,3 +143,6 @@ AUTO_UPDATE_KP = False
 
 # lane detection method
 OLD_METHOD = True
+
+# Roi Resizable
+ROI_RESIZABLE = False
