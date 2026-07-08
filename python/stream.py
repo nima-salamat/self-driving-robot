@@ -767,6 +767,33 @@ document.getElementById('confirm_advanced').addEventListener('click', ()=>{
 document.getElementById('freeze_btn').addEventListener('click', ()=>fetch('/freeze_frame', {method:'POST'}).then(()=> {isFrozen=true; updateFrameModeText(); showToast('Frame frozen');}));
 document.getElementById('unfreeze_btn').addEventListener('click', ()=>fetch('/unfreeze_frame', {method:'POST'}).then(()=> {isFrozen=false; updateFrameModeText(); showToast('Back to live');}));
 
+// MISSING EVENT LISTENERS FOR TAKE PICTURE & RECORDING ADDED HERE
+document.getElementById('take_picture_btn').addEventListener('click', () => {
+    fetch('/take_picture', {method: 'POST'})
+        .then(r => r.json())
+        .then(j => {
+            if (j && j.success) showToast('Picture Taken!');
+        });
+});
+
+document.getElementById('toggle_record_btn').addEventListener('click', () => {
+    fetch('/toggle_record', {method: 'POST'})
+        .then(r => r.json())
+        .then(j => {
+            if (j && j.success) {
+                isRecording = j.recording;
+                const statusDiv = document.getElementById('record_status');
+                const btn = document.getElementById('toggle_record_btn');
+                
+                statusDiv.textContent = 'Recording: ' + (isRecording ? 'Yes' : 'No');
+                statusDiv.style.color = isRecording ? '#ef4444' : 'var(--accent)';
+                btn.textContent = isRecording ? 'Stop Recording' : 'Start Recording';
+                
+                showToast(isRecording ? 'Recording Started' : 'Recording Stopped');
+            }
+        });
+});
+
 /* ---------- Init ---------- */
 function initApp(){
     updateInputsFromValues(); 
