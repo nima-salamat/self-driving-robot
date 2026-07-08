@@ -144,5 +144,8 @@ AUTO_UPDATE_KP = False
 # lane detection method
 OLD_METHOD = True
 
+# crosswalk detection method
+CW_OLD_METHOD = False
+
 # Roi Resizable
 ROI_RESIZABLE = False

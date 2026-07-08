@@ -1,7 +1,8 @@
 # ویژن 
 from modes.city.config_city import (
     MAX_SERVO_ANGLE, MIN_SERVO_ANGLE, SERVO_CENTER, SERVO_DIRECTION,
-    CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH, OLD_METHOD, ROI_RESIZABLE
+    CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH, OLD_METHOD, ROI_RESIZABLE,
+    CW_OLD_METHOD,
 )
 
 import modes.city.config_city as conf
@@ -195,12 +196,19 @@ class VisionProcessor:
         cw_lines = []
 
         if cw_frame is not None:
-            gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
-            _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
-            edges = cv2.Canny(gray, 100, 150)
+            if CW_OLD_METHOD:
+                gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
+                _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
+                edges = cv2.Canny(gray, 100, 150)
 
-            lsd = cv2.createLineSegmentDetector(0)
-            lines, _, _, _ = lsd.detect(edges)
+                lsd = cv2.createLineSegmentDetector(0)
+                lines, _, _, _ = lsd.detect(edges)
+            else:
+                gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
+                _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
+                edges = cv2.Canny(gray, 100, 150)
+                lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
+                                    minLineLength=5, maxLineGap=5)
             
             vertical = 0
             horizontal = 0
