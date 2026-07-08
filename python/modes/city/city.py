@@ -14,7 +14,7 @@ from traffic_sign_detector.detector import localization as sign_detector
 from traffic_sign_detector.detector import get_model
 from controller import RobotController
 from modes.city.config_city import (
-    SPEED, SERVO_CENTER,
+    SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
 from stream import start_stream
 import logging
@@ -68,19 +68,19 @@ class Robot:
                 logger.debug(f"navigate with tag: {self.last_tag}")
                 if self.last_tag == TURN_RIGHT:
                      time.sleep(0.1)
-                     self.control.forward_pulse(f"f {SPEED} 5 90 f {SPEED} 4 140")
+                     self.control.forward_pulse(f"f {HARDCODE_SPEED} 5 90 f {HARDCODE_SPEED} 4 140")
                      time.sleep(0.1)
                 elif self.last_tag == TURN_LEFT:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {SPEED} 6 90 f {SPEED} 4 60")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 6 90 f {HARDCODE_SPEED} 4 60")
                     time.sleep(0.1)
                 elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {SPEED} 9 95")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 9 95")
                     time.sleep(0.1)
                 else:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {SPEED}  10 95")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED}  10 95")
                     time.sleep(0.1)
 
     def run(self):

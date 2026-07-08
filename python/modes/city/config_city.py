@@ -24,10 +24,9 @@ CW_TRAPEZOID_MODE = True
 
 # Top width factor for trapezoids (0.0 to 1.0)
 # 0.5 means the top edge will be 50% of the base width
-# با این مقادیر، فقط یک بخش کوچک مثلثی از گوشه‌های بیرونی کادر حذف می‌شود
-RL_TOP_WIDTH_FACTOR = 0.85   # سمت راست: ۱۵ درصد از بالا/بیرون بریده می‌شود
-LL_TOP_WIDTH_FACTOR = 0.85   # سمت چپ: ۱۵ درصد از بالا/بیرون بریده می‌شود
-CW_TOP_WIDTH_FACTOR = 0.90   # عابر پیاده: بالا فقط کمی باریک‌تر از پایین است
+RL_TOP_WIDTH_FACTOR = 0.85   
+LL_TOP_WIDTH_FACTOR = 0.85 
+CW_TOP_WIDTH_FACTOR = 0.90
 
 # Right lane ROI (fraction of frame)
 RL_TOP_ROI = 0.8   # start 80% down from top
@@ -82,7 +81,8 @@ SERVO_CENTER = 90
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
-SPEED = 255
+SPEED = 235
+HARDCODE_SPEED = 255
 
 # --- Crosswalk Setting ---
 CROSSWALK_SLEEP = 3 # sec  - after seeing crosswalk
