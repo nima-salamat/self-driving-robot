@@ -1,255 +1,173 @@
-from base_config import BASE_DIR
 import cv2
 import numpy as np
 import os
-from math import sqrt
+try:
+    from base_config import BASE_DIR
+except ImportError:
+    BASE_DIR = "." 
 
-#Parameter
-SIZE = 20
-CLASS_NUMBER = 8
-MODEL_PATH = os.path.join(BASE_DIR, "traffic_sign_detector", "data_svm.dat")
-
-SIGNS = [
-         "ERROR",
-         "TURN LEFT",
-         "TURN RIGHT",
-         "ONE WAY",
-         "TURN RIGHT",
-         "TURN LEFT",
-         "STRAIGHT",
-         "STOP"
-]
-
-def deskew(img):
-    m = cv2.moments(img)
-    if abs(m['mu02']) < 1e-2:
-        return img.copy()
-    skew = m['mu11']/m['mu02']
-    M = np.float32([[1, skew, -0.5*SIZE*skew], [0, 1, 0]])
-    img = cv2.warpAffine(img, M, (SIZE, SIZE), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
-    return img
-
-class StatModel(object):
-    def load(self, fn):
-        self.model = cv2.ml.SVM_load(fn)
-    def save(self, fn):
-        self.model.save(fn)
-
-
-class SVM(StatModel):
-    def __init__(self, C = 12.5, gamma = 0.50625):
-        self.model = cv2.ml.SVM_create()
-        self.model.setGamma(gamma)
-        self.model.setC(C)
-        self.model.setKernel(cv2.ml.SVM_RBF)
-        self.model.setType(cv2.ml.SVM_C_SVC)
-
-    def train(self, samples, responses):
-        self.model.train(samples, cv2.ml.ROW_SAMPLE, responses)
-
-    def predict(self, samples):
-
-        return self.model.predict(samples)[1].ravel()
-
-
-
-def preprocess_simple(data):
-    return np.float32(data).reshape(-1, SIZE*SIZE) / 255.0
-
-
-def get_hog() : 
-    winSize = (20,20)
-    blockSize = (10,10)
-    blockStride = (5,5)
-    cellSize = (10,10)
-    nbins = 9
-    derivAperture = 1
-    winSigma = -1.
-    histogramNormType = 0
-    L2HysThreshold = 0.2
-    gammaCorrection = 1
-    nlevels = 64
-    signedGradient = True
-
-    hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins,derivAperture,winSigma,histogramNormType,L2HysThreshold,gammaCorrection,nlevels, signedGradient)
-
-    return hog
-
-
-
-def get_model(force_to_train=False):
-    svm_file = MODEL_PATH
-
-    print(f"Loading existing SVM model from '{svm_file}' ...")
-    model = SVM()
-    model.load(svm_file)
-    return model
-    
-
-def constrastLimit(image):
-    img_ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
-    channels = list(cv2.split(img_ycrcb))  # <-- تبدیل tuple به list
-    channels[0] = cv2.equalizeHist(channels[0])
-    img_ycrcb = cv2.merge(channels)
-    return cv2.cvtColor(img_ycrcb, cv2.COLOR_YCrCb2BGR)
-
-
-def LaplacianOfGaussian(image):
-    blurred = cv2.GaussianBlur(image, (3,3), 0)
-    gray = cv2.cvtColor(blurred, cv2.COLOR_BGR2GRAY)
-    log = cv2.Laplacian(gray, cv2.CV_8U, ksize=3)
-    return cv2.convertScaleAbs(log)
-
-
-def binarization(image):
-    _, thresh = cv2.threshold(image, 15, 255, cv2.THRESH_BINARY)
-    return thresh
-
-
-def preprocess_image(image):
-    image = constrastLimit(image)
-    image = LaplacianOfGaussian(image)
-    image = binarization(image)
-    return image
-
-# ----------------- Contour / Sign Detection -----------------
-def removeSmallComponents(image, threshold):
-    nb_components, output, stats, _ = cv2.connectedComponentsWithStats(image, connectivity=8)
-    sizes = stats[1:, -1]; nb_components -= 1
-    img2 = np.zeros(output.shape, dtype=np.uint8)
-    for i in range(nb_components):
-        if sizes[i] >= threshold:
-            img2[output == i + 1] = 255
-    return img2
-
-
-def findContour(image):
-    cnts, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    return cnts
-
-
-def contourIsSign(perimeter, centroid, threshold):
-    # perimeter: contour (Nx1x2) or list of points
-    result = []
-    for p in perimeter:
-        # support both contour point shapes
-        pt = p[0] if isinstance(p, (list, tuple, np.ndarray)) and len(p) > 0 else p
-        x = pt[0]
-        y = pt[1]
-        distance = sqrt((x - centroid[0])**2 + (y - centroid[1])**2)
-        result.append(distance)
-    if len(result) == 0:
-        return (False, 0)
-    max_value = max(result)
-    if max_value == 0:
-        return (False, 0)
-    signature = [dist / max_value for dist in result]
-    temp = sum((1 - s) for s in signature) / len(signature)
-    return (temp < threshold, max_value + 2)
-
-
-def cropSign(image, coordinate):
-    width, height = image.shape[1], image.shape[0]
-    top = max(int(coordinate[0][1]), 0)
-    bottom = min(int(coordinate[1][1]), height-1)
-    left = max(int(coordinate[0][0]), 0)
-    right = min(int(coordinate[1][0]), width-1)
-    # ensure valid box
-    if bottom <= top or right <= left:
-        return None
-    return image[top:bottom, left:right]
-
-
-def findLargestSign(image, contours, threshold, distance_threshold):
-    """
-    Collect candidate signs from contours, return a list of candidates sorted by distance (size proxy).
-    Each candidate is a tuple: (distance, sign_image, coordinate)
-    """
-    candidates = []
-    for c in contours:
-        M = cv2.moments(c)
-        if M.get("m00", 0) == 0:
-            continue
-        cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
-        is_sign, distance = contourIsSign(c, [cX, cY], 1 - threshold)
-        if is_sign and distance > distance_threshold:
-            pts = c.reshape(-1,2)
-            left, top = np.amin(pts, axis=0)
-            right, bottom = np.amax(pts, axis=0)
-            coordinate = [(int(left)-2, int(top)-2), (int(right)+3, int(bottom)+1)]
-            sign = cropSign(image, coordinate)
-            if sign is None:
-                continue
-            candidates.append((distance, sign, coordinate))
-    if not candidates:
-        return []
-    # sort candidates by distance (descending)
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates
-
-
-def remove_other_color(img):
-    frame = cv2.GaussianBlur(img, (3,3), 0)
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    # Blue mask
-    mask_blue = cv2.inRange(hsv, np.array([100,128,0]), np.array([215,255,255]))
-    # White mask
-    mask_white = cv2.inRange(hsv, np.array([0,0,128], dtype=np.uint8), np.array([255,255,255], dtype=np.uint8))
-    # Black mask
-    mask_black = cv2.inRange(hsv, np.array([0,0,0], dtype=np.uint8), np.array([170,150,50], dtype=np.uint8))
-    mask = cv2.bitwise_or(cv2.bitwise_or(mask_blue, mask_white), mask_black)
-    return mask
-
-
-def getLabel(model, data):
-    gray = cv2.cvtColor(data, cv2.COLOR_BGR2GRAY)
-    img = [cv2.resize(gray,(SIZE,SIZE))]
-    #print(np.array(img).shape)
-    img_deskewed = list(map(deskew, img))
-    hog = get_hog()
-    hog_descriptors = np.array([hog.compute(img_deskewed[0])])
-    hog_descriptors = np.reshape(hog_descriptors, [-1, hog_descriptors.shape[1]])
-    return int(model.predict(hog_descriptors)[0])
-
-# ----------------- Localization -----------------
-def localization(image, model, debug_frame, min_size_components=300, similitary_contour_with_circle=0.65):
-    original_image = image.copy()
-    binary_image = preprocess_image(image)
-    binary_image = removeSmallComponents(binary_image, min_size_components)
-    binary_image = cv2.bitwise_and(binary_image, binary_image, mask=remove_other_color(image))
-
-    contours = findContour(binary_image)
-    candidates = findLargestSign(original_image, contours, similitary_contour_with_circle, 15)
-
-    sign = None
-    coordinate = None
-    sign_type = -1
-    text = ""
-
-    # iterate candidates (largest first) and pick the first one that is NOT classified as ERROR (index 0)
-    for distance, candidate_sign, coord in candidates:
-        try:
-            label = getLabel(model, candidate_sign)
-        except Exception as e:
-            # if classification fails, skip this candidate
-            print(f"Classification error: {e}")
-            continue
-        if label == 0:
-            # explicit skip for ERROR class
-            continue
-        # accept this candidate
-        sign = candidate_sign
-        coordinate = coord
-        sign_type = int(label)
-        text = SIGNS[sign_type] if 0 <= sign_type < len(SIGNS) else "UNKNOWN"
+class TrafficSignDetector:
+    def __init__(self, model_path=None):
+      
+        self.SIGNS = ["ERROR", "STOP", "TURN LEFT", "TURN RIGHT", "STRAIGHT", "PARK"]
+        self.count = 0 
         
-    if debug_frame is not None and coordinate is not None:
-        cv2.rectangle(debug_frame, coordinate[0], coordinate[1], (0,255,0), 1)
-        cv2.putText(debug_frame, text, (coordinate[0][0], coordinate[0][1]-15),
-                    cv2.FONT_HERSHEY_PLAIN, 1, (0,0,255),2)
+        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        
+        winSize = (32, 32)
+        blockSize = (16, 16)
+        blockStride = (8, 8)
+        cellSize = (8, 8)
+        nbins = 9
+        self.hog = cv2.HOGDescriptor(winSize, blockSize, blockStride, cellSize, nbins, 1, 4.0, 0, 0.2, 0, 64)
+        
+        if model_path is None:
+            self.model_file = os.path.join(BASE_DIR, 'assets', 'svm_model.xml')
+        else:
+            self.model_file = model_path
+            
+        self.model = cv2.ml.SVM_create()
+        self.model = self.model.load(self.model_file)
 
-    return coordinate, debug_frame, sign_type, text
+    def extract_features(self, image):
+       
+        img_resized = cv2.resize(image, (32, 32))
+        
+        hsv = cv2.cvtColor(img_resized, cv2.COLOR_BGR2HSV)
+        hist = cv2.calcHist([hsv], [0, 1], None, [16, 16], [0, 180, 0, 256])
+        cv2.normalize(hist, hist)
+        color_features = hist.flatten()
+        
+        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+        hog_features = self.hog.compute(gray).flatten()
+        
+        combined_features = np.concatenate((color_features, hog_features))
+        return combined_features.astype(np.float32)
 
+    def get_label(self, image):
+       
+        if self.model is None or image is None or image.size == 0: 
+            return 0 
+        try:
+            features = self.extract_features(image)
+            _, result = self.model.predict(np.array([features]))
+            return int(result[0][0])
+        except Exception as e:
+            print(f"Prediction error: {e}")
+            return 0 
 
+    def get_roi(self, frame):
+      
+        height, width = frame.shape[:2]
+        top_crop = int(height * 0.1)  
+        bottom_crop = int(height * 0.8) 
+        return top_crop, bottom_crop
 
+    def apply_clahe(self, img):
+      
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        l_clahe = self.clahe.apply(l)
+        lab_clahe = cv2.merge((l_clahe, a, b))
+        return cv2.cvtColor(lab_clahe, cv2.COLOR_LAB2BGR)
+
+    def extract_color_and_edge_mask(self, img):
+    
+        enhanced_img = self.apply_clahe(img)
+        
+        hsv = cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2HSV)
+        mask_red = cv2.bitwise_or(
+            cv2.inRange(hsv, np.array([0, 70, 50]), np.array([10, 255, 255])), 
+            cv2.inRange(hsv, np.array([170, 70, 50]), np.array([180, 255, 255]))
+        )
+        mask_blue = cv2.inRange(hsv, np.array([100, 100, 50]), np.array([140, 255, 255]))
+        color_mask = cv2.bitwise_or(mask_red, mask_blue)
+        color_mask = cv2.dilate(color_mask, np.ones((5,5), np.uint8), iterations=1)
+
+        gray = cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edge_mask = cv2.Canny(blurred, 40, 120)
+        
+        combined_mask = cv2.bitwise_and(edge_mask, edge_mask, mask=color_mask)
+        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, np.ones((3,3), np.uint8))
+        
+        return combined_mask
+
+    def find_robust_signs(self, image, original_image, mask, offset_y):
+   
+        cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        best_coordinate = None
+        best_sign = None
+        best_score = 0
+        
+        for c in cnts:
+            area = cv2.contourArea(c)
+            if area < 300: 
+                continue 
+                
+            x, y, w, h = cv2.boundingRect(c)
+            aspect_ratio = float(w) / h
+            if aspect_ratio < 0.6 or aspect_ratio > 1.4: 
+                continue
+
+            hull = cv2.convexHull(c)
+            hull_area = cv2.contourArea(hull)
+            if hull_area == 0: 
+                continue
+            solidity = float(area) / hull_area
+            
+            if solidity > 0.7 and area > best_score:
+                best_score = area
+                pad = 5
+                left, top = max(0, x-pad), max(0, y-pad)
+                right, bottom = min(image.shape[1], x+w+pad), min(image.shape[0], y+h+pad)
+                
+                real_top = top + offset_y
+                real_bottom = bottom + offset_y
+                
+                best_coordinate = [(left, real_top), (right, real_bottom)]
+                best_sign = original_image[real_top:real_bottom, left:right]
+
+        return best_sign, best_coordinate
+
+    def process_frame(self, original_image, debug_frame=None):
+   
+        self.count += 1
+        
+        top_y, bottom_y = self.get_roi(original_image)
+        roi_frame = original_image[top_y:bottom_y, :]
+        
+        binary_mask = self.extract_color_and_edge_mask(roi_frame)
+        
+        sign, coordinate = self.find_robust_signs(roi_frame, original_image, binary_mask, top_y)
+        
+        text = ""
+        sign_type = -1
+        
+        if sign is not None and sign.size > 0:
+            sign_type = self.get_label(sign)
+            
+            if 0 < sign_type < len(self.SIGNS):
+                text = self.SIGNS[sign_type]
+                
+                cv2.imwrite(f"signs_output/{self.count}_{text}.png", sign)
+                
+                if debug_frame is not None:
+                    cv2.rectangle(debug_frame, coordinate[0], coordinate[1], (0, 255, 0), 2)
+                    
+                    cv2.putText(debug_frame, text, (coordinate[0][0], coordinate[0][1]-10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+            else:
+                sign_type = -1
+
+        full_binary = np.zeros(original_image.shape[:2], dtype=np.uint8)
+        full_binary[top_y:bottom_y, :] = binary_mask
+        
+        return {
+            "coordinate": coordinate,
+            "binary_mask": full_binary,
+            "sign_type": sign_type,
+            "text": text,
+            "debug_frame": debug_frame 
+        }

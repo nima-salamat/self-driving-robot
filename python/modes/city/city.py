@@ -10,8 +10,7 @@ from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
-from traffic_sign_detector.detector import localization as sign_detector
-from traffic_sign_detector.detector import get_model
+from traffic_sign_detector.detector import TrafficSignDetector
 from controller import RobotController
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
@@ -46,8 +45,7 @@ class Robot:
         self.crosswalk_last_seen = 0
         self.last_tag = None
         self.stop_last_seen = None
-        self.model = get_model() if config_city.WITH_SIGN else None
-
+        self.sign_detector = TrafficSignDetector()
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
 
@@ -177,14 +175,14 @@ class Robot:
                         tag_id = None
                         if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                             read_sign_counter = 0
-                            coordinate, debug_frame, sign_type, text = sign_detector(frame, debug_frame=debug_frame, model=self.model)
-                            if text == "TURN LEFT":
+                            sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
+                            if sign_result['text'] == "TURN LEFT":
                                 tag_id = TURN_LEFT
-                            elif text == "TURN RIGHT":
+                            elif sign_result['text'] == "TURN RIGHT":
                                 tag_id = TURN_RIGHT
-                            elif text == "STRAIGHT":
+                            elif sign_result['text'] == "STRAIGHT":
                                 tag_id = STRAIGHT
-                            elif text == "STOP":
+                            elif sign_result['text'] == "STOP":
                                 tag_id = STOP
                                 stop_seen = True
                                 self.stop_last_seen = time.time()
@@ -270,7 +268,7 @@ class Robot:
                         if config_city.WITH_APRILTAG:
                             tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
                         elif config_city.WITH_SIGN:
-                            coordinate, debug_frame, sign_type, text = sign_detector(frame, debug_frame=debug_frame, model=self.model)
+                            self.sign_detector.process_frame(frame, debug_frame=debug_frame)
 
                         if config_city.DEBUG:
                             debug = result.get("debug") or {}
