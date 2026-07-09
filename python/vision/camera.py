@@ -1,4 +1,5 @@
 import base_config as temp_conf
+from utils.camera_calibration import CameraCalibration
 
 if temp_conf.CONFIG_MODULE is not None:
     conf = temp_conf.CONFIG_MODULE
@@ -26,6 +27,8 @@ class Camera:
         self.mode = mode
         self.pi_mode = False
         self.camera_initialized = False
+        self.camera_calibration = CameraCalibration()
+
 
         # Initialize camera based on mode
         if mode == "picam" and Picamera2 is not None:
@@ -110,35 +113,62 @@ class Camera:
             if not self.camera_initialized:
                 logger.error("Webcam test capture failed")
                 raise RuntimeError("Webcam not functioning properly")
-
+    
     def capture_frame(self, with_resize=True):
+
         frame = None
         frame_resized = None
+
         if not self.camera_initialized:
             logger.error("Camera not initialized")
             return frame, frame_resized
 
         try:
+
             if self.pi_mode:
+
                 frame = self.picam.capture_array()
+
                 if frame is None or frame.size == 0:
                     logger.warning("Picamera2 returned empty frame")
                     return frame, frame_resized
+
             else:
+
                 ret, frame = self.cap.read()
+
                 if not ret or frame is None:
                     logger.warning("OpenCV camera returned no frame")
                     return frame, frame_resized
-                
+
+
+            # Apply lens distortion correction
+            frame = self.camera_calibration.undistort(frame)
+
+
             if with_resize:
-                # Resize and convert if necessary
-                if frame.shape[:2] != (self.resize_height, self.resize_width):
-                    frame_resized = cv2.resize(frame, (self.resize_width, self.resize_height), interpolation=cv2.INTER_AREA)
-                
+
+                if frame.shape[:2] != (
+                    self.resize_height,
+                    self.resize_width
+                ):
+
+                    frame_resized = cv2.resize(
+                        frame,
+                        (self.resize_width, self.resize_height),
+                        interpolation=cv2.INTER_AREA
+                    )
+
+
             return frame, frame_resized
 
+
         except Exception as e:
-            logger.error(f"Error capturing frame: {e}")
+
+            logger.error(
+                f"Error capturing frame: {e}"
+            )
+
             return frame, frame_resized
 
     def release(self):
