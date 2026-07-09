@@ -1,6 +1,3 @@
-# =========================
-# stream.py
-# =========================
 import logging
 import cv2
 import json
@@ -9,7 +6,7 @@ import os
 from flask import Flask, Response, request, render_template_string, jsonify
 import threading
 import base_config as temp_conf
-from template import HTML_TEMPLATE
+from .template import HTML_TEMPLATE
 # choose config module
 if temp_conf.CONFIG_MODULE is not None:
     conf = temp_conf.CONFIG_MODULE
