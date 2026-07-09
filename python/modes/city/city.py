@@ -22,6 +22,7 @@ import numpy as np
 import time
 import threading
 import sys
+from utils.fps import FPS
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,12 @@ if not hasattr(config_city, "debug_frames_list") or not isinstance(config_city.d
     config_city.debug_frames_list = [None, None]
 
 config_city.DEBUG = False
+
+
+
+
+
+
 
 class Robot:
     def __init__(self):
@@ -48,10 +55,10 @@ class Robot:
         self.sign_detector = TrafficSignDetector()
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
+        self.fps = FPS()
 
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
-
 
     def check_crosswalk(self):
         now = time.time()
@@ -83,12 +90,11 @@ class Robot:
 
     def run(self):
         logger.info("starting")
-        prev_time = time.time()
+        self.fps.start()
         read_sign_counter = 0
-        prev_time_fps = time.time()
-        fps_counter = 0
         try:
             while True:
+                self.fps.update()
                 if config_city.RUN_LVL == "STOP":
                     time.sleep(config_city.DELAY)
                     self.control.stop()
@@ -100,50 +106,18 @@ class Robot:
                     debug_frame=None
                     result = self.vision.detect(frame_resized, debug_frame=None)
                     
-                    if config_city.STREAM:
-                        curr_time = time.time()
-                        fps = 1.0 / (curr_time - prev_time)
-                        prev_time = curr_time
-                        debug = result.get("debug") or {}
-                        display_frame = debug["combined"].copy()
-                        cv2.putText(display_frame, f"FPS: {fps:.1f}", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        
-                        config_city.debug_frames_list = []
-                        self.update_debug_frames(display_frame)
-                        
-
-                        if getattr(config_city, "TAKE_PICTURE", False):
-                            try:
-                                self.output.save_image(display_frame)
-                            except Exception as e:
-                                logger.error(f"save_image failed: {e}")
-                            config_city.TAKE_PICTURE = False
-
-                        if getattr(config_city, "RECORD_VIDEO", False):
-                            if not self.output.is_recording():
-                                try:
-                                    self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
-                                except Exception as e:
-                                    logger.error(f"start_recording failed: {e}")
-                            self.output.write_frame(display_frame)
-                        else:
-                            if self.output.is_recording():
-                                try:
-                                    self.output.stop_recording()
-                                except Exception as e:
-                                    logger.error(f"stop_recording failed: {e}")
+                    self.handle_debug_stream(result, frame, SERVO_CENTER, False, "stopped")
 
                     continue
-                now = time.time()
-                if now >= 1 + prev_time_fps:
-                    if config_city.SHOW_FPS:
-                        print("FPS:",fps_counter)
-                    fps_counter = 0
-                    prev_time_fps = now
-                fps_counter += 1
-                
-                    
+
+                if config_city.SHOW_FPS:
+                    self.fps.print_every_second(
+                        self.fps.instant_fps,
+                        "|",
+                        self.fps.second_fps,
+                        "|",
+                        self.fps.avg_fps,
+                    )
 
                 stop_seen = False
                 if config_city.DEBUG:
@@ -193,80 +167,16 @@ class Robot:
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
                 
-                    if config_city.DEBUG:
-                        debug = result.get("debug") or {}
-                        if debug.get("combined") is not None:
-                            cv2.imshow("combined", debug["combined"])
-                        if frame is not None:
-                            cv2.imshow("frame", frame)
-                        
-                    if config_city.STREAM:
-                        curr_time = time.time()
-                        fps = 1.0 / (curr_time - prev_time)
-                        prev_time = curr_time
-                        debug = result.get("debug") or {}
-                        display_frame = debug["combined"].copy()
-
-                        texts = [
-                            f"FPS: {fps:.1f}, RealFPS: {fps_counter:.1f}, Crosswalk:{crosswalk}, {status}",
-                            f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}"
-                        ]
-
-                        font = cv2.FONT_HERSHEY_SIMPLEX
-                        scale = 0.3
-                        thickness = 1
-                        line_height = 15 
-                        org_x = 10
-                        org_y_start = 20 
-
-                        for i, text in enumerate(texts):
-                            y_pos = org_y_start + (i * line_height)
-                            
-                            (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-                            pad = 4
-                            x1, y1 = org_x - pad, y_pos - text_height - pad
-                            x2, y2 = org_x + text_width + pad, y_pos + baseline + pad
-                            
-                            roi = display_frame[max(0, y1):y2, max(0, x1):x2]
-                            if roi.size > 0:
-                                roi_blur = cv2.GaussianBlur(roi, (15, 15), 0)
-                                roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
-                                display_frame[max(0, y1):y2, max(0, x1):x2] = roi_white
-
-                            cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
-
-                        config_city.debug_frames_list = []
-                        self.update_debug_frames(display_frame)
-
-                        if getattr(config_city, "TAKE_PICTURE", False):
-                            try:
-                                self.output.save_image(display_frame)
-                            except Exception as e:
-                                logger.error(f"save_image failed: {e}")
-                            config_city.TAKE_PICTURE = False
-
-                        if getattr(config_city, "RECORD_VIDEO", False):
-                            if not self.output.is_recording():
-                                try:
-                                    self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
-                                except Exception as e:
-                                    logger.error(f"start_recording failed: {e}")
-                            self.output.write_frame(display_frame)
-                        else:
-                            if self.output.is_recording():
-                                try:
-                                    self.output.stop_recording()
-                                except Exception as e:
-                                    logger.error(f"stop_recording failed: {e}")
+                    self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(config_city.DELAY)
+                        time.sleep(2*config_city.DELAY) # i think the delay 0.01s is not enough for that
                         continue
                     
                 else:
                     self.control.stop()
-                    time.sleep(0.1)
+                    time.sleep(2*config_city.DELAY)
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     self.check_crosswalk()
                     
@@ -281,79 +191,13 @@ class Robot:
                         elif config_city.WITH_SIGN:
                             self.sign_detector.process_frame(frame, debug_frame=debug_frame)
 
-                        if config_city.DEBUG:
-                            debug = result.get("debug") or {}
-                            if debug.get("combined") is not None:
-                                cv2.imshow("combined", debug["combined"])
-                            if frame is not None:
-                                cv2.imshow("frame", frame)
-
-                        if config_city.STREAM:
-                            curr_time = time.time()
-                            fps = 1.0 / (curr_time - prev_time)
-                            prev_time = curr_time
-                            debug = result.get("debug") or {}
-                            display_frame = debug["combined"].copy()
-
-                            
-                            texts = [
-                                f"FPS: {fps:.1f}, RealFPS: {fps_counter:.1f}, Crosswalk:{crosswalk}, {status}",
-                                f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}"
-                            ]
-
-                            font = cv2.FONT_HERSHEY_SIMPLEX
-                            scale = 0.3
-                            thickness = 1
-                            line_height = 15 
-                            org_x = 10
-                            org_y_start = 20
-
-                            for i, text in enumerate(texts):
-                                y_pos = org_y_start + (i * line_height)
-                                
-                                (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-                                pad = 4
-                                x1, y1 = org_x - pad, y_pos - text_height - pad
-                                x2, y2 = org_x + text_width + pad, y_pos + baseline + pad
-                                
-                                roi = display_frame[max(0, y1):y2, max(0, x1):x2]
-                                if roi.size > 0:
-                                    roi_blur = cv2.GaussianBlur(roi, (15, 15), 0)
-                                    roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
-                                    display_frame[max(0, y1):y2, max(0, x1):x2] = roi_white
-
-                                cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
-
-
-                            config_city.debug_frames_list = []
-                            self.update_debug_frames(display_frame)
-
-                            if getattr(config_city, "TAKE_PICTURE", False):
-                                try:
-                                    self.output.save_image(display_frame)
-                                except Exception as e:
-                                    logger.error(f"save_image failed: {e}")
-                                config_city.TAKE_PICTURE = False
-
-                            if getattr(config_city, "RECORD_VIDEO", False):
-                                if not self.output.is_recording():
-                                    try:
-                                        self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
-                                    except Exception as e:
-                                        logger.error(f"start_recording failed: {e}")
-                                self.output.write_frame(display_frame)
-                            else:
-                                if self.output.is_recording():
-                                    try:
-                                        self.output.stop_recording()
-                                    except Exception as e:
-                                        logger.error(f"stop_recording failed: {e}")
+                    self.handle_debug_stream(result, frame, angle, crosswalk, "crosswalk")
                     
                     continue
                 
                 if crosswalk and time.time() - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
                     self.control.stop()
-                    time.sleep(0.1)
+                    time.sleep(2*config_city.DELAY)
                     self.check_crosswalk()
                     continue
                 
@@ -377,7 +221,73 @@ class Robot:
         finally:
             self.close()
             logger.info("exited")
+
+
+    def handle_debug_stream(self, result, frame, angle, crosswalk, status):
+        if config_city.DEBUG:
+            debug = result.get("debug") or {}
+            if debug.get("combined") is not None:
+                cv2.imshow("combined", debug["combined"])
+            if frame is not None:
+                cv2.imshow("frame", frame)
             
+        if config_city.STREAM:
+            
+            debug = result.get("debug") or {}
+            display_frame = debug["combined"].copy()
+
+            texts = [
+                f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, Crosswalk:{crosswalk}, {status}",
+                f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}"
+            ]
+
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            scale = 0.3
+            thickness = 1
+            line_height = 15 
+            org_x = 10
+            org_y_start = 20 
+
+            for i, text in enumerate(texts):
+                y_pos = org_y_start + (i * line_height)
+                
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
+                pad = 4
+                x1, y1 = org_x - pad, y_pos - text_height - pad
+                x2, y2 = org_x + text_width + pad, y_pos + baseline + pad
+                
+                roi = display_frame[max(0, y1):y2, max(0, x1):x2]
+                if roi.size > 0:
+                    roi_blur = cv2.GaussianBlur(roi, (15, 15), 0)
+                    roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
+                    display_frame[max(0, y1):y2, max(0, x1):x2] = roi_white
+
+                cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
+
+            config_city.debug_frames_list = []
+            self.update_debug_frames(display_frame)
+
+            if getattr(config_city, "TAKE_PICTURE", False):
+                try:
+                    self.output.save_image(display_frame)
+                except Exception as e:
+                    logger.error(f"save_image failed: {e}")
+                config_city.TAKE_PICTURE = False
+
+            if getattr(config_city, "RECORD_VIDEO", False):
+                if not self.output.is_recording():
+                    try:
+                        self.output.start_recording(display_frame.shape, fps=VIDEO_FPS, codec=VIDEO_CODEC)
+                    except Exception as e:
+                        logger.error(f"start_recording failed: {e}")
+                self.output.write_frame(display_frame)
+            else:
+                if self.output.is_recording():
+                    try:
+                        self.output.stop_recording()
+                    except Exception as e:
+                        logger.error(f"stop_recording failed: {e}")
+
     def safe(self, func):
         def wrapper(*args, **kwargs):
             val =  None
