@@ -149,3 +149,15 @@ CW_OLD_METHOD = False
 
 # Roi Resizable
 ROI_RESIZABLE = False
+
+# --- BEV (Bird's Eye View) Config ---
+USE_BEV = True 
+
+BEV_SRC_TL_X = 0.35
+BEV_SRC_TL_Y = 0.60
+BEV_SRC_TR_X = 0.65
+BEV_SRC_TR_Y = 0.60
+BEV_SRC_BR_X = 1.00
+BEV_SRC_BR_Y = 1.00
+BEV_SRC_BL_X = 0.00
+BEV_SRC_BL_Y = 1.00 

@@ -97,7 +97,8 @@ class Robot:
                     time.sleep(config_city.DELAY)
                     
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                    result = self.vision.detect(frame_resized, debug_frame)
+                    debug_frame=None
+                    result = self.vision.detect(frame_resized, debug_frame=None)
                     
                     if config_city.STREAM:
                         curr_time = time.time()
@@ -134,14 +135,15 @@ class Robot:
                                     logger.error(f"stop_recording failed: {e}")
 
                     continue
-                
-                if config_city.SHOW_FPS:
-                    now = time.time()
-                    if now >= 1 + prev_time_fps:
+                now = time.time()
+                if now >= 1 + prev_time_fps:
+                    if config_city.SHOW_FPS:
                         print("FPS:",fps_counter)
-                        fps_counter = 0
-                        prev_time_fps = now
-                    fps_counter += 1
+                    fps_counter = 0
+                    prev_time_fps = now
+                fps_counter += 1
+                
+                    
 
                 stop_seen = False
                 if config_city.DEBUG:
@@ -205,24 +207,33 @@ class Robot:
                         debug = result.get("debug") or {}
                         display_frame = debug["combined"].copy()
 
-                        text = f"FPS: {fps:.1f}, Crosswalk:{crosswalk}, {status}, angle:{angle:.1f}"
-                        org = (10, 30)
+                        texts = [
+                            f"FPS: {fps:.1f}, RealFPS: {fps_counter:.1f}, Crosswalk:{crosswalk}, {status}",
+                            f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}"
+                        ]
+
                         font = cv2.FONT_HERSHEY_SIMPLEX
-                        scale = 0.6
-                        thickness = 2
-                        
-                        (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-                        pad = 4
-                        x1, y1 = org[0]-pad, org[1]-text_height-pad
-                        x2, y2 = org[0]+text_width+pad, org[1]+baseline+pad
-                        roi = display_frame[max(0,y1):y2, max(0,x1):x2]
+                        scale = 0.3
+                        thickness = 1
+                        line_height = 15 
+                        org_x = 10
+                        org_y_start = 20 
 
-                        if roi.size > 0:
-                            roi_blur = cv2.GaussianBlur(roi, (15,15), 0)
-                            roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
-                            display_frame[max(0,y1):y2, max(0,x1):x2] = roi_white
+                        for i, text in enumerate(texts):
+                            y_pos = org_y_start + (i * line_height)
+                            
+                            (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
+                            pad = 4
+                            x1, y1 = org_x - pad, y_pos - text_height - pad
+                            x2, y2 = org_x + text_width + pad, y_pos + baseline + pad
+                            
+                            roi = display_frame[max(0, y1):y2, max(0, x1):x2]
+                            if roi.size > 0:
+                                roi_blur = cv2.GaussianBlur(roi, (15, 15), 0)
+                                roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
+                                display_frame[max(0, y1):y2, max(0, x1):x2] = roi_white
 
-                        cv2.putText(display_frame, text, (org[0], org[1]), font, scale, (0,0,0), thickness)
+                            cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
 
                         config_city.debug_frames_list = []
                         self.update_debug_frames(display_frame)
@@ -284,24 +295,35 @@ class Robot:
                             debug = result.get("debug") or {}
                             display_frame = debug["combined"].copy()
 
-                            text = f"FPS: {fps:.1f}, Crosswalk:{crosswalk}, stopped, time elapsed:{time.time() - self.crosswalk_last_seen:.1f}"
-                            org = (10, 30)
-                            font = cv2.FONT_HERSHEY_SIMPLEX
-                            scale = 0.6
-                            thickness = 2
                             
-                            (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
-                            pad = 4
-                            x1, y1 = org[0]-pad, org[1]-text_height-pad
-                            x2, y2 = org[0]+text_width+pad, org[1]+baseline+pad
-                            roi = display_frame[max(0,y1):y2, max(0,x1):x2]
+                            texts = [
+                                f"FPS: {fps:.1f}, RealFPS: {fps_counter:.1f}, Crosswalk:{crosswalk}, {status}",
+                                f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}"
+                            ]
 
-                            if roi.size > 0:
-                                roi_blur = cv2.GaussianBlur(roi, (15,15), 0)
-                                roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
-                                display_frame[max(0,y1):y2, max(0,x1):x2] = roi_white
+                            font = cv2.FONT_HERSHEY_SIMPLEX
+                            scale = 0.3
+                            thickness = 1
+                            line_height = 15 
+                            org_x = 10
+                            org_y_start = 20
 
-                            cv2.putText(display_frame, text, (org[0], org[1]), font, scale, (0,0,0), thickness)
+                            for i, text in enumerate(texts):
+                                y_pos = org_y_start + (i * line_height)
+                                
+                                (text_width, text_height), baseline = cv2.getTextSize(text, font, scale, thickness)
+                                pad = 4
+                                x1, y1 = org_x - pad, y_pos - text_height - pad
+                                x2, y2 = org_x + text_width + pad, y_pos + baseline + pad
+                                
+                                roi = display_frame[max(0, y1):y2, max(0, x1):x2]
+                                if roi.size > 0:
+                                    roi_blur = cv2.GaussianBlur(roi, (15, 15), 0)
+                                    roi_white = cv2.addWeighted(roi_blur, 0.3, 255*np.ones_like(roi_blur, dtype=np.uint8), 0.7, 0)
+                                    display_frame[max(0, y1):y2, max(0, x1):x2] = roi_white
+
+                                cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
+
 
                             config_city.debug_frames_list = []
                             self.update_debug_frames(display_frame)

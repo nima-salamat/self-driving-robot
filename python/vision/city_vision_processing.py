@@ -2,7 +2,7 @@
 from modes.city.config_city import (
     MAX_SERVO_ANGLE, MIN_SERVO_ANGLE, SERVO_CENTER, SERVO_DIRECTION,
     CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH, OLD_METHOD, ROI_RESIZABLE,
-    CW_OLD_METHOD,
+    CW_OLD_METHOD
 )
 
 import modes.city.config_city as conf
@@ -13,6 +13,7 @@ import numpy as np
 class VisionProcessor:
     def __init__(self):
         self.last_steering = SERVO_CENTER
+        self.last_error = 0
         self.rroi_unseen_counter = 0
         self.lroi_unseen_counter = 0
         self.max_unseen_counter = 10
@@ -56,6 +57,10 @@ class VisionProcessor:
 
                 alpha = math.degrees(math.atan((lane_width / 2) / Yp))
 
+                # اگر BEV فعال باشد، خطوط تقریباً عمودی (90 درجه) خواهند بود
+                if hasattr(conf, 'USE_BEV') and conf.USE_BEV:
+                    return 90
+
                 if side == "right":
                     return 90 + alpha
                 else:
@@ -83,8 +88,43 @@ class VisionProcessor:
 
         return best_x_mid
 
-    def detect(self, frame, debug_frame):
+    def detect(self, frame, debug_frame = None):
+        if frame is None:
+            print("Warning: Frame is None. Returning last known steering angle.")
+            return {
+                "steering_angle": self.last_steering,
+                "error": self.last_error,
+                "lane_type": "none",
+                "crosswalk": False,
+                "debug": {"rl_draw": None, "ll_draw": None, "combined": None, "cw_draw": None},
+                "kp": 0
+            }
+
         height, width = frame.shape[:2]
+
+        # ----------------------
+        # APPLY BEV (Bird's Eye View)
+        # ----------------------
+        if hasattr(conf, 'USE_BEV') and conf.USE_BEV:
+            src_pts = np.float32([
+                [width * conf.BEV_SRC_TL_X, height * conf.BEV_SRC_TL_Y],
+                [width * conf.BEV_SRC_TR_X, height * conf.BEV_SRC_TR_Y],
+                [width * conf.BEV_SRC_BR_X, height * conf.BEV_SRC_BR_Y],
+                [width * conf.BEV_SRC_BL_X, height * conf.BEV_SRC_BL_Y]
+            ])
+            
+            dst_pts = np.float32([
+                [0, 0],
+                [width, 0],
+                [width, height],
+                [0, height]
+            ])
+            
+            matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            frame = cv2.warpPerspective(frame, matrix, (width, height), flags=cv2.INTER_LINEAR)
+            
+            
+        debug_frame = frame.copy() if conf.DEBUG or conf.STREAM else None
 
         # --- ROI pixel bounds ---
         rl_top, rl_bottom = int(conf.RL_TOP_ROI * height), int(conf.RL_BOTTOM_ROI * height)
@@ -313,13 +353,15 @@ class VisionProcessor:
         else:
           steering_angle = self.last_steering * 0.3 + 0.7 * steering_angle
           self.last_steering = steering_angle
+
+        self.last_error = error
         
         # --------------
         # DEBUG DRAWING
         # --------------
         debug = {"rl_draw": None, "ll_draw": None, "combined": None, "crosswalk_draw": None}
         
-        if conf.DEBUG or conf.STREAM:
+        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:    
             def scale(points):
                 result = []
                 for x in points:

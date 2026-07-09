@@ -19,6 +19,7 @@ class RobotController:
         self.current_speed = 0
         self.pid = PIDController(conf.KP, conf.KI, conf.KD, conf.KT, output_limits=conf.OUTPUT_LIMITS)
         self._initialized = True
+        self.last_angle = 90
 
 
     def __new__(cls, *args, **kwargs):
@@ -54,6 +55,7 @@ class RobotController:
         self.current_speed = 0
 
     def set_angle(self, angle: int):
+        self.last_angle = angle
         self.servo(angle)
     
     def set_speed(self, speed: int):
