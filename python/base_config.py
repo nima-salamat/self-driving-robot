@@ -12,6 +12,15 @@ default_height = 230
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
 
+# --- Camera Defaults ---
+CAM_WIDTH = 640
+CAM_HEIGHT = 480
+
+resize_width = 380
+resize_height = 230
+CAMERA_PITCH_DEG = -40 # camera angle in real world
+CAMERA_HEIGHT = 27 # height of camera in real world
+USBCAM_ADDR = 0
 # --- Lane Detection Regions of Interest (ROIs) ---
 # Values are normalized (0.0 – 1.0), multiplied by frame width/height
 # Tune these for your camera placement
