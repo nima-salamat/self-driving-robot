@@ -11,7 +11,7 @@ from base_config import BASE_DIR
 # Configuration
 # ===========================================
 
-CHECKERBOARD = (9, 6)
+CHECKERBOARD = (11, 7)
 
 IMAGE_DIR = os.path.join(BASE_DIR, "assets", "images")
 
