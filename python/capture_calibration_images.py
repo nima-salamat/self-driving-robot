@@ -3,7 +3,7 @@ import cv2
 import logging
 
 from base_config import BASE_DIR
-from camera import Camera
+from vision.camera import Camera
 
 # ===========================================
 # Configuration
