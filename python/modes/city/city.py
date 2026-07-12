@@ -26,6 +26,7 @@ from utils.fps import FPS
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# keep defaults (config_city can override)
 OUTPUT_DIR = getattr(config_city, "OUTPUT_DIR", "output")
 VIDEO_FPS = getattr(config_city, "VIDEO_FPS", 20)
 VIDEO_CODEC = getattr(config_city, "VIDEO_CODEC", "mp4v")
@@ -34,6 +35,12 @@ if not hasattr(config_city, "debug_frames_list") or not isinstance(config_city.d
     config_city.debug_frames_list = [None, None]
 
 config_city.DEBUG = False
+
+
+
+
+
+
 
 class Robot:
     def __init__(self):
@@ -46,9 +53,9 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.sign_detector = TrafficSignDetector()
+        # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
-        self.stop_miss_counter = 3
 
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
@@ -85,7 +92,6 @@ class Robot:
         logger.info("starting")
         self.fps.start()
         read_sign_counter = 0
-        status = ""
         try:
             while True:
                 self.fps.update()
@@ -113,6 +119,7 @@ class Robot:
                         self.fps.avg_fps,
                     )
 
+                stop_seen = False
                 if config_city.DEBUG:
                     cv2.waitKey(1)
                 angle=SERVO_CENTER
@@ -132,27 +139,19 @@ class Robot:
                     
                     if config_city.WITH_APRILTAG:
                         tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
-                        
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
-                            if tag_id == STOP:
-                                self.stop_miss_counter = 0
-                            else:
-                                self.stop_miss_counter += 1
-                            self.last_tag = tag_id
-                        else:
-                            self.stop_miss_counter += 1
-
-                        status = "stopped" if self.stop_miss_counter < 3 else "running"
-                        
+                            if largest_tag["corners"][1][1] > 180:
+                                if tag_id == STOP:
+                                    stop_seen = True
+                                    self.stop_last_seen = time.time()
+                                self.last_tag = tag_id
                     elif config_city.WITH_SIGN:
                         read_sign_counter += 1
                         tag_id = None
-                        
                         if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                             read_sign_counter = 0
                             sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
-                            
                             if sign_result['text'] == "TURN LEFT":
                                 tag_id = TURN_LEFT
                             elif sign_result['text'] == "TURN RIGHT":
@@ -161,24 +160,20 @@ class Robot:
                                 tag_id = STRAIGHT
                             elif sign_result['text'] == "STOP":
                                 tag_id = STOP
-                                self.stop_miss_counter = 0
-                            
-                            if tag_id != STOP:
-                                self.stop_miss_counter += 1
-                                
-                            if tag_id is not None:
-                                self.last_tag = tag_id
+                                stop_seen = True
+                                self.stop_last_seen = time.time()
+                        if tag_id is not None:
+                            self.last_tag = tag_id
 
-                        status = "stopped" if self.stop_miss_counter < 3 else "running"
-                    else:
-                        status = "running"
+                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
                 
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(config_city.DELAY)
+                        time.sleep(2*config_city.DELAY) # i think the delay 0.01s is not enough for that
                         continue
+                    
                 else:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
@@ -226,6 +221,7 @@ class Robot:
         finally:
             self.close()
             logger.info("exited")
+
 
     def handle_debug_stream(self, result, frame, angle, crosswalk, status):
         if config_city.DEBUG:
@@ -308,8 +304,9 @@ class Robot:
         _(self.control.stop)()
         _(self.control.set_angle)(90)
         _(self.camera.release)()
-        _(self.control.connection.close)() 
+        _(self.control.connection.close)() # close serial connection
 
+        # release output manager resources
         try:
             self.output.close()
         except Exception:
