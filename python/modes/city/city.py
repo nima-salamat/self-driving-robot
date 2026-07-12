@@ -92,6 +92,7 @@ class Robot:
         logger.info("starting")
         self.fps.start()
         read_sign_counter = 0
+        status = ""
         try:
             while True:
                 self.fps.update()
@@ -146,6 +147,9 @@ class Robot:
                                     stop_seen = True
                                     self.stop_last_seen = time.time()
                                 self.last_tag = tag_id
+
+                        status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
+                        
                     elif config_city.WITH_SIGN:
                         read_sign_counter += 1
                         tag_id = None
@@ -165,7 +169,7 @@ class Robot:
                         if tag_id is not None:
                             self.last_tag = tag_id
 
-                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
+                        status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
                 
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
