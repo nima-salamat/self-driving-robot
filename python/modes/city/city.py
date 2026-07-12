@@ -23,6 +23,9 @@ import time
 import threading
 import sys
 from utils.fps import FPS
+from utils.roi_manager import crop_image
+
+
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -192,9 +195,17 @@ class Robot:
 
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
+        
+        sign_tag_frame = crop_image(frame, 
+                                    config_city.ST_TOP_ROI, 
+                                    config_city.ST_BOTTOM_ROI, 
+                                    config_city.ST_LEFT_ROI, 
+                                    config_city.ST_RIGHT_ROI
+        )
+        
         stop_seen = False
         if config_city.WITH_APRILTAG:
-            tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
+            tags, debug_frame, largest_tag = self.apriltag_detector.detect(sign_tag_frame, debug_frame)
             if largest_tag is not None:
                 tag_id = largest_tag["id"]
                 if largest_tag["corners"][1][1] > 180:
@@ -207,7 +218,7 @@ class Robot:
             tag_id = None
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
-                sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
+                sign_result = self.sign_detector.process_frame(sign_tag_frame, debug_frame=debug_frame)
                 debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
