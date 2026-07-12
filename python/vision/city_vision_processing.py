@@ -17,7 +17,14 @@ class VisionProcessor:
         self.rroi_unseen_counter = 0
         self.lroi_unseen_counter = 0
         self.max_unseen_counter = 10
-        
+
+    def _extract_line(self, line):
+        """
+        یک تابع کمکی برای یکسان‌سازی فرمت خطوط.
+        خروجی همیشه [x1, y1, x2, y2] خواهد بود.
+        """
+        line = np.asarray(line).flatten()
+        return line[0], line[1], line[2], line[3]
 
     def _best_mid_x(self, lines, roi_w, roi_h, side=""):
         if lines is None:
@@ -31,7 +38,7 @@ class VisionProcessor:
         best_score = -1
         
         for line in lines:
-            x1, y1, x2, y2 = line[0]
+            x1, y1, x2, y2 = self._extract_line(line)
 
             slope = (y2 - y1) / (x2 - x1 + 1e-9)
             angle = abs(math.degrees(math.atan(slope)))
@@ -50,17 +57,11 @@ class VisionProcessor:
                 return math.exp(-(diff ** 2) / (2 * sigma ** 2))
 
             def expected_lane_angle(side, h=CAMERA_HEIGHT, lane_width=LANE_WIDTH, camera_pitch_deg=CAMERA_PITCH_DEG):
- 
                 camera_pitch = math.radians(camera_pitch_deg)
-
                 Yp = h / math.tan(-camera_pitch)  
-
                 alpha = math.degrees(math.atan((lane_width / 2) / Yp))
-
-                # اگر BEV فعال باشد، خطوط تقریباً عمودی (90 درجه) خواهند بود
                 if hasattr(conf, 'USE_BEV') and conf.USE_BEV:
                     return 90
-
                 if side == "right":
                     return 90 + alpha
                 else:
@@ -159,10 +160,10 @@ class VisionProcessor:
                 rl_h, rl_w = rl_frame.shape[:2]
                 rl_base_w = int((conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI) * width)
                 pts_rl = np.array([
-                    [0, 0],                                             
+                    [0, 0],                                       
                     [int(rl_base_w * conf.RL_TOP_WIDTH_FACTOR), 0],     
-                    [rl_w, rl_h],                                       
-                    [0, rl_h]                                           
+                    [rl_w, rl_h],                               
+                    [0, rl_h]                                   
                 ], np.int32)
                 mask_rl = np.zeros((rl_h, rl_w), dtype=np.uint8)
                 cv2.fillPoly(mask_rl, [pts_rl], 255)
@@ -173,9 +174,9 @@ class VisionProcessor:
                 ll_base_w = int((conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI) * width)
                 pts_ll = np.array([
                     [ll_w - int(ll_base_w * conf.LL_TOP_WIDTH_FACTOR), 0], 
-                    [ll_w, 0],                                             
-                    [ll_w, ll_h],                                          
-                    [0, ll_h]                                              
+                    [ll_w, 0],                                            
+                    [ll_w, ll_h],                                       
+                    [0, ll_h]                                         
                 ], np.int32)
                 mask_ll = np.zeros((ll_h, ll_w), dtype=np.uint8)
                 cv2.fillPoly(mask_ll, [pts_ll], 255)
@@ -187,8 +188,8 @@ class VisionProcessor:
                 pts_cw = np.array([
                     [int(cw_w * (1 - conf.CW_TOP_WIDTH_FACTOR) / 2), 0], 
                     [int(cw_w * (1 + conf.CW_TOP_WIDTH_FACTOR) / 2), 0], 
-                    [cw_w, cw_h],                                        
-                    [0, cw_h]                                            
+                    [cw_w, cw_h],                                      
+                    [0, cw_h]                                          
                 ], np.int32)
                 mask_cw = np.zeros((cw_h, cw_w), dtype=np.uint8)
                 cv2.fillPoly(mask_cw, [pts_cw], 255)
@@ -204,7 +205,7 @@ class VisionProcessor:
                 _, gray = cv2.threshold(gray, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
                 edges = cv2.Canny(gray, 100, 150)
                 lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
-                                    minLineLength=5, maxLineGap=5)
+                                        minLineLength=5, maxLineGap=5)
                 return edges, lines
             else:
                 if roi is None:
@@ -223,7 +224,7 @@ class VisionProcessor:
                 edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=1)
 
                 lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180, threshold=20,
-                                    minLineLength=5, maxLineGap=5)
+                                        minLineLength=5, maxLineGap=5)
                 return edges, lines
 
         rl_edge, rl_lines = process_roi(rl_frame)
@@ -242,13 +243,13 @@ class VisionProcessor:
                 edges = cv2.Canny(gray, 100, 150)
 
                 lsd = cv2.createLineSegmentDetector(0)
-                lines, _, _, _ = lsd.detect(edges)
+                lines = lsd.detect(edges)[0] # lsd.detect returns (lines, width, prec, nfa)
             else:
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
                 edges = cv2.Canny(gray, 100, 150)
                 lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
-                                    minLineLength=5, maxLineGap=5)
+                                        minLineLength=5, maxLineGap=5)
             
             vertical = 0
             horizontal = 0
@@ -256,9 +257,10 @@ class VisionProcessor:
             crosswalk_pixel_dist = (3.5 / 5) * (cw_bottom - cw_top) 
             line_min_length = max(cw_roi_diagonal / 20, 10)
             lowest_horizontal_line = None
+            
             if lines is not None:
                 for line in lines:
-                    x0, y0, x1, y1 = line[0] 
+                    x0, y0, x1, y1 = self._extract_line(line)
                     slope = (y1 - y0) / (x1 - x0 + 1e-6)
                     angle = abs(np.arctan(slope) * 180 / np.pi)
                     length = math.hypot(x1 - x0, y1 - y0)
@@ -268,7 +270,9 @@ class VisionProcessor:
                             horizontal += 1
                             cw_lines.append(line)
                             if lowest_horizontal_line is not None:
-                                if max(y0, y1) > max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]):
+                                # استفاده از extract_line برای مقایسه
+                                _, ly0, _, ly1 = self._extract_line(lowest_horizontal_line)
+                                if max(y0, y1) > max(ly0, ly1):
                                     lowest_horizontal_line = line
                             else:
                                 lowest_horizontal_line = line
@@ -279,7 +283,8 @@ class VisionProcessor:
                         
             if vertical >= 3 and horizontal >= 2:
                 if lowest_horizontal_line is not None:
-                    if max(lowest_horizontal_line[0][1],lowest_horizontal_line[0][3]) > crosswalk_pixel_dist:
+                    _, ly0, _, ly1 = self._extract_line(lowest_horizontal_line)
+                    if max(ly0, ly1) > crosswalk_pixel_dist:
                         crosswalk = True
             
         # --------------
@@ -362,11 +367,13 @@ class VisionProcessor:
         debug = {"rl_draw": None, "ll_draw": None, "combined": None, "crosswalk_draw": None}
         
         if (conf.DEBUG or conf.STREAM) and debug_frame is not None:    
-            def scale(points):
-                result = []
-                for x in points:
-                    result.append((w_dbg / width) * x)
-                return result
+            def scale(line_coords):
+                #line_coords is [x1, y1, x2, y2]
+                res = []
+                for x in line_coords:
+                    res.append((w_dbg / width) * x)
+                return res
+
             vis = debug_frame
             h_dbg, w_dbg = vis.shape[:2]
             
@@ -396,23 +403,13 @@ class VisionProcessor:
                 ll_x_mid_full = (w_dbg / width)*ll_x_mid_full
                 lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
 
+            # ... [Trapezoid drawing code remains same] ...
             if hasattr(conf, 'LANE_ROI_MODE') and conf.LANE_ROI_MODE == "trapezoid":
                 rl_base_w_dbg = int((conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI) * w_dbg)
-                pts_rl_vis = np.array([
-                    [rl_left, rl_top],
-                    [rl_left + int(rl_base_w_dbg * conf.RL_TOP_WIDTH_FACTOR), rl_top],
-                    [rl_right, rl_bottom],
-                    [rl_left, rl_bottom]
-                ], np.int32)
+                pts_rl_vis = np.array([[rl_left, rl_top], [rl_left + int(rl_base_w_dbg * conf.RL_TOP_WIDTH_FACTOR), rl_top], [rl_right, rl_bottom], [rl_left, rl_bottom]], np.int32)
                 cv2.polylines(vis, [pts_rl_vis], True, (255, 0, 0), 1)
-
                 ll_base_w_dbg = int((conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI) * w_dbg)
-                pts_ll_vis = np.array([
-                    [ll_right - int(ll_base_w_dbg * conf.LL_TOP_WIDTH_FACTOR), ll_top],
-                    [ll_right, ll_top],
-                    [ll_right, ll_bottom],
-                    [ll_left, ll_bottom]
-                ], np.int32)
+                pts_ll_vis = np.array([[ll_right - int(ll_base_w_dbg * conf.LL_TOP_WIDTH_FACTOR), ll_top], [ll_right, ll_top], [ll_right, ll_bottom], [ll_left, ll_bottom]], np.int32)
                 cv2.polylines(vis, [pts_ll_vis], True, (0, 255, 0), 1)
             else:
                 cv2.rectangle(vis, (rl_left, rl_top), (rl_right, rl_bottom), (255, 0, 0), 1)
@@ -420,12 +417,7 @@ class VisionProcessor:
 
             if hasattr(conf, 'CW_TRAPEZOID_MODE') and conf.CW_TRAPEZOID_MODE:
                 cw_w_dbg = cw_right - cw_left
-                pts_cw_vis = np.array([
-                    [cw_left + int(cw_w_dbg * (1 - conf.CW_TOP_WIDTH_FACTOR) / 2), cw_top],
-                    [cw_left + int(cw_w_dbg * (1 + conf.CW_TOP_WIDTH_FACTOR) / 2), cw_top],
-                    [cw_right, cw_bottom],
-                    [cw_left, cw_bottom]
-                ], np.int32)
+                pts_cw_vis = np.array([[cw_left + int(cw_w_dbg * (1 - conf.CW_TOP_WIDTH_FACTOR) / 2), cw_top], [cw_left + int(cw_w_dbg * (1 + conf.CW_TOP_WIDTH_FACTOR) / 2), cw_top], [cw_right, cw_bottom], [cw_left, cw_bottom]], np.int32)
                 cv2.polylines(vis, [pts_cw_vis], True, (0, 255, 255), 1)
             else:
                 cv2.rectangle(vis, (cw_left + 1, cw_top), (cw_right - 1, cw_bottom), (0, 255, 255), 1)
@@ -433,33 +425,37 @@ class VisionProcessor:
             # draw Hough lines from RL ROI
             if rl_lines is not None:
                 for line in rl_lines:
-                    x1, y1, x2, y2 = scale(line[0])
+                    # استفاده از extract_line و سپس scale
+                    lx1, ly1, lx2, ly2 = self._extract_line(line)
+                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
                     if rl_draw is not None:
-                        cv2.line(rl_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                    cv2.line(vis, (rl_left + int(x1), rl_top + int(y1)), (rl_left + int(x2), rl_top + int(y2)), (0,255,0), 2)
+                        cv2.line(rl_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
+                    cv2.line(vis, (rl_left + int(sx1), rl_top + int(sy1)), (rl_left + int(sx2), rl_top + int(sy2)), (0,255,0), 2)
                 if rl_x_mid is not None:
                     cv2.circle(vis, (int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
 
             # draw Hough lines from LL ROI
             if ll_lines is not None:
                 for line in ll_lines:
-                    x1, y1, x2, y2 = scale(line[0])
+                    lx1, ly1, lx2, ly2 = self._extract_line(line)
+                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
                     if ll_draw is not None:
-                        cv2.line(ll_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                    cv2.line(vis, (ll_left + int(x1), ll_top + int(y1)), (ll_left + int(x2), ll_top + int(y2)), (0,255,0), 2)
+                        cv2.line(ll_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
+                    cv2.line(vis, (ll_left + int(sx1), ll_top + int(sy1)), (ll_left + int(sx2), ll_top + int(sy2)), (0,255,0), 2)
                 if ll_x_mid is not None:
                     cv2.circle(vis, (int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
 
             # show lane center / frame center
             cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
             cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
-                        
+                            
             if cw_lines is not None:
                 for line in cw_lines:
-                    x1, y1, x2, y2 = scale(line[0])
+                    lx1, ly1, lx2, ly2 = self._extract_line(line)
+                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
                     if cw_draw is not None:
-                        cv2.line(cw_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                    cv2.line(vis, (cw_left + (int(x1)), cw_top + int(y1)), (cw_left + int(x2), cw_top + int(y2)), (0,255,255), 2)
+                        cv2.line(cw_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
+                    cv2.line(vis, (cw_left + (int(sx1)), cw_top + int(sy1)), (cw_left + int(sx2), cw_top + int(sy2)), (0,255,255), 2)
                 
             debug["rl_draw"] = rl_draw
             debug["ll_draw"] = ll_draw
