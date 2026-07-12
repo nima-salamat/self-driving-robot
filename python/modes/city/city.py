@@ -138,23 +138,32 @@ class Robot:
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
                     
+                    if not hasattr(self, 'stop_miss_counter'):
+                        self.stop_miss_counter = 3
+                    
                     if config_city.WITH_APRILTAG:
                         tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
+                        
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
                             if tag_id == STOP:
-                                stop_seen = True
-                                self.stop_last_seen = time.time()
+                                self.stop_miss_counter = 0
+                            else:
+                                self.stop_miss_counter += 1
                             self.last_tag = tag_id
+                        else:
+                            self.stop_miss_counter += 1
 
-                        status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
+                        status = "stopped" if self.stop_miss_counter < 3 else "running"
                         
                     elif config_city.WITH_SIGN:
                         read_sign_counter += 1
                         tag_id = None
+                        
                         if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                             read_sign_counter = 0
                             sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
+                            
                             if sign_result['text'] == "TURN LEFT":
                                 tag_id = TURN_LEFT
                             elif sign_result['text'] == "TURN RIGHT":
@@ -163,20 +172,22 @@ class Robot:
                                 tag_id = STRAIGHT
                             elif sign_result['text'] == "STOP":
                                 tag_id = STOP
-                                stop_seen = True
-                                self.stop_last_seen = time.time()
-                        
-                        if tag_id is not None:
-                            self.last_tag = tag_id
+                                self.stop_miss_counter = 0
+                            
+                            if tag_id != STOP:
+                                self.stop_miss_counter += 1
+                                
+                            if tag_id is not None:
+                                self.last_tag = tag_id
 
-                        status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
+                        status = "stopped" if self.stop_miss_counter < 3 else "running"
                 
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(config_city.DELAY) 
-                        continue    
+                        time.sleep(config_city.DELAY)
+                        continue
                 else:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
