@@ -37,11 +37,6 @@ if not hasattr(config_city, "debug_frames_list") or not isinstance(config_city.d
 config_city.DEBUG = False
 
 
-
-
-
-
-
 class Robot:
     def __init__(self):
         self.camera = Camera()
@@ -136,7 +131,7 @@ class Robot:
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
                     
-                    _, stop_seen = self.handle_read_sign_or_tag(frame)
+                    _, stop_seen, debug_frame = self.handle_read_sign_or_tag(frame, debug_frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
 
@@ -196,7 +191,7 @@ class Robot:
             logger.info("exited")
 
 
-    def handle_read_sign_or_tag(self, frame):
+    def handle_read_sign_or_tag(self, frame, debug_frame):
         stop_seen = False
         if config_city.WITH_APRILTAG:
             tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
@@ -213,6 +208,7 @@ class Robot:
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
                 sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
+                debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
                 elif sign_result['text'] == "TURN RIGHT":
@@ -225,7 +221,7 @@ class Robot:
                     self.stop_last_seen = time.time()
             if tag_id is not None:
                 self.last_tag = tag_id
-        return tag_id, stop_seen
+        return tag_id, stop_seen, debug_frame
 
 
     def handle_debug_stream(self, result, frame, angle, crosswalk, status):
