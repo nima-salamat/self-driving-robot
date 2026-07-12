@@ -142,11 +142,10 @@ class Robot:
                         tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
                         if largest_tag is not None:
                             tag_id = largest_tag["id"]
-                            if largest_tag["corners"][1][1] > 180:
-                                if tag_id == STOP:
-                                    stop_seen = True
-                                    self.stop_last_seen = time.time()
-                                self.last_tag = tag_id
+                            if tag_id == STOP:
+                                stop_seen = True
+                                self.stop_last_seen = time.time()
+                            self.last_tag = tag_id
 
                         status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
                         
@@ -166,6 +165,7 @@ class Robot:
                                 tag_id = STOP
                                 stop_seen = True
                                 self.stop_last_seen = time.time()
+                        
                         if tag_id is not None:
                             self.last_tag = tag_id
 
@@ -175,9 +175,8 @@ class Robot:
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(2*config_city.DELAY) # i think the delay 0.01s is not enough for that
-                        continue
-                    
+                        time.sleep(config_city.DELAY) 
+                        continue    
                 else:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
