@@ -52,6 +52,7 @@ class Robot:
         self.crosswalk_last_seen = 0
         self.last_tag = None
         self.stop_last_seen = None
+        self.read_sign_counter = 0
         self.sign_detector = TrafficSignDetector()
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
@@ -91,7 +92,6 @@ class Robot:
     def run(self):
         logger.info("starting")
         self.fps.start()
-        read_sign_counter = 0
         try:
             while True:
                 self.fps.update()
@@ -208,10 +208,10 @@ class Robot:
                         self.stop_last_seen = time.time()
                     self.last_tag = tag_id
         elif config_city.WITH_SIGN:
-            read_sign_counter += 1
+            self.read_sign_counter += 1
             tag_id = None
-            if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
-                read_sign_counter = 0
+            if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
+                self.read_sign_counter = 0
                 sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
