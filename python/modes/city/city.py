@@ -10,6 +10,7 @@ from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
+from vision.object_detector import ObjectDetector
 from traffic_sign_detector.detector import TrafficSignDetector
 from controller import RobotController
 from modes.city.config_city import (
@@ -55,6 +56,7 @@ class Robot:
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
+        self.object_detector = ObjectDetector()
 
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
@@ -139,11 +141,14 @@ class Robot:
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
 
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
+                    if config_city.DETECT_OBJECT:
+                        self.handle_detect_object(frame)
 
                     if status == "stopped":
                         self.control.stop()
                         time.sleep(0.2)
                         continue
+                        
                     
                 else:
                     self.control.stop()
@@ -193,6 +198,14 @@ class Robot:
             self.close()
             logger.info("exited")
 
+    def handle_detect_object(self, frame):
+        object_frame = crop_image(frame, 
+                                    config_city.OBJ_TOP_ROI, 
+                                    config_city.OBJ_BOTTOM_ROI, 
+                                    config_city.OBJ_LEFT_ROI, 
+                                    config_city.OBJ_RIGHT_ROI
+        )
+        print(self.object_detector.detect(object_frame)[1])
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         

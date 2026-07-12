@@ -12,7 +12,6 @@ USBCAM_ADDR = 0
 CAMERA_MODE = "picam"
 
 
-
 # --- ROI Shape Features ---
 # Values are normalized (0.0 – 1.0), multiplied by frame width/height
 
@@ -175,3 +174,6 @@ BEV_SRC_BR_X = 1.00
 BEV_SRC_BR_Y = 1.00
 BEV_SRC_BL_X = 0.00
 BEV_SRC_BL_Y = 1.00 
+
+# Detect Object
+DETECT_OBJECT = False
