@@ -26,7 +26,6 @@ from utils.fps import FPS
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# keep defaults (config_city can override)
 OUTPUT_DIR = getattr(config_city, "OUTPUT_DIR", "output")
 VIDEO_FPS = getattr(config_city, "VIDEO_FPS", 20)
 VIDEO_CODEC = getattr(config_city, "VIDEO_CODEC", "mp4v")
@@ -35,12 +34,6 @@ if not hasattr(config_city, "debug_frames_list") or not isinstance(config_city.d
     config_city.debug_frames_list = [None, None]
 
 config_city.DEBUG = False
-
-
-
-
-
-
 
 class Robot:
     def __init__(self):
@@ -53,9 +46,9 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.sign_detector = TrafficSignDetector()
-        # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
+        self.stop_miss_counter = 3
 
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
@@ -120,7 +113,6 @@ class Robot:
                         self.fps.avg_fps,
                     )
 
-                stop_seen = False
                 if config_city.DEBUG:
                     cv2.waitKey(1)
                 angle=SERVO_CENTER
@@ -137,9 +129,6 @@ class Robot:
         
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
-                    
-                    if not hasattr(self, 'stop_miss_counter'):
-                        self.stop_miss_counter = 3
                     
                     if config_city.WITH_APRILTAG:
                         tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
@@ -181,6 +170,8 @@ class Robot:
                                 self.last_tag = tag_id
 
                         status = "stopped" if self.stop_miss_counter < 3 else "running"
+                    else:
+                        status = "running"
                 
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
@@ -235,7 +226,6 @@ class Robot:
         finally:
             self.close()
             logger.info("exited")
-
 
     def handle_debug_stream(self, result, frame, angle, crosswalk, status):
         if config_city.DEBUG:
@@ -318,9 +308,8 @@ class Robot:
         _(self.control.stop)()
         _(self.control.set_angle)(90)
         _(self.camera.release)()
-        _(self.control.connection.close)() # close serial connection
+        _(self.control.connection.close)() 
 
-        # release output manager resources
         try:
             self.output.close()
         except Exception:
