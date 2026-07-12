@@ -11,14 +11,14 @@ HTML_TEMPLATE = """
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#071026 0%, #07142a 100%);color:var(--txt);padding:18px}
-.container{max-width:1250px;margin:0 auto;display:grid;grid-template-columns: 1fr 460px;gap:18px;align-items:start}
+.container{max-width:1300px;margin:0 auto;display:grid;grid-template-columns: 1fr 480px;gap:18px;align-items:start}
 .card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);padding:14px;border-radius:10px;box-shadow: 0 6px 24px rgba(2,6,23,0.6)}
 .header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
 .h1{font-size:18px;font-weight:600}
 .controls{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 select,input[type=number],input[type=color],input[type=checkbox],input[type=range]{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,0.04);padding:6px 8px;border-radius:6px}
 input[type=range]{accent-color: var(--accent);}
-button.btn{background:var(--accent);color:#012; border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+button.btn{background:var(--accent);color:#012; border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600; transition: 0.2s;}
 button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--txt);padding:7px 10px;border-radius:8px;cursor:pointer}
 canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
 .label{width:160px;color:var(--muted);font-size:13px}
@@ -103,6 +103,12 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
       <div class="form-row"><label class="label">Crosswalk Trapezoid</label><input type="checkbox" id="cw_trap_mode"></div>
       <div class="form-row"><label class="label">CW Top Factor</label><input id="cw_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="cw_factor_val" class="small" style="width:30px;"></span></div>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row"><label class="label">Sign/Tag Trapezoid</label><input type="checkbox" id="st_trap_mode"></div>
+      <div class="form-row"><label class="label">ST Top Factor</label><input id="st_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="st_factor_val" class="small" style="width:30px;"></span></div>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row"><label class="label">Object Trapezoid</label><input type="checkbox" id="obj_trap_mode"></div>
+      <div class="form-row"><label class="label">OBJ Top Factor</label><input id="obj_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="obj_factor_val" class="small" style="width:30px;"></span></div>
       <div style="margin-top:10px"><button id="confirm_shape" class="btn">Save Shapes to System</button></div>
     </div>
 
@@ -124,7 +130,31 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <div class="toggle-row"><label><input type="checkbox" id="vis_rl" checked> Right Lane</label><input type="color" id="color_rl" value="{{ ui.colors.RL }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_ll" checked> Left Lane</label><input type="color" id="color_ll" value="{{ ui.colors.LL }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_cw" checked> Crosswalk</label><input type="color" id="color_cw" value="{{ ui.colors.CW }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_st" checked> Sign/Tag</label><input type="color" id="color_st" value="{{ ui.colors.ST }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_obj" checked> Object</label><input type="color" id="color_obj" value="{{ ui.colors.OBJ }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_bev" checked> BEV Area</label><input type="color" id="color_bev" value="{{ ui.colors.BEV }}"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Vision Advanced Limits</div>
+      <div class="inputs" style="max-height:200px; overflow-y:auto; font-size:12px;">
+        <div class="form-row"><label class="label">LANE_THRESHOLD</label><input id="lane_threshold" type="number" min="0" max="255" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">CW_THRESHOLD</label><input id="cross_thresh" type="number" min="0" max="255" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">CW_SLEEP (s)</label><input id="crosswalk_sleep" type="number" min="0" step="0.1" class="counter"></div>
+        <div class="form-row"><label class="label">CW_THRESH_SPEND</label><input id="crosswalk_thresh_spend" type="number" min="0" step="0.1" class="counter"></div>
+        <div class="form-row"><label class="label">READ_SIGN_THRESH</label><input id="read_sign_threshold" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">TURN_RIGHT Lvl</label><input id="turn_right" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">TURN_LEFT Lvl</label><input id="turn_left" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">STRAIGHT Lvl</label><input id="straight" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">STOP Lvl</label><input id="stop_lvl" type="number" min="0" step="1" class="counter"></div>
+        
+        <div class="form-row"><label class="label">RUN_LVL</label>
+          <select id="run_lvl" class="counter"><option value="MOVE">MOVE</option><option value="STOP">STOP</option></select>
+        </div>
+        <div class="form-row"><label class="label">Use Signs Vision</label><input type="checkbox" id="with_sign"></div>
+        <div class="form-row"><label class="label">Use AprilTag</label><input type="checkbox" id="with_apriltag"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px"><button id="confirm_advanced" class="btn">Confirm Advanced Limits</button></div>
     </div>
 
     <div class="card">
@@ -138,18 +168,10 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
         <button id="freeze_btn" class="ghost">Freeze Frame</button>
         <button id="unfreeze_btn" class="ghost">Unfreeze Frame</button>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="section-title">Vision Advanced Limits</div>
-      <div class="form-row"><label class="label">LANE_THRESHOLD</label><input id="lane_threshold" type="number" min="0" max="255" step="1"></div>
-      <div class="form-row"><label class="label">CW_THRESHOLD</label><input id="cross_thresh" type="number" min="0" max="255" step="1"></div>
-      <div class="form-row"><label class="label">RUN_LVL</label>
-        <select id="run_lvl"><option value="MOVE">MOVE</option><option value="STOP">STOP</option></select>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row">
+        <button id="stop_all_btn" class="btn" style="background:#ef4444; color:white; width:100%;">Stop All Sync & Requests</button>
       </div>
-      <div class="form-row"><label class="label">Use Signs Vision</label><input type="checkbox" id="with_sign"></div>
-      <div class="form-row"><label class="label">Use AprilTag</label><input type="checkbox" id="with_apriltag"></div>
-      <div style="display:flex;gap:8px;margin-top:12px"><button id="confirm_advanced" class="btn">Confirm Advanced</button></div>
     </div>
 
   </div>
@@ -173,14 +195,16 @@ let advanced = {{ advanced|tojson }};
 let selectedVar = 'NONE';
 let markerHighlight = null;
 let fetchFrameTimer = null;
+let valUpdateTimer = null;
 let dragState = null;
 let debounceTimers = {};
 let isFrozen = false;
 let isRecording = false;
+let syncActive = true; 
 
 /* ---------- Utilities ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
-function round01(v){ return Math.round(v*1000)/1000; } // Better precision for BEV
+function round01(v){ return Math.round(v*1000)/1000; } 
 function showToast(text, timeout=2500){
     const t = document.getElementById('toast');
     t.textContent = text;
@@ -191,13 +215,16 @@ function varColorByKey(key){
   if(key==='RL') return ui.colors.RL;
   if(key==='LL') return ui.colors.LL;
   if(key==='CW') return ui.colors.CW;
+  if(key==='ST') return ui.colors.ST || '#bf7bff';
+  if(key==='OBJ') return ui.colors.OBJ || '#ff5757';
   if(key==='BEV') return ui.colors.BEV || '#d946ef';
   return '#9ad0ff';
 }
 function updateFrameModeText(){
-    frameModeDisplay.textContent = isFrozen ? 'Mode: Frozen (for precise tuning)' : 'Mode: Live';
+    frameModeDisplay.textContent = !syncActive ? 'Mode: STOPPED' : (isFrozen ? 'Mode: Frozen (for precise tuning)' : 'Mode: Live');
 }
 function sendAdvanced(payload) {
+    if(!syncActive) return showToast('Requests are stopped!');
     fetch('/set_advanced',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
         .then(r=>r.json()).then(j=>{
             if(j && j.success){
@@ -219,16 +246,18 @@ function computeRects(){
     return {
         RL: rectFromVars('RL_TOP_ROI','RL_BOTTOM_ROI','RL_LEFT_ROI','RL_RIGHT_ROI', w, h),
         LL: rectFromVars('LL_TOP_ROI','LL_BOTTOM_ROI','LL_LEFT_ROI','LL_RIGHT_ROI', w, h),
-        CW: rectFromVars('CW_TOP_ROI','CW_BOTTOM_ROI','CW_LEFT_ROI','CW_RIGHT_ROI', w, h)
+        CW: rectFromVars('CW_TOP_ROI','CW_BOTTOM_ROI','CW_LEFT_ROI','CW_RIGHT_ROI', w, h),
+        ST: rectFromVars('ST_TOP_ROI','ST_BOTTOM_ROI','ST_LEFT_ROI','ST_RIGHT_ROI', w, h),
+        OBJ: rectFromVars('OBJ_TOP_ROI','OBJ_BOTTOM_ROI','OBJ_LEFT_ROI','OBJ_RIGHT_ROI', w, h)
     };
 }
 function startFrameLoop(){
     if(fetchFrameTimer) clearInterval(fetchFrameTimer);
     fetchFrameTimer = setInterval(fetchFrameOnce, 120);
 }
-startFrameLoop();
 
 function fetchFrameOnce(){
+    if(!syncActive) return;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = '/video_feed_frame?t=' + Date.now();
@@ -289,9 +318,10 @@ function drawOverlays(){
     ctx.save();
     
     if(showRects){
-        // Read shape configs
         const laneMode = advanced.LANE_ROI_MODE || 'rectangle';
         const cwMode = advanced.CW_TRAPEZOID_MODE !== false; 
+        const stMode = advanced.ST_TRAPEZOID_MODE !== false; 
+        const objMode = advanced.OBJ_TRAPEZOID_MODE !== false;
         
         // 1. Draw BEV
         if(ui.visible['BEV'] && advanced.USE_BEV !== false) {
@@ -304,22 +334,20 @@ function drawOverlays(){
                 {x: advanced.BEV_SRC_BL_X * w, y: advanced.BEV_SRC_BL_Y * h}
             ];
             
-            drawPolygon(pts, bevColor, isBevHL, null, null, 0.15); // Lighter fill for BEV
+            drawPolygon(pts, bevColor, isBevHL, null, null, 0.15); 
             
-            // BEV Label
             ctx.fillStyle = bevColor;
             ctx.fillRect(pts[0].x, pts[0].y - 20, 90, 18);
             ctx.fillStyle = '#fff';
             ctx.font = 'bold 12px Arial';
             ctx.fillText("BEV Region", pts[0].x + 5, pts[0].y - 7);
 
-            // Draw Resize Handles for BEV
             const size = 12;
             for(let p of pts) drawHandle(p.x, p.y, size, '#fff', bevColor);
         }
 
         // 2. Draw ROIs
-        for(const key of ['RL','LL','CW']){
+        for(const key of ['RL','LL','CW','ST','OBJ']){
             if(!ui.visible[key]) continue;
             const r = rects[key];
             if(!r) continue;
@@ -357,6 +385,26 @@ function drawOverlays(){
                     drawPolygon(pts, color, isHL, "CW (Rectangle)", r);
                 }
             }
+            else if(key === 'ST') {
+                if(stMode){
+                    let factor = advanced.ST_TOP_WIDTH_FACTOR;
+                    let pts = [{x:r.x+(r.w*(1-factor)/2), y:r.y}, {x:r.x+(r.w*(1+factor)/2), y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
+                    drawPolygon(pts, color, isHL, "ST (Isosceles)", r);
+                } else {
+                    let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
+                    drawPolygon(pts, color, isHL, "ST (Rectangle)", r);
+                }
+            }
+            else if(key === 'OBJ') {
+                if(objMode){
+                    let factor = advanced.OBJ_TOP_WIDTH_FACTOR;
+                    let pts = [{x:r.x+(r.w*(1-factor)/2), y:r.y}, {x:r.x+(r.w*(1+factor)/2), y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
+                    drawPolygon(pts, color, isHL, "OBJ (Isosceles)", r);
+                } else {
+                    let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
+                    drawPolygon(pts, color, isHL, "OBJ (Rectangle)", r);
+                }
+            }
             
             ctx.globalAlpha = 1.0;
             ctx.strokeStyle = 'rgba(255,255,255,0.3)';
@@ -380,7 +428,6 @@ function hitTest(px, py){
     const w = canvas.width, h = canvas.height;
     const size = 12;
     
-    // Check BEV Corners First (Highest Priority to drag)
     if(ui.visible['BEV'] && advanced.USE_BEV !== false) {
         const bevCorners = {
             TL: {x: advanced.BEV_SRC_TL_X * w, y: advanced.BEV_SRC_TL_Y * h},
@@ -396,9 +443,8 @@ function hitTest(px, py){
         }
     }
 
-    // Check ROI Rectangles
     const rects = computeRects();
-    for(const key of ['RL','LL','CW']){
+    for(const key of ['RL','LL','CW','ST','OBJ']){
         if(!ui.visible[key]) continue;
         const r = rects[key];
         if(!r) continue;
@@ -418,6 +464,7 @@ function hitTest(px, py){
 }
 
 canvas.addEventListener('mousedown', e=>{
+    if(!syncActive) return;
     const rectB = canvas.getBoundingClientRect();
     const px = e.clientX - rectB.left;
     const py = e.clientY - rectB.top;
@@ -461,22 +508,21 @@ canvas.addEventListener('mousemove', e=>{
         canvas.style.cursor = 'default';
     }
     
-    if(!dragState) return;
+    if(!dragState || !syncActive) return;
     const dx = px - dragState.start.x;
     const dy = py - dragState.start.y;
     const w = canvas.width, h = canvas.height;
     
-    // --- BEV Dragging ---
     if(dragState.group === 'BEV'){
         const dnx = dx/w, dny = dy/h;
-        const c = dragState.corner; // TL, TR, BR, BL
+        const c = dragState.corner; 
         let nx = clamp01(dragState.orig['BEV_SRC_'+c+'_X'] + dnx);
         let ny = clamp01(dragState.orig['BEV_SRC_'+c+'_Y'] + dny);
         
         advanced['BEV_SRC_'+c+'_X'] = round01(nx);
         advanced['BEV_SRC_'+c+'_Y'] = round01(ny);
         
-        updateShapeUIFromData(); // update input boxes visually
+        updateShapeUIFromData(); 
         drawOverlays();
         
         if(debounceTimers['BEV']) clearTimeout(debounceTimers['BEV']);
@@ -486,15 +532,17 @@ canvas.addEventListener('mousemove', e=>{
                 ['BEV_SRC_'+c+'_Y']: advanced['BEV_SRC_'+c+'_Y']
             });
         }, 220);
-        return; // Skip ROI logic
+        return; 
     }
     
-    // --- ROI Dragging ---
     const group = dragState.group;
     let topVar, bottomVar, leftVar, rightVar;
     if(group==='RL'){ topVar='RL_TOP_ROI'; bottomVar='RL_BOTTOM_ROI'; leftVar='RL_LEFT_ROI'; rightVar='RL_RIGHT_ROI'; }
     else if(group==='LL'){ topVar='LL_TOP_ROI'; bottomVar='LL_BOTTOM_ROI'; leftVar='LL_LEFT_ROI'; rightVar='LL_RIGHT_ROI'; }
-    else { topVar='CW_TOP_ROI'; bottomVar='CW_BOTTOM_ROI'; leftVar='CW_LEFT_ROI'; rightVar='CW_RIGHT_ROI'; }
+    else if(group==='CW'){ topVar='CW_TOP_ROI'; bottomVar='CW_BOTTOM_ROI'; leftVar='CW_LEFT_ROI'; rightVar='CW_RIGHT_ROI'; }
+    else if(group==='ST'){ topVar='ST_TOP_ROI'; bottomVar='ST_BOTTOM_ROI'; leftVar='ST_LEFT_ROI'; rightVar='ST_RIGHT_ROI'; }
+    else { topVar='OBJ_TOP_ROI'; bottomVar='OBJ_BOTTOM_ROI'; leftVar='OBJ_LEFT_ROI'; rightVar='OBJ_RIGHT_ROI'; }
+    
     const orig = dragState.origRect;
     let nx_t = orig.t, nx_b = orig.b, nx_l = orig.l, nx_r = orig.r;
     
@@ -525,7 +573,11 @@ canvas.addEventListener('mousemove', e=>{
 });
 
 window.addEventListener('mouseup', ()=>{
-    if(!dragState) return;
+    if(!dragState || !syncActive) {
+        dragState = null;
+        canvas.style.cursor = 'default';
+        return;
+    }
     
     if(dragState.group === 'BEV') {
         const c = dragState.corner;
@@ -538,7 +590,9 @@ window.addEventListener('mouseup', ()=>{
         let topVar, bottomVar, leftVar, rightVar;
         if(group==='RL'){ topVar='RL_TOP_ROI'; bottomVar='RL_BOTTOM_ROI'; leftVar='RL_LEFT_ROI'; rightVar='RL_RIGHT_ROI'; }
         else if(group==='LL'){ topVar='LL_TOP_ROI'; bottomVar='LL_BOTTOM_ROI'; leftVar='LL_LEFT_ROI'; rightVar='LL_RIGHT_ROI'; }
-        else { topVar='CW_TOP_ROI'; bottomVar='CW_BOTTOM_ROI'; leftVar='CW_LEFT_ROI'; rightVar='CW_RIGHT_ROI'; }
+        else if(group==='CW'){ topVar='CW_TOP_ROI'; bottomVar='CW_BOTTOM_ROI'; leftVar='CW_LEFT_ROI'; rightVar='CW_RIGHT_ROI'; }
+        else if(group==='ST'){ topVar='ST_TOP_ROI'; bottomVar='ST_BOTTOM_ROI'; leftVar='ST_LEFT_ROI'; rightVar='ST_RIGHT_ROI'; }
+        else { topVar='OBJ_TOP_ROI'; bottomVar='OBJ_BOTTOM_ROI'; leftVar='OBJ_LEFT_ROI'; rightVar='OBJ_RIGHT_ROI'; }
         sendUpdate({[topVar]:values[topVar], [bottomVar]:values[bottomVar], [leftVar]:values[leftVar], [rightVar]:values[rightVar]});
     }
     
@@ -553,10 +607,15 @@ const shapeInputs = {
     ll_factor: document.getElementById('ll_factor'),
     cw_trap_mode: document.getElementById('cw_trap_mode'),
     cw_factor: document.getElementById('cw_factor'),
+    st_trap_mode: document.getElementById('st_trap_mode'),
+    st_factor: document.getElementById('st_factor'),
+    obj_trap_mode: document.getElementById('obj_trap_mode'),
+    obj_factor: document.getElementById('obj_factor'),
     rl_val: document.getElementById('rl_factor_val'),
     ll_val: document.getElementById('ll_factor_val'),
     cw_val: document.getElementById('cw_factor_val'),
-    // BEV controls
+    st_val: document.getElementById('st_factor_val'),
+    obj_val: document.getElementById('obj_factor_val'),
     use_bev: document.getElementById('use_bev_toggle'),
     bev_tl_x: document.getElementById('BEV_SRC_TL_X'),
     bev_tl_y: document.getElementById('BEV_SRC_TL_Y'),
@@ -569,18 +628,22 @@ const shapeInputs = {
 };
 
 function updateShapeUIFromData() {
-    // Shapes
     shapeInputs.lane_mode.value = advanced.LANE_ROI_MODE || 'rectangle';
     shapeInputs.rl_factor.value = advanced.RL_TOP_WIDTH_FACTOR;
     shapeInputs.ll_factor.value = advanced.LL_TOP_WIDTH_FACTOR;
     shapeInputs.cw_trap_mode.checked = advanced.CW_TRAPEZOID_MODE;
     shapeInputs.cw_factor.value = advanced.CW_TOP_WIDTH_FACTOR;
+    shapeInputs.st_trap_mode.checked = advanced.ST_TRAPEZOID_MODE;
+    shapeInputs.st_factor.value = advanced.ST_TOP_WIDTH_FACTOR;
+    shapeInputs.obj_trap_mode.checked = advanced.OBJ_TRAPEZOID_MODE;
+    shapeInputs.obj_factor.value = advanced.OBJ_TOP_WIDTH_FACTOR;
     
     shapeInputs.rl_val.textContent = parseFloat(advanced.RL_TOP_WIDTH_FACTOR).toFixed(2);
     shapeInputs.ll_val.textContent = parseFloat(advanced.LL_TOP_WIDTH_FACTOR).toFixed(2);
     shapeInputs.cw_val.textContent = parseFloat(advanced.CW_TOP_WIDTH_FACTOR).toFixed(2);
+    shapeInputs.st_val.textContent = parseFloat(advanced.ST_TOP_WIDTH_FACTOR).toFixed(2);
+    shapeInputs.obj_val.textContent = parseFloat(advanced.OBJ_TOP_WIDTH_FACTOR).toFixed(2);
     
-    // BEV
     shapeInputs.use_bev.checked = advanced.USE_BEV;
     shapeInputs.bev_tl_x.value = advanced.BEV_SRC_TL_X.toFixed(3);
     shapeInputs.bev_tl_y.value = advanced.BEV_SRC_TL_Y.toFixed(3);
@@ -600,10 +663,16 @@ function handleShapeSlider() {
     advanced.LL_TOP_WIDTH_FACTOR = parseFloat(shapeInputs.ll_factor.value);
     advanced.CW_TRAPEZOID_MODE = shapeInputs.cw_trap_mode.checked;
     advanced.CW_TOP_WIDTH_FACTOR = parseFloat(shapeInputs.cw_factor.value);
+    advanced.ST_TRAPEZOID_MODE = shapeInputs.st_trap_mode.checked;
+    advanced.ST_TOP_WIDTH_FACTOR = parseFloat(shapeInputs.st_factor.value);
+    advanced.OBJ_TRAPEZOID_MODE = shapeInputs.obj_trap_mode.checked;
+    advanced.OBJ_TOP_WIDTH_FACTOR = parseFloat(shapeInputs.obj_factor.value);
     
     shapeInputs.rl_val.textContent = advanced.RL_TOP_WIDTH_FACTOR.toFixed(2);
     shapeInputs.ll_val.textContent = advanced.LL_TOP_WIDTH_FACTOR.toFixed(2);
     shapeInputs.cw_val.textContent = advanced.CW_TOP_WIDTH_FACTOR.toFixed(2);
+    shapeInputs.st_val.textContent = advanced.ST_TOP_WIDTH_FACTOR.toFixed(2);
+    shapeInputs.obj_val.textContent = advanced.OBJ_TOP_WIDTH_FACTOR.toFixed(2);
     drawOverlays();
 }
 
@@ -613,15 +682,17 @@ function handleShapeSlider() {
     shapeInputs.ll_factor.addEventListener(evt, handleShapeSlider);
     shapeInputs.cw_trap_mode.addEventListener(evt, handleShapeSlider);
     shapeInputs.cw_factor.addEventListener(evt, handleShapeSlider);
+    shapeInputs.st_trap_mode.addEventListener(evt, handleShapeSlider);
+    shapeInputs.st_factor.addEventListener(evt, handleShapeSlider);
+    shapeInputs.obj_trap_mode.addEventListener(evt, handleShapeSlider);
+    shapeInputs.obj_factor.addEventListener(evt, handleShapeSlider);
 });
 
-// BEV Toggle directly update system
 shapeInputs.use_bev.addEventListener('change', (e) => {
     sendAdvanced({ USE_BEV: e.target.checked });
     showToast('BEV System ' + (e.target.checked ? 'Enabled' : 'Disabled'));
 });
 
-// BEV Inputs manual apply button
 document.getElementById('confirm_bev_inputs').addEventListener('click', () => {
     sendAdvanced({
         BEV_SRC_TL_X: parseFloat(shapeInputs.bev_tl_x.value) || 0,
@@ -636,14 +707,17 @@ document.getElementById('confirm_bev_inputs').addEventListener('click', () => {
     showToast('BEV Points Saved');
 });
 
-
 document.getElementById('confirm_shape').addEventListener('click', ()=>{
     sendAdvanced({
         LANE_ROI_MODE: advanced.LANE_ROI_MODE,
         RL_TOP_WIDTH_FACTOR: advanced.RL_TOP_WIDTH_FACTOR,
         LL_TOP_WIDTH_FACTOR: advanced.LL_TOP_WIDTH_FACTOR,
         CW_TRAPEZOID_MODE: advanced.CW_TRAPEZOID_MODE,
-        CW_TOP_WIDTH_FACTOR: advanced.CW_TOP_WIDTH_FACTOR
+        CW_TOP_WIDTH_FACTOR: advanced.CW_TOP_WIDTH_FACTOR,
+        ST_TRAPEZOID_MODE: advanced.ST_TRAPEZOID_MODE,
+        ST_TOP_WIDTH_FACTOR: advanced.ST_TOP_WIDTH_FACTOR,
+        OBJ_TRAPEZOID_MODE: advanced.OBJ_TRAPEZOID_MODE,
+        OBJ_TOP_WIDTH_FACTOR: advanced.OBJ_TOP_WIDTH_FACTOR
     });
     showToast('Shape Config Saved');
 });
@@ -657,6 +731,7 @@ function updateInputsFromValues(){
 }
 document.querySelectorAll('.btn-inc').forEach(btn=>{
     btn.addEventListener('click', ()=>{
+        if(!syncActive) return showToast('Requests are stopped!');
         const v = btn.dataset.var;
         const d = parseFloat(btn.dataset.delta);
         const input = inputsContainer.querySelector(`input[name="${v}"]`);
@@ -672,6 +747,7 @@ function debounceSendSingle(name, val){
 }
 inputsContainer.querySelectorAll('input').forEach(input=>{
     input.addEventListener('input', e=>{
+        if(!syncActive) return;
         const name = e.target.name;
         let v = parseFloat(e.target.value);
         if(isNaN(v)) return;
@@ -682,6 +758,7 @@ inputsContainer.querySelectorAll('input').forEach(input=>{
     });
 });
 document.getElementById('apply_all').addEventListener('click', ()=>{
+    if(!syncActive) return showToast('Requests are stopped!');
     const data = {};
     inputsContainer.querySelectorAll('input').forEach(input=>{
         const name = input.name;
@@ -691,6 +768,7 @@ document.getElementById('apply_all').addEventListener('click', ()=>{
     sendUpdate(data);
 });
 function sendUpdate(data){
+    if(!syncActive) return;
     fetch('/update_conf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
         .then(r=>r.json()).then(j=>{
             if(j && j.values){
@@ -703,6 +781,7 @@ function sendUpdate(data){
 
 /* ---------- Stream API Actions ---------- */
 document.getElementById('refresh_vals').addEventListener('click', ()=>{
+    if(!syncActive) return showToast('Requests are stopped!');
     fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); drawOverlays(); }});
     loadAdvanced();
 });
@@ -715,21 +794,57 @@ document.getElementById('download_json').addEventListener('click', ()=>{
     });
 });
 
+/* ---------- Stop All Sync Button Logic ---------- */
+const stopAllBtn = document.getElementById('stop_all_btn');
+stopAllBtn.addEventListener('click', () => {
+    syncActive = !syncActive;
+    if(!syncActive) {
+        stopAllBtn.textContent = 'Resume All Sync & Requests';
+        stopAllBtn.style.background = '#22c55e'; // Green when resuming
+        clearInterval(fetchFrameTimer);
+        clearInterval(valUpdateTimer);
+        updateFrameModeText();
+        showToast('All Sync Stopped');
+    } else {
+        stopAllBtn.textContent = 'Stop All Sync & Requests';
+        stopAllBtn.style.background = '#ef4444'; // Red for stop
+        startFrameLoop();
+        valUpdateTimer = setInterval(fetchValuesLoop, 4000);
+        updateFrameModeText();
+        showToast('Sync Resumed');
+    }
+});
+
 /* ---------- Advanced API Sync ---------- */
 const advInputs = {
     lane_threshold: document.getElementById('lane_threshold'),
     cross_thresh: document.getElementById('cross_thresh'),
+    cross_sleep: document.getElementById('crosswalk_sleep'),
+    cross_thresh_spend: document.getElementById('crosswalk_thresh_spend'),
+    read_sign_thresh: document.getElementById('read_sign_threshold'),
+    turn_right: document.getElementById('turn_right'),
+    turn_left: document.getElementById('turn_left'),
+    straight: document.getElementById('straight'),
+    stop_lvl: document.getElementById('stop_lvl'),
     run_lvl: document.getElementById('run_lvl'),
     with_sign: document.getElementById('with_sign'),
     with_apriltag: document.getElementById('with_apriltag')
 };
 
 function loadAdvanced(){
+    if(!syncActive) return;
     fetch('/get_advanced').then(r=>r.json()).then(j=>{
         if(j && j.advanced){
             advanced = j.advanced;
             advInputs.lane_threshold.value = advanced.LANE_THRESHOLD;
             advInputs.cross_thresh.value = advanced.CROSSWALK_THRESHOLD;
+            advInputs.cross_sleep.value = advanced.CROSSWALK_SLEEP;
+            advInputs.cross_thresh_spend.value = advanced.CROSSWALK_THRESH_SPEND;
+            advInputs.read_sign_thresh.value = advanced.READ_SIGN_THRESHOLD;
+            advInputs.turn_right.value = advanced.TURN_RIGHT;
+            advInputs.turn_left.value = advanced.TURN_LEFT;
+            advInputs.straight.value = advanced.STRAIGHT;
+            advInputs.stop_lvl.value = advanced.STOP;
             advInputs.run_lvl.value = advanced.RUN_LVL;
             advInputs.with_sign.checked = advanced.WITH_SIGN;
             advInputs.with_apriltag.checked = advanced.WITH_APRILTAG;
@@ -742,41 +857,59 @@ document.getElementById('confirm_advanced').addEventListener('click', ()=>{
     sendAdvanced({
         LANE_THRESHOLD: parseInt(advInputs.lane_threshold.value)||0,
         CROSSWALK_THRESHOLD: parseInt(advInputs.cross_thresh.value)||0,
+        CROSSWALK_SLEEP: parseFloat(advInputs.cross_sleep.value)||0,
+        CROSSWALK_THRESH_SPEND: parseFloat(advInputs.cross_thresh_spend.value)||0,
+        READ_SIGN_THRESHOLD: parseInt(advInputs.read_sign_thresh.value)||0,
+        TURN_RIGHT: parseInt(advInputs.turn_right.value)||0,
+        TURN_LEFT: parseInt(advInputs.turn_left.value)||0,
+        STRAIGHT: parseInt(advInputs.straight.value)||0,
+        STOP: parseInt(advInputs.stop_lvl.value)||0,
         RUN_LVL: advInputs.run_lvl.value,
         WITH_SIGN: advInputs.with_sign.checked,
         WITH_APRILTAG: advInputs.with_apriltag.checked
     });
-    showToast('Advanced Logic Saved');
+    showToast('Advanced Limits Saved');
 });
 
 /* ---------- Color & Vis Listeners ---------- */
-['vis_rl','vis_ll','vis_cw','vis_bev'].forEach(id => {
+['vis_rl','vis_ll','vis_cw','vis_st','vis_obj','vis_bev'].forEach(id => {
     document.getElementById(id).addEventListener('change', (e) => {
         let key = id.replace('vis_', '').toUpperCase();
         ui.visible[key] = e.target.checked;
-        fetch('/set_ui',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visible: ui.visible})});
+        if(syncActive) {
+            fetch('/set_ui',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visible: ui.visible})});
+        }
         drawOverlays();
     });
 });
-['color_rl','color_ll','color_cw','color_bev'].forEach(id => {
+['color_rl','color_ll','color_cw','color_st','color_obj','color_bev'].forEach(id => {
     document.getElementById(id).addEventListener('change', (e) => {
         let key = id.replace('color_', '').toUpperCase();
         ui.colors[key] = e.target.value;
-        fetch('/set_ui',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({colors: ui.colors})});
+        if(syncActive) {
+            fetch('/set_ui',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({colors: ui.colors})});
+        }
         drawOverlays();
     });
 });
 
-
 /* ---------- Buttons setup ---------- */
-document.getElementById('freeze_btn').addEventListener('click', ()=>fetch('/freeze_frame', {method:'POST'}).then(()=> {isFrozen=true; updateFrameModeText(); showToast('Frame frozen');}));
-document.getElementById('unfreeze_btn').addEventListener('click', ()=>fetch('/unfreeze_frame', {method:'POST'}).then(()=> {isFrozen=false; updateFrameModeText(); showToast('Back to live');}));
+document.getElementById('freeze_btn').addEventListener('click', ()=> {
+    if(!syncActive) return showToast('Requests are stopped!');
+    fetch('/freeze_frame', {method:'POST'}).then(()=> {isFrozen=true; updateFrameModeText(); showToast('Frame frozen');})
+});
+document.getElementById('unfreeze_btn').addEventListener('click', ()=> {
+    if(!syncActive) return showToast('Requests are stopped!');
+    fetch('/unfreeze_frame', {method:'POST'}).then(()=> {isFrozen=false; updateFrameModeText(); showToast('Back to live');})
+});
 
 document.getElementById('take_picture_btn').addEventListener('click', () => {
+    if(!syncActive) return showToast('Requests are stopped!');
     fetch('/take_picture', {method: 'POST'}).then(r => r.json()).then(j => { if (j && j.success) showToast('Picture Taken!'); });
 });
 
 document.getElementById('toggle_record_btn').addEventListener('click', () => {
+    if(!syncActive) return showToast('Requests are stopped!');
     fetch('/toggle_record', {method: 'POST'}).then(r => r.json()).then(j => {
         if (j && j.success) {
             isRecording = j.recording;
@@ -791,19 +924,34 @@ document.getElementById('toggle_record_btn').addEventListener('click', () => {
 });
 
 /* ---------- Init ---------- */
+function fetchValuesLoop() {
+    if(!syncActive) return;
+    fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }});
+}
+
 function initApp(){
     updateInputsFromValues(); 
     document.getElementById('vis_rl').checked = ui.visible.RL;
     document.getElementById('vis_ll').checked = ui.visible.LL;
     document.getElementById('vis_cw').checked = ui.visible.CW;
-    document.getElementById('vis_bev').checked = ui.visible.BEV !== false; // Checkbox for UI display
+    document.getElementById('vis_st').checked = ui.visible.ST !== false;
+    document.getElementById('vis_obj').checked = ui.visible.OBJ !== false;
+    document.getElementById('vis_bev').checked = ui.visible.BEV !== false; 
     loadAdvanced();
     updateFrameModeText();
+    startFrameLoop();
+    valUpdateTimer = setInterval(fetchValuesLoop, 4000);
 }
 initApp();
-setInterval(()=>fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }}), 4000);
 
-function mapGroupToDefaultVar(g){ if(g==='RL') return 'RL_TOP_ROI'; if(g==='LL') return 'LL_TOP_ROI'; return 'CW_TOP_ROI'; }
+function mapGroupToDefaultVar(g){ 
+    if(g==='RL') return 'RL_TOP_ROI'; 
+    if(g==='LL') return 'LL_TOP_ROI'; 
+    if(g==='CW') return 'CW_TOP_ROI'; 
+    if(g==='ST') return 'ST_TOP_ROI'; 
+    if(g==='OBJ') return 'OBJ_TOP_ROI'; 
+    return 'RL_TOP_ROI'; 
+}
 </script>
 </body>
 </html>

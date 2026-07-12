@@ -27,6 +27,8 @@ CW_TRAPEZOID_MODE = True
 RL_TOP_WIDTH_FACTOR = 0.85   
 LL_TOP_WIDTH_FACTOR = 0.85 
 CW_TOP_WIDTH_FACTOR = 0.90
+ST_TOP_WIDTH_FACTOR = 0.8
+OBJ_TOP_WIDTH_FACTOR = 0.8
 
 # Right lane ROI (fraction of frame)
 RL_TOP_ROI = 0.8   # start 80% down from top
@@ -57,6 +59,18 @@ TL_TOP_ROI = 0.0
 TL_BOTTOM_ROI = 1
 TL_LEFT_ROI = 0.0
 TL_RIGHT_ROI = 1.0
+
+# Sign or Tag ROI
+ST_TOP_ROI = 0.0
+ST_BOTTOM_ROI = 1
+ST_LEFT_ROI = 0.0
+ST_RIGHT_ROI = 1.0
+
+# Object ROI
+OBJ_TOP_ROI = 0.0
+OBJ_BOTTOM_ROI = 1
+OBJ_LEFT_ROI = 0.0
+OBJ_RIGHT_ROI = 1.0
 
 # --- Control Gains ---
 # These are proportional gains for steering correction

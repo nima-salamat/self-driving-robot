@@ -1,4 +1,3 @@
-# ویژن 
 from modes.city.config_city import (
     MAX_SERVO_ANGLE, MIN_SERVO_ANGLE, SERVO_CENTER, SERVO_DIRECTION,
     CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH, OLD_METHOD, ROI_RESIZABLE,
@@ -19,10 +18,7 @@ class VisionProcessor:
         self.max_unseen_counter = 10
 
     def _extract_line(self, line):
-        """
-        یک تابع کمکی برای یکسان‌سازی فرمت خطوط.
-        خروجی همیشه [x1, y1, x2, y2] خواهد بود.
-        """
+  
         line = np.asarray(line).flatten()
         return line[0], line[1], line[2], line[3]
 

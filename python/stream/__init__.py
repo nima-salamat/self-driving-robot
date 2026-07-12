@@ -7,6 +7,7 @@ from flask import Flask, Response, request, render_template_string, jsonify
 import threading
 import base_config as temp_conf
 from .template import HTML_TEMPLATE
+
 # choose config module
 if temp_conf.CONFIG_MODULE is not None:
     conf = temp_conf.CONFIG_MODULE
@@ -21,10 +22,17 @@ app = Flask(__name__)
 VARIABLES = [
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
-    "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"
+    "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+    "ST_TOP_ROI", "ST_BOTTOM_ROI", "ST_LEFT_ROI", "ST_RIGHT_ROI",
+    "OBJ_TOP_ROI", "OBJ_BOTTOM_ROI", "OBJ_LEFT_ROI", "OBJ_RIGHT_ROI"  
 ]
 
-# --- Advanced variables (Including new Trapezoid Settings & BEV) ---
+def get_base_var(var):
+    """Helper to return 1.0 default for BOTTOM/RIGHT, and 0.0 for TOP/LEFT"""
+    default = 1.0 if ("BOTTOM" in var or "RIGHT" in var) else 0.0
+    return float(getattr(conf, var, default))
+
+# --- Advanced variables (Includes all system limits & ST/OBJ setup) ---
 ADVANCED_VARS = {
     # Vision & General Limits
     "LANE_THRESHOLD": 180,
@@ -44,9 +52,13 @@ ADVANCED_VARS = {
     # ROI Shape Setup
     "LANE_ROI_MODE": "trapezoid", 
     "CW_TRAPEZOID_MODE": True,
+    "ST_TRAPEZOID_MODE": True,    
+    "OBJ_TRAPEZOID_MODE": True,
     "RL_TOP_WIDTH_FACTOR": 0.5,
     "LL_TOP_WIDTH_FACTOR": 0.5,
     "CW_TOP_WIDTH_FACTOR": 0.6,
+    "ST_TOP_WIDTH_FACTOR": 0.8,
+    "OBJ_TOP_WIDTH_FACTOR": 0.8,
 
     # BEV Setup
     "USE_BEV": True,
@@ -60,6 +72,17 @@ ADVANCED_VARS = {
     "BEV_SRC_BL_Y": 1.00
 }
 
+# Dynamic helper to extract all advanced variables properly typed
+def get_all_advanced():
+    res = {}
+    for k, default_v in ADVANCED_VARS.items():
+        val = getattr(conf, k, default_v)
+        if type(default_v) == bool: res[k] = bool(val)
+        elif type(default_v) == int: res[k] = int(val)
+        elif type(default_v) == float: res[k] = float(val)
+        else: res[k] = str(val)
+    return res
+
 # UI settings filename and functions
 def ui_filename():
     mode = getattr(temp_conf, "MODE", "mode")
@@ -68,8 +91,8 @@ def ui_filename():
 def load_ui_settings():
     fname = ui_filename()
     default_ui = {
-        "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef"},
-        "visible": {"RL":True, "LL":True, "CW":True, "BEV":True}
+        "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef", "ST":"#bf7bff", "OBJ":"#ff5757"}, 
+        "visible": {"RL":True, "LL":True, "CW":True, "BEV":True, "ST":True, "OBJ":True} 
     }
     if os.path.exists(fname):
         try:
@@ -79,9 +102,11 @@ def load_ui_settings():
                     "colors": data.get("colors", default_ui["colors"]),
                     "visible": data.get("visible", default_ui["visible"])
                 }
-                # Fallbacks in case old config doesn't have BEV
-                if "BEV" not in ui["colors"]: ui["colors"]["BEV"] = default_ui["colors"]["BEV"]
-                if "BEV" not in ui["visible"]: ui["visible"]["BEV"] = default_ui["visible"]["BEV"]
+                # Fallbacks in case old config doesn't have missing keys
+                for key in default_ui["colors"]:
+                    if key not in ui["colors"]: ui["colors"][key] = default_ui["colors"][key]
+                for key in default_ui["visible"]:
+                    if key not in ui["visible"]: ui["visible"][key] = default_ui["visible"][key]
                 return ui
         except Exception:
             logger.exception("Failed load UI settings")
@@ -104,75 +129,22 @@ def config_filename():
 
 def save_conf_to_json():
     filename = config_filename()
-    data = {var: float(getattr(conf, var, 0.0)) for var in VARIABLES}
+    # Save base ROI points
+    data = {var: get_base_var(var) for var in VARIABLES}
+    # Save all advanced config seamlessly
+    data.update(get_all_advanced())
     
-    # Update with Advanced Variables
-    data.update({
-        "LANE_THRESHOLD": int(getattr(conf, "LANE_THRESHOLD", ADVANCED_VARS["LANE_THRESHOLD"])),
-        "CROSSWALK_THRESHOLD": int(getattr(conf, "CROSSWALK_THRESHOLD", ADVANCED_VARS["CROSSWALK_THRESHOLD"])),
-        "CROSSWALK_SLEEP": float(getattr(conf, "CROSSWALK_SLEEP", ADVANCED_VARS["CROSSWALK_SLEEP"])),
-        "CROSSWALK_THRESH_SPEND": float(getattr(conf, "CROSSWALK_THRESH_SPEND", ADVANCED_VARS["CROSSWALK_THRESH_SPEND"])),
-        "RUN_LVL": str(getattr(conf, "RUN_LVL", ADVANCED_VARS["RUN_LVL"])),
-        "WITH_SIGN": bool(getattr(conf, "WITH_SIGN", ADVANCED_VARS["WITH_SIGN"])),
-        "WITH_APRILTAG": bool(getattr(conf, "WITH_APRILTAG", ADVANCED_VARS["WITH_APRILTAG"])),
-        "READ_SIGN_THRESHOLD": int(getattr(conf, "READ_SIGN_THRESHOLD", ADVANCED_VARS["READ_SIGN_THRESHOLD"])),
-        "TURN_RIGHT": int(getattr(conf, "TURN_RIGHT", ADVANCED_VARS["TURN_RIGHT"])),
-        "TURN_LEFT": int(getattr(conf, "TURN_LEFT", ADVANCED_VARS["TURN_LEFT"])),
-        "STRAIGHT": int(getattr(conf, "STRAIGHT", ADVANCED_VARS["STRAIGHT"])),
-        "STOP": int(getattr(conf, "STOP", ADVANCED_VARS["STOP"])),
-        "RECORD_VIDEO": bool(getattr(conf, "RECORD_VIDEO", ADVANCED_VARS["RECORD_VIDEO"])),
-        
-        # Shape variables
-        "LANE_ROI_MODE": str(getattr(conf, "LANE_ROI_MODE", ADVANCED_VARS["LANE_ROI_MODE"])),
-        "CW_TRAPEZOID_MODE": bool(getattr(conf, "CW_TRAPEZOID_MODE", ADVANCED_VARS["CW_TRAPEZOID_MODE"])),
-        "RL_TOP_WIDTH_FACTOR": float(getattr(conf, "RL_TOP_WIDTH_FACTOR", ADVANCED_VARS["RL_TOP_WIDTH_FACTOR"])),
-        "LL_TOP_WIDTH_FACTOR": float(getattr(conf, "LL_TOP_WIDTH_FACTOR", ADVANCED_VARS["LL_TOP_WIDTH_FACTOR"])),
-        "CW_TOP_WIDTH_FACTOR": float(getattr(conf, "CW_TOP_WIDTH_FACTOR", ADVANCED_VARS["CW_TOP_WIDTH_FACTOR"])),
-        
-        # BEV Variables
-        "USE_BEV": bool(getattr(conf, "USE_BEV", ADVANCED_VARS["USE_BEV"])),
-        "BEV_SRC_TL_X": float(getattr(conf, "BEV_SRC_TL_X", ADVANCED_VARS["BEV_SRC_TL_X"])),
-        "BEV_SRC_TL_Y": float(getattr(conf, "BEV_SRC_TL_Y", ADVANCED_VARS["BEV_SRC_TL_Y"])),
-        "BEV_SRC_TR_X": float(getattr(conf, "BEV_SRC_TR_X", ADVANCED_VARS["BEV_SRC_TR_X"])),
-        "BEV_SRC_TR_Y": float(getattr(conf, "BEV_SRC_TR_Y", ADVANCED_VARS["BEV_SRC_TR_Y"])),
-        "BEV_SRC_BR_X": float(getattr(conf, "BEV_SRC_BR_X", ADVANCED_VARS["BEV_SRC_BR_X"])),
-        "BEV_SRC_BR_Y": float(getattr(conf, "BEV_SRC_BR_Y", ADVANCED_VARS["BEV_SRC_BR_Y"])),
-        "BEV_SRC_BL_X": float(getattr(conf, "BEV_SRC_BL_X", ADVANCED_VARS["BEV_SRC_BL_X"])),
-        "BEV_SRC_BL_Y": float(getattr(conf, "BEV_SRC_BL_Y", ADVANCED_VARS["BEV_SRC_BL_Y"]))
-    })
     try:
         with open(filename, "w") as f:
             json.dump(data, f, indent=2)
     except Exception:
         logger.exception("Failed writing config JSON")
 
-
 # --- Flask routes ---
 @app.route('/')
 def index():
-    values = {var: float(getattr(conf, var, 0.0)) for var in VARIABLES}
-    advanced_current = {
-        "LANE_THRESHOLD": int(getattr(conf, "LANE_THRESHOLD", ADVANCED_VARS["LANE_THRESHOLD"])),
-        "CROSSWALK_THRESHOLD": int(getattr(conf, "CROSSWALK_THRESHOLD", ADVANCED_VARS["CROSSWALK_THRESHOLD"])),
-        "RUN_LVL": getattr(conf, "RUN_LVL", ADVANCED_VARS["RUN_LVL"]),
-        "WITH_SIGN": bool(getattr(conf, "WITH_SIGN", ADVANCED_VARS["WITH_SIGN"])),
-        "WITH_APRILTAG": bool(getattr(conf, "WITH_APRILTAG", ADVANCED_VARS["WITH_APRILTAG"])),
-        "LANE_ROI_MODE": str(getattr(conf, "LANE_ROI_MODE", ADVANCED_VARS["LANE_ROI_MODE"])),
-        "CW_TRAPEZOID_MODE": bool(getattr(conf, "CW_TRAPEZOID_MODE", ADVANCED_VARS["CW_TRAPEZOID_MODE"])),
-        "RL_TOP_WIDTH_FACTOR": float(getattr(conf, "RL_TOP_WIDTH_FACTOR", ADVANCED_VARS["RL_TOP_WIDTH_FACTOR"])),
-        "LL_TOP_WIDTH_FACTOR": float(getattr(conf, "LL_TOP_WIDTH_FACTOR", ADVANCED_VARS["LL_TOP_WIDTH_FACTOR"])),
-        "CW_TOP_WIDTH_FACTOR": float(getattr(conf, "CW_TOP_WIDTH_FACTOR", ADVANCED_VARS["CW_TOP_WIDTH_FACTOR"])),
-        
-        "USE_BEV": bool(getattr(conf, "USE_BEV", ADVANCED_VARS["USE_BEV"])),
-        "BEV_SRC_TL_X": float(getattr(conf, "BEV_SRC_TL_X", ADVANCED_VARS["BEV_SRC_TL_X"])),
-        "BEV_SRC_TL_Y": float(getattr(conf, "BEV_SRC_TL_Y", ADVANCED_VARS["BEV_SRC_TL_Y"])),
-        "BEV_SRC_TR_X": float(getattr(conf, "BEV_SRC_TR_X", ADVANCED_VARS["BEV_SRC_TR_X"])),
-        "BEV_SRC_TR_Y": float(getattr(conf, "BEV_SRC_TR_Y", ADVANCED_VARS["BEV_SRC_TR_Y"])),
-        "BEV_SRC_BR_X": float(getattr(conf, "BEV_SRC_BR_X", ADVANCED_VARS["BEV_SRC_BR_X"])),
-        "BEV_SRC_BR_Y": float(getattr(conf, "BEV_SRC_BR_Y", ADVANCED_VARS["BEV_SRC_BR_Y"])),
-        "BEV_SRC_BL_X": float(getattr(conf, "BEV_SRC_BL_X", ADVANCED_VARS["BEV_SRC_BL_X"])),
-        "BEV_SRC_BL_Y": float(getattr(conf, "BEV_SRC_BL_Y", ADVANCED_VARS["BEV_SRC_BL_Y"]))
-    }
+    values = {var: get_base_var(var) for var in VARIABLES}
+    advanced_current = get_all_advanced()
     return render_template_string(HTML_TEMPLATE, variables=VARIABLES, values=values, ui=UI_SETTINGS, advanced=advanced_current, mode=getattr(temp_conf, "MODE", "mode"))
 
 @app.route('/update_conf', methods=['POST'])
@@ -191,72 +163,54 @@ def update_conf():
                     pass
         if updated:
             save_conf_to_json()
-        return jsonify(success=True, values={var: float(getattr(conf, var, 0.0)) for var in VARIABLES})
+        return jsonify(success=True, values={var: get_base_var(var) for var in VARIABLES})
     except:
         return jsonify(success=False)
 
 @app.route('/get_values')
 def get_values():
-    return jsonify(values={var: float(getattr(conf, var, 0.0)) for var in VARIABLES})
+    return jsonify(values={var: get_base_var(var) for var in VARIABLES})
 
 @app.route('/get_advanced')
 def get_advanced():
-    return jsonify(advanced={
-        "LANE_THRESHOLD": int(getattr(conf, "LANE_THRESHOLD", ADVANCED_VARS["LANE_THRESHOLD"])),
-        "CROSSWALK_THRESHOLD": int(getattr(conf, "CROSSWALK_THRESHOLD", ADVANCED_VARS["CROSSWALK_THRESHOLD"])),
-        "RUN_LVL": getattr(conf, "RUN_LVL", ADVANCED_VARS["RUN_LVL"]),
-        "WITH_SIGN": bool(getattr(conf, "WITH_SIGN", ADVANCED_VARS["WITH_SIGN"])),
-        "WITH_APRILTAG": bool(getattr(conf, "WITH_APRILTAG", ADVANCED_VARS["WITH_APRILTAG"])),
-        "LANE_ROI_MODE": str(getattr(conf, "LANE_ROI_MODE", ADVANCED_VARS["LANE_ROI_MODE"])),
-        "CW_TRAPEZOID_MODE": bool(getattr(conf, "CW_TRAPEZOID_MODE", ADVANCED_VARS["CW_TRAPEZOID_MODE"])),
-        "RL_TOP_WIDTH_FACTOR": float(getattr(conf, "RL_TOP_WIDTH_FACTOR", ADVANCED_VARS["RL_TOP_WIDTH_FACTOR"])),
-        "LL_TOP_WIDTH_FACTOR": float(getattr(conf, "LL_TOP_WIDTH_FACTOR", ADVANCED_VARS["LL_TOP_WIDTH_FACTOR"])),
-        "CW_TOP_WIDTH_FACTOR": float(getattr(conf, "CW_TOP_WIDTH_FACTOR", ADVANCED_VARS["CW_TOP_WIDTH_FACTOR"])),
-        
-        "USE_BEV": bool(getattr(conf, "USE_BEV", ADVANCED_VARS["USE_BEV"])),
-        "BEV_SRC_TL_X": float(getattr(conf, "BEV_SRC_TL_X", ADVANCED_VARS["BEV_SRC_TL_X"])),
-        "BEV_SRC_TL_Y": float(getattr(conf, "BEV_SRC_TL_Y", ADVANCED_VARS["BEV_SRC_TL_Y"])),
-        "BEV_SRC_TR_X": float(getattr(conf, "BEV_SRC_TR_X", ADVANCED_VARS["BEV_SRC_TR_X"])),
-        "BEV_SRC_TR_Y": float(getattr(conf, "BEV_SRC_TR_Y", ADVANCED_VARS["BEV_SRC_TR_Y"])),
-        "BEV_SRC_BR_X": float(getattr(conf, "BEV_SRC_BR_X", ADVANCED_VARS["BEV_SRC_BR_X"])),
-        "BEV_SRC_BR_Y": float(getattr(conf, "BEV_SRC_BR_Y", ADVANCED_VARS["BEV_SRC_BR_Y"])),
-        "BEV_SRC_BL_X": float(getattr(conf, "BEV_SRC_BL_X", ADVANCED_VARS["BEV_SRC_BL_X"])),
-        "BEV_SRC_BL_Y": float(getattr(conf, "BEV_SRC_BL_Y", ADVANCED_VARS["BEV_SRC_BL_Y"]))
-    })
+    return jsonify(advanced=get_all_advanced())
 
 @app.route('/set_advanced', methods=['POST'])
 def set_advanced():
     data = request.get_json() or {}
     try:
-        if "LANE_THRESHOLD" in data: setattr(conf, "LANE_THRESHOLD", max(0, min(255, int(data["LANE_THRESHOLD"]))))
-        if "CROSSWALK_THRESHOLD" in data: setattr(conf, "CROSSWALK_THRESHOLD", max(0, min(255, int(data["CROSSWALK_THRESHOLD"]))))
-        if "RUN_LVL" in data: setattr(conf, "RUN_LVL", data["RUN_LVL"] if data["RUN_LVL"] in ("MOVE","STOP") else "MOVE")
-        
+        # Loop dynamically so no setting is ever missed
+        for k, default_v in ADVANCED_VARS.items():
+            if k in data:
+                val = data[k]
+                
+                # Apply limits & Types
+                if k in ("LANE_THRESHOLD", "CROSSWALK_THRESHOLD"): val = max(0, min(255, int(val)))
+                elif k.startswith("BEV_SRC_"): val = max(0.0, min(1.0, float(val)))
+                
+                expected_type = type(default_v)
+                if expected_type == bool: val = bool(val)
+                elif expected_type == int: val = int(val)
+                elif expected_type == float: val = float(val)
+                else: val = str(val)
+                
+                setattr(conf, k, val)
+
+        # Linked logic overrides
+        if "RUN_LVL" in data: 
+            setattr(conf, "RUN_LVL", data["RUN_LVL"] if data["RUN_LVL"] in ("MOVE","STOP") else "MOVE")
+            
         if "WITH_SIGN" in data or "WITH_APRILTAG" in data:
             use_sign = bool(data.get("WITH_SIGN", getattr(conf, "WITH_SIGN", True)))
             setattr(conf, "WITH_SIGN", use_sign)
             setattr(conf, "WITH_APRILTAG", not use_sign)
-            
-        # Shape Config handling
-        if "LANE_ROI_MODE" in data: setattr(conf, "LANE_ROI_MODE", str(data["LANE_ROI_MODE"]))
-        if "CW_TRAPEZOID_MODE" in data: setattr(conf, "CW_TRAPEZOID_MODE", bool(data["CW_TRAPEZOID_MODE"]))
-        if "RL_TOP_WIDTH_FACTOR" in data: setattr(conf, "RL_TOP_WIDTH_FACTOR", float(data["RL_TOP_WIDTH_FACTOR"]))
-        if "LL_TOP_WIDTH_FACTOR" in data: setattr(conf, "LL_TOP_WIDTH_FACTOR", float(data["LL_TOP_WIDTH_FACTOR"]))
-        if "CW_TOP_WIDTH_FACTOR" in data: setattr(conf, "CW_TOP_WIDTH_FACTOR", float(data["CW_TOP_WIDTH_FACTOR"]))
-        
-        # BEV Config handling
-        if "USE_BEV" in data: setattr(conf, "USE_BEV", bool(data["USE_BEV"]))
-        for bev_key in ["BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y", "BEV_SRC_BR_X", "BEV_SRC_BR_Y", "BEV_SRC_BL_X", "BEV_SRC_BL_Y"]:
-            if bev_key in data:
-                setattr(conf, bev_key, max(0.0, min(1.0, float(data[bev_key]))))
         
     except Exception as e:
         logger.exception("Invalid advanced payload")
         return jsonify(success=False), 400
         
     save_conf_to_json()
-    # fetch updated states
-    return jsonify(success=True, advanced=get_advanced().get_json()['advanced'])
+    return jsonify(success=True, advanced=get_all_advanced())
 
 @app.route('/get_ui')
 def get_ui(): return jsonify(ui=UI_SETTINGS)
