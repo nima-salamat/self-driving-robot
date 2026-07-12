@@ -119,7 +119,6 @@ class Robot:
                         self.fps.avg_fps,
                     )
 
-                stop_seen = False
                 if config_city.DEBUG:
                     cv2.waitKey(1)
                 angle=SERVO_CENTER
@@ -133,44 +132,19 @@ class Robot:
                         debug_frame = None
                     
                     result = self.vision.detect(frame_resized, debug_frame)
-        
+
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
                     
-                    if config_city.WITH_APRILTAG:
-                        tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
-                        if largest_tag is not None:
-                            tag_id = largest_tag["id"]
-                            if largest_tag["corners"][1][1] > 180:
-                                if tag_id == STOP:
-                                    stop_seen = True
-                                    self.stop_last_seen = time.time()
-                                self.last_tag = tag_id
-                    elif config_city.WITH_SIGN:
-                        read_sign_counter += 1
-                        tag_id = None
-                        if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
-                            read_sign_counter = 0
-                            sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
-                            if sign_result['text'] == "TURN LEFT":
-                                tag_id = TURN_LEFT
-                            elif sign_result['text'] == "TURN RIGHT":
-                                tag_id = TURN_RIGHT
-                            elif sign_result['text'] == "STRAIGHT":
-                                tag_id = STRAIGHT
-                            elif sign_result['text'] == "STOP":
-                                tag_id = STOP
-                                stop_seen = True
-                                self.stop_last_seen = time.time()
-                        if tag_id is not None:
-                            self.last_tag = tag_id
+                    _, stop_seen = self.handle_read_sign_or_tag(frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
+
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(0.2) # i think the delay 0.01s is not enough for that
+                        time.sleep(0.2)
                         continue
                     
                 else:
@@ -220,6 +194,38 @@ class Robot:
         finally:
             self.close()
             logger.info("exited")
+
+
+    def handle_read_sign_or_tag(self, frame):
+        stop_seen = False
+        if config_city.WITH_APRILTAG:
+            tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
+            if largest_tag is not None:
+                tag_id = largest_tag["id"]
+                if largest_tag["corners"][1][1] > 180:
+                    if tag_id == STOP:
+                        stop_seen = True
+                        self.stop_last_seen = time.time()
+                    self.last_tag = tag_id
+        elif config_city.WITH_SIGN:
+            read_sign_counter += 1
+            tag_id = None
+            if read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
+                read_sign_counter = 0
+                sign_result = self.sign_detector.process_frame(frame, debug_frame=debug_frame)
+                if sign_result['text'] == "TURN LEFT":
+                    tag_id = TURN_LEFT
+                elif sign_result['text'] == "TURN RIGHT":
+                    tag_id = TURN_RIGHT
+                elif sign_result['text'] == "STRAIGHT":
+                    tag_id = STRAIGHT
+                elif sign_result['text'] == "STOP":
+                    tag_id = STOP
+                    stop_seen = True
+                    self.stop_last_seen = time.time()
+            if tag_id is not None:
+                self.last_tag = tag_id
+        return tag_id, stop_seen
 
 
     def handle_debug_stream(self, result, frame, angle, crosswalk, status):
