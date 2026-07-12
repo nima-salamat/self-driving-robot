@@ -81,7 +81,7 @@ SERVO_CENTER = 90
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
-SPEED = 235
+SPEED = 200
 HARDCODE_SPEED = 255
 
 # --- Crosswalk Setting ---
@@ -115,7 +115,7 @@ CHANGE_WITH_JSON = True
 WITH_SIGN = True
 WITH_APRILTAG = not WITH_SIGN
 
-READ_SIGN_THRESHOLD = 5
+READ_SIGN_THRESHOLD = 20
 
 # Sign or Tag id
 TURN_RIGHT = 2

@@ -165,13 +165,12 @@ class Robot:
                         if tag_id is not None:
                             self.last_tag = tag_id
 
-                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 1) else "running"
-                
+                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
                     self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
 
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(2*config_city.DELAY) # i think the delay 0.01s is not enough for that
+                        time.sleep(0.2) # i think the delay 0.01s is not enough for that
                         continue
                     
                 else:

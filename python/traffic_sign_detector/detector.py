@@ -144,7 +144,7 @@ class TrafficSignDetector:
 
         # 5. Format outputs exactly like the old codebase expects
         if best_sign_type != -1:
-            text = f"{self.SIGNS[best_sign_type]} ({best_conf:.2f})"
+            text = f"{self.SIGNS[best_sign_type]}"
             
             # Save the cropped sign
             (x1, y1), (x2, y2) = best_coordinate
