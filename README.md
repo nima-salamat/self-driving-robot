@@ -2,8 +2,9 @@
 
 This document covers the Python and Arduino components of the Self Driving Robot project. These components work together to enable autonomous navigation through computer vision, sensor processing, and motor control.
 
-## 📋 Table of Contents
 
+## 📋 Table of Contents
+- [Demo](#demo)
 - [Architecture Overview](#architecture-overview)
 - [Arduino Component](#arduino-component)
 - [Python Component](#python-component)
@@ -11,6 +12,11 @@ This document covers the Python and Arduino components of the Self Driving Robot
 - [Usage](#usage)
 - [Communication Protocol](#communication-protocol)
 - [Troubleshooting](#troubleshooting)
+
+---
+## Demo
+
+https://github.com/user-attachments/assets/ad7efa66-dcdb-4234-98d1-214cd702bc16
 
 ---
 
