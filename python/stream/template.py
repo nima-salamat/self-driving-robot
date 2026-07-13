@@ -54,8 +54,13 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <button id="clear_selection" class="ghost">Clear</button>
       <button id="center_reset" class="ghost">Center Base</button>
       <div style="flex:1"></div>
-      <label class="small" style="color:var(--accent); font-weight:bold;">Show Overlays <input id="show_rects" type="checkbox" checked></label>
-      <div id="frame_mode" class="small status-line">Mode: Live</div>
+      
+      <label class="small" style="color:var(--accent); font-weight:bold;">
+        View Zoom <input id="workspace_zoom" type="range" min="0.3" max="1.5" step="0.1" value="1.0" style="width:70px; vertical-align:middle;">
+      </label>
+
+      <label class="small" style="color:var(--accent); font-weight:bold; margin-left: 10px;">Show Overlays <input id="show_rects" type="checkbox" checked></label>
+      <div id="frame_mode" class="small status-line" style="margin-left: 10px;">Mode: Live</div>
     </div>
     <canvas id="video_canvas" width="900" height="600"></canvas>
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -202,7 +207,14 @@ let isFrozen = false;
 let isRecording = false;
 let syncActive = true; 
 
-/* ---------- Utilities ---------- */
+// Workspace Zoom Variable
+let workspaceZoom = 1.0;
+document.getElementById('workspace_zoom').addEventListener('input', (e) => {
+    workspaceZoom = parseFloat(e.target.value);
+    drawOverlays(); 
+});
+
+/* ---------- Utilities & Math ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 function round01(v){ return Math.round(v*1000)/1000; } 
 function showToast(text, timeout=2500){
@@ -234,23 +246,49 @@ function sendAdvanced(payload) {
         });
 }
 
+// Convert image norm coords (0-1) to physical canvas coords, honoring workspace zoom
+function getImgBounds() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const iw = w * workspaceZoom;
+    const ih = h * workspaceZoom;
+    const ix = (w - iw) / 2;
+    const iy = (h - ih) / 2;
+    return {ix, iy, iw, ih};
+}
+
+function toCanvas(nx, ny) {
+    const b = getImgBounds();
+    return { x: b.ix + nx * b.iw, y: b.iy + ny * b.ih };
+}
+
 /* ---------- Canvas frame loop ---------- */
-function rectFromVars(topVar, bottomVar, leftVar, rightVar, width, height){
+function rectFromVars(topVar, bottomVar, leftVar, rightVar){
     const t = parseFloat(values[topVar]); const b = parseFloat(values[bottomVar]);
     const l = parseFloat(values[leftVar]); const r = parseFloat(values[rightVar]);
     if (isNaN(t)||isNaN(b)||isNaN(l)||isNaN(r)) return null;
-    return {x: l*width, y: t*height, w: Math.max(2,(r-l)*width), h: Math.max(2,(b-t)*height), t, b, l, r};
-}
-function computeRects(){
-    const w = canvas.width, h = canvas.height;
+    
+    // Calculate physical canvas points using zoom
+    const tl = toCanvas(l, t);
+    const br = toCanvas(r, b);
+    
     return {
-        RL: rectFromVars('RL_TOP_ROI','RL_BOTTOM_ROI','RL_LEFT_ROI','RL_RIGHT_ROI', w, h),
-        LL: rectFromVars('LL_TOP_ROI','LL_BOTTOM_ROI','LL_LEFT_ROI','LL_RIGHT_ROI', w, h),
-        CW: rectFromVars('CW_TOP_ROI','CW_BOTTOM_ROI','CW_LEFT_ROI','CW_RIGHT_ROI', w, h),
-        ST: rectFromVars('ST_TOP_ROI','ST_BOTTOM_ROI','ST_LEFT_ROI','ST_RIGHT_ROI', w, h),
-        OBJ: rectFromVars('OBJ_TOP_ROI','OBJ_BOTTOM_ROI','OBJ_LEFT_ROI','OBJ_RIGHT_ROI', w, h)
+        x: tl.x, y: tl.y, 
+        w: Math.max(2, br.x - tl.x), h: Math.max(2, br.y - tl.y), 
+        t, b, l, r
     };
 }
+
+function computeRects(){
+    return {
+        RL: rectFromVars('RL_TOP_ROI','RL_BOTTOM_ROI','RL_LEFT_ROI','RL_RIGHT_ROI'),
+        LL: rectFromVars('LL_TOP_ROI','LL_BOTTOM_ROI','LL_LEFT_ROI','LL_RIGHT_ROI'),
+        CW: rectFromVars('CW_TOP_ROI','CW_BOTTOM_ROI','CW_LEFT_ROI','CW_RIGHT_ROI'),
+        ST: rectFromVars('ST_TOP_ROI','ST_BOTTOM_ROI','ST_LEFT_ROI','ST_RIGHT_ROI'),
+        OBJ: rectFromVars('OBJ_TOP_ROI','OBJ_BOTTOM_ROI','OBJ_LEFT_ROI','OBJ_RIGHT_ROI')
+    };
+}
+
 function startFrameLoop(){
     if(fetchFrameTimer) clearInterval(fetchFrameTimer);
     fetchFrameTimer = setInterval(fetchFrameOnce, 120);
@@ -268,7 +306,13 @@ function fetchFrameOnce(){
         if (canvas.width !== dispW || canvas.height !== dispH) {
             canvas.width = dispW; canvas.height = dispH;
         }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        
+        // Draw the image according to the Zoom level
+        const b = getImgBounds();
+        ctx.drawImage(img, b.ix, b.iy, b.iw, b.ih);
+        
         drawOverlays();
     };
     img.onerror = () => {
@@ -314,7 +358,6 @@ function drawPolygon(points, color, isHighlight, labelText, r, fillAlpha=0.35) {
 function drawOverlays(){
     const showRects = showRectsCheckbox.checked;
     const rects = computeRects();
-    const w = canvas.width, h = canvas.height;
     ctx.save();
     
     if(showRects){
@@ -328,10 +371,10 @@ function drawOverlays(){
             const bevColor = varColorByKey('BEV');
             const isBevHL = (markerHighlight === 'BEV');
             const pts = [
-                {x: advanced.BEV_SRC_TL_X * w, y: advanced.BEV_SRC_TL_Y * h},
-                {x: advanced.BEV_SRC_TR_X * w, y: advanced.BEV_SRC_TR_Y * h},
-                {x: advanced.BEV_SRC_BR_X * w, y: advanced.BEV_SRC_BR_Y * h},
-                {x: advanced.BEV_SRC_BL_X * w, y: advanced.BEV_SRC_BL_Y * h}
+                toCanvas(advanced.BEV_SRC_TL_X, advanced.BEV_SRC_TL_Y),
+                toCanvas(advanced.BEV_SRC_TR_X, advanced.BEV_SRC_TR_Y),
+                toCanvas(advanced.BEV_SRC_BR_X, advanced.BEV_SRC_BR_Y),
+                toCanvas(advanced.BEV_SRC_BL_X, advanced.BEV_SRC_BL_Y)
             ];
             
             drawPolygon(pts, bevColor, isBevHL, null, null, 0.15); 
@@ -425,15 +468,14 @@ function drawOverlays(){
 
 /* ---------- Hit testing & Drag Bounding Box ---------- */
 function hitTest(px, py){
-    const w = canvas.width, h = canvas.height;
     const size = 12;
     
     if(ui.visible['BEV'] && advanced.USE_BEV !== false) {
         const bevCorners = {
-            TL: {x: advanced.BEV_SRC_TL_X * w, y: advanced.BEV_SRC_TL_Y * h},
-            TR: {x: advanced.BEV_SRC_TR_X * w, y: advanced.BEV_SRC_TR_Y * h},
-            BR: {x: advanced.BEV_SRC_BR_X * w, y: advanced.BEV_SRC_BR_Y * h},
-            BL: {x: advanced.BEV_SRC_BL_X * w, y: advanced.BEV_SRC_BL_Y * h}
+            TL: toCanvas(advanced.BEV_SRC_TL_X, advanced.BEV_SRC_TL_Y),
+            TR: toCanvas(advanced.BEV_SRC_TR_X, advanced.BEV_SRC_TR_Y),
+            BR: toCanvas(advanced.BEV_SRC_BR_X, advanced.BEV_SRC_BR_Y),
+            BL: toCanvas(advanced.BEV_SRC_BL_X, advanced.BEV_SRC_BL_Y)
         };
         for(const c of Object.keys(bevCorners)){
             const {x:cx, y:cy} = bevCorners[c];
@@ -511,13 +553,17 @@ canvas.addEventListener('mousemove', e=>{
     if(!dragState || !syncActive) return;
     const dx = px - dragState.start.x;
     const dy = py - dragState.start.y;
-    const w = canvas.width, h = canvas.height;
+    
+    const b = getImgBounds();
+    const dnx = dx / b.iw; // Scale delta accurately by workspace zoom
+    const dny = dy / b.ih;
     
     if(dragState.group === 'BEV'){
-        const dnx = dx/w, dny = dy/h;
         const c = dragState.corner; 
-        let nx = clamp01(dragState.orig['BEV_SRC_'+c+'_X'] + dnx);
-        let ny = clamp01(dragState.orig['BEV_SRC_'+c+'_Y'] + dny);
+        
+        // Removed 0-1 restriction. Allowing bounds from -5 to 5.
+        let nx = Math.max(-5.0, Math.min(5.0, dragState.orig['BEV_SRC_'+c+'_X'] + dnx));
+        let ny = Math.max(-5.0, Math.min(5.0, dragState.orig['BEV_SRC_'+c+'_Y'] + dny));
         
         advanced['BEV_SRC_'+c+'_X'] = round01(nx);
         advanced['BEV_SRC_'+c+'_Y'] = round01(ny);
@@ -547,13 +593,11 @@ canvas.addEventListener('mousemove', e=>{
     let nx_t = orig.t, nx_b = orig.b, nx_l = orig.l, nx_r = orig.r;
     
     if(dragState.type==='move'){
-        const dnx = dx/w, dny = dy/h;
         nx_t = clamp01(orig.t + dny); nx_b = clamp01(orig.b + dny);
         nx_l = clamp01(orig.l + dnx); nx_r = clamp01(orig.r + dnx);
         if(nx_r - nx_l < 0.02){ const mid = (nx_l + nx_r)/2; nx_l = mid - 0.01; nx_r = mid + 0.01; }
         if(nx_b - nx_t < 0.02){ const mid = (nx_t + nx_b)/2; nx_t = mid - 0.01; nx_b = mid + 0.01; }
     } else {
-        const dnx = dx/w, dny = dy/h;
         if(dragState.corner==='nw'){ nx_t = clamp01(orig.t + dny); nx_l = clamp01(orig.l + dnx); }
         if(dragState.corner==='ne'){ nx_t = clamp01(orig.t + dny); nx_r = clamp01(orig.r + dnx); }
         if(dragState.corner==='sw'){ nx_b = clamp01(orig.b + dny); nx_l = clamp01(orig.l + dnx); }

@@ -156,7 +156,7 @@ def update_conf():
             if var in data:
                 try:
                     val = float(data[var])
-                    val = max(0.0, min(1.0, val))
+                    val = max(0.0, min(1.0, val)) # Keep standard ROIs within 0-1
                     setattr(conf, var, val)
                     updated[var] = val
                 except:
@@ -186,7 +186,8 @@ def set_advanced():
                 
                 # Apply limits & Types
                 if k in ("LANE_THRESHOLD", "CROSSWALK_THRESHOLD"): val = max(0, min(255, int(val)))
-                elif k.startswith("BEV_SRC_"): val = max(0.0, min(1.0, float(val)))
+                # ALLOW EXTREME POINTS FOR BEV (e.g., -5.0 to 5.0 instead of 0.0 to 1.0)
+                elif k.startswith("BEV_SRC_"): val = max(-5.0, min(5.0, float(val)))
                 
                 expected_type = type(default_v)
                 if expected_type == bool: val = bool(val)
