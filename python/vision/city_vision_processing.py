@@ -208,19 +208,36 @@ class VisionProcessor:
                     return None, None
 
                 gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                gray = cv2.GaussianBlur(gray, (5, 5), 0)
+                gray = cv2.GaussianBlur(gray, (3,3), 0)
                 sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
                 sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
 
                 magnitude = cv2.magnitude(sobel_x, sobel_y)
                 magnitude = cv2.convertScaleAbs(magnitude)
 
-                _, edges = cv2.threshold(magnitude, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
+#                _, edges = cv2.threshold(magnitude, conf.LANE_THRESHOLD, 255, cv2.THRESH_BINARY)
+                _, edges = cv2.threshold(
+                    magnitude,
+                    conf.LANE_THRESHOLD,
+                    255,
+                    cv2.THRESH_BINARY
+                )
                 kernel = np.ones((3, 3), np.uint8)
-                edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=1)
+                edges = cv2.morphologyEx(
+                    edges,
+                    cv2.MORPH_CLOSE,
+                    kernel,
+                    iterations=1
+                )
 
-                lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180, threshold=20,
-                                        minLineLength=5, maxLineGap=5)
+                lines = cv2.HoughLinesP(
+                    edges,
+                    1,
+                    np.pi/180,
+                    threshold=15,
+                    minLineLength=5,
+                    maxLineGap=20
+                )
                 return edges, lines
 
         rl_edge, rl_lines = process_roi(rl_frame)
@@ -250,8 +267,8 @@ class VisionProcessor:
             vertical = 0
             horizontal = 0
             cw_roi_diagonal = math.sqrt(math.pow(cw_right - cw_left, 2) + math.pow(cw_bottom - cw_top, 2))
-            crosswalk_pixel_dist = (3.5 / 5) * (cw_bottom - cw_top) 
-            line_min_length = max(cw_roi_diagonal / 20, 10)
+            crosswalk_pixel_dist = (0.6) * (cw_bottom - cw_top) 
+            line_min_length = max(cw_roi_diagonal / 10, 10)
             lowest_horizontal_line = None
             
             if lines is not None:
@@ -266,7 +283,6 @@ class VisionProcessor:
                             horizontal += 1
                             cw_lines.append(line)
                             if lowest_horizontal_line is not None:
-                                # استفاده از extract_line برای مقایسه
                                 _, ly0, _, ly1 = self._extract_line(lowest_horizontal_line)
                                 if max(y0, y1) > max(ly0, ly1):
                                     lowest_horizontal_line = line
@@ -277,7 +293,7 @@ class VisionProcessor:
                             vertical += 1
                             cw_lines.append(line)
                         
-            if vertical >= 3 and horizontal >= 2:
+            if vertical >= 4 and horizontal >= 3:
                 if lowest_horizontal_line is not None:
                     _, ly0, _, ly1 = self._extract_line(lowest_horizontal_line)
                     if max(ly0, ly1) > crosswalk_pixel_dist:
@@ -421,7 +437,6 @@ class VisionProcessor:
             # draw Hough lines from RL ROI
             if rl_lines is not None:
                 for line in rl_lines:
-                    # استفاده از extract_line و سپس scale
                     lx1, ly1, lx2, ly2 = self._extract_line(line)
                     sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
                     if rl_draw is not None:
