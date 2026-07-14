@@ -46,6 +46,11 @@ class Robot:
     def __init__(self):
         self.camera = Camera()
         self.control = RobotController()
+
+        # hardcode the left and right lane change 
+        self.control._send_command("set left b 255 45 70 b 255 45 125")
+        self.control._send_command("set right f 255 45 70 f  255 45 125")
+
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector()
         self.crosswalk_time_start = 0
