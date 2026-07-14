@@ -9,7 +9,7 @@ except ImportError:
 
 class TrafficSignDetector:
     def __init__(self, model_path=None):
-        self.SIGNS = ["ERROR", "STOP", "TURN LEFT", "TURN RIGHT", "STRAIGHT", "PARK"]
+        self.SIGNS = ["ERROR", "STOP", "TURN RIGHT", "TURN LEFT", "STRAIGHT", "PARK"]
         self.count = 0 
         
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
