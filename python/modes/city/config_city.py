@@ -177,3 +177,6 @@ BEV_SRC_BL_Y = 1.00
 
 # Detect Object
 DETECT_OBJECT = False
+
+# Traffic sign detector method
+SIGN_DETECTOR_METHOD = "svm"  # "yolo" or "svm"

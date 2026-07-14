@@ -11,7 +11,8 @@ from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
-from traffic_sign_detector.detector import TrafficSignDetector
+from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
+from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
 from controller import RobotController
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
@@ -52,7 +53,7 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0
-        self.sign_detector = TrafficSignDetector()
+        self.sign_detector = SVMTrafficSignDetector() if config_city.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
