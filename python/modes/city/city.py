@@ -84,16 +84,13 @@ class Robot:
                     time.sleep(0.1)
                     self.control.forward_pulse(f"f {HARDCODE_SPEED} 100 90 f {HARDCODE_SPEED} 60 125")
                     time.sleep(0.1)
-                    self.control.signal_right()
-                    time.sleep(0.01)
 
                      
                 elif self.last_tag == TURN_LEFT:
                     time.sleep(0.1)
                     self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 60 60")
                     time.sleep(0.1)
-                    self.control.signal_left()
-                    time.sleep(0.01)
+   
 
                 elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
@@ -158,6 +155,14 @@ class Robot:
                     self.handle_debug_stream(result, frame, angle, crosswalk, status, sign_text)                    
                     if config_city.DETECT_OBJECT:
                         self.handle_detect_object(frame)
+
+                    if sign_text == self.sign_detector.SIGNS.index("TURN LEFT"):
+                        self.control.signal_left()
+                        time.sleep(0.01)
+                    elif sign_text == self.sign_detector.SIGNS.index("TURN RIGHT"):
+                        self.control.signal_right()
+                        time.sleep(0.01)
+
 
                     if status == "stopped":
                         self.control.stop()
@@ -275,7 +280,7 @@ class Robot:
             
             debug = result.get("debug") or {}
             display_frame = debug["combined"].copy()
-            self.control.read()
+            self.control.read(3)
             texts = [
                 f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, Crosswalk:{crosswalk}, {status}",
                 f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}, Sign:{sign_text}, LastTag:{self.last_tag}",
