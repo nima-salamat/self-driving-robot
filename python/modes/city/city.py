@@ -81,20 +81,27 @@ class Robot:
                 self.crosswalk_time_start = 0
                 logger.debug(f"navigate with tag: {self.last_tag}")
                 if self.last_tag == TURN_RIGHT:
-                     time.sleep(0.1)
-                     self.control.forward_pulse(f"f {HARDCODE_SPEED} 5 90 f {HARDCODE_SPEED} 4 140")
-                     time.sleep(0.1)
+                    time.sleep(0.1)
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 100 90 f {HARDCODE_SPEED} 60 125")
+                    time.sleep(0.1)
+                    self.control.signal_right()
+                    time.sleep(0.01)
+
+                     
                 elif self.last_tag == TURN_LEFT:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 6 90 f {HARDCODE_SPEED} 4 60")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 60 60")
                     time.sleep(0.1)
+                    self.control.signal_left()
+                    time.sleep(0.01)
+
                 elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 9 95")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 140 90")
                     time.sleep(0.1)
                 else:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED}  10 95")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED}  140 90")
                     time.sleep(0.1)
 
     def run(self):
@@ -144,11 +151,11 @@ class Robot:
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
                     
-                    _, stop_seen, debug_frame = self.handle_read_sign_or_tag(frame, debug_frame)
+                    sign_text, stop_seen, debug_frame = self.handle_read_sign_or_tag(frame, debug_frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
 
-                    self.handle_debug_stream(result, frame, angle, crosswalk, status)                    
+                    self.handle_debug_stream(result, frame, angle, crosswalk, status, sign_text)                    
                     if config_city.DETECT_OBJECT:
                         self.handle_detect_object(frame)
 
@@ -175,7 +182,7 @@ class Robot:
                         elif config_city.WITH_SIGN:
                             self.sign_detector.process_frame(frame, debug_frame=debug_frame)
 
-                    self.handle_debug_stream(result, frame, angle, crosswalk, "crosswalk")
+                    self.handle_debug_stream(result, frame, angle, crosswalk, "crosswalk", "")
                     
                     continue
                 
@@ -256,7 +263,7 @@ class Robot:
         return tag_id, stop_seen, debug_frame
 
 
-    def handle_debug_stream(self, result, frame, angle, crosswalk, status):
+    def handle_debug_stream(self, result, frame, angle, crosswalk, status, sign_text):
         if config_city.DEBUG:
             debug = result.get("debug") or {}
             if debug.get("combined") is not None:
@@ -268,10 +275,10 @@ class Robot:
             
             debug = result.get("debug") or {}
             display_frame = debug["combined"].copy()
-
+            self.control.read()
             texts = [
                 f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, Crosswalk:{crosswalk}, {status}",
-                f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}"
+                f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}, Sign:{sign_text}, LastTag:{self.last_tag}",
             ]
 
             font = cv2.FONT_HERSHEY_SIMPLEX
