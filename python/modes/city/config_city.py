@@ -94,8 +94,8 @@ SERVO_CENTER = 90
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
-SPEED = 200
-HARDCODE_SPEED = 255
+SPEED = 150
+HARDCODE_SPEED = 220
 
 # --- Crosswalk Setting ---
 CROSSWALK_SLEEP = 3 # sec  - after seeing crosswalk
@@ -128,7 +128,7 @@ CHANGE_WITH_JSON = True
 WITH_SIGN = True
 WITH_APRILTAG = not WITH_SIGN
 
-READ_SIGN_THRESHOLD = 20
+READ_SIGN_THRESHOLD = 40
 
 # Sign or Tag id
 TURN_RIGHT = 2
@@ -155,10 +155,10 @@ OUTPUT_LIMITS = (-80, 80)
 AUTO_UPDATE_KP = False
 
 # lane detection method
-OLD_METHOD = True
+OLD_METHOD = False
 
 # crosswalk detection method
-CW_OLD_METHOD = False
+CW_OLD_METHOD = True
 
 # Roi Resizable
 ROI_RESIZABLE = False
