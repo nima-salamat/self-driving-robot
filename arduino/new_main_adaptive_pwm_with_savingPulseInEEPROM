@@ -8,9 +8,9 @@
    Motion Control Configuration
    ========================================================================== */
 // Adaptive Startup Parameters
-const int STARTUP_PWM_STEP = 5;               // PWM increment step when motor is stalled
+const int STARTUP_PWM_STEP = 10;               // PWM increment step when motor is stalled
 const int STARTUP_CHECK_INTERVAL_MS = 40;     // Time interval (ms) between movement checks
-const int STARTUP_MIN_PULSES = 1;             // Minimum encoder pulses to consider motor "moving"
+const int STARTUP_MIN_PULSES = 5;             // Minimum encoder pulses to consider motor "moving"
 const int MAX_ALLOWED_PWM = 255;              // Maximum allowed PWM during adaptive startup
 const int STARTUP_TIMEOUT_MS = 1000;          // Timeout (ms) to abort adaptive startup if stuck
 
