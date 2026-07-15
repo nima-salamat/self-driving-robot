@@ -81,17 +81,15 @@ class Robot:
                 self.crosswalk_time_start = 0
                 logger.debug(f"navigate with tag: {self.last_tag}")
                 if self.last_tag == TURN_RIGHT:
+                    self.control.signal_right()
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 100 90 f {HARDCODE_SPEED} 60 125")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 90 125")
                     time.sleep(0.1)
-
-                     
                 elif self.last_tag == TURN_LEFT:
+                    self.control.signal_left()
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 60 60")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 135 90 f {HARDCODE_SPEED} 90 60")
                     time.sleep(0.1)
-   
-
                 elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
                     self.control.forward_pulse(f"f {HARDCODE_SPEED} 140 90")
@@ -155,13 +153,6 @@ class Robot:
                     self.handle_debug_stream(result, frame, angle, crosswalk, status, sign_text)                    
                     if config_city.DETECT_OBJECT:
                         self.handle_detect_object(frame)
-
-                    if sign_text == self.sign_detector.SIGNS.index("TURN LEFT"):
-                        self.control.signal_left()
-                        time.sleep(0.01)
-                    elif sign_text == self.sign_detector.SIGNS.index("TURN RIGHT"):
-                        self.control.signal_right()
-                        time.sleep(0.01)
 
 
                     if status == "stopped":
