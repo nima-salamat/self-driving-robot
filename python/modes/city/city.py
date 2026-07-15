@@ -48,8 +48,10 @@ class Robot:
         self.control = RobotController()
 
         # hardcode the left and right lane change 
-        self.control._send_command("set left b 255 45 70 b 255 45 125")
-        self.control._send_command("set right f 255 45 70 f  255 45 125")
+        self.control._send_command("set left b 170 110 70 b 170 80 125")
+        time.sleep(0.4)
+        self.control._send_command("set right f 170 70 125 f 170 70 70")
+        time.sleep(0.4)
 
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector()
