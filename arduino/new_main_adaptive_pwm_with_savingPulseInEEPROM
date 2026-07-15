@@ -828,6 +828,7 @@ void startSideForwardPulseStep() {
   if (movingByPulses) return;
   startMotorByPulses('f', SIDE_PASS_FORWARD_SPEED, SIDE_PASS_FORWARD_PULSES, SERVO_CENTER);
   sidePassState = SIDE_MOVING_FORWARD_10_PULSES;
+  panel.clearPanel();
 }
 
 /* =========================
@@ -1059,10 +1060,12 @@ void loop() {
       } else {
         stopMotor();
         startServoMoveImmediate(SERVO_CENTER);
+        panel.clearPanel();
       }
     } else {
       stopMotor();
       startServoMoveImmediate(SERVO_CENTER);
+      panel.clearPanel();
     }
   }
 
