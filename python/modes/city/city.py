@@ -271,7 +271,6 @@ class Robot:
             
             debug = result.get("debug") or {}
             display_frame = debug["combined"].copy()
-            self.control.read(3)
             texts = [
                 f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, Crosswalk:{crosswalk}, {status}",
                 f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}, Sign:{sign_text}, LastTag:{self.last_tag}",
