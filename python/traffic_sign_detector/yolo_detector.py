@@ -15,7 +15,7 @@ class TrafficSignDetector:
         
         # Default to the ONNX model
         if model_path is None:
-            self.model_file = os.path.join(BASE_DIR, 'assets', 'best.onnx')
+            self.model_file = os.path.join(BASE_DIR, 'assets', 'best416.onnx')
         else:
             self.model_file = model_path
             
@@ -30,8 +30,8 @@ class TrafficSignDetector:
         input_shape = model_inputs[0].shape 
         
         # Handle dynamic shapes; fallback to 640x640 if standard
-        self.input_height = input_shape[2] if isinstance(input_shape[2], int) else 640
-        self.input_width = input_shape[3] if isinstance(input_shape[3], int) else 640
+        self.input_height = input_shape[2] if isinstance(input_shape[2], int) else 416
+        self.input_width = input_shape[3] if isinstance(input_shape[3], int) else 416
         
         os.makedirs("signs_output", exist_ok=True)
 
