@@ -49,7 +49,7 @@ class Robot:
         self.control = RobotController(config=config_race)
 
         self.vision = VisionProcessor()
-        self.apriltag_detector = ApriltagDetector()
+        self.apriltag_detector = ApriltagDetector(config=config_race)
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0

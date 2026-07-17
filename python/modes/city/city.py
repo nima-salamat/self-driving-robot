@@ -53,7 +53,7 @@ class Robot:
         time.sleep(0.4)
 
         self.vision = VisionProcessor()
-        self.apriltag_detector = ApriltagDetector()
+        self.apriltag_detector = ApriltagDetector(config=config_city)
         self.crosswalk_time_start = 0
         self.crosswalk_last_seen = 0
         self.last_tag = None
