@@ -159,6 +159,10 @@ class Robot:
                         height = y2 - y1
                         area = width * height
                         print(area)
+                        if area < 5000:
+                            status = "running"
+                            self.stop_last_seen = None
+                            
                     if status == "stopped":
                         self.control.stop()
                         time.sleep(config_city.DELAY)
