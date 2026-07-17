@@ -1,7 +1,6 @@
 import modes.city.config_city as config_city 
 
 from utils.config_mode import set_city_mode
-print("running city")
 # set_city_mode()
 from utils import json_config
 json_config.load()
@@ -158,7 +157,6 @@ class Robot:
                         width = x2 - x1
                         height = y2 - y1
                         area = width * height
-                        print(area)
                         if area < 5000:
                             status = "running"
                             self.stop_last_seen = None

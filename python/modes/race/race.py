@@ -28,8 +28,7 @@ from utils.fps import FPS
 from utils.roi_manager import crop_image
 
 
-print("DEBUG:", RobotController)
-print("DEBUG TYPE:", type(RobotController))
+
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -119,7 +118,6 @@ class Robot:
                     width = x2 - x1
                     height = y2 - y1
                     area = width * height
-                    print(area)
                     if area < 5000:
                         status = "running"
                         self.stop_last_seen = None
