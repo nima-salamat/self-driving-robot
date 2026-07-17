@@ -3,15 +3,17 @@ from arduino.arduino_connection import ArduinoConnection
 from controller.pid_controller import PIDController
 import base_config as temp_conf
 
-if temp_conf.CONFIG_MODULE is not None:
-    conf = temp_conf.CONFIG_MODULE
-else:
-    conf = temp_conf
+conf = None
 
 class RobotController:
     _instance =  None
     _initialized = False
     def __init__(self):
+        global conf
+        if temp_conf.CONFIG_MODULE is not None:
+            conf = temp_conf.CONFIG_MODULE
+        else:
+            conf = temp_conf
         if self._initialized:
             return
         self.connection = ArduinoConnection()

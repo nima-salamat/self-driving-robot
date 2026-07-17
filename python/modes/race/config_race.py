@@ -1,23 +1,40 @@
-# =========================
-# config.py
-# =========================
-
+MODE = "race"
 # --- Camera Defaults ---
-default_width = 380
-default_height = 230
+CAM_WIDTH = 640
+CAM_HEIGHT = 480
+
+resize_width = 380
+resize_height = 230
+CAMERA_PITCH_DEG = -40 # camera angle in real world
+CAMERA_HEIGHT = 27 # height of camera in real world
+USBCAM_ADDR = 0
 
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
 
-# --- Lane Detection Regions of Interest (ROIs) ---
+
+# --- ROI Shape Features ---
 # Values are normalized (0.0 – 1.0), multiplied by frame width/height
-# Tune these for your camera placement
+
+# Options: "rectangle" or "trapezoid"
+LANE_ROI_MODE = "rectangle"  
+
+# Toggle for Crosswalk Trapezoid (True = Isosceles Trapezoid, False = Rectangle)
+CW_TRAPEZOID_MODE = False  
+
+# Top width factor for trapezoids (0.0 to 1.0)
+# 0.5 means the top edge will be 50% of the base width
+RL_TOP_WIDTH_FACTOR = 0.85   
+LL_TOP_WIDTH_FACTOR = 0.85 
+CW_TOP_WIDTH_FACTOR = 0.90
+ST_TOP_WIDTH_FACTOR = 0.8
+OBJ_TOP_WIDTH_FACTOR = 0.8
 
 # Right lane ROI (fraction of frame)
-RL_TOP_ROI = 0.8   # start 40% down from top
-RL_BOTTOM_ROI = 1  # stop at 90% of frame height
-RL_LEFT_ROI = 0.7   # left boundary (55% of width)
-RL_RIGHT_ROI = 1 # right boundary (95% of width)
+RL_TOP_ROI = 0.8   # start 80% down from top
+RL_BOTTOM_ROI = 1  # stop at 100% of frame height
+RL_LEFT_ROI = 0.6   # left boundary (60% of width)
+RL_RIGHT_ROI = 0.9 # right boundary (90% of width)
 
 # Left lane ROI
 LL_TOP_ROI = 0.8
@@ -28,19 +45,38 @@ LL_RIGHT_ROI = 0.5
 # Crosswalk ROI (if you later want stop line detection)
 CW_TOP_ROI = 0.8
 CW_BOTTOM_ROI = 1.0
-CW_LEFT_ROI = 0.1
-CW_RIGHT_ROI = 0.4
+CW_LEFT_ROI = 0.3
+CW_RIGHT_ROI = 0.9
 
 # Apriltag ROI
-AT_TOP_ROI = 0.1
+AT_TOP_ROI = 0.0
 AT_BOTTOM_ROI = 1
 AT_LEFT_ROI = 0.0
 AT_RIGHT_ROI = 1.0
+
+# Traffic Light ROI
+TL_TOP_ROI = 0.0
+TL_BOTTOM_ROI = 1
+TL_LEFT_ROI = 0.0
+TL_RIGHT_ROI = 1.0
+
+# Sign or Tag ROI
+ST_TOP_ROI = 0.0
+ST_BOTTOM_ROI = 1
+ST_LEFT_ROI = 0.0
+ST_RIGHT_ROI = 1.0
+
+# Object ROI
+OBJ_TOP_ROI = 0.0
+OBJ_BOTTOM_ROI = 1
+OBJ_LEFT_ROI = 0.0
+OBJ_RIGHT_ROI = 1.0
 
 # --- Control Gains ---
 # These are proportional gains for steering correction
 LOW_KP = 0.5 # smaller correction when error is small
 HIGH_KP = 0.7 # stronger correction when error is large
+# now high and low kp dont use in city vision  
 
 # --- Debugging ---
 # If True, will draw ROIs, lane midpoints, error, etc.
@@ -48,42 +84,100 @@ DEBUG = True
 
 # --- Arduino Serial Settings ---
 SERIAL_PORT = "/dev/ttyUSB0"   # adjust if different
-BAUD_RATE = 115200
+BAUD_RATE = 115200             # same as in your arduino etc 
 SERIAL_TIMEOUT = 0.1
 
 # --- Servo Angle Limits ---
 MIN_SERVO_ANGLE = 55.0
 MAX_SERVO_ANGLE = 125.0
+# --- Servo Default Config ---
+SERVO_CENTER = 90
+SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
-SPEED = 255
+SPEED = 150
+HARDCODE_SPEED = 220
 
 # --- Crosswalk Setting ---
-CROSSWALK_SLEEP = 3
-CROSSWALK_THRESH_SPEND = 10
+CROSSWALK_SLEEP = 3 # sec  - after seeing crosswalk
+CROSSWALK_THRESH_SPEND = 8 # sec  - dont care if crosswalk seen before threshold time
+
 
 # Stream (enable/disable) 
 STREAM = True
-debug_frame_buffer = None # global stream frame variable
+debug_frames_list = [] # global stream frame variable
+
+# tack snapshot and video of camera
+TAKE_PICTURE = False
+RECORD_VIDEO = False
+
+# Lane Width (distance between two lane in the track)
+LANE_WIDTH = 30 # cm
 
 # Static Threshold
 LANE_THRESHOLD = 180 # lane vision processing threshold
 CROSSWALK_THRESHOLD = 180 
 
-# Run Level
+# Run Level 
 RUN_LVL = "MOVE" # it can be MOVE or STOP
+
+
+# Change Configs based on json file
+CHANGE_WITH_JSON = True
+
+# Set use sign or apriltag detector
+WITH_SIGN = True
+WITH_APRILTAG = not WITH_SIGN
+
+READ_SIGN_THRESHOLD = 40
+
+# Sign or Tag id
+TURN_RIGHT = 2
+TURN_LEFT = 3
+STRAIGHT = 4
+STOP = 5
 
 # without arduino
 WITHOUT_ARDUINO = False
+
+# sleep delay time
+DELAY = 0.005
 
 # show fps
 SHOW_FPS = False
 
 # PID parameters
 USE_PID = True
-KP = 1
+KP = 1.2
 KI = 0
-KD = 0
-KT = 0
+KD = 0.002
+KT = 0.01
 OUTPUT_LIMITS = (-80, 80)
 AUTO_UPDATE_KP = False
+
+# lane detection method
+OLD_METHOD = False
+
+# crosswalk detection method
+CW_OLD_METHOD = True
+
+# Roi Resizable
+ROI_RESIZABLE = False
+
+# --- BEV (Bird's Eye View) Config ---
+USE_BEV = True 
+
+BEV_SRC_TL_X = 0.35
+BEV_SRC_TL_Y = 0.60
+BEV_SRC_TR_X = 0.65
+BEV_SRC_TR_Y = 0.60
+BEV_SRC_BR_X = 1.00
+BEV_SRC_BR_Y = 1.00
+BEV_SRC_BL_X = 0.00
+BEV_SRC_BL_Y = 1.00 
+
+# Detect Object
+DETECT_OBJECT = False
+
+# Traffic sign detector method
+SIGN_DETECTOR_METHOD = "yolo"  # "yolo" or "svm"

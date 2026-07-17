@@ -32,7 +32,7 @@
   "STRAIGHT": 4,
   "STOP": 5,
   "RECORD_VIDEO": false,
-  "LANE_ROI_MODE": "rectangle",
+  "LANE_ROI_MODE": "trapezoid",
   "CW_TRAPEZOID_MODE": false,
   "ST_TRAPEZOID_MODE": true,
   "OBJ_TRAPEZOID_MODE": true,

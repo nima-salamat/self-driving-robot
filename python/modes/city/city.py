@@ -1,8 +1,8 @@
 import modes.city.config_city as config_city 
 
 from utils.config_mode import set_city_mode
-set_city_mode()
-
+print("running city")
+# set_city_mode()
 from utils import json_config
 json_config.load()
 

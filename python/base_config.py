@@ -75,5 +75,5 @@ CROSSWALK_SLEEP = 3
 CROSSWALK_THRESH_SPEND = 10
 
 # --- Running Mode ---
-MODE = "main" # it can be "city" or "race" too
+MODE = "" # it can be "city" or "race" too
 CONFIG_MODULE = None
