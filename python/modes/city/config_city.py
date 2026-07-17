@@ -16,10 +16,10 @@ CAMERA_MODE = "picam"
 # Values are normalized (0.0 – 1.0), multiplied by frame width/height
 
 # Options: "rectangle" or "trapezoid"
-LANE_ROI_MODE = "trapezoid"  
+LANE_ROI_MODE = "rectangle"  
 
 # Toggle for Crosswalk Trapezoid (True = Isosceles Trapezoid, False = Rectangle)
-CW_TRAPEZOID_MODE = True  
+CW_TRAPEZOID_MODE = False  
 
 # Top width factor for trapezoids (0.0 to 1.0)
 # 0.5 means the top edge will be 50% of the base width

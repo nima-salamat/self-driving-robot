@@ -146,20 +146,23 @@ class Robot:
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
                     
-                    sign_text, stop_seen, debug_frame = self.handle_read_sign_or_tag(frame, debug_frame)
+                    sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
 
                     self.handle_debug_stream(result, frame, angle, crosswalk, status, sign_text)                    
                     if config_city.DETECT_OBJECT:
                         self.handle_detect_object(frame)
-
-
+                    if coordinate is not None:
+                        (x1, y1), (x2, y2) = coordinate
+                        width = x2 - x1
+                        height = y2 - y1
+                        area = width * height
+                        print(area)
                     if status == "stopped":
                         self.control.stop()
-                        time.sleep(0.2)
+                        time.sleep(config_city.DELAY)
                         continue
-                        
                     
                 else:
                     self.control.stop()
@@ -228,8 +231,9 @@ class Robot:
         )
         
         stop_seen = False
+        coordinate = None
         if config_city.WITH_APRILTAG:
-            tags, debug_frame, largest_tag = self.apriltag_detector.detect(sign_tag_frame, debug_frame)
+            tags, debug_frame, largest_tag, coordinate = self.apriltag_detector.detect(sign_tag_frame, debug_frame)
             if largest_tag is not None:
                 tag_id = largest_tag["id"]
                 if largest_tag["corners"][1][1] > 180:
@@ -243,6 +247,7 @@ class Robot:
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
                 sign_result = self.sign_detector.process_frame(sign_tag_frame, debug_frame=debug_frame)
+                coordinate = sign_result["coordinate"]
                 debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
@@ -256,7 +261,8 @@ class Robot:
                     self.stop_last_seen = time.time()
             if tag_id is not None:
                 self.last_tag = tag_id
-        return tag_id, stop_seen, debug_frame
+            
+        return tag_id, stop_seen, debug_frame, coordinate
 
 
     def handle_debug_stream(self, result, frame, angle, crosswalk, status, sign_text):

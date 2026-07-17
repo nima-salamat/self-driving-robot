@@ -41,7 +41,7 @@
   "CW_TOP_WIDTH_FACTOR": 0.9,
   "ST_TOP_WIDTH_FACTOR": 0.8,
   "OBJ_TOP_WIDTH_FACTOR": 0.8,
-  "USE_BEV": true,
+  "USE_BEV": false,
   "BEV_SRC_TL_X": 0.322,
   "BEV_SRC_TL_Y": 0.382,
   "BEV_SRC_TR_X": 0.69,
