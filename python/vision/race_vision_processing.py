@@ -1,9 +1,9 @@
-from modes.city.config_city import (
+from modes.race.config_race import (
     MAX_SERVO_ANGLE, MIN_SERVO_ANGLE, SERVO_CENTER, SERVO_DIRECTION,
     CAMERA_HEIGHT, CAMERA_PITCH_DEG, LANE_WIDTH, OLD_METHOD, ROI_RESIZABLE
 )
 
-import modes.city.config_city as conf
+import modes.race.config_race as conf
 import math
 import cv2
 import numpy as np

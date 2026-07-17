@@ -44,8 +44,8 @@ config_city.DEBUG = False
 
 class Robot:
     def __init__(self):
-        self.camera = Camera()
-        self.control = RobotController()
+        self.camera = Camera(config=config_city)
+        self.control = RobotController(config=config_city)
 
         # hardcode the left and right lane change 
         self.control._send_command("set left b 170 110 70 b 170 80 125")
@@ -373,7 +373,11 @@ class Robot:
 
 def start():
     if config_city.STREAM:
-        flask_thread = threading.Thread(target=start_stream, daemon=False)
+        flask_thread = threading.Thread(
+            target=start_stream, 
+            args=(config_city,), 
+            daemon=False
+        )
         flask_thread.start()
     robot = Robot()
     robot.run()

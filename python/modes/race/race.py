@@ -28,6 +28,8 @@ from utils.fps import FPS
 from utils.roi_manager import crop_image
 
 
+print("DEBUG:", RobotController)
+print("DEBUG TYPE:", type(RobotController))
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -44,8 +46,8 @@ config_race.DEBUG = False
 
 class Robot:
     def __init__(self):
-        self.camera = Camera()
-        self.control = RobotController()
+        self.camera = Camera(config=config_race)
+        self.control = RobotController(config=config_race)
 
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector()
@@ -308,7 +310,11 @@ def start():
 
 
     if config_race.STREAM:
-        flask_thread = threading.Thread(target=start_stream, daemon=False)
+        flask_thread = threading.Thread(
+            target=start_stream, 
+            args=(config_race,), 
+            daemon=False
+        )
         flask_thread.start()
     robot = Robot()
     robot.run()

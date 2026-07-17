@@ -1,19 +1,13 @@
 import cv2
 from cv2 import aruco
-import base_config as temp_conf
-
-if temp_conf.CONFIG_MODULE is not None:
-    conf = temp_conf.CONFIG_MODULE
-else:
-    conf = temp_conf
-
 import logging
 
 logger = logging.getLogger(__name__)
 
-
 class ApriltagDetector:
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
+        
         self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_APRILTAG_36h11)
         self.aruco_params = aruco.DetectorParameters()
         logger.info("ArUco AprilTag 36h11 dictionary initialized")
@@ -24,12 +18,21 @@ class ApriltagDetector:
 
         h, w = frame.shape[:2]
 
-        x1 = int(conf.AT_LEFT_ROI * w)
-        y1 = int(conf.AT_TOP_ROI * h)
-        x2 = int(conf.AT_RIGHT_ROI * w)
-        y2 = int(conf.AT_BOTTOM_ROI * h)
+        at_left_roi = getattr(self.config, 'AT_LEFT_ROI', 0.0)
+        at_top_roi = getattr(self.config, 'AT_TOP_ROI', 0.0)
+        at_right_roi = getattr(self.config, 'AT_RIGHT_ROI', 1.0)
+        at_bottom_roi = getattr(self.config, 'AT_BOTTOM_ROI', 1.0)
+
+        x1 = int(at_left_roi * w)
+        y1 = int(at_top_roi * h)
+        x2 = int(at_right_roi * w)
+        y2 = int(at_bottom_roi * h)
 
         roi = frame[y1:y2, x1:x2]
+        
+        if roi.size == 0:
+            return [], debug_frame, None, None
+
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         _, gray_thr = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY)
 
@@ -40,6 +43,10 @@ class ApriltagDetector:
         )
 
         detected_tags = []
+        
+        stream_mode = getattr(self.config, 'STREAM', False)
+        debug_mode = getattr(self.config, 'DEBUG', False)
+        show_debug = (stream_mode or debug_mode) and (debug_frame is not None)
 
         if ids is not None and len(corners) > 0:
             for i in range(len(corners)):
@@ -62,7 +69,7 @@ class ApriltagDetector:
                     "coordinate": [(int(min_x), int(min_y)), (int(max_x), int(max_y))]
                 })
 
-                if (conf.STREAM or conf.DEBUG) and debug_frame is not None:
+                if show_debug:
                     cv2.polylines(debug_frame, [c_global.astype(int)], True, (0, 255, 0), 2)
                     cv2.putText(
                         debug_frame,
@@ -85,7 +92,7 @@ class ApriltagDetector:
 
         coor = largest_tag["coordinate"] if largest_tag is not None else None
 
-        if (conf.STREAM or conf.DEBUG) and debug_frame is not None:
+        if show_debug:
             cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
 
         return detected_tags, debug_frame, largest_tag, coor

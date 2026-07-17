@@ -1,43 +1,56 @@
 import time
 from arduino.arduino_connection import ArduinoConnection
 from controller.pid_controller import PIDController
-import base_config as temp_conf
-
-conf = None
 
 class RobotController:
     _instance =  None
     _initialized = False
-    def __init__(self):
-        global conf
-        if temp_conf.CONFIG_MODULE is not None:
-            conf = temp_conf.CONFIG_MODULE
-        else:
-            conf = temp_conf
-        if self._initialized:
-            return
-        self.connection = ArduinoConnection()
-        self.current_angle = 90
-        self.current_speed = 0
-        self.pid = PIDController(conf.KP, conf.KI, conf.KD, conf.KT, output_limits=conf.OUTPUT_LIMITS)
-        self._initialized = True
-        self.last_angle = 90
-
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+    def __init__(self, config=None):
+        if self._initialized:
+            return
+            
+        if config is None:
+            raise ValueError("Config must be provided during the first initialization of RobotController.")
+            
+        self.config = config
+        
+        mode = getattr(self.config, 'MODE', 'unknown')
+        print(f"Mode: {mode}")
+        
+        kp = getattr(self.config, 'KP', 1.0)
+        ki = getattr(self.config, 'KI', 0.0)
+        kd = getattr(self.config, 'KD', 0.0)
+        kt = getattr(self.config, 'KT', 0.0)
+        output_limits = getattr(self.config, 'OUTPUT_LIMITS', (-255, 255))
+        
+        self.min_servo_angle = getattr(self.config, 'MIN_SERVO_ANGLE', 0)
+        self.max_servo_angle = getattr(self.config, 'MAX_SERVO_ANGLE', 180)
+        self.servo_center = getattr(self.config, 'SERVO_CENTER', 90)
+        self.servo_direction = getattr(self.config, 'SERVO_DIRECTION', 'ltr')
+
+        self.connection = ArduinoConnection()
+        self.current_angle = 90
+        self.current_speed = 0
+        self.pid = PIDController(kp, ki, kd, kt, output_limits=output_limits)
+        
+        self.last_angle = 90
+        self._initialized = True
+
     def _send_command(self, cmd: str):
         cmd = cmd.strip() + "\n" 
         self.connection.send_command(cmd)
 
     def servo(self, angle: int):
-        if angle < conf.MIN_SERVO_ANGLE:
-            angle = conf.MIN_SERVO_ANGLE
-        elif angle > conf.MAX_SERVO_ANGLE:
-            angle = conf.MAX_SERVO_ANGLE
+        if angle < self.min_servo_angle:
+            angle = self.min_servo_angle
+        elif angle > self.max_servo_angle:
+            angle = self.max_servo_angle
         
         self._send_command(f"servo {angle}")
 
@@ -73,17 +86,15 @@ class RobotController:
             speed = self.current_speed if self.current_speed < 0 else -150
         self.motor(-abs(speed))
         
-    def forward_pulse(self,s):
+    def forward_pulse(self, s):
         self._send_command(s)
     
     def backward_pulse(self, s):
         self._send_command(s)
         
-        
     def read(self):
         """
             read data from arduino . . . 
-            
         """
         command = self.connection.read_command().strip()
         commands = command.split(" ")
@@ -106,12 +117,12 @@ class RobotController:
         self.pid.kp = kp
 
     def calculate_angle_by_error(self, error):
-        if conf.SERVO_DIRECTION == "rtl":
-            steering_angle = conf.SERVO_CENTER - self.pid.update(error)
+        if self.servo_direction == "rtl":
+            steering_angle = self.servo_center - self.pid.update(error)
         else: # ltr
-            steering_angle = conf.SERVO_CENTER + self.pid.update(error)
+            steering_angle = self.servo_center + self.pid.update(error)
         
-        steering_angle = int(max(conf.MIN_SERVO_ANGLE, min(conf.MAX_SERVO_ANGLE, steering_angle)))
+        steering_angle = int(max(self.min_servo_angle, min(self.max_servo_angle, steering_angle)))
         return steering_angle
     
     def set_angle_by_error(self, error, lane_type):
