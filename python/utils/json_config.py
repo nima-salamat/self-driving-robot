@@ -2,11 +2,13 @@ import os
 import json
 
 
-import base_config
 
 def load():
+    import base_config
+
     import modes.city.config_city as config_city
     import modes.race.config_race as config_race
+    print(base_config.MODE, "*******************")
     if base_config.MODE == "city":
         try:
             if config_city.CHANGE_WITH_JSON:

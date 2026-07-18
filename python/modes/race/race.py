@@ -4,7 +4,6 @@ from utils.config_mode import set_race_mode
 # set_race_mode()
 
 from utils import json_config
-json_config.load()
 
 from manager.output_manager import OutputManager
 from vision.camera import Camera
@@ -305,7 +304,7 @@ class Robot:
         sys.exit(0)
 
 def start():
-
+    json_config.load()
 
     if config_race.STREAM:
         flask_thread = threading.Thread(

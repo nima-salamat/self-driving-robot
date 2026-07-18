@@ -74,8 +74,8 @@ OBJ_RIGHT_ROI = 1.0
 
 # --- Control Gains ---
 # These are proportional gains for steering correction
-LOW_KP = 0.5 # smaller correction when error is small
-HIGH_KP = 0.7 # stronger correction when error is large
+LOW_KP = 0.3 # smaller correction when error is small
+HIGH_KP = 0.6 # stronger correction when error is large
 # now high and low kp dont use in city vision  
 
 # --- Debugging ---
@@ -95,7 +95,7 @@ SERVO_CENTER = 90
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
-SPEED = 150
+SPEED = 200
 HARDCODE_SPEED = 220
 
 # --- Crosswalk Setting ---
@@ -148,9 +148,9 @@ SHOW_FPS = False
 
 # PID parameters
 USE_PID = True
-KP = 1.2
-KI = 0
-KD = 0.002
+KP = 0.6
+KI = 0.0
+KD = 0.004
 KT = 0.01
 OUTPUT_LIMITS = (-80, 80)
 AUTO_UPDATE_KP = False
