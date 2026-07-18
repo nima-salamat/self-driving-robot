@@ -97,7 +97,7 @@ SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
 SPEED = 150
-HARDCODE_SPEED = 220
+HARDCODE_SPEED = 240
 
 # --- Crosswalk Setting ---
 CROSSWALK_SLEEP = 3 # sec  - after seeing crosswalk

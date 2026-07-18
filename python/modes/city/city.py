@@ -81,12 +81,12 @@ class Robot:
                 if self.last_tag == TURN_RIGHT:
                     self.control.signal_right()
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 90 125")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 90 130")
                     time.sleep(0.1)
                 elif self.last_tag == TURN_LEFT:
                     self.control.signal_left()
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 135 90 f {HARDCODE_SPEED} 90 60")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 135 90 f {HARDCODE_SPEED} 120 50")
                     time.sleep(0.1)
                 elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
