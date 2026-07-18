@@ -15,10 +15,11 @@ from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTraff
 from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
-    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
+    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP, USE_SIGN)
 from stream import start_stream
 import logging
 import cv2
+import math
 import numpy as np
 import time
 import threading
@@ -26,7 +27,7 @@ import sys
 from utils.fps import FPS
 from utils.roi_manager import crop_image
 
-
+# Set to False to completely bypass sign and tag processing
 
 logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -47,18 +48,70 @@ class Robot:
         self.camera = Camera(config=config_race)
         self.control = RobotController(config=config_race)
         
-        # hardcode the left and right lane change 
-        self.control._send_command("set left b 170 110 70 b 170 80 125")
+        # Calculate dynamic obstacle avoidance parameters
+        lane_width = 30      # cm
+        robot_width = 12     # cm (Approximate robot width)
+        safe_margin = 3      # cm (Safety gap from the obstacle)
+        pulse_cm = 0.5
+
+        # Calculate required lateral shift to avoid center obstacle
+        lateral_shift_cm = (lane_width / 2) - (robot_width / 2) + safe_margin
+
+        center_angle = 90
+        turn_angle_offset = 30  # 30 degrees deviation
+
+        left_angle = center_angle - turn_angle_offset   # 60
+        right_angle = center_angle + turn_angle_offset  # 120
+
+        # Calculate hypotenuse distance needed for the lateral shift
+        theta_radians = math.radians(turn_angle_offset)
+        travel_distance_cm = lateral_shift_cm / math.sin(theta_radians)
+
+        # Convert distances to pulses
+        travel_pulse = int(travel_distance_cm / pulse_cm)
+
+        # Command to shift LEFT (Avoid obstacle)
+        # 1. Steer left (60) to move out
+        # 2. Steer right (120) to straighten out in the new lane
+        cmd_avoid_left = (
+            f"set left "
+            f"f 230 {travel_pulse} {left_angle} "
+            f"f 230 {travel_pulse} {right_angle}"
+        )
+
+        # Command to shift RIGHT (Return to original lane after passing the object)
+        # 1. Steer right (120) to move back in
+        # 2. Steer left (60) to straighten out
+        cmd_return_right = (
+            f"set right "
+            f"f 230 {travel_pulse} {right_angle} "
+            f"f 230 {travel_pulse} {left_angle}"
+        )
+
+        # Send commands to Arduino
+        self.control._send_command(cmd_avoid_left)
         time.sleep(0.4)
-        self.control._send_command("set right f 170 70 125 f 170 70 70")
+        self.control._send_command("save left")
         time.sleep(0.4)
+
+        self.control._send_command(cmd_return_right)
+        time.sleep(0.4)
+        self.control._send_command("save right")
+        time.sleep(0.4)
+
 
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector(config=config_race)
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0
-        self.sign_detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+        
+        # Initialize sign detector strictly based on USE_SIGN variable
+        if USE_SIGN:
+            self.sign_detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+        else:
+            self.sign_detector = None
+            
         # OutputManager instance 
         self.output = OutputManager(config_module=config_race, output_dir=OUTPUT_DIR)
         self.fps = FPS()
@@ -98,8 +151,8 @@ class Robot:
 
                 if config_race.DEBUG:
                     cv2.waitKey(1)
-                angle=SERVO_CENTER
-            
+                
+                angle = SERVO_CENTER
             
                 frame, frame_resized = self.camera.capture_frame(with_resize=True)
                 if config_race.STREAM or config_race.DEBUG:
@@ -111,28 +164,36 @@ class Robot:
 
                 angle = result.get("steering_angle")
                 
-                sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
-
-                status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
-
-                self.handle_debug_stream(result, frame, angle, status, sign_text)                    
-                if config_race.DETECT_OBJECT:
-                    self.handle_detect_object(frame)
-                if coordinate is not None:
-                    (x1, y1), (x2, y2) = coordinate
-                    width = x2 - x1
-                    height = y2 - y1
-                    area = width * height
-                    if area < 5000:
-                        status = "running"
-                        self.stop_last_seen = None
-                        
-                if status == "stopped":
-                    self.control.stop()
-                    time.sleep(config_race.DELAY)
-                    continue
+                # Defaults fallback when USE_SIGN is False to prevent breaking the loop
+                status = "running"
+                sign_text = "None"
                 
-                
+                if USE_SIGN:
+                    sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
+
+                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
+                 
+                    if config_race.DETECT_OBJECT:
+                        self.handle_detect_object(frame)
+                    
+                    if coordinate is not None:
+                        (x1, y1), (x2, y2) = coordinate
+                        width = x2 - x1
+                        height = y2 - y1
+                        area = width * height
+                        if area < 5000:
+                            status = "running"
+                            self.stop_last_seen = None
+                            
+                    if status == "stopped":
+                        self.handle_debug_stream(result, frame, angle, status, sign_text)
+                        self.control.stop()
+                        time.sleep(config_race.DELAY)
+                        continue
+                    
+                # Unconditionally process debug stream outside USE_SIGN to maintain camera feed
+                self.handle_debug_stream(result, frame, angle, status, sign_text)
+                    
                 if config_race.AUTO_UPDATE_KP:
                     self.control.update_kp(result["kp"])
                 
@@ -164,7 +225,10 @@ class Robot:
         print(self.object_detector.detect(object_frame)[1])
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
-        
+        # Strict fallback: Skip all processing if USE_SIGN is disabled
+        if not USE_SIGN:
+            return None, False, debug_frame, None
+            
         sign_tag_frame = crop_image(frame, 
                                     config_race.ST_TOP_ROI, 
                                     config_race.ST_BOTTOM_ROI, 
@@ -194,7 +258,7 @@ class Robot:
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
                 elif sign_result['text'] == "TURN RIGHT":
-                    tag_id = TURN_RIGHT
+                    tag_id = STRAIGHT
                 elif sign_result['text'] == "STRAIGHT":
                     tag_id = STRAIGHT
                 elif sign_result['text'] == "STOP":

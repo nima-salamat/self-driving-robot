@@ -181,3 +181,4 @@ DETECT_OBJECT = False
 
 # Traffic sign detector method
 SIGN_DETECTOR_METHOD = "yolo"  # "yolo" or "svm"
+USE_SIGN = False
