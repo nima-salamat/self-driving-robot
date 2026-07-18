@@ -119,9 +119,7 @@ class WebStreamer:
         data = {var: self.get_base_var(var) for var in VARIABLES}
         data.update(self.get_all_advanced())
         try:
-            print(filename)
             with open(filename, "w") as f:
-                print(data)
                 json.dump(data, f, indent=2)
         except Exception:
             logger.exception("Failed writing config JSON")
