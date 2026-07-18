@@ -149,9 +149,9 @@ SHOW_FPS = False
 
 # PID parameters
 USE_PID = True
-KP = 1.2
+KP = 0.5
 KI = 0
-KD = 0.002
+KD = 0.009
 KT = 0.01
 OUTPUT_LIMITS = (-80, 80)
 AUTO_UPDATE_KP = False

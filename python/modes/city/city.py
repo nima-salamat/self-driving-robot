@@ -78,23 +78,26 @@ class Robot:
             if elapsed >= config_city.CROSSWALK_SLEEP:
                 self.crosswalk_time_start = 0
                 logger.debug(f"navigate with tag: {self.last_tag}")
+                self.control.set_angle(90)
+                time.sleep(0.3)
+                
                 if self.last_tag == TURN_RIGHT:
                     self.control.signal_right()
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 90 130")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 50 70 f {HARDCODE_SPEED} 170 120")
                     time.sleep(0.1)
                 elif self.last_tag == TURN_LEFT:
                     self.control.signal_left()
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 135 90 f {HARDCODE_SPEED} 120 50")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 120 60")
                     time.sleep(0.1)
                 elif self.last_tag == STRAIGHT:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 140 90")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 220 90")
                     time.sleep(0.1)
                 else:
                     time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED}  140 90")
+                    self.control.forward_pulse(f"f {HARDCODE_SPEED}  220 90")
                     time.sleep(0.1)
 
     def run(self):

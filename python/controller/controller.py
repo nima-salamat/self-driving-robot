@@ -127,7 +127,7 @@ class RobotController:
     
     def set_angle_by_error(self, error, lane_type):
         if lane_type == "none":
-            self.set_angle(40)
+            self.set_angle(120)
         self.set_angle(self.calculate_angle_by_error(error))
 
     def signal_left(self):

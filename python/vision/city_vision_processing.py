@@ -265,7 +265,7 @@ class VisionProcessor:
             vertical = 0
             horizontal = 0
             cw_roi_diagonal = math.sqrt(math.pow(cw_right - cw_left, 2) + math.pow(cw_bottom - cw_top, 2))
-            crosswalk_pixel_dist = (0.6) * (cw_bottom - cw_top) 
+            crosswalk_pixel_dist = (0.7) * (cw_bottom - cw_top) 
             line_min_length = max(cw_roi_diagonal / 10, 10)
             lowest_horizontal_line = None
             
