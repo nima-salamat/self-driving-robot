@@ -165,6 +165,7 @@ class Robot:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
                         self.control.stop()
+                        self._pace_control_loop()
                         continue
                     if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()
@@ -172,8 +173,9 @@ class Robot:
                         debug_frame = None
                     
                     result = self.vision.detect(frame_resized, debug_frame)
-                    if not result.get("perception_valid", True):
+                    if not result.get("perception_valid", False):
                         self.control.stop()
+                        self._pace_control_loop()
                         continue
 
                     angle = result.get("steering_angle")
@@ -207,6 +209,7 @@ class Robot:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
                         self.control.stop()
+                        self._pace_control_loop()
                         continue
                     self.check_crosswalk()
                     result = {

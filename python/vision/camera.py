@@ -145,7 +145,7 @@ class Camera:
                 if frame is None or frame.size == 0:
                     logger.warning("Picamera2 returned empty frame")
                     self.consecutive_failures += 1
-                    return frame, frame_resized
+                    return finish(frame, frame_resized, False)
 
             else:
                 ret, frame = self.cap.read()
@@ -153,7 +153,7 @@ class Camera:
                 if not ret or frame is None:
                     logger.warning("OpenCV camera returned no frame")
                     self.consecutive_failures += 1
-                    return frame, frame_resized
+                    return finish(frame, frame_resized, False)
 
             frame = self.camera_calibration.undistort(frame)
 
@@ -174,7 +174,7 @@ class Camera:
         except Exception:
             self.consecutive_failures += 1
             logger.exception("Error capturing frame")
-            return frame, frame_resized
+            return finish(frame, frame_resized, False)
 
     def release(self):
         self.camera_initialized = False

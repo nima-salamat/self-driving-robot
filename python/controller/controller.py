@@ -93,6 +93,11 @@ class RobotController:
         elif speed < -255:
             speed = -255
             
+        if speed != 0 and not self.without_arduino and not self.connection.connected:
+            self.connection.send_command("stop\n")
+            self.current_speed = 0
+            return False
+
         if self.current_speed == speed:
             return True
         self.current_speed = speed
