@@ -140,6 +140,8 @@ class Camera:
                         (self.resize_width, self.resize_height),
                         interpolation=cv2.INTER_AREA
                     )
+                else:
+                    frame_resized = frame
 
             self.last_capture_valid = True
             self.consecutive_failures = 0
