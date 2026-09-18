@@ -109,6 +109,7 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0
+        self.last_sign_result_id = 0
         
         # Initialize sign detector strictly based on USE_SIGN variable
         if USE_SIGN:
@@ -276,9 +277,11 @@ class Robot:
             if self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
                 self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
-                sign_result = self.sign_detector.latest()
-                if sign_result is None:
+                latest_sign = self.sign_detector.latest()
+                if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
                     return None, False, debug_frame, None
+                self.last_sign_result_id = latest_sign[0]
+                sign_result = latest_sign[1]
                 coordinate = sign_result["coordinate"]
                 debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
