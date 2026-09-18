@@ -203,9 +203,6 @@ class Robot:
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
                  
-                    if config_race.DETECT_OBJECT:
-                        self.handle_detect_object(frame)
-                    
                     if coordinate is not None:
                         (x1, y1), (x2, y2) = coordinate
                         width = x2 - x1
@@ -221,6 +218,9 @@ class Robot:
                         time.sleep(config_race.DELAY)
                         continue
                     
+                if config_race.DETECT_OBJECT:
+                    self.handle_detect_object(frame)
+
                 # Unconditionally process debug stream outside USE_SIGN to maintain camera feed
                 self.handle_debug_stream(result, frame, angle, status, sign_text)
                     
