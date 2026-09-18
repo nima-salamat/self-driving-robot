@@ -1,33 +1,50 @@
-import base64
+import hashlib
+import logging
+import urllib.request
 from pathlib import Path
 
-from .registry import resolve_model_path
+from .registry import MODEL_ROOT, get_model_spec, resolve_model_path
 
 
-BUNDLE_ROOT = Path(__file__).resolve().parents[2] / "models" / "lane" / "bundled"
+logger = logging.getLogger(__name__)
 
 
-def _bundle_parts(model_name):
-    stem = resolve_model_path(model_name).name
-    return sorted(BUNDLE_ROOT.glob(f"{stem}.part*.b64"))
+def _sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def ensure_model_materialized(model_name):
+    spec = get_model_spec(model_name)
     destination = resolve_model_path(model_name)
-    if destination.exists() and destination.stat().st_size > 0:
-        return destination
 
-    parts = _bundle_parts(model_name)
-    if not parts:
-        raise FileNotFoundError(
-            f"No bundled weights found for {model_name}. Expected files under {BUNDLE_ROOT}."
-        )
+    if destination.exists() and destination.stat().st_size > 0:
+        actual = _sha256(destination)
+        if actual == spec.sha256:
+            return destination
+        logger.warning("Lane model hash mismatch; re-downloading %s", model_name)
+        destination.unlink()
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".part")
-    with temporary.open("wb") as output:
-        for part in parts:
-            encoded = part.read_text(encoding="ascii").strip()
-            output.write(base64.b64decode(encoded, validate=True))
-    temporary.replace(destination)
+    logger.info("Downloading lane model %s", model_name)
+
+    try:
+        urllib.request.urlretrieve(spec.model_url, temporary)
+        actual = _sha256(temporary)
+        if actual != spec.sha256:
+            raise RuntimeError(
+                f"SHA256 mismatch for {model_name}: expected {spec.sha256}, got {actual}"
+            )
+        temporary.replace(destination)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
     return destination
