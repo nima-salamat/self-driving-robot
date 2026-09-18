@@ -77,7 +77,6 @@ def parse_args():
         choices=[
             "unet_depthwise_nano",
             "unet_depthwise_small",
-            "ufld_culane_resnet18",
         ],
         default=None,
         help="Enable ML lane detection with the selected model. Omit to keep the existing detector."
