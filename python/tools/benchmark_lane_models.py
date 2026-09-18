@@ -59,6 +59,7 @@ def benchmark(detector, source, warmup, frames, display, output, camera_mode):
     total_frames = 0
     valid_frames = 0
     infer_times = []
+    model_times = []
     wall_start = time.monotonic()
 
     for _ in range(max(0, warmup)):
@@ -77,6 +78,7 @@ def benchmark(detector, source, warmup, frames, display, output, camera_mode):
         total_frames += 1
         valid_frames += int(result["perception_valid"])
         infer_times.append(result["ml_latency_ms"])
+        model_times.append(result["ml_inference_ms"])
 
         if display or output:
             vis = result["debug"]["combined"]
@@ -117,6 +119,7 @@ def benchmark(detector, source, warmup, frames, display, output, camera_mode):
     infer_mean = float(np.mean(infer_times))
     infer_p50 = float(np.percentile(infer_times, 50))
     infer_p95 = float(np.percentile(infer_times, 95))
+    model_mean = float(np.mean(model_times))
     wall_fps = total_frames / max(elapsed, 1e-9)
 
     print()
@@ -126,7 +129,9 @@ def benchmark(detector, source, warmup, frames, display, output, camera_mode):
     print(f"Inference mean:     {format_ms(infer_mean)}")
     print(f"Inference p50:      {format_ms(infer_p50)}")
     print(f"Inference p95:      {format_ms(infer_p95)}")
-    print(f"Model FPS:          {1000.0 / infer_mean:.2f}")
+    print(f"Pipeline FPS:       {1000.0 / infer_mean:.2f}")
+    print(f"NCNN inference:     {format_ms(model_mean)}")
+    print(f"NCNN FPS:           {1000.0 / model_mean:.2f}")
     print(f"Wall FPS:           {wall_fps:.2f}")
     print(f"Wall elapsed:       {wall_elapsed:.2f} s")
     return 0
