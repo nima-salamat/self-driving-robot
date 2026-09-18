@@ -3,6 +3,7 @@ import cv2
 import json
 import os
 import threading
+import time
 from flask import Flask, Response, request, render_template_string, jsonify
 from .template import HTML_TEMPLATE
 
@@ -139,6 +140,7 @@ class WebStreamer:
         self.app.add_url_rule('/set_ui', 'set_ui', self.set_ui, methods=['POST'])
         self.app.add_url_rule('/video_feed_frame', 'video_feed_frame', self.video_feed_frame)
         self.app.add_url_rule('/api/arduino-output', 'arduino_output', self.arduino_output)
+        self.app.add_url_rule('/api/health', 'health', self.health)
         self.app.add_url_rule('/take_picture', 'take_picture', self.take_picture, methods=['POST'])
         self.app.add_url_rule('/toggle_record', 'toggle_record', self.toggle_record, methods=['POST'])
         self.app.add_url_rule('/freeze_frame', 'freeze_frame', self.freeze_frame, methods=['POST'])
@@ -256,6 +258,34 @@ class WebStreamer:
             payload = self._jpeg_cache
         return Response(payload, mimetype='image/jpeg')
 
+    def health(self):
+        monitor = getattr(self.config, "health_monitor", None)
+        metrics = getattr(self.config, "runtime_metrics", None)
+        controller = getattr(self.config, "robot_controller", None)
+
+        payload = {
+            "health": (
+                monitor.snapshot_runtime(self.config)
+                if monitor is not None
+                else {"state": "UNKNOWN", "lifecycle": "UNKNOWN", "faults": {}}
+            ),
+            "metrics": metrics.snapshot() if metrics is not None else {},
+        }
+
+        if controller is not None:
+            command = controller.last_command
+            payload["control"] = {
+                "angle": controller.last_angle,
+                "speed": controller.current_speed,
+                "command": command,
+                "command_age_ms": (
+                    max(0.0, (time.monotonic() - command["transmitted_at"]) * 1000.0)
+                    if command and command.get("transmitted_at") is not None
+                    else None
+                ),
+            }
+
+        return jsonify(payload)
     def arduino_output(self):
         connection = getattr(self.config, "arduino_connection", None)
         if connection is None:
