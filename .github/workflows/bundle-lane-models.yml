@@ -37,5 +37,5 @@ jobs:
             echo "No model changes to commit."
             exit 0
           fi
-          git commit -m "chore(lane-models): bundle verified ONNX weights"
+          git commit -m "chore(lane-models): bundle verified ONNX and NCNN weights"
           git push
