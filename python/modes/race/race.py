@@ -12,6 +12,7 @@ from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
+from traffic_sign_detector.async_detector import AsyncSignDetector
 from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
@@ -109,7 +110,8 @@ class Robot:
         
         # Initialize sign detector strictly based on USE_SIGN variable
         if USE_SIGN:
-            self.sign_detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+            detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+            self.sign_detector = AsyncSignDetector(detector)
         else:
             self.sign_detector = None
             
@@ -259,7 +261,10 @@ class Robot:
             tag_id = None
             if self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
-                sign_result = self.sign_detector.process_frame(sign_tag_frame, debug_frame=debug_frame)
+                self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
+                sign_result = self.sign_detector.latest()
+                if sign_result is None:
+                    return None, False, debug_frame, None
                 coordinate = sign_result["coordinate"]
                 debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
@@ -359,6 +364,8 @@ class Robot:
         _(self.control.set_angle)(90)
         _(self.camera.release)()
         _(self.control.connection.close)() # close serial connection
+        if self.sign_detector is not None:
+            self.sign_detector.close()
 
         # release output manager resources
         try:
