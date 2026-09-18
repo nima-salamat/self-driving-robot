@@ -31,17 +31,22 @@ class PIDController:
     def update(self, error, now=None):
         now = time.monotonic() if now is None else float(now)
 
+        long_sample = False
         if self._last_time is None:
             dt = self.dt if self.dt > 0 else 0.01
         else:
-            dt = now - self._last_time
+            elapsed = now - self._last_time
+            if not elapsed > 0:
+                elapsed = self.min_dt
+            long_sample = elapsed > self.max_dt
+            dt = elapsed
 
         self._last_time = now
-        if not dt > 0:
-            dt = self.min_dt
         dt = min(max(dt, self.min_dt), self.max_dt)
 
-        if self._prev_error is None:
+        if self._prev_error is None or long_sample:
+            # A long CV/sign-detection stall should not turn a large error jump
+            # into a derivative kick.
             derivative = 0.0
         else:
             raw_derivative = (error - self._prev_error) / dt
