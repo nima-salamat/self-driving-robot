@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #if defined(__AVR__)
 #include <avr/wdt.h>
@@ -27,7 +28,7 @@ const uint32_t STATUS_INTERVAL_MS = 50UL;
 const uint32_t BUTTON_POLL_MS = 25UL;
 const uint32_t BUTTON_DEBOUNCE_MS = 35UL;
 
-const uint32_t ULTRA_INTERVAL_MS = 120UL;
+const uint32_t ULTRA_INTERVAL_MS = 50UL;
 const uint32_t ULTRA_TIMEOUT_US = 30000UL;
 const uint32_t ULTRA_COOLDOWN_US = 3000UL;
 
@@ -674,7 +675,7 @@ bool enqueueSequence(const char *sequence) {
   strncpy(work, sequence, MAX_SEQUENCE_CHARS);
   work[MAX_SEQUENCE_CHARS] = '\0';
 
-  char *tokens[32];
+  char *tokens[64];
   uint8_t tokenCount = 0;
 
   char *token = strtok(work, " \t");
@@ -808,7 +809,7 @@ void requestMotorSpeed(int speed) {
 
   if (pulseActive) {
     if (speed == 0) {
-      emergencyStopActive ? writeMotorHardware(0) : void();
+      writeMotorHardware(0);
       pulsePaused = false;
       pulseActive = false;
       adaptiveActive = false;
@@ -828,10 +829,8 @@ void requestMotorSpeed(int speed) {
   }
 
   if (directionChangePending) {
-    if (speed == 0 || (speed > 0) == (pendingDirectionSpeed > 0)) {
-      directionChangePending = false;
-      pendingDirectionSpeed = 0;
-    }
+    directionChangePending = false;
+    pendingDirectionSpeed = 0;
   }
 
   if (currentMotorSpeed != 0 && speed != 0 &&
@@ -1140,6 +1139,7 @@ void handleButtons(uint32_t nowMs) {
    SERIAL
    ========================= */
 void processSerialLine(char *rawLine);
+void sendStatus();
 
 void pollSerial() {
   const size_t MAX_BYTES_PER_LOOP = 256;
