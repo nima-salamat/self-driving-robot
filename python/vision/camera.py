@@ -18,6 +18,7 @@ class Camera:
                  mode=None):
 
         self.config = config
+        setattr(self.config, "camera", self)
         
         self.width = width or getattr(self.config, 'CAM_WIDTH', 640)
         self.height = height or getattr(self.config, 'CAM_HEIGHT', 480)

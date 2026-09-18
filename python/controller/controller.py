@@ -67,6 +67,9 @@ class RobotController:
             derivative_filter=getattr(self.config, "PID_DERIVATIVE_FILTER", 0.25),
         )
         
+        setattr(self.config, "robot_controller", self)
+        setattr(self.config, "arduino_connection", self.connection)
+
         self.last_angle = 90
         self.command_sequence = 0
         self.last_command = None
