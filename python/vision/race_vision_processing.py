@@ -401,7 +401,7 @@ class VisionProcessor:
             "steering_angle": steering_angle,
             "error": error,
             "lane_type": lane_type,
-            "perception_valid": True,
+            "perception_valid": lane_type != "none",
             "debug": debug,
             "kp": kp
         }
