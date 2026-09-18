@@ -247,7 +247,9 @@ class WebStreamer:
         connection = getattr(self.config, "arduino_connection", None)
         if connection is None:
             return jsonify(enabled=False, connected=False, state="DISCONNECTED", lines=[])
-        return jsonify(connection.telemetry_status(limit=50))
+        status = connection.telemetry_status(limit=50)
+        status["enabled"] = bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
+        return jsonify(status)
 
     def take_picture(self):
         setattr(self.config, "TAKE_PICTURE", True)
