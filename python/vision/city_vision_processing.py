@@ -16,6 +16,10 @@ class VisionProcessor:
         self.rroi_unseen_counter = 0
         self.lroi_unseen_counter = 0
         self.max_unseen_counter = 10
+        self._bev_cache_key = None
+        self._bev_matrix = None
+        self._morph_kernel = np.ones((3, 3), np.uint8)
+        self._lsd = cv2.createLineSegmentDetector(0)
 
     def _extract_line(self, line):
         line = np.asarray(line).flatten()
@@ -92,7 +96,6 @@ class VisionProcessor:
 
     def detect(self, frame, debug_frame=None):
         if frame is None:
-            print("Warning: Frame is None. Returning last known steering angle.")
             return {
                 "steering_angle": self.last_steering,
                 "error": self.last_error,
@@ -105,22 +108,29 @@ class VisionProcessor:
         height, width = frame.shape[:2]
 
         if hasattr(conf, 'USE_BEV') and conf.USE_BEV:
-            src_pts = np.float32([
-                [width * conf.BEV_SRC_TL_X, height * conf.BEV_SRC_TL_Y],
-                [width * conf.BEV_SRC_TR_X, height * conf.BEV_SRC_TR_Y],
-                [width * conf.BEV_SRC_BR_X, height * conf.BEV_SRC_BR_Y],
-                [width * conf.BEV_SRC_BL_X, height * conf.BEV_SRC_BL_Y]
-            ])
-            
-            dst_pts = np.float32([
-                [0, 0],
-                [width, 0],
-                [width, height],
-                [0, height]
-            ])
-            
-            matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            frame = cv2.warpPerspective(frame, matrix, (width, height), flags=cv2.INTER_LINEAR)
+            cache_key = (
+                width, height,
+                conf.BEV_SRC_TL_X, conf.BEV_SRC_TL_Y,
+                conf.BEV_SRC_TR_X, conf.BEV_SRC_TR_Y,
+                conf.BEV_SRC_BR_X, conf.BEV_SRC_BR_Y,
+                conf.BEV_SRC_BL_X, conf.BEV_SRC_BL_Y,
+            )
+            if cache_key != self._bev_cache_key:
+                src_pts = np.float32([
+                    [width * conf.BEV_SRC_TL_X, height * conf.BEV_SRC_TL_Y],
+                    [width * conf.BEV_SRC_TR_X, height * conf.BEV_SRC_TR_Y],
+                    [width * conf.BEV_SRC_BR_X, height * conf.BEV_SRC_BR_Y],
+                    [width * conf.BEV_SRC_BL_X, height * conf.BEV_SRC_BL_Y]
+                ])
+                dst_pts = np.float32([
+                    [0, 0],
+                    [width, 0],
+                    [width, height],
+                    [0, height]
+                ])
+                self._bev_matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+                self._bev_cache_key = cache_key
+            frame = cv2.warpPerspective(frame, self._bev_matrix, (width, height), flags=cv2.INTER_LINEAR)
             
         debug_frame = frame.copy() if conf.DEBUG or conf.STREAM else None
 
@@ -220,7 +230,7 @@ class VisionProcessor:
                     255,
                     cv2.THRESH_BINARY
                 )
-                kernel = np.ones((3, 3), np.uint8)
+                kernel = self._morph_kernel
                 edges = cv2.morphologyEx(
                     edges,
                     cv2.MORPH_CLOSE,
@@ -253,8 +263,7 @@ class VisionProcessor:
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
                 edges = cv2.Canny(gray, 100, 150)
 
-                lsd = cv2.createLineSegmentDetector(0)
-                lines = lsd.detect(edges)[0] 
+                lines = self._lsd.detect(edges)[0] 
             else:
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
