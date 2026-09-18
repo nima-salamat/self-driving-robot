@@ -151,6 +151,13 @@ SERIAL_RECONNECT_TIMEOUT = 0.5
 SERIAL_TELEMETRY_BUFFER_SIZE = 100
 READ_ARDUINO_OUTPUT = False
 
+# Raspberry Pi -> Arduino liveness protection.
+HOST_HEARTBEAT_INTERVAL = 0.1
+
+# In-memory command trace used by the future route-recovery coordinator.
+MOTION_HISTORY_MAX_PULSES = 200
+MOTION_HISTORY_MAX_EVENTS = 128
+
 # PID timing protection
 PID_MIN_DT = 0.001
 PID_MAX_DT = 0.2
