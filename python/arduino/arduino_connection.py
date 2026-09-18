@@ -186,7 +186,9 @@ class ArduinoConnection:
                 connection = self.serial_connection
                 if connection is None or not connection.is_open:
                     return False
-                connection.write(b"stop\nservo 90\n")
+                connection.write(b"stop\n")
+                connection.flush()
+                connection.write(b"servo 90\n")
                 connection.flush()
             return True
         except Exception as exc:
