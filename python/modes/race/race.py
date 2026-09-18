@@ -14,8 +14,8 @@ from traffic_sign_detector.async_detector import AsyncSignDetector
 from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
-    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP, USE_SIGN)
-from stream import start_stream
+    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
+from stream import start_stream, stop_stream
 import logging
 import cv2
 import math
@@ -93,14 +93,18 @@ class Robot:
 
         # Send commands to Arduino only when hardware control is enabled.
         if not getattr(config_race, "WITHOUT_ARDUINO", False):
-            self.control._send_command(cmd_avoid_left)
-            time.sleep(0.4)
-            self.control._send_command("save left")
-            time.sleep(0.4)
-            self.control._send_command(cmd_return_right)
-            time.sleep(0.4)
-            self.control._send_command("save right")
-            time.sleep(0.4)
+            startup_commands = (
+                (cmd_avoid_left, 0.4),
+                ("save left", 0.4),
+                (cmd_return_right, 0.4),
+                ("save right", 0.4),
+            )
+            for command, delay in startup_commands:
+                if self._shutdown_requested():
+                    break
+                self.control._send_command(command)
+                if self._sleep_interruptible(delay):
+                    break
 
 
         self.vision = VisionProcessor()
@@ -126,6 +130,14 @@ class Robot:
         if self.health is not None:
             from utils.health import HealthState
             self.health.set_lifecycle(HealthState.READY)
+
+    def _sleep_interruptible(self, seconds):
+        event = getattr(config_race, "SHUTDOWN_EVENT", None)
+        seconds = max(0.0, float(seconds))
+        if event is None:
+            time.sleep(seconds)
+            return False
+        return bool(event.wait(seconds))
 
     def _pace_control_loop(self):
         period = max(0.001, float(getattr(config_race, "CONTROL_PERIOD", 0.01)))
@@ -219,7 +231,7 @@ class Robot:
                 status = "running"
                 sign_text = "None"
                 
-                if USE_SIGN:
+                if getattr(config_race, "USE_SIGN", False):
                     sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
@@ -239,7 +251,8 @@ class Robot:
                     if status == "stopped":
                         self.handle_debug_stream(result, frame, angle, status, sign_text)
                         self.control.stop()
-                        time.sleep(config_race.DELAY)
+                        if self._sleep_interruptible(config_race.DELAY):
+                            break
                         self._pace_control_loop()
                         continue
                     
@@ -283,7 +296,7 @@ class Robot:
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         # Strict fallback: Skip all processing if USE_SIGN is disabled
-        if not USE_SIGN:
+        if not getattr(config_race, "USE_SIGN", False):
             return None, False, debug_frame, None
             
         sign_tag_frame = crop_image(frame, 
@@ -310,7 +323,9 @@ class Robot:
             if self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
                 self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
-                latest_sign = self.sign_detector.latest()
+                latest_sign = self.sign_detector.latest(
+                    max_age_s=getattr(config_race, "SIGN_RESULT_MAX_AGE", 0.75)
+                )
                 if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
                     return None, False, debug_frame, None
                 self.last_sign_result_id = latest_sign[0]
@@ -432,6 +447,10 @@ class Robot:
                 logger.exception("Cleanup failed: OpenCV windows")
 
         if self.flask_thread and self.flask_thread.is_alive():
+            try:
+                stop_stream(config_race)
+            except Exception:
+                logger.exception("Failed to stop Flask stream")
             self.flask_thread.join(timeout=1.0)
 
         try:

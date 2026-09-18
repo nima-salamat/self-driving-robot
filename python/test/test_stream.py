@@ -9,7 +9,7 @@ import modes.city.config_city as config_city
 base_config.MODE="city"
 base_config.CONFIG_MODULE = config_city
 from vision import camera, city_vision_processing
-from stream import start_stream
+from stream import start_stream, stop_stream
 import threading
 
 config_city.DEBUG = True
@@ -31,11 +31,7 @@ while True:
     except Exception as e:
         print(e)
 
-try:
-    import requests
-    requests.post("http://127.0.0.1:5000/shutdown")
-except Exception:
-    pass
+stop_stream(config_city)
 
 if flask_thread.is_alive():
-    flask_thread.join()
+    flask_thread.join(timeout=2.0)

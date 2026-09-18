@@ -3,18 +3,7 @@ from arduino.arduino_connection import ArduinoConnection
 from controller.pid_controller import PIDController
 
 class RobotController:
-    _instance =  None
-    _initialized = False
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self, config=None):
-        if self._initialized:
-            return
-            
         if config is None:
             raise ValueError("Config must be provided during the first initialization of RobotController.")
             
@@ -70,11 +59,12 @@ class RobotController:
         setattr(self.config, "robot_controller", self)
         setattr(self.config, "arduino_connection", self.connection)
 
-        self.last_angle = 90
+        self.last_angle = self.servo_center
+        self.current_angle = self.servo_center
+        self._last_connection_state = bool(self.connection.connected)
         self.command_sequence = 0
         self._telemetry_parse_failures = 0
         self.last_command = None
-        self._initialized = True
 
     def _send_command(self, cmd: str):
         command = cmd.strip()
@@ -97,6 +87,15 @@ class RobotController:
         }
         return success
 
+    def _sync_connection_state(self):
+        connected = bool(self.connection.connected)
+        if connected != self._last_connection_state:
+            self.last_angle = None
+            self.current_angle = None
+            self.current_speed = 0
+            self.pid.reset()
+            self._last_connection_state = connected
+
     def hardware_ready(self):
         return self.without_arduino or self.connection.connected
 
@@ -105,15 +104,16 @@ class RobotController:
             angle = self.min_servo_angle
         elif angle > self.max_servo_angle:
             angle = self.max_servo_angle
-        
+
         return self._send_command(f"servo {angle}")
 
     def motor(self, speed: int):
+        self._sync_connection_state()
         if speed > 255:
             speed = 255
         elif speed < -255:
             speed = -255
-            
+
         if speed != 0 and not self.without_arduino and not self.connection.connected:
             self.connection.send_command("stop\n")
             self.current_speed = 0
@@ -121,19 +121,32 @@ class RobotController:
 
         if self.current_speed == speed:
             return True
-        self.current_speed = speed
-        return self._send_command(f"motor {speed}")
+
+        success = self._send_command(f"motor {speed}")
+        self.current_speed = speed if success else 0
+        return success
 
     def stop(self):
         """Stop the robot"""
+        self._sync_connection_state()
         self.current_speed = 0
+        self.pid.reset()
         return self._send_command("stop")
 
     def set_angle(self, angle: int):
+        self._sync_connection_state()
+        angle = max(self.min_servo_angle, min(self.max_servo_angle, angle))
         if self.last_angle == angle:
             return True
-        self.last_angle = angle
-        return self.servo(angle)
+
+        success = self.servo(angle)
+        if success:
+            self.last_angle = angle
+            self.current_angle = angle
+        else:
+            self.last_angle = None
+            self.current_angle = None
+        return success
     
     def set_speed(self, speed: int):
         self.motor(speed)

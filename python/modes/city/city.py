@@ -14,7 +14,7 @@ from controller import RobotController
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
-from stream import start_stream
+from stream import start_stream, stop_stream
 import logging
 import cv2
 import numpy as np
@@ -78,6 +78,14 @@ class Robot:
             from utils.health import HealthState
             self.health.set_lifecycle(HealthState.READY)
 
+    def _sleep_interruptible(self, seconds):
+        event = getattr(config_city, "SHUTDOWN_EVENT", None)
+        seconds = max(0.0, float(seconds))
+        if event is None:
+            time.sleep(seconds)
+            return False
+        return bool(event.wait(seconds))
+
     def _pace_control_loop(self):
         period = max(0.001, float(getattr(config_city, "CONTROL_PERIOD", 0.01)))
         self._next_control_time += period
@@ -102,27 +110,54 @@ class Robot:
             if elapsed >= config_city.CROSSWALK_SLEEP:
                 self.crosswalk_time_start = 0
                 logger.debug(f"navigate with tag: {self.last_tag}")
+                if self._shutdown_requested():
+                    return
                 self.control.set_angle(90)
-                time.sleep(0.3)
-                
+                if self._sleep_interruptible(0.3):
+                    return
+
                 if self.last_tag == TURN_RIGHT:
+                    if self._shutdown_requested():
+                        return
                     self.control.signal_right()
-                    time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 50 70 f {HARDCODE_SPEED} 170 120")
-                    time.sleep(0.1)
+                    if self._sleep_interruptible(0.1):
+                        return
+                    if self._shutdown_requested():
+                        return
+                    self.control.forward_pulse(
+                        f"f {HARDCODE_SPEED} 50 70 f {HARDCODE_SPEED} 170 120"
+                    )
+                    if self._sleep_interruptible(0.1):
+                        return
                 elif self.last_tag == TURN_LEFT:
+                    if self._shutdown_requested():
+                        return
                     self.control.signal_left()
-                    time.sleep(0.1)
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 120 60")
-                    time.sleep(0.1)
+                    if self._sleep_interruptible(0.1):
+                        return
+                    if self._shutdown_requested():
+                        return
+                    self.control.forward_pulse(
+                        f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 120 60"
+                    )
+                    if self._sleep_interruptible(0.1):
+                        return
                 elif self.last_tag == STRAIGHT:
-                    time.sleep(0.1)
+                    if self._sleep_interruptible(0.1):
+                        return
+                    if self._shutdown_requested():
+                        return
                     self.control.forward_pulse(f"f {HARDCODE_SPEED} 220 90")
-                    time.sleep(0.1)
+                    if self._sleep_interruptible(0.1):
+                        return
                 else:
-                    time.sleep(0.1)
+                    if self._sleep_interruptible(0.1):
+                        return
+                    if self._shutdown_requested():
+                        return
                     self.control.forward_pulse(f"f {HARDCODE_SPEED}  220 90")
-                    time.sleep(0.1)
+                    if self._sleep_interruptible(0.1):
+                        return
 
     def _shutdown_requested(self):
         event = getattr(config_city, "SHUTDOWN_EVENT", None)
@@ -336,7 +371,9 @@ class Robot:
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
                 self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
-                latest_sign = self.sign_detector.latest()
+                latest_sign = self.sign_detector.latest(
+                    max_age_s=getattr(config_city, "SIGN_RESULT_MAX_AGE", 0.75)
+                )
                 if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
                     return None, False, debug_frame, None
                 self.last_sign_result_id = latest_sign[0]
@@ -458,6 +495,10 @@ class Robot:
                 logger.exception("Cleanup failed: OpenCV windows")
 
         if self.flask_thread and self.flask_thread.is_alive():
+            try:
+                stop_stream(config_city)
+            except Exception:
+                logger.exception("Failed to stop Flask stream")
             self.flask_thread.join(timeout=1.0)
 
         try:

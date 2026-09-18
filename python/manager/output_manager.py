@@ -39,6 +39,9 @@ class OutputManager:
         self._write_queue = queue.Queue(maxsize=3)
         self._writer_stop = threading.Event()
         self.dropped_video_frames = 0
+        self._writer_failures = 0
+        self._last_error = None
+        self._failed_writers = set()
         self._writer_thread = threading.Thread(
             target=self._writer_loop,
             name="video-writer",
@@ -124,67 +127,101 @@ class OutputManager:
             self.logger.info("Started recording: %s", path)
             return path
 
+    def _discard_job(self, job):
+        writer, frame = job
+        if frame is None:
+            try:
+                writer.release()
+            except Exception:
+                self.logger.exception("Failed to release discarded video writer")
+        else:
+            with self._lock:
+                self.dropped_video_frames += 1
+
+    def _enqueue_job(self, job, drop_when_full=True):
+        try:
+            self._write_queue.put_nowait(job)
+            return True
+        except queue.Full:
+            if not drop_when_full:
+                return False
+
+        while True:
+            try:
+                dropped_job = self._write_queue.get_nowait()
+            except queue.Empty:
+                return False
+
+            self._write_queue.task_done()
+            self._discard_job(dropped_job)
+            try:
+                self._write_queue.put_nowait(job)
+                return True
+            except queue.Full:
+                continue
+
+    def _enqueue_close_marker(self, writer):
+        return self._enqueue_job((writer, None), drop_when_full=True)
+
     def write_frame(self, frame):
         with self._lock:
             if not self.recording or self.video_writer is None:
                 return False
+            writer = self.video_writer
 
-        try:
-            self._write_queue.put_nowait(frame)
-            return True
-        except queue.Full:
-            try:
-                self._write_queue.get_nowait()
-                self._write_queue.task_done()
-            except queue.Empty:
-                pass
-            try:
-                self._write_queue.put_nowait(frame)
-                self.dropped_video_frames += 1
-                return True
-            except queue.Full:
-                self.dropped_video_frames += 1
-                return False
+        return self._enqueue_job((writer, frame), drop_when_full=True)
 
     def _writer_loop(self):
         while not self._writer_stop.is_set() or not self._write_queue.empty():
             try:
-                frame = self._write_queue.get(timeout=0.1)
+                writer, frame = self._write_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             try:
                 with self._lock:
-                    writer = self.video_writer if self.recording else None
-                    if writer is not None:
-                        writer.write(frame)
-            except Exception:
+                    failed = id(writer) in self._failed_writers
+                if failed:
+                    continue
+                if frame is None:
+                    writer.release()
+                else:
+                    writer.write(frame)
+            except Exception as exc:
                 self.logger.exception("Failed to write video frame")
+                with self._lock:
+                    self._failed_writers.add(id(writer))
+                try:
+                    writer.release()
+                except Exception:
+                    self.logger.exception("Failed to release failed video writer")
+                with self._lock:
+                    self._writer_failures += 1
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    if self.video_writer is writer and self.recording:
+                        self.recording = False
+                        self.video_writer = None
+                        self.current_video_path = None
             finally:
                 self._write_queue.task_done()
 
     def stop_recording(self):
         with self._lock:
-            if not self.recording:
+            if not self.recording or self.video_writer is None:
                 return None
-
-        self._write_queue.join()
-        with self._lock:
-            if not self.recording:
-                return None
+            writer = self.video_writer
             path = self.current_video_path
-            try:
-                self.video_writer.release()
-                self.logger.info(
-                    "Stopped recording: %s (dropped=%d)",
-                    path,
-                    self.dropped_video_frames,
-                )
-                return path
-            finally:
-                self.video_writer = None
-                self.current_video_path = None
-                self.recording = False
+            self.video_writer = None
+            self.current_video_path = None
+            self.recording = False
+
+        self._enqueue_close_marker(writer)
+        self.logger.info(
+            "Stopped recording: %s (dropped=%d)",
+            path,
+            self.dropped_video_frames,
+        )
+        return path
 
     def stats(self):
         with self._lock:
@@ -194,6 +231,8 @@ class OutputManager:
                 "dropped_video_frames": int(self.dropped_video_frames),
                 "queue_depth": self._write_queue.qsize(),
                 "writer_alive": self._writer_thread.is_alive(),
+                "writer_failures": int(self._writer_failures),
+                "last_error": self._last_error,
             }
 
     def is_recording(self):
@@ -201,18 +240,15 @@ class OutputManager:
             return bool(self.recording)
 
     def close(self):
-        try:
-            self._write_queue.join()
-        finally:
-            with self._lock:
-                if self.video_writer is not None:
-                    try:
-                        self.video_writer.release()
-                    except Exception:
-                        self.logger.exception("Failed to release video writer")
-                self.video_writer = None
-                self.recording = False
-                self.current_video_path = None
-            self._writer_stop.set()
-            if self._writer_thread.is_alive() and self._writer_thread is not threading.current_thread():
-                self._writer_thread.join(timeout=2.0)
+        with self._lock:
+            writer = self.video_writer
+            self.video_writer = None
+            self.recording = False
+            self.current_video_path = None
+
+        if writer is not None:
+            self._enqueue_close_marker(writer)
+
+        self._writer_stop.set()
+        if self._writer_thread.is_alive() and self._writer_thread is not threading.current_thread():
+            self._writer_thread.join(timeout=2.0)

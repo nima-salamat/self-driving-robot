@@ -1,3 +1,4 @@
+import math
 import time
 
 
@@ -29,7 +30,25 @@ class PIDController:
         self._last_time = None
 
     def update(self, error, now=None):
-        now = time.monotonic() if now is None else float(now)
+        try:
+            error = float(error)
+        except (TypeError, ValueError):
+            self.reset()
+            return 0.0
+
+        if not math.isfinite(error):
+            self.reset()
+            return 0.0
+
+        if now is None:
+            now = time.monotonic()
+        else:
+            try:
+                now = float(now)
+            except (TypeError, ValueError):
+                now = time.monotonic()
+            if not math.isfinite(now):
+                now = time.monotonic()
 
         long_sample = False
         if self._last_time is None:
@@ -76,6 +95,10 @@ class PIDController:
             saturated_low = output <= self.limit_min and error < 0
             if not (saturated_high or saturated_low):
                 self._integral = candidate_integral
+
+        if not math.isfinite(output):
+            self.reset()
+            return 0.0
 
         self._prev_error = error
         self._prev_derivative = derivative

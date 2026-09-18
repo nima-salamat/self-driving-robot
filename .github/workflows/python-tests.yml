@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pyserial
+        run: python -m pip install --upgrade pip pyserial numpy opencv-python-headless flask onnxruntime
       - name: Compile Python
         run: python -m compileall -q python
       - name: Run hardware-free unit tests

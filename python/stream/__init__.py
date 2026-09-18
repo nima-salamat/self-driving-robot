@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from flask import Flask, Response, request, render_template_string, jsonify
+from werkzeug.serving import make_server
 from .template import HTML_TEMPLATE
 
 logger = logging.getLogger(__name__)
@@ -250,10 +251,15 @@ class WebStreamer:
         frame_id = getattr(self.config, "stream_frame_seq", id(frame))
         with self._jpeg_cache_lock:
             if frame_id != self._jpeg_cache_frame_id or self._jpeg_cache is None:
-                ret, buffer = cv2.imencode('.jpg', frame)
-                if not ret:
-                    return Response('', status=204)
-                self._jpeg_cache = buffer.tobytes()
+                try:
+                    ret, buffer = cv2.imencode('.jpg', frame)
+                    if not ret:
+                        return Response('', status=204)
+                    payload = buffer.tobytes()
+                except Exception:
+                    logger.exception("Failed to encode stream frame")
+                    return Response('', status=503)
+                self._jpeg_cache = payload
                 self._jpeg_cache_frame_id = frame_id
             payload = self._jpeg_cache
         return Response(payload, mimetype='image/jpeg')
@@ -333,11 +339,32 @@ class WebStreamer:
         return jsonify(success=True)
 
 def start_stream(config):
-
     streamer = WebStreamer(config)
-    streamer.app.run(
-        host=getattr(config, "STREAM_HOST", "127.0.0.1"),
-        port=int(getattr(config, "STREAM_PORT", 5000)),
+    server = make_server(
+        getattr(config, "STREAM_HOST", "127.0.0.1"),
+        int(getattr(config, "STREAM_PORT", 5000)),
+        streamer.app,
         threaded=True,
-        debug=False,
     )
+    config.streamer = streamer
+    config.stream_server = server
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        if getattr(config, "stream_server", None) is server:
+            config.stream_server = None
+        if getattr(config, "streamer", None) is streamer:
+            config.streamer = None
+
+
+def stop_stream(config):
+    server = getattr(config, "stream_server", None)
+    if server is None:
+        return False
+    try:
+        server.shutdown()
+        return True
+    except Exception:
+        logger.exception("Failed to stop stream server")
+        return False

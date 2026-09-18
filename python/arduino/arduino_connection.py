@@ -55,6 +55,7 @@ class ArduinoConnection:
         self._telemetry = deque(maxlen=max(1, int(telemetry_buffer_size)))
         self._telemetry_lock = threading.Lock()
         self._telemetry_enabled = bool(telemetry_enabled)
+        self._max_telemetry_line_bytes = 4096
         self._print_telemetry = False
         self._last_error = None
         self._consecutive_reconnect_failures = 0
@@ -63,6 +64,7 @@ class ArduinoConnection:
         self._telemetry_bytes_received = 0
         self._telemetry_dropped_lines = 0
         self._last_telemetry_at = None
+        self._connected_at = None
 
         if self.enabled:
             self._reconnect_thread = threading.Thread(
@@ -120,6 +122,11 @@ class ArduinoConnection:
             "line_rate_hz": lines_received / elapsed if elapsed > 0 else 0.0,
             "last_line_age_s": (max(0.0, now - last_telemetry_at) if last_telemetry_at is not None else None),
             "reconnect_failures": self._consecutive_reconnect_failures,
+            "connected_age_s": (
+                max(0.0, now - self._connected_at)
+                if self._connected_at is not None
+                else None
+            ),
         }
 
     def _set_state(self, state, error=None):
@@ -127,8 +134,10 @@ class ArduinoConnection:
             self._state = state
             self._last_error = str(error) if error else None
         if state == self.CONNECTED:
+            self._connected_at = time.monotonic()
             self._connected_event.set()
         else:
+            self._connected_at = None
             self._connected_event.clear()
 
     def _request_reconnect(self):
@@ -171,9 +180,18 @@ class ArduinoConnection:
                 while not self._stop_event.is_set() and time.monotonic() < deadline:
                     time.sleep(min(0.05, deadline - time.monotonic()))
 
-            self._consecutive_reconnect_failures = 0
-            self._set_state(self.CONNECTED)
-            logger.info("Arduino serial connected: %s @ %s", self.port, self.baudrate)
+            if self._stop_event.is_set():
+                with self._serial_lock:
+                    connection = self.serial_connection
+                    self.serial_connection = None
+                    if connection is not None:
+                        try:
+                            connection.close()
+                        except Exception:
+                            pass
+                self._set_state(self.DISCONNECTED)
+                return False
+
             return True
         except (serial.SerialException, OSError) as exc:
             self.serial_connection = None
@@ -194,10 +212,20 @@ class ArduinoConnection:
                 if self.connected:
                     continue
                 if self._open_serial():
-                    self._establish_safe_state()
+                    if self._establish_safe_state():
+                        self._consecutive_reconnect_failures = 0
+                        self._set_state(self.CONNECTED)
+                        logger.info(
+                            "Arduino serial connected: %s @ %s",
+                            self.port,
+                            self.baudrate,
+                        )
+                    elif self._consecutive_reconnect_failures >= self.max_retries:
+                        # Back off after repeated failures without blocking the control thread.
+                        self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
                 elif self._consecutive_reconnect_failures >= self.max_retries:
                     # Back off after repeated failures without blocking the control thread.
-                    time.sleep(min(self.reconnect_interval * 4.0, 5.0))
+                    self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
 
     def _establish_safe_state(self):
         """Send a safe stop/center sequence before normal control resumes."""
@@ -212,18 +240,22 @@ class ArduinoConnection:
                 connection.flush()
             return True
         except Exception as exc:
-            self._mark_disconnected(exc)
+            self._mark_disconnected(exc, expected_connection=self.serial_connection)
             return False
 
-    def _mark_disconnected(self, error=None):
+    def _mark_disconnected(self, error=None, expected_connection=None):
         with self._serial_lock:
             connection = self.serial_connection
+            if expected_connection is not None and connection is not expected_connection:
+                return
+
             self.serial_connection = None
             if connection is not None:
                 try:
                     connection.close()
                 except Exception:
                     pass
+
         self._set_state(self.DISCONNECTED, error)
         self._request_reconnect()
 
@@ -252,10 +284,10 @@ class ArduinoConnection:
                 else:
                     time.sleep(0.002)
             except (serial.SerialException, OSError) as exc:
-                self._mark_disconnected(exc)
+                self._mark_disconnected(exc, expected_connection=connection)
             except Exception as exc:
                 logger.exception("Arduino telemetry reader failed")
-                self._mark_disconnected(exc)
+                self._mark_disconnected(exc, expected_connection=connection)
 
     def _ensure_reader_started(self):
         if self._reader_thread is None:
@@ -271,9 +303,17 @@ class ArduinoConnection:
         while True:
             newline = self._rx_buffer.find(b"\n")
             if newline < 0:
-                if len(self._rx_buffer) > 16384:
+                if len(self._rx_buffer) > self._max_telemetry_line_bytes:
                     self._rx_buffer.clear()
+                    with self._telemetry_lock:
+                        self._telemetry_dropped_lines += 1
                 break
+
+            if newline > self._max_telemetry_line_bytes:
+                del self._rx_buffer[:newline + 1]
+                with self._telemetry_lock:
+                    self._telemetry_dropped_lines += 1
+                continue
 
             raw = bytes(self._rx_buffer[:newline])
             del self._rx_buffer[:newline + 1]
@@ -315,11 +355,11 @@ class ArduinoConnection:
                 connection.flush()
             return True
         except (serial.SerialException, OSError, TimeoutError) as exc:
-            self._mark_disconnected(exc)
+            self._mark_disconnected(exc, expected_connection=connection)
             return False
         except Exception as exc:
             logger.exception("Arduino command failed")
-            self._mark_disconnected(exc)
+            self._mark_disconnected(exc, expected_connection=connection)
             return False
 
     @if_is_not_windows

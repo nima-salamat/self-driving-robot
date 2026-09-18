@@ -33,6 +33,7 @@ class Camera:
         self.pi_mode = False
         self.camera_initialized = False
         self.last_capture_valid = False
+        self.last_capture_at = None
         self.consecutive_failures = 0
         self.camera_calibration = CameraCalibration()
 
@@ -44,17 +45,43 @@ class Camera:
                 logger.info("Using Picamera2")
             except Exception:
                 logger.exception("Failed to initialize Picamera2")
-                self.pi_mode = False
+                self._cleanup_failed_initialization()
                 if not self.allow_picam_fallback:
                     raise
                 logger.warning("Falling back to OpenCV camera by explicit configuration")
+                self.pi_mode = False
                 self.cap = cv2.VideoCapture(self.usbcam_addr)
-                self.setup_camera()
+                try:
+                    self.setup_camera()
+                except Exception:
+                    self._cleanup_failed_initialization()
+                    raise
         else:
             self.pi_mode = False
             self.cap = cv2.VideoCapture(self.usbcam_addr)
-            self.setup_camera()
+            try:
+                self.setup_camera()
+            except Exception:
+                self._cleanup_failed_initialization()
+                raise
             logger.info("Using OpenCV VideoCapture")
+
+    def _cleanup_failed_initialization(self):
+        self.camera_initialized = False
+        try:
+            if self.pi_mode and getattr(self, "picam", None) is not None:
+                self.picam.stop()
+                self.picam.close()
+        except Exception:
+            logger.exception("Failed to clean up Picamera2 after initialization failure")
+        try:
+            cap = getattr(self, "cap", None)
+            if cap is not None:
+                cap.release()
+        except Exception:
+            logger.exception("Failed to clean up OpenCV camera after initialization failure")
+        self.picam = None
+        self.cap = None
 
     def setup_camera(self):
         if self.pi_mode:
@@ -126,6 +153,7 @@ class Camera:
         self.last_capture_valid = False
 
         def finish(result_frame, result_resized, valid):
+            self.last_capture_at = time.monotonic()
             metrics = getattr(self.config, "runtime_metrics", None)
             if metrics is not None:
                 metrics.record_camera(
