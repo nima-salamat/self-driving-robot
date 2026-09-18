@@ -209,3 +209,8 @@ SHUTDOWN_EVENT = None
 PERFORMANCE = False
 
 SIGN_RESULT_MAX_AGE = 0.75
+
+# Optional ML lane detector; disabled by default.
+USE_ML_LANE_DETECTOR = False
+ML_LANE_MODEL = "unet_depthwise_nano"
+ML_LANE_CPU_THREADS = 4
