@@ -93,6 +93,29 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class SerialGenerationAdversarialTests(unittest.TestCase):
+    def test_stale_old_connection_failure_cannot_disconnect_new_connection(self):
+        connection = ArduinoConnection(enabled=False)
+        try:
+            old = FakeSerial()
+            new = FakeSerial()
+            with connection._serial_lock:
+                connection.serial_connection = new
+            connection._set_state(ArduinoConnection.CONNECTED)
+
+            connection._mark_disconnected(
+                RuntimeError("old connection failed"),
+                expected_connection=old,
+            )
+
+            self.assertIs(connection.serial_connection, new)
+            self.assertEqual(connection.state, ArduinoConnection.CONNECTED)
+            self.assertTrue(new.is_open)
+            self.assertFalse(old.is_open)
+        finally:
+            connection.close()
+
+
 class FakeControllerConnection:
     def __init__(self, *args, **kwargs):
         self.connected = True

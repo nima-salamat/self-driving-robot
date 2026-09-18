@@ -240,18 +240,22 @@ class ArduinoConnection:
                 connection.flush()
             return True
         except Exception as exc:
-            self._mark_disconnected(exc)
+            self._mark_disconnected(exc, expected_connection=self.serial_connection)
             return False
 
-    def _mark_disconnected(self, error=None):
+    def _mark_disconnected(self, error=None, expected_connection=None):
         with self._serial_lock:
             connection = self.serial_connection
+            if expected_connection is not None and connection is not expected_connection:
+                return
+
             self.serial_connection = None
             if connection is not None:
                 try:
                     connection.close()
                 except Exception:
                     pass
+
         self._set_state(self.DISCONNECTED, error)
         self._request_reconnect()
 
@@ -280,10 +284,10 @@ class ArduinoConnection:
                 else:
                     time.sleep(0.002)
             except (serial.SerialException, OSError) as exc:
-                self._mark_disconnected(exc)
+                self._mark_disconnected(exc, expected_connection=connection)
             except Exception as exc:
                 logger.exception("Arduino telemetry reader failed")
-                self._mark_disconnected(exc)
+                self._mark_disconnected(exc, expected_connection=connection)
 
     def _ensure_reader_started(self):
         if self._reader_thread is None:
@@ -351,11 +355,11 @@ class ArduinoConnection:
                 connection.flush()
             return True
         except (serial.SerialException, OSError, TimeoutError) as exc:
-            self._mark_disconnected(exc)
+            self._mark_disconnected(exc, expected_connection=connection)
             return False
         except Exception as exc:
             logger.exception("Arduino command failed")
-            self._mark_disconnected(exc)
+            self._mark_disconnected(exc, expected_connection=connection)
             return False
 
     @if_is_not_windows
