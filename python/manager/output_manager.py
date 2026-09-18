@@ -20,6 +20,8 @@ class OutputManager:
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_module = config_module
+        if config_module is not None:
+            setattr(config_module, "output_manager", self)
 
         if output_dir is None and getattr(config_module, 'OUTPUT_DIR', None):
             output_dir = getattr(config_module, 'OUTPUT_DIR')

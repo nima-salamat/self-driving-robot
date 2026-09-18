@@ -272,6 +272,13 @@ class WebStreamer:
             "metrics": metrics.snapshot() if metrics is not None else {},
         }
 
+        sign_detector = getattr(self.config, "sign_detector", None)
+        output_manager = getattr(self.config, "output_manager", None)
+        if sign_detector is not None:
+            payload["sign_detector"] = sign_detector.status()
+        if output_manager is not None:
+            payload["recording"] = output_manager.stats()
+
         if controller is not None:
             command = controller.last_command
             payload["control"] = {

@@ -65,6 +65,7 @@ class Robot:
             self.sign_detector = AsyncSignDetector(detector)
         else:
             self.sign_detector = None
+        setattr(config_city, "sign_detector", self.sign_detector)
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS(config=config_city)
