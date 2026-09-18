@@ -1,5 +1,6 @@
 import time
 from arduino.arduino_connection import ArduinoConnection
+from arduino.hardware_contract import perform_hardware_handshake
 from controller.pid_controller import PIDController
 from controller.motion_history import MotionHistory
 
@@ -41,9 +42,28 @@ class RobotController:
         self.connection.set_print_telemetry(
             bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
         )
+        contract_path = getattr(self.config, "ARDUINO_CONFIG", None)
         if not self.without_arduino:
             startup_wait = max(0.0, float(getattr(self.config, "SERIAL_STARTUP_WAIT", 3.0)))
-            if startup_wait and not self.connection.wait_until_connected(startup_wait):
+            if contract_path:
+                if not self.connection.wait_until_connected(startup_wait):
+                    raise RuntimeError(
+                        "Arduino did not connect before the strict hardware contract startup deadline"
+                    )
+                report = perform_hardware_handshake(
+                    self.connection,
+                    contract_path,
+                    timeout=getattr(self.config, "ARDUINO_CONTRACT_TIMEOUT", 3.0),
+                )
+                print(
+                    "[Arduino contract] OK "
+                    f"firmware={report['firmware_id']} "
+                    f"protocol={report['protocol']} "
+                    f"board={report['board']} "
+                    f"config={report['config_id']} "
+                    f"fingerprint={report['fingerprint']}"
+                )
+            elif startup_wait and not self.connection.wait_until_connected(startup_wait):
                 print("Arduino not connected during startup; recovery continues in background.")
         self.current_angle = 90
         self.current_speed = 0
