@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +107,11 @@ def load():
     import modes.race.config_race as config_race
 
     config_module = config_city if base_config.MODE == "city" else config_race
-    filename = "city.json" if base_config.MODE == "city" else "race.json"
+    filename = Path(base_config.BASE_DIR) / (
+        "city.json" if base_config.MODE == "city" else "race.json"
+    )
 
     if getattr(config_module, "CHANGE_WITH_JSON", False):
-        _load_into(config_module, filename)
+        _load_into(config_module, str(filename))
 
     logger.info("Configuration loaded: %s", filename)
