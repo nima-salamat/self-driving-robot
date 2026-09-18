@@ -73,7 +73,6 @@ class MotionHistory:
             return 0
 
         metadata = dict(metadata or {})
-        operation_id = self._next_sequence()
         total_pulses = sum(group["pulses"] for group in groups)
 
         # Keep only the tail that can fit in the bounded pulse history. This
@@ -84,6 +83,7 @@ class MotionHistory:
         global_offset = 0
 
         with self._lock:
+            operation_id = self._next_sequence()
             for group_index, group in enumerate(groups):
                 for pulse_number in range(1, group["pulses"] + 1):
                     absolute_number = global_offset + pulse_number
