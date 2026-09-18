@@ -203,7 +203,15 @@ class Robot:
                         self.control.stop()
                         continue
                     self.check_crosswalk()
-                    
+                    result = {
+                        "steering_angle": SERVO_CENTER,
+                        "error": 0,
+                        "lane_type": "crosswalk",
+                        "perception_valid": True,
+                        "crosswalk": True,
+                        "debug": {"combined": frame},
+                    }
+
                     if config_city.DEBUG or config_city.STREAM:
                         debug_frame = frame.copy()
                         result = self.vision.detect(frame_resized, debug_frame)
