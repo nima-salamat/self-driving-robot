@@ -38,4 +38,11 @@ def parse_args():
         help="Avg fps"
     )
 
+    parser.add_argument(
+        "--read-arduino-output",
+        default=False,
+        action="store_true",
+        help="Display Arduino telemetry collected by the background serial reader"
+    )
+
     return parser.parse_args()

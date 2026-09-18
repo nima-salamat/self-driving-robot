@@ -140,7 +140,24 @@ STOP = 5
 # without arduino
 WITHOUT_ARDUINO = False
 
-# sleep delay time
+# Serial recovery / telemetry
+SERIAL_MAX_RETRIES = 3
+SERIAL_STARTUP_WAIT = 3.0
+SERIAL_REBOOT_WAIT = 2.0
+SERIAL_RECONNECT_INTERVAL = 0.5
+SERIAL_RECONNECT_TIMEOUT = 0.5
+SERIAL_TELEMETRY_BUFFER_SIZE = 100
+READ_ARDUINO_OUTPUT = False
+
+# PID timing protection
+PID_MIN_DT = 0.001
+PID_MAX_DT = 0.2
+PID_DERIVATIVE_FILTER = 0.25
+
+
+# Control-loop target period (seconds)
+CONTROL_PERIOD = 0.01
+# Legacy delay retained for maneuver timing
 DELAY = 0.005
 
 # show fps

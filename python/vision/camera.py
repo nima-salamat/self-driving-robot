@@ -27,6 +27,8 @@ class Camera:
 
         self.pi_mode = False
         self.camera_initialized = False
+        self.last_capture_valid = False
+        self.consecutive_failures = 0
         self.camera_calibration = CameraCalibration()
 
         if self.mode == "picam" and Picamera2 is not None:
@@ -51,7 +53,8 @@ class Camera:
         if self.pi_mode:
             try:
                 config_pi = self.picam.create_preview_configuration(
-                    main={"size": (self.width, self.height), "format": "RGB888"}
+                    main={"size": (self.width, self.height), "format": "RGB888"},
+                    queue=False,
                 )
                 self.picam.configure(config_pi)
                 
@@ -106,6 +109,7 @@ class Camera:
 
         frame = None
         frame_resized = None
+        self.last_capture_valid = False
 
         if not self.camera_initialized:
             logger.error("Camera not initialized")
@@ -117,6 +121,7 @@ class Camera:
 
                 if frame is None or frame.size == 0:
                     logger.warning("Picamera2 returned empty frame")
+                    self.consecutive_failures += 1
                     return frame, frame_resized
 
             else:
@@ -124,6 +129,7 @@ class Camera:
 
                 if not ret or frame is None:
                     logger.warning("OpenCV camera returned no frame")
+                    self.consecutive_failures += 1
                     return frame, frame_resized
 
             frame = self.camera_calibration.undistort(frame)
@@ -135,15 +141,21 @@ class Camera:
                         (self.resize_width, self.resize_height),
                         interpolation=cv2.INTER_AREA
                     )
+                else:
+                    frame_resized = frame
 
+            self.last_capture_valid = True
+            self.consecutive_failures = 0
             return frame, frame_resized
 
-        except Exception as e:
-            logger.error(f"Error capturing frame: {e}")
+        except Exception:
+            self.consecutive_failures += 1
+            logger.exception("Error capturing frame")
             return frame, frame_resized
 
     def release(self):
         self.camera_initialized = False
+        self.last_capture_valid = False
         if self.pi_mode:
             try:
                 self.picam.stop()

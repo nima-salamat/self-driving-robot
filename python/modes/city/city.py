@@ -11,6 +11,7 @@ from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
+from traffic_sign_detector.async_detector import AsyncSignDetector
 from controller import RobotController
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
@@ -44,12 +45,16 @@ class Robot:
     def __init__(self):
         self.camera = Camera(config=config_city)
         self.control = RobotController(config=config_city)
+        config_city.arduino_connection = self.control.connection
+        self.flask_thread = None
+        self._next_control_time = time.monotonic()
 
-        # hardcode the left and right lane change 
-        self.control._send_command("set left b 170 110 70 b 170 80 125")
-        time.sleep(0.4)
-        self.control._send_command("set right f 170 70 125 f 170 70 70")
-        time.sleep(0.4)
+        # hardcode the left and right lane change
+        if not getattr(config_city, "WITHOUT_ARDUINO", False):
+            self.control._send_command("set left b 170 110 70 b 170 80 125")
+            time.sleep(0.4)
+            self.control._send_command("set right f 170 70 125 f 170 70 70")
+            time.sleep(0.4)
 
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector(config=config_city)
@@ -58,14 +63,29 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0
-        self.sign_detector = SVMTrafficSignDetector() if config_city.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+        self.last_sign_result_id = 0
+        if config_city.WITH_SIGN:
+            detector = SVMTrafficSignDetector() if config_city.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+            self.sign_detector = AsyncSignDetector(detector)
+        else:
+            self.sign_detector = None
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
         self.object_detector = ObjectDetector()
 
+    def _pace_control_loop(self):
+        period = max(0.001, float(getattr(config_city, "CONTROL_PERIOD", 0.01)))
+        self._next_control_time += period
+        delay = self._next_control_time - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        else:
+            self._next_control_time = time.monotonic()
+
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
+        config_city.stream_frame_seq = getattr(config_city, "stream_frame_seq", 0) + 1
 
     def check_crosswalk(self):
         now = time.time()
@@ -107,18 +127,23 @@ class Robot:
             while True:
                 self.fps.update()
                 if config_city.RUN_LVL == "STOP":
-                    time.sleep(config_city.DELAY)
                     self.control.stop()
-                    time.sleep(config_city.DELAY)
                     self.control.set_angle(SERVO_CENTER)
-                    time.sleep(config_city.DELAY)
-                    
-                    frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                    debug_frame=None
-                    result = self.vision.detect(frame_resized, debug_frame=None)
-                    
-                    self.handle_debug_stream(result, frame, SERVO_CENTER, False, "stopped")
 
+                    if config_city.STREAM or config_city.DEBUG:
+                        frame, _ = self.camera.capture_frame(with_resize=False)
+                        if self.camera.last_capture_valid:
+                            result = {
+                                "steering_angle": SERVO_CENTER,
+                                "error": 0,
+                                "lane_type": "stopped",
+                                "perception_valid": True,
+                                "debug": {"combined": frame},
+                            }
+                            self.handle_debug_stream(
+                                result, frame, SERVO_CENTER, False, "stopped"
+                            )
+                    self._pace_control_loop()
                     continue
 
                 if config_city.SHOW_FPS:
@@ -137,12 +162,18 @@ class Robot:
                 
                 if self.crosswalk_time_start == 0:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    if not self.camera.last_capture_valid or frame_resized is None:
+                        self.control.stop()
+                        continue
                     if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()
                     else:
                         debug_frame = None
                     
                     result = self.vision.detect(frame_resized, debug_frame)
+                    if not result.get("perception_valid", True):
+                        self.control.stop()
+                        continue
 
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
@@ -172,8 +203,19 @@ class Robot:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    if not self.camera.last_capture_valid or frame_resized is None:
+                        self.control.stop()
+                        continue
                     self.check_crosswalk()
-                    
+                    result = {
+                        "steering_angle": SERVO_CENTER,
+                        "error": 0,
+                        "lane_type": "crosswalk",
+                        "perception_valid": True,
+                        "crosswalk": True,
+                        "debug": {"combined": frame},
+                    }
+
                     if config_city.DEBUG or config_city.STREAM:
                         debug_frame = frame.copy()
                         result = self.vision.detect(frame_resized, debug_frame)
@@ -203,15 +245,14 @@ class Robot:
                 else:
                     self.control.set_angle(result["steering_angle"])
                     
-                time.sleep(config_city.DELAY)
-                self.control.set_speed(SPEED)  
-                time.sleep(config_city.DELAY)
+                self.control.set_speed(SPEED)
+                self._pace_control_loop()
 
         except KeyboardInterrupt:
             logger.error("error KeyboardInterrupt")
             
         except Exception as e:
-            logger.error(f"error {e}")
+            logger.exception("Unhandled robot loop exception")
         finally:
             self.close()
             logger.info("exited")
@@ -223,7 +264,8 @@ class Robot:
                                     config_city.OBJ_LEFT_ROI, 
                                     config_city.OBJ_RIGHT_ROI
         )
-        print(self.object_detector.detect(object_frame)[1])
+        detected = self.object_detector.detect(object_frame)[1]
+        logger.debug("Object detector result: %s", detected)
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         
@@ -246,11 +288,24 @@ class Robot:
                         self.stop_last_seen = time.time()
                     self.last_tag = tag_id
         elif config_city.WITH_SIGN:
+            if self.sign_detector is None:
+                detector = (
+                    SVMTrafficSignDetector()
+                    if config_city.SIGN_DETECTOR_METHOD == "svm"
+                    else YOLOTrafficSignDetector()
+                )
+                self.sign_detector = AsyncSignDetector(detector)
+
             self.read_sign_counter += 1
             tag_id = None
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
-                sign_result = self.sign_detector.process_frame(sign_tag_frame, debug_frame=debug_frame)
+                self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
+                latest_sign = self.sign_detector.latest()
+                if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
+                    return None, False, debug_frame, None
+                self.last_sign_result_id = latest_sign[0]
+                sign_result = latest_sign[1]
                 coordinate = sign_result["coordinate"]
                 debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
@@ -333,42 +388,45 @@ class Robot:
                     except Exception as e:
                         logger.error(f"stop_recording failed: {e}")
 
-    def safe(self, func):
-        def wrapper(*args, **kwargs):
-            val =  None
-            try:
-                val = func(*args, **kwargs)
-            except Exception:
-                pass
-
-            return val
-        return wrapper
-        
     def close(self):
-        _ = self.safe
-        _(self.control.stop)()
-        _(self.control.set_angle)(90)
-        _(self.camera.release)()
-        _(self.control.connection.close)() # close serial connection
+        cleanup = [
+            ("stop", self.control.stop),
+            ("center servo", lambda: self.control.set_angle(90)),
+            ("camera release", self.camera.release),
+            ("serial close", self.control.connection.close),
+        ]
+        for name, action in cleanup:
+            try:
+                action()
+            except Exception:
+                logger.exception("Cleanup failed: %s", name)
 
-        # release output manager resources
+        if self.sign_detector is not None:
+            try:
+                self.sign_detector.close()
+            except Exception:
+                logger.exception("Cleanup failed: sign detector")
+
         try:
             self.output.close()
         except Exception:
-            pass
-        
-        if config_city.DEBUG:
-            _(cv2.destroyAllWindows)()
-            
-        if config_city.STREAM:
-            try:
-                import requests
-                requests.post("http://127.0.0.1:5000/shutdown")
-            except Exception:
-                pass
+            logger.exception("Cleanup failed: output manager")
 
-            if flask_thread.is_alive():
-                flask_thread.join()
+        if config_city.DEBUG:
+            try:
+                cv2.destroyAllWindows()
+            except Exception:
+                logger.exception("Cleanup failed: OpenCV windows")
+
+        if self.flask_thread and self.flask_thread.is_alive():
+            self.flask_thread.join(timeout=1.0)
+
+        try:
+            if getattr(config_city, 'arduino_connection', None) is self.control.connection:
+                delattr(config_city, "arduino_connection")
+        except Exception:
+            logger.exception("Cleanup failed: serial state detach")
+
         sys.exit(0)
 
 def start():
@@ -376,10 +434,12 @@ def start():
 
     if config_city.STREAM:
         flask_thread = threading.Thread(
-            target=start_stream, 
-            args=(config_city,), 
-            daemon=False
+            target=start_stream,
+            args=(config_city,),
+            daemon=True,
+            name="flask-stream",
         )
         flask_thread.start()
     robot = Robot()
+    robot.flask_thread = flask_thread if config_city.STREAM else None
     robot.run()

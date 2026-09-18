@@ -12,6 +12,7 @@ from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
+from traffic_sign_detector.async_detector import AsyncSignDetector
 from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
@@ -47,6 +48,9 @@ class Robot:
     def __init__(self):
         self.camera = Camera(config=config_race)
         self.control = RobotController(config=config_race)
+        config_race.arduino_connection = self.control.connection
+        self.flask_thread = None
+        self._next_control_time = time.monotonic()
         
         # Calculate dynamic obstacle avoidance parameters
         lane_width = 30      # cm
@@ -88,16 +92,16 @@ class Robot:
             f"f 230 {travel_pulse} {left_angle}"
         )
 
-        # Send commands to Arduino
-        self.control._send_command(cmd_avoid_left)
-        time.sleep(0.4)
-        self.control._send_command("save left")
-        time.sleep(0.4)
-
-        self.control._send_command(cmd_return_right)
-        time.sleep(0.4)
-        self.control._send_command("save right")
-        time.sleep(0.4)
+        # Send commands to Arduino only when hardware control is enabled.
+        if not getattr(config_race, "WITHOUT_ARDUINO", False):
+            self.control._send_command(cmd_avoid_left)
+            time.sleep(0.4)
+            self.control._send_command("save left")
+            time.sleep(0.4)
+            self.control._send_command(cmd_return_right)
+            time.sleep(0.4)
+            self.control._send_command("save right")
+            time.sleep(0.4)
 
 
         self.vision = VisionProcessor()
@@ -105,10 +109,12 @@ class Robot:
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0
+        self.last_sign_result_id = 0
         
         # Initialize sign detector strictly based on USE_SIGN variable
         if USE_SIGN:
-            self.sign_detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+            detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+            self.sign_detector = AsyncSignDetector(detector)
         else:
             self.sign_detector = None
             
@@ -117,8 +123,18 @@ class Robot:
         self.fps = FPS()
         self.object_detector = ObjectDetector()
 
+    def _pace_control_loop(self):
+        period = max(0.001, float(getattr(config_race, "CONTROL_PERIOD", 0.01)))
+        self._next_control_time += period
+        delay = self._next_control_time - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        else:
+            self._next_control_time = time.monotonic()
+
     def update_debug_frames(self, frame):
         config_race.debug_frames_list.append(frame)
+        config_race.stream_frame_seq = getattr(config_race, "stream_frame_seq", 0) + 1
 
    
     def run(self):
@@ -128,16 +144,24 @@ class Robot:
             while True:
                 self.fps.update()
                 if config_race.RUN_LVL == "STOP":
-                    time.sleep(config_race.DELAY)
                     self.control.stop()
-                    time.sleep(config_race.DELAY)
                     self.control.set_angle(SERVO_CENTER)
-                    time.sleep(config_race.DELAY)
-                    
-                    frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                    debug_frame=None
-                    result = self.vision.detect(frame_resized, debug_frame=None)
-                    self.handle_debug_stream(result, frame, SERVO_CENTER, False, "stopped")
+
+                    if config_race.STREAM or config_race.DEBUG:
+                        frame, _ = self.camera.capture_frame(with_resize=False)
+                        if self.camera.last_capture_valid:
+                            result = {
+                                "steering_angle": SERVO_CENTER,
+                                "error": 0,
+                                "lane_type": "stopped",
+                                "perception_valid": True,
+                                "debug": {"combined": frame},
+                            }
+                            self.handle_debug_stream(
+                                result, frame, SERVO_CENTER,
+                                False, "stopped"
+                            )
+                    self._pace_control_loop()
                     continue
 
                 if config_race.SHOW_FPS:
@@ -155,12 +179,18 @@ class Robot:
                 angle = SERVO_CENTER
             
                 frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                if not self.camera.last_capture_valid or frame_resized is None:
+                    self.control.stop()
+                    continue
                 if config_race.STREAM or config_race.DEBUG:
                     debug_frame = frame.copy()
                 else:
                     debug_frame = None
                 
                 result = self.vision.detect(frame_resized, debug_frame)
+                if not result.get("perception_valid", True):
+                    self.control.stop()
+                    continue
 
                 angle = result.get("steering_angle")
                 
@@ -202,15 +232,14 @@ class Robot:
                 else:
                     self.control.set_angle(result["steering_angle"])
                     
-                time.sleep(config_race.DELAY)
-                self.control.set_speed(SPEED)  
-                time.sleep(config_race.DELAY)
+                self.control.set_speed(SPEED)
+                self._pace_control_loop()
 
         except KeyboardInterrupt:
             logger.error("error KeyboardInterrupt")
             
         except Exception as e:
-            logger.error(f"error {e}")
+            logger.exception("Unhandled robot loop exception")
         finally:
             self.close()
             logger.info("exited")
@@ -222,7 +251,8 @@ class Robot:
                                     config_race.OBJ_LEFT_ROI, 
                                     config_race.OBJ_RIGHT_ROI
         )
-        print(self.object_detector.detect(object_frame)[1])
+        detected = self.object_detector.detect(object_frame)[1]
+        logger.debug("Object detector result: %s", detected)
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         # Strict fallback: Skip all processing if USE_SIGN is disabled
@@ -252,13 +282,18 @@ class Robot:
             tag_id = None
             if self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
-                sign_result = self.sign_detector.process_frame(sign_tag_frame, debug_frame=debug_frame)
+                self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
+                latest_sign = self.sign_detector.latest()
+                if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
+                    return None, False, debug_frame, None
+                self.last_sign_result_id = latest_sign[0]
+                sign_result = latest_sign[1]
                 coordinate = sign_result["coordinate"]
                 debug_frame = sign_result["debug_frame"]
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
                 elif sign_result['text'] == "TURN RIGHT":
-                    tag_id = STRAIGHT
+                    tag_id = TURN_RIGHT
                 elif sign_result['text'] == "STRAIGHT":
                     tag_id = STRAIGHT
                 elif sign_result['text'] == "STOP":
@@ -335,42 +370,45 @@ class Robot:
                     except Exception as e:
                         logger.error(f"stop_recording failed: {e}")
 
-    def safe(self, func):
-        def wrapper(*args, **kwargs):
-            val =  None
-            try:
-                val = func(*args, **kwargs)
-            except Exception:
-                pass
-
-            return val
-        return wrapper
-        
     def close(self):
-        _ = self.safe
-        _(self.control.stop)()
-        _(self.control.set_angle)(90)
-        _(self.camera.release)()
-        _(self.control.connection.close)() # close serial connection
+        cleanup = [
+            ("stop", self.control.stop),
+            ("center servo", lambda: self.control.set_angle(90)),
+            ("camera release", self.camera.release),
+            ("serial close", self.control.connection.close),
+        ]
+        for name, action in cleanup:
+            try:
+                action()
+            except Exception:
+                logger.exception("Cleanup failed: %s", name)
 
-        # release output manager resources
+        if self.sign_detector is not None:
+            try:
+                self.sign_detector.close()
+            except Exception:
+                logger.exception("Cleanup failed: sign detector")
+
         try:
             self.output.close()
         except Exception:
-            pass
-        
-        if config_race.DEBUG:
-            _(cv2.destroyAllWindows)()
-            
-        if config_race.STREAM:
-            try:
-                import requests
-                requests.post("http://127.0.0.1:5000/shutdown")
-            except Exception:
-                pass
+            logger.exception("Cleanup failed: output manager")
 
-            if flask_thread.is_alive():
-                flask_thread.join()
+        if config_race.DEBUG:
+            try:
+                cv2.destroyAllWindows()
+            except Exception:
+                logger.exception("Cleanup failed: OpenCV windows")
+
+        if self.flask_thread and self.flask_thread.is_alive():
+            self.flask_thread.join(timeout=1.0)
+
+        try:
+            if getattr(config_race, 'arduino_connection', None) is self.control.connection:
+                delattr(config_race, "arduino_connection")
+        except Exception:
+            logger.exception("Cleanup failed: serial state detach")
+
         sys.exit(0)
 
 def start():
@@ -378,10 +416,12 @@ def start():
 
     if config_race.STREAM:
         flask_thread = threading.Thread(
-            target=start_stream, 
-            args=(config_race,), 
-            daemon=False
+            target=start_stream,
+            args=(config_race,),
+            daemon=True,
+            name="flask-stream",
         )
         flask_thread.start()
     robot = Robot()
+    robot.flask_thread = flask_thread if config_race.STREAM else None
     robot.run()
