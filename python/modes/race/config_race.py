@@ -154,7 +154,9 @@ PID_MAX_DT = 0.2
 PID_DERIVATIVE_FILTER = 0.25
 
 
-# sleep delay time
+# Control-loop target period (seconds)
+CONTROL_PERIOD = 0.01
+# Legacy delay retained for maneuver timing
 DELAY = 0.005
 
 # show fps
