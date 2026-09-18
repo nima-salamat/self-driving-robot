@@ -88,6 +88,9 @@ def _load_into(config_module, filename):
         _validate(name, value)
         setattr(config_module, name, value)
 
+    if getattr(config_module, "PID_MAX_DT", 0.0) < getattr(config_module, "PID_MIN_DT", 0.0):
+        raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
+
 
 def load():
     import base_config
