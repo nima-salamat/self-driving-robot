@@ -360,36 +360,39 @@ class Robot:
                     except Exception as e:
                         logger.error(f"stop_recording failed: {e}")
 
-    def safe(self, func):
-        def wrapper(*args, **kwargs):
-            val =  None
-            try:
-                val = func(*args, **kwargs)
-            except Exception:
-                pass
-
-            return val
-        return wrapper
-        
     def close(self):
-        _ = self.safe
-        _(self.control.stop)()
-        _(self.control.set_angle)(90)
-        _(self.camera.release)()
-        _(self.control.connection.close)() # close serial connection
-        self.sign_detector.close()
+        cleanup = [
+            ("stop", self.control.stop),
+            ("center servo", lambda: self.control.set_angle(90)),
+            ("camera release", self.camera.release),
+            ("serial close", self.control.connection.close),
+        ]
+        for name, action in cleanup:
+            try:
+                action()
+            except Exception:
+                logger.exception("Cleanup failed: %s", name)
 
-        # release output manager resources
         try:
             self.output.close()
         except Exception:
-            pass
-        
+            logger.exception("Cleanup failed: output manager")
+
         if config_city.DEBUG:
-            _(cv2.destroyAllWindows)()
-            
+            try:
+                cv2.destroyAllWindows()
+            except Exception:
+                logger.exception("Cleanup failed: OpenCV windows")
+
         if self.flask_thread and self.flask_thread.is_alive():
             self.flask_thread.join(timeout=1.0)
+
+        try:
+            if getattr(config_city, 'arduino_connection', None) is self.control.connection:
+                delattr(config_city, "arduino_connection")
+        except Exception:
+            logger.exception("Cleanup failed: serial state detach")
+
         sys.exit(0)
 
 def start():
