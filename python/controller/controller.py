@@ -1,6 +1,9 @@
 import time
 from arduino.arduino_connection import ArduinoConnection
-from arduino.hardware_contract import perform_hardware_handshake
+from arduino.hardware_contract import (
+    ArduinoHardwareConfigError,
+    perform_hardware_handshake,
+)
 from controller.pid_controller import PIDController
 from controller.motion_history import MotionHistory
 
@@ -47,7 +50,7 @@ class RobotController:
             startup_wait = max(0.0, float(getattr(self.config, "SERIAL_STARTUP_WAIT", 3.0)))
             if contract_path:
                 if not self.connection.wait_until_connected(startup_wait):
-                    raise RuntimeError(
+                    raise ArduinoHardwareConfigError(
                         "Arduino did not connect before the strict hardware contract startup deadline"
                     )
                 report = perform_hardware_handshake(
