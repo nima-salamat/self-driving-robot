@@ -50,6 +50,7 @@ class Robot:
         self.control = RobotController(config=config_race)
         config_race.arduino_connection = self.control.connection
         self.flask_thread = None
+        self._next_control_time = time.monotonic()
         
         # Calculate dynamic obstacle avoidance parameters
         lane_width = 30      # cm
@@ -120,6 +121,15 @@ class Robot:
         self.output = OutputManager(config_module=config_race, output_dir=OUTPUT_DIR)
         self.fps = FPS()
         self.object_detector = ObjectDetector()
+
+    def _pace_control_loop(self):
+        period = max(0.001, float(getattr(config_race, "CONTROL_PERIOD", 0.01)))
+        self._next_control_time += period
+        delay = self._next_control_time - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        else:
+            self._next_control_time = time.monotonic()
 
     def update_debug_frames(self, frame):
         config_race.debug_frames_list.append(frame)
@@ -212,9 +222,8 @@ class Robot:
                 else:
                     self.control.set_angle(result["steering_angle"])
                     
-                time.sleep(config_race.DELAY)
-                self.control.set_speed(SPEED)  
-                time.sleep(config_race.DELAY)
+                self.control.set_speed(SPEED)
+                self._pace_control_loop()
 
         except KeyboardInterrupt:
             logger.error("error KeyboardInterrupt")
@@ -232,7 +241,8 @@ class Robot:
                                     config_race.OBJ_LEFT_ROI, 
                                     config_race.OBJ_RIGHT_ROI
         )
-        print(self.object_detector.detect(object_frame)[1])
+        detected = self.object_detector.detect(object_frame)[1]
+        logger.debug("Object detector result: %s", detected)
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         # Strict fallback: Skip all processing if USE_SIGN is disabled
