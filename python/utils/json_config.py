@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 RANGES = {
     "DELAY": (0.0, 1.0),
+    "CONTROL_PERIOD": (0.001, 1.0),
     "SERIAL_TIMEOUT": (0.01, 5.0),
     "SERIAL_MAX_RETRIES": (1, 10),
     "SERIAL_REBOOT_WAIT": (0.0, 10.0),
