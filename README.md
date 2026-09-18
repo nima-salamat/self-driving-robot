@@ -454,11 +454,7 @@ List candidates:
 python python/tools/benchmark_lane_models.py --list
 ```
 
-Download the candidate weights:
-
-```bash
-python python/tools/download_lane_models.py --model all
-```
+The two candidate ONNX weights are bundled in the repository and materialized automatically on first use.
 
 Benchmark one candidate on a recorded drive:
 
@@ -489,7 +485,6 @@ Available names are:
 
 - `unet_depthwise_nano`
 - `unet_depthwise_small`
-- `ufld_culane_resnet18`
 
 ML lane detection is not used in the normal runtime unless explicitly enabled. The Arduino firmware and protocol are unchanged.
 
