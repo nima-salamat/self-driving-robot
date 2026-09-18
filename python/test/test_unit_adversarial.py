@@ -607,3 +607,49 @@ class RecordingFailureSuppressionTests(unittest.TestCase):
             if predicate():
                 return True
             time.sleep(0.01)
+
+
+class CameraInitializationAdversarialTests(unittest.TestCase):
+    def test_failed_opencv_initialization_releases_handle(self):
+        import types
+        from unittest.mock import patch
+
+        class FakeCapture:
+            def __init__(self):
+                self.released = False
+
+            def isOpened(self):
+                return True
+
+            def set(self, *_args):
+                return True
+
+            def read(self):
+                return False, None
+
+            def release(self):
+                self.released = True
+
+        fake_capture = FakeCapture()
+        fake_cv2 = types.SimpleNamespace(
+            VideoCapture=lambda *_args, **_kwargs: fake_capture,
+            CAP_PROP_FRAME_WIDTH=3,
+            CAP_PROP_FRAME_HEIGHT=4,
+            CAP_PROP_FPS=5,
+            CAP_PROP_BUFFERSIZE=6,
+        )
+        with patch.dict(sys.modules, {"cv2": fake_cv2}):
+            import importlib
+            camera_module = importlib.import_module("vision.camera")
+            config = types.SimpleNamespace(
+                CAMERA_MODE="webcam",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                resize_width=380,
+                resize_height=230,
+                CAMERA_FALLBACK_TO_OPENCV=False,
+            )
+            with self.assertRaises(RuntimeError):
+                camera_module.Camera(config=config)
+            self.assertTrue(fake_capture.released)
