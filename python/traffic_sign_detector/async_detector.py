@@ -63,8 +63,8 @@ class AsyncSignDetector:
             return latest
 
         max_age_s = max(0.0, float(max_age_s))
-        age_s = max(0.0, time.monotonic() - latest[3])
-        return latest if age_s <= max_age_s else None
+        input_age_s = max(0.0, time.monotonic() - latest[2])
+        return latest if input_age_s <= max_age_s else None
 
     def _run(self):
         logger = logging.getLogger(__name__)

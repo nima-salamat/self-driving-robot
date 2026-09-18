@@ -41,6 +41,7 @@ class OutputManager:
         self.dropped_video_frames = 0
         self._writer_failures = 0
         self._last_error = None
+        self._failed_writers = set()
         self._writer_thread = threading.Thread(
             target=self._writer_loop,
             name="video-writer",
@@ -178,12 +179,18 @@ class OutputManager:
                 continue
 
             try:
+                with self._lock:
+                    failed = id(writer) in self._failed_writers
+                if failed:
+                    continue
                 if frame is None:
                     writer.release()
                 else:
                     writer.write(frame)
             except Exception as exc:
                 self.logger.exception("Failed to write video frame")
+                with self._lock:
+                    self._failed_writers.add(id(writer))
                 try:
                     writer.release()
                 except Exception:

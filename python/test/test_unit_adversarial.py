@@ -531,3 +531,79 @@ class PIDNumericalStabilityTests(unittest.TestCase):
         output = pid.update(1000000.0, now=1000.0)
         self.assertTrue(math.isfinite(output))
         self.assertLessEqual(abs(output), 80)
+
+
+class SignInputFreshnessAdversarialTests(unittest.TestCase):
+    def test_old_input_is_expired_even_when_result_just_completed(self):
+        from traffic_sign_detector.async_detector import AsyncSignDetector
+
+        worker = AsyncSignDetector(
+            type(
+                "ImmediateDetector",
+                (),
+                {"process_frame": lambda self, frame, debug_frame=None: {"label": frame}},
+            )()
+        )
+        try:
+            self.assertEqual(worker.submit("frame-1"), 1)
+            self.assertTrue(
+                self._wait(lambda: worker.latest() is not None)
+            )
+            with worker._lock:
+                request_id, result, _submitted, completed = worker._latest
+                worker._latest = (
+                    request_id,
+                    result,
+                    time.monotonic() - 2.0,
+                    completed,
+                )
+            self.assertIsNone(worker.latest(max_age_s=0.75))
+        finally:
+            worker.close()
+
+    @staticmethod
+    def _wait(predicate, timeout=2.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return False
+
+
+class RecordingFailureSuppressionTests(unittest.TestCase):
+    def test_failed_writer_does_not_receive_queued_frames_again(self):
+        from manager.output_manager import OutputManager
+        import tempfile
+        import types
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                OUTPUT_DIR=tmp,
+                VIDEO_FPS=20,
+                VIDEO_CODEC="mp4v",
+                MIN_FREE_DISK_MB=0,
+            )
+            writer = FailingVideoWriter()
+            manager = OutputManager(config_module=config, output_dir=tmp)
+            try:
+                with patch("manager.output_manager.cv2.VideoWriter", return_value=writer):
+                    manager.start_recording((1, 1))
+                    manager.write_frame("frame-1")
+                    manager.write_frame("frame-2")
+                    self.assertTrue(
+                        self._wait(lambda: manager.stats()["writer_failures"] == 1)
+                    )
+                    self.assertEqual(len(writer.writes), 1)
+                    self.assertTrue(writer.released)
+            finally:
+                manager.close()
+
+    @staticmethod
+    def _wait(predicate, timeout=2.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.01)
