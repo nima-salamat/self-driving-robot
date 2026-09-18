@@ -26,22 +26,21 @@ def download(spec):
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     if destination.exists() and sha256(destination) == spec.sha256:
-        print(f"[ok] {spec.name}: already installed")
-        return
+        print(f"[ok] {spec.name}: ONNX already installed")
+    else:
+        temporary = destination.with_suffix(destination.suffix + ".part")
+        print(f"[download] {spec.name} ONNX")
+        urllib.request.urlretrieve(spec.model_url, temporary)
 
-    temporary = destination.with_suffix(destination.suffix + ".part")
-    print(f"[download] {spec.name} ONNX")
-    urllib.request.urlretrieve(spec.model_url, temporary)
+        actual = sha256(temporary)
+        if actual != spec.sha256:
+            temporary.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"SHA256 mismatch for {spec.name}: expected {spec.sha256}, got {actual}"
+            )
 
-    actual = sha256(temporary)
-    if actual != spec.sha256:
-        temporary.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"SHA256 mismatch for {spec.name}: expected {spec.sha256}, got {actual}"
-        )
-
-    temporary.replace(destination)
-    print(f"[ok] {destination} ({destination.stat().st_size / 1024:.1f} KiB)")
+        temporary.replace(destination)
+        print(f"[ok] {destination} ({destination.stat().st_size / 1024:.1f} KiB)")
 
     for asset_url, relative_path in (
         (spec.ncnn_param_url, spec.ncnn_param_path),
