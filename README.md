@@ -443,6 +443,56 @@ For issues or questions:
 2. Review existing test files for usage examples
 3. Enable debug mode for detailed diagnostics
 
+
+## ML Lane Model Benchmarks
+
+The default lane detector is unchanged. ML lane detection is opt-in and disabled unless `--ml-lane-model` is supplied.
+
+List candidates:
+
+```bash
+python python/tools/benchmark_lane_models.py --list
+```
+
+Download the candidate weights:
+
+```bash
+python python/tools/download_lane_models.py --model all
+```
+
+Benchmark one candidate on a recorded drive:
+
+```bash
+python python/tools/benchmark_lane_models.py \
+  --model unet_depthwise_nano \
+  --input output/videos/video_1.mp4 \
+  --display \
+  --frames 300
+```
+
+Benchmark directly from camera:
+
+```bash
+python python/tools/benchmark_lane_models.py \
+  --model unet_depthwise_nano \
+  --camera \
+  --display
+```
+
+To run Race mode with an ML lane model:
+
+```bash
+python python/main.py --mode race --ml-lane-model unet_depthwise_nano
+```
+
+Available names are:
+
+- `unet_depthwise_nano`
+- `unet_depthwise_small`
+- `ufld_culane_resnet18`
+
+ML lane detection is not used in the normal runtime unless explicitly enabled. The Arduino firmware and protocol are unchanged.
+
 ## Operational Diagnostics
 
 The Python runtime includes startup pre-flight checks, rotating logs, runtime health metrics, hardware-free tests, and an offline vision replay tool.
