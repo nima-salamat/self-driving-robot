@@ -105,6 +105,7 @@ class MLLaneDetector:
         mat = self.ncnn.Mat(chw)
         extractor = self.net.create_extractor()
 
+        inference_started = time.monotonic()
         ret = extractor.input(self.input_blob, mat)
         if ret != 0:
             raise RuntimeError(f"NCNN input failed with code {ret}")
@@ -112,6 +113,7 @@ class MLLaneDetector:
         ret, output = extractor.extract(self.output_blob)
         if ret != 0:
             raise RuntimeError(f"NCNN extraction failed with code {ret}")
+        inference_ms = (time.monotonic() - inference_started) * 1000.0
 
         result = np.array(output, copy=True).astype(np.float32)
         result = np.squeeze(result)
@@ -119,7 +121,13 @@ class MLLaneDetector:
             raise RuntimeError(f"Unexpected NCNN output shape: {result.shape}")
 
         if result.size == 0:
-            return np.zeros((frame.shape[0], frame.shape[1]), dtype=np.float32), None, "none", {}
+            return (
+                np.zeros((frame.shape[0], frame.shape[1]), dtype=np.float32),
+                None,
+                "none",
+                {},
+                inference_ms,
+            )
 
         if float(result.min()) < 0.0 or float(result.max()) > 1.0:
             result = 1.0 / (1.0 + np.exp(-np.clip(result, -30.0, 30.0)))
@@ -132,7 +140,7 @@ class MLLaneDetector:
             interpolation=cv2.INTER_LINEAR,
         )
         center_x, lane_type = self._lane_center_from_mask(lane_mask)
-        return lane_mask, center_x, lane_type, {"lanes": []}
+        return lane_mask, center_x, lane_type, {"lanes": []}, inference_ms
 
     def detect(self, frame, debug_frame=None):
         started = time.monotonic()
@@ -147,7 +155,7 @@ class MLLaneDetector:
                 "kp": 0,
             }
 
-        mask, center_x, lane_type, meta = self._predict_unet(frame)
+        mask, center_x, lane_type, meta, inference_ms = self._predict_unet(frame)
 
         width = frame.shape[1]
         frame_center = width / 2.0
@@ -205,6 +213,7 @@ class MLLaneDetector:
             "kp": 0.45,
             "ml_model": self.model_name,
             "ml_latency_ms": elapsed_ms,
+            "ml_inference_ms": inference_ms,
         }
 
 
