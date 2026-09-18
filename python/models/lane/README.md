@@ -1,12 +1,11 @@
 # Lane Model Candidates
 
-These model files are downloaded locally and are intentionally not required by the normal robot runtime.
+Two ONNX lane-segmentation models are bundled as base64 chunks and reconstructed automatically when an ML lane model is first used.
 
-Run:
+Available:
 
-```bash
-python python/tools/download_lane_models.py --model all
-```
+- `unet_depthwise_nano` — UNetDepthwiseNano, 256x256, BDD100K
+- `unet_depthwise_small` — UNetDepthwiseSmall, 256x256, BDD100K
 
 List:
 
@@ -14,22 +13,17 @@ List:
 python python/tools/benchmark_lane_models.py --list
 ```
 
-Benchmark a model on a recorded video:
+Benchmark the models on a recorded drive:
 
 ```bash
-python python/tools/benchmark_lane_models.py \
-  --model unet_depthwise_nano \
-  --input output/videos/video_1.mp4 \
-  --display
+python python/tools/benchmark_lane_models.py --model unet_depthwise_nano --input output/videos/video_1.mp4 --display --frames 300
+python python/tools/benchmark_lane_models.py --model unet_depthwise_small --input output/videos/video_1.mp4 --display --frames 300
 ```
 
-Benchmark directly from the Raspberry Pi camera:
+Benchmark directly from the camera:
 
 ```bash
-python python/tools/benchmark_lane_models.py \
-  --model unet_depthwise_nano \
-  --camera \
-  --display
+python python/tools/benchmark_lane_models.py --model unet_depthwise_nano --camera --display --frames 300
 ```
 
-The repository contains the loader/decoder and download manifest; third-party binary weights are fetched into this directory at setup time rather than committed to Git.
+The normal robot runtime keeps the existing classical lane detector unless `--ml-lane-model` is explicitly provided. The Arduino firmware and protocol are unchanged.
