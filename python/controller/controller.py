@@ -34,17 +34,45 @@ class RobotController:
         self.servo_center = getattr(self.config, 'SERVO_CENTER', 90)
         self.servo_direction = getattr(self.config, 'SERVO_DIRECTION', 'ltr')
 
-        self.connection = ArduinoConnection()
+        self.without_arduino = bool(getattr(self.config, "WITHOUT_ARDUINO", False))
+        self.connection = ArduinoConnection(
+            port=getattr(self.config, "SERIAL_PORT", "/dev/ttyUSB0"),
+            baudrate=getattr(self.config, "BAUD_RATE", 115200),
+            timeout=getattr(self.config, "SERIAL_TIMEOUT", 0.1),
+            max_retries=getattr(self.config, "SERIAL_MAX_RETRIES", 3),
+            reboot_wait=getattr(self.config, "SERIAL_REBOOT_WAIT", 2.0),
+            reconnect_interval=getattr(self.config, "SERIAL_RECONNECT_INTERVAL", 0.5),
+            reconnect_timeout=getattr(self.config, "SERIAL_RECONNECT_TIMEOUT", 0.5),
+            telemetry_enabled=True,
+            telemetry_buffer_size=getattr(self.config, "SERIAL_TELEMETRY_BUFFER_SIZE", 100),
+            enabled=not self.without_arduino,
+        )
+        self.connection.set_print_telemetry(
+            bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
+        )
+        if not self.without_arduino:
+            startup_wait = max(0.0, float(getattr(self.config, "SERIAL_STARTUP_WAIT", 3.0)))
+            if startup_wait and not self.connection.wait_until_connected(startup_wait):
+                print("Arduino not connected during startup; recovery continues in background.")
         self.current_angle = 90
         self.current_speed = 0
-        self.pid = PIDController(kp, ki, kd, kt, output_limits=output_limits)
+        self.pid = PIDController(
+            kp,
+            ki,
+            kd,
+            kt,
+            output_limits=output_limits,
+            min_dt=getattr(self.config, "PID_MIN_DT", 0.001),
+            max_dt=getattr(self.config, "PID_MAX_DT", 0.2),
+            derivative_filter=getattr(self.config, "PID_DERIVATIVE_FILTER", 0.25),
+        )
         
         self.last_angle = 90
         self._initialized = True
 
     def _send_command(self, cmd: str):
-        cmd = cmd.strip() + "\n" 
-        self.connection.send_command(cmd)
+        cmd = cmd.strip() + "\n"
+        return self.connection.send_command(cmd)
 
     def servo(self, angle: int):
         if angle < self.min_servo_angle:
@@ -52,7 +80,7 @@ class RobotController:
         elif angle > self.max_servo_angle:
             angle = self.max_servo_angle
         
-        self._send_command(f"servo {angle}")
+        return self._send_command(f"servo {angle}")
 
     def motor(self, speed: int):
         if speed > 255:
@@ -60,18 +88,21 @@ class RobotController:
         elif speed < -255:
             speed = -255
             
-        if self.current_speed != speed:
-            self.current_speed = speed
-        self._send_command(f"motor {speed}")
+        if self.current_speed == speed:
+            return True
+        self.current_speed = speed
+        return self._send_command(f"motor {speed}")
 
     def stop(self):
         """Stop the robot"""
-        self._send_command("stop")
         self.current_speed = 0
+        return self._send_command("stop")
 
     def set_angle(self, angle: int):
+        if self.last_angle == angle:
+            return True
         self.last_angle = angle
-        self.servo(angle)
+        return self.servo(angle)
     
     def set_speed(self, speed: int):
         self.motor(speed)
@@ -127,8 +158,10 @@ class RobotController:
     
     def set_angle_by_error(self, error, lane_type):
         if lane_type == "none":
-            self.set_angle(120)
-        self.set_angle(self.calculate_angle_by_error(error))
+            self.pid.reset()
+            self.stop()
+            return False
+        return self.set_angle(self.calculate_angle_by_error(error))
 
     def signal_left(self):
         self._send_command("left")
