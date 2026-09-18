@@ -243,8 +243,12 @@ def load_hardware_config(path):
 
 def _canonical_lines(config):
     lines = []
-    for module in config["modules"]:
-        lines.append(_module_echo(module))
+
+    type_order = ("motor", "servo", "ultrasonic", "encoder", "tm1638")
+    for module_type in type_order:
+        for module in config["modules"]:
+            if module["type"] == module_type:
+                lines.append(_module_echo(module))
 
     for name in (
         "stop_distance_cm",
