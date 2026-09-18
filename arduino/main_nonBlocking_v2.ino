@@ -763,6 +763,9 @@ char serialBuffer[SERIAL_LINE_MAX + 1];
 size_t serialLength = 0;
 bool serialOverflow = false;
 
+uint32_t lastHostHeartbeatMs = 0;
+bool hostHeartbeatSeen = false;
+
 /* =========================
    SERVO
    ========================= */
