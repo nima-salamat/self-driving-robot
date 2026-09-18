@@ -2,6 +2,7 @@ import logging
 import cv2
 import json
 import os
+import threading
 from flask import Flask, Response, request, render_template_string, jsonify
 from .template import HTML_TEMPLATE
 
@@ -59,6 +60,9 @@ class WebStreamer:
         
         self.ui_settings = self.load_ui_settings()
         
+        self._jpeg_cache_lock = threading.Lock()
+        self._jpeg_cache_frame_id = None
+        self._jpeg_cache = None
         self._setup_routes()
 
     def get_base_var(self, var):
@@ -134,6 +138,7 @@ class WebStreamer:
         self.app.add_url_rule('/get_ui', 'get_ui', self.get_ui)
         self.app.add_url_rule('/set_ui', 'set_ui', self.set_ui, methods=['POST'])
         self.app.add_url_rule('/video_feed_frame', 'video_feed_frame', self.video_feed_frame)
+        self.app.add_url_rule('/api/arduino-output', 'arduino_output', self.arduino_output)
         self.app.add_url_rule('/take_picture', 'take_picture', self.take_picture, methods=['POST'])
         self.app.add_url_rule('/toggle_record', 'toggle_record', self.toggle_record, methods=['POST'])
         self.app.add_url_rule('/freeze_frame', 'freeze_frame', self.freeze_frame, methods=['POST'])
@@ -228,10 +233,24 @@ class WebStreamer:
         
         if frame is None: 
             return Response('', status=204)
-        ret, buffer = cv2.imencode('.jpg', frame)
-        if not ret: 
-            return Response('', status=204)
-        return Response(buffer.tobytes(), mimetype='image/jpeg')
+        frame_id = getattr(self.config, "stream_frame_seq", id(frame))
+        with self._jpeg_cache_lock:
+            if frame_id != self._jpeg_cache_frame_id or self._jpeg_cache is None:
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if not ret:
+                    return Response('', status=204)
+                self._jpeg_cache = buffer.tobytes()
+                self._jpeg_cache_frame_id = frame_id
+            payload = self._jpeg_cache
+        return Response(payload, mimetype='image/jpeg')
+
+    def arduino_output(self):
+        connection = getattr(self.config, "arduino_connection", None)
+        if connection is None:
+            return jsonify(enabled=False, connected=False, state="DISCONNECTED", lines=[])
+        status = connection.telemetry_status(limit=50)
+        status["enabled"] = bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
+        return jsonify(status)
 
     def take_picture(self):
         setattr(self.config, "TAKE_PICTURE", True)
