@@ -826,7 +826,10 @@ void startNextPulse() {
     adaptiveCurrentPwm = activePulse.speed;
     adaptiveActive = false;
   } else {
-    adaptiveCurrentPwm = min((uint8_t)activePulse.speed, ADAPTIVE_INITIAL_PWM);
+    adaptiveCurrentPwm = (uint8_t)min(
+        (uint16_t)activePulse.speed,
+        (uint16_t)ADAPTIVE_INITIAL_PWM
+    );
     adaptiveActive = true;
   }
 
