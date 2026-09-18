@@ -172,7 +172,13 @@ class Robot:
                     else:
                         debug_frame = None
                     
+                    perception_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
+                    if self.metrics is not None:
+                        self.metrics.record_perception(
+                            (time.monotonic() - perception_started) * 1000.0,
+                            bool(result.get("perception_valid", False)),
+                        )
                     if not result.get("perception_valid", False):
                         self.control.stop()
                         self._pace_control_loop()
@@ -223,7 +229,13 @@ class Robot:
 
                     if config_city.DEBUG or config_city.STREAM:
                         debug_frame = frame.copy()
+                        perception_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
+                        if self.metrics is not None:
+                            self.metrics.record_perception(
+                                (time.monotonic() - perception_started) * 1000.0,
+                                bool(result.get("perception_valid", False)),
+                            )
                         angle = result.get("steering_angle")
                         crosswalk = result.get("crosswalk", False)
 
@@ -246,12 +258,17 @@ class Robot:
                 if config_city.AUTO_UPDATE_KP:
                     self.control.update_kp(result["kp"])
                 
+                control_started = time.monotonic()
                 if config_city.USE_PID:
                     self.control.set_angle_by_error(result["error"], result["lane_type"])
                 else:
                     self.control.set_angle(result["steering_angle"])
-                    
+
                 self.control.set_speed(SPEED)
+                if self.metrics is not None:
+                    self.metrics.record_control(
+                        (time.monotonic() - control_started) * 1000.0
+                    )
                 self._pace_control_loop()
 
         except KeyboardInterrupt:
