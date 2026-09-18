@@ -116,7 +116,7 @@ class Robot:
             
         # OutputManager instance 
         self.output = OutputManager(config_module=config_race, output_dir=OUTPUT_DIR)
-        self.fps = FPS()
+        self.fps = FPS(config=config_race)
         self.object_detector = ObjectDetector()
 
     def _pace_control_loop(self):
@@ -143,6 +143,7 @@ class Robot:
         try:
             while not self._shutdown_requested():
                 self.fps.update()
+                self.fps.maybe_log_performance()
                 if config_race.RUN_LVL == "STOP":
                     self.control.stop()
                     self.control.set_angle(SERVO_CENTER)
