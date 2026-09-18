@@ -1,77 +1,161 @@
 # Arduino Firmware
 
-این پوشه چند نسل firmware مستقل دارد. فایل‌های قدیمی عمداً دست‌نخورده نگه داشته شده‌اند.
+This directory contains multiple independent firmware generations. Existing firmware files are kept intact unless explicitly documented otherwise.
 
-## Firmwareها
+## Firmware matrix
 
-| فایل | مدل پیکربندی | قرارداد Python | کاربرد |
+| Firmware | Hardware configuration | Python contract | Main purpose |
 |---|---|---|---|
-| main.ino | پین‌ها داخل کد | ندارد | firmware قدیمی |
-| main_Blocking.ino | پین‌ها داخل کد | ندارد | نسخه legacy و blocking |
-| main_nonBlocking.ino | پین‌ها داخل کد | ندارد | non-blocking قدیمی؛ دست‌نخورده |
-| main_nonBlocking_v2.ino | پین‌ها داخل کد | ندارد | نسخه hardened با fixed hardware mapping |
-| main_configurable_v1.ino | از Python دریافت می‌شود | دارد | نسخه جدید قابل‌کانفیگ و قابل‌اعتبارسنجی |
+| \`main.ino\` | Hard-coded in firmware | No | Legacy firmware |
+| \`main_Blocking.ino\` | Hard-coded in firmware | No | Blocking legacy implementation |
+| \`main_nonBlocking.ino\` | Hard-coded in firmware | No | Original non-blocking implementation |
+| \`main_nonBlocking_v2.ino\` | Hard-coded in firmware | No | Hardened fixed-pin non-blocking implementation |
+| \`main_configurable_v1.ino\` | Supplied by Python at startup | Yes | Configurable firmware with strict hardware validation |
 
-## main_configurable_v1.ino
+## Recommended development model
 
-این firmware برای این طراحی شده که Arduino هیچ فرض ضمنی درباره پین‌ها نداشته باشد.
+\`main_configurable_v1.ino\` separates two concerns:
 
-Python در زمان startup می‌تواند تعریف کند:
+1. The firmware implements hardware capabilities and safety logic.
+2. Python supplies the physical hardware layout for a specific robot.
 
-- چند motor داریم و PWM/DIR هرکدام کجاست.
-- چند servo داریم و محدوده و center هرکدام چیست.
-- چند ultrasonic داریم و نام منطقی، TRIG و ECHO هرکدام چیست.
-- چند encoder داریم و پین interrupt آن‌ها چیست.
-- آیا TM1638 وجود دارد و کلیدهای force-stop و resume کدام‌اند.
-- پارامترهای safety و timing.
+Changing the wiring therefore does not require creating another firmware build, as long as the new layout is supported by the firmware.
 
-### ماژول‌های پشتیبانی‌شده
+## Supported modules
 
-حداکثرهای firmware:
+The firmware currently supports these module types:
 
 ~~~text
-motor       4
-servo       4
-ultrasonic  8
-encoder     4
-tm1638      1
+motor       maximum 4
+servo       maximum 4
+ultrasonic  maximum 8
+encoder     maximum 4
+tm1638      maximum 1
 ~~~
 
-هدف این firmware Arduino Mega 2560 است.
+The implementation targets the Arduino Mega 2560.
 
-### اعتبارسنجی روی Arduino
+### Motor
 
-قبل از فعال‌شدن سخت‌افزار، firmware موارد زیر را بررسی می‌کند:
+Each motor has an independent PWM and direction pin:
 
-- تعداد moduleها از حد مجاز بیشتر نباشد.
-- ID مربوط به motor/servo/encoder از صفر و بدون gap باشد.
-- پین‌ها تکراری نباشند.
-- PWM motor روی پین PWM باشد.
-- encoder روی پین interrupt-capable باشد.
-- بازه servo معتبر باشد.
-- TRIG/ECHO یک ultrasonic یکی نباشند.
-- نام ultrasonicها تکراری نباشد.
-- تنظیمات safety در محدوده باشند.
-
-در صورت خطا:
-
-~~~text
-ERR CFG <REASON>
+~~~json
+{
+  "type": "motor",
+  "id": 0,
+  "pwm": 10,
+  "dir": 12
+}
 ~~~
 
-ارسال می‌شود و config فعال نمی‌شود.
+Motor IDs must be contiguous starting at zero.
 
-## Handshake
+### Servo
 
-ابتدا Python باید نسخه firmware را تشخیص دهد:
+Each servo defines its pin and safe angular range:
+
+~~~json
+{
+  "type": "servo",
+  "id": 0,
+  "pin": 9,
+  "min": 30,
+  "max": 150,
+  "center": 90
+}
+~~~
+
+### Ultrasonic
+
+Ultrasonic sensors use a logical name plus TRIG/ECHO pins:
+
+~~~json
+{
+  "type": "ultrasonic",
+  "name": "right",
+  "trig": 6,
+  "echo": 7
+}
+~~~
+
+For compatibility with the current Python controller, the front sensors should be named:
 
 ~~~text
-hello
+left
+right
+~~~
 
+An additional sensor can use:
+
+~~~text
+side
+~~~
+
+Names are configurable; Python compatibility currently depends on the standard \`left\` and \`right\` names for obstacle logic.
+
+### Encoder
+
+Encoders use an interrupt-capable Arduino pin:
+
+~~~json
+{
+  "type": "encoder",
+  "id": 0,
+  "pin": 2
+}
+~~~
+
+### TM1638
+
+TM1638 is optional:
+
+~~~json
+{
+  "type": "tm1638",
+  "stb": 26,
+  "clk": 28,
+  "dio": 30,
+  "force_stop_button": 0,
+  "resume_button": 7
+}
+~~~
+
+If TM1638 is omitted, the firmware simply disables that feature.
+
+## Hardware validation
+
+The Arduino validates the proposed configuration before enabling normal runtime control.
+
+Validation includes:
+
+- Module count limits.
+- Contiguous motor, servo, and encoder IDs.
+- Pin conflicts.
+- PWM requirements for motor pins.
+- Interrupt capability for encoder pins.
+- Servo range validity.
+- TRIG/ECHO conflicts.
+- Duplicate ultrasonic names.
+- Supported safety-option ranges.
+- Configuration fingerprint equality.
+
+A rejected configuration produces an error such as:
+
+~~~text
+ERR CFG PIN_CONFLICT_10
+~~~
+
+The hardware configuration is not activated after a validation failure.
+
+## Python handshake
+
+The configurable firmware starts by identifying itself:
+
+~~~text
 HELLO main_configurable_v1 1 mega2560
 ~~~
 
-سپس configuration ارسال می‌شود:
+Python then sends the selected profile:
 
 ~~~text
 cfg begin mega2560_default
@@ -84,11 +168,12 @@ cfg ultrasonic right 6 7
 cfg ultrasonic side 8 24
 cfg tm1638 26 28 30 0 7
 cfg option stop_distance_cm 35
+cfg option pulse_stop_distance_cm 10
 ...
 cfg end mega2560_default <FNV32>
 ~~~
 
-Arduino configuration را validate می‌کند، fingerprint را دوباره حساب می‌کند و تمام مقادیر پذیرفته‌شده را echo می‌کند:
+The Arduino validates the entire configuration and echoes accepted values:
 
 ~~~text
 CFG ECHO mega2560_default motor 0 10 12
@@ -97,24 +182,23 @@ CFG ECHO mega2560_default servo 0 9 30 150 90
 CFG READY mega2560_default <FNV32>
 ~~~
 
-Python فقط وقتی startup را موفق اعلام می‌کند که:
+Python considers the contract valid only when all of these match:
 
-1. firmware ID درست باشد.
-2. protocol version درست باشد.
-3. board درست باشد.
-4. Arduino تمام module/optionها را echo کرده باشد.
-5. fingerprint دو طرف دقیقاً برابر باشد.
+- Firmware ID.
+- Protocol version.
+- Board ID.
+- Every accepted module.
+- Every accepted option.
+- Final FNV-1a fingerprint.
 
-## Runtime
+## Runtime commands
 
-بعد از موفق‌شدن handshake، فرمان‌های runtime زیر در دسترس‌اند:
+After the contract succeeds, the current controller-compatible commands are:
 
 ~~~text
 motor 200
 motor -200
 motor 0
-
-motor 0 180
 
 servo 90
 servo 0 90
@@ -136,63 +220,48 @@ status
 u
 ~~~
 
-Pulse:
+Pulse groups use:
 
 ~~~text
 f <speed> <pulses> <angle>
 b <speed> <pulses> <angle>
 ~~~
 
-چند pulse می‌تواند در یک خط ارسال شود.
+Multiple pulse groups can be sent in a single line.
 
-## Sensor naming
+## Safety features
 
-برای سازگاری با Python فعلی، ultrasonicهای جلوی ربات را بهتر است دقیقاً این نام‌ها داشته باشند:
+The configurable firmware includes:
 
-~~~text
-left
-right
-~~~
+- Host heartbeat timeout.
+- Front obstacle stop.
+- Pulse pause/resume when a configured front sensor is too close.
+- Encoder stall timeout.
+- Direction dead-time.
+- Fixed-size serial input buffering.
+- AVR watchdog support.
+- Optional TM1638 force-stop and resume controls.
 
-نام اختیاری سوم:
+## Example profile
 
-~~~text
-side
-~~~
-
-اگر این نام‌ها در config نباشند، telemetry مربوطه مقدار -1 می‌دهد.
-
-## Safety
-
-firmware شامل این لایه‌هاست:
-
-- heartbeat timeout
-- توقف در obstacle جلویی
-- pause/resume برای pulse هنگام نزدیک‌شدن مانع
-- stall timeout برای encoder
-- dead-time هنگام تغییر جهت
-- serial line length limit
-- watchdog روی AVR
-- TM1638 force-stop/resume در صورت configure شدن
-
-این نسخه برای دریافت command از buffer ثابت استفاده می‌کند.
-
-## مثال
-
-profile نمونه در Python:
+The repository contains a working profile for the current Mega 2560-style wiring:
 
 ~~~text
-../python/arduino_configs/mega2560_default.json
+python/arduino_configs/mega2560_default.json
 ~~~
 
-برای استفاده:
+Start Python with strict validation:
 
 ~~~bash
 python python/main.py --mode race --arduino-config python/arduino_configs/mega2560_default.json
 ~~~
 
-این flag اختیاری است. بدون آن Python رفتار قدیمی را ادامه می‌دهد و handshake جدید اجرا نمی‌شود.
+See the Python README for the complete command-line workflow.
 
-## نکته مهم
+## Important compatibility notes
 
-main_configurable_v1.ino را با profile مربوط به همان firmware استفاده کنید. اگر Python با --arduino-config به firmware دیگری وصل شود، firmware ID/protocol mismatch گزارش می‌شود و Python اجرا را متوقف می‌کند.
+\`main_nonBlocking.ino\` and \`main_nonBlocking_v2.ino\` remain separate firmware generations.
+
+The configurable firmware has its own protocol contract and should be paired with its matching Python profile.
+
+Do not assume that a profile for \`main_configurable_v1.ino\` can be used with another firmware generation.
