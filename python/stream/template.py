@@ -81,6 +81,13 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
     </div>
 
   
+      <div class="card">
+        <div class="section-title">Runtime Health</div>
+        <div id="health_state" class="status-line">State: UNKNOWN</div>
+        <div id="health_faults" class="small">Faults: none</div>
+        <div id="health_metrics" class="small" style="margin-top:6px;"></div>
+      </div>
+
     <div class="card">
       <div class="section-title">Bird's Eye View (BEV) Config</div>
       <div class="form-row" style="margin-bottom: 10px;">
@@ -869,6 +876,7 @@ stopAllBtn.addEventListener('click', () => {
         stopAllBtn.style.background = '#ef4444'; // Red for stop
         startFrameLoop();
         valUpdateTimer = setInterval(fetchValuesLoop, 4000);
+    setInterval(updateHealth, 1000);
     setInterval(updateArduinoOutput, 1000);
     updateArduinoOutput();
         updateFrameModeText();
@@ -985,6 +993,35 @@ document.getElementById('toggle_record_btn').addEventListener('click', () => {
 });
 
 /* ---------- Init ---------- */
+function updateHealth(){
+    if(!syncActive) return;
+    fetch('/api/health')
+        .then(r=>r.json())
+        .then(j=>{
+            const h = j.health || {};
+            const m = j.metrics || {};
+            const t = m.timing || {};
+            const state = document.getElementById('health_state');
+            const faults = document.getElementById('health_faults');
+            const metrics = document.getElementById('health_metrics');
+            state.textContent = 'State: ' + (h.state || 'UNKNOWN');
+            const names = Object.keys(h.faults || {});
+            faults.textContent = 'Faults: ' + (names.length ? names.join(', ') : 'none');
+            const loop = t.loop || {};
+            const camera = t.camera || {};
+            const perception = t.perception || {};
+            const serial = t.serial || {};
+            metrics.textContent =
+                'FPS avg ' + (m.avg_fps || 0).toFixed(1) +
+                ' | loop p95 ' + (loop.p95_ms || 0).toFixed(1) + ' ms' +
+                ' | loop max ' + (loop.max_ms || 0).toFixed(1) + ' ms' +
+                ' | camera p95 ' + (camera.p95_ms || 0).toFixed(1) + ' ms' +
+                ' | perception p95 ' + (perception.p95_ms || 0).toFixed(1) + ' ms' +
+                ' | serial p95 ' + (serial.p95_ms || 0).toFixed(1) + ' ms';
+        })
+        .catch(()=>{});
+}
+
 function updateArduinoOutput(){
     if(!syncActive) return;
     fetch('/api/arduino-output')
