@@ -48,6 +48,7 @@ class Robot:
     def __init__(self):
         self.camera = Camera(config=config_race)
         self.control = RobotController(config=config_race)
+        config_race.arduino_connection = self.control.connection
         self.flask_thread = None
         
         # Calculate dynamic obstacle avoidance parameters
