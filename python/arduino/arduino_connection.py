@@ -342,7 +342,7 @@ class ArduinoConnection:
                 print(f"[Arduino] {line}", flush=True)
 
     def _heartbeat_loop(self):
-        heartbeat = b"heartbeat\\n"
+        heartbeat = b"heartbeat\n"
         while not self._stop_event.is_set():
             if self.enabled and self.connected:
                 try:
