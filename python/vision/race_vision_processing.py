@@ -4,6 +4,7 @@ from modes.race.config_race import (
 )
 
 import modes.race.config_race as conf
+from vision.ml_lane import create_ml_lane_detector
 import math
 import cv2
 import numpy as np
@@ -16,6 +17,7 @@ class VisionProcessor:
         self.lroi_unseen_counter = 0
         self.max_unseen_counter = 10
         self._bev_cache_key = None
+        self.ml_lane_detector = create_ml_lane_detector(conf)
         self._bev_matrix = None
         self._morph_kernel = np.ones((3, 3), np.uint8)
         self._lsd = cv2.createLineSegmentDetector(0)
@@ -92,6 +94,9 @@ class VisionProcessor:
         return best_x_mid
 
     def detect(self, frame, debug_frame=None):
+        if self.ml_lane_detector is not None:
+            return self.ml_lane_detector.detect(frame, debug_frame)
+
         if frame is None:
             return {
                 "steering_angle": SERVO_CENTER,
