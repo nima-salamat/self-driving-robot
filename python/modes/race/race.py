@@ -14,7 +14,7 @@ from traffic_sign_detector.async_detector import AsyncSignDetector
 from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
-    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP, USE_SIGN)
+    TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
 from stream import start_stream, stop_stream
 import logging
 import cv2
@@ -219,7 +219,7 @@ class Robot:
                 status = "running"
                 sign_text = "None"
                 
-                if USE_SIGN:
+                if getattr(config_race, "USE_SIGN", False):
                     sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
@@ -283,7 +283,7 @@ class Robot:
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         # Strict fallback: Skip all processing if USE_SIGN is disabled
-        if not USE_SIGN:
+        if not getattr(config_race, "USE_SIGN", False):
             return None, False, debug_frame, None
             
         sign_tag_frame = crop_image(frame, 
