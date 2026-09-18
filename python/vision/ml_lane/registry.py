@@ -17,10 +17,8 @@ class LaneModelSpec:
     license: str
     params: str
     notes: str
-    model_path: Optional[str] = None
-    model_url: Optional[str] = None
-    archive_url: Optional[str] = None
-    archive_glob: Optional[str] = None
+    model_path: str
+    model_source: str = "bundled"
 
 
 MODEL_SPECS = {
@@ -35,11 +33,6 @@ MODEL_SPECS = {
         params="52,191 params / 3.00 GFLOPs",
         notes="Very small depthwise UNet lane segmentation model.",
         model_path="unet_depthwise_nano/unet_depthwise_nano_jit.pnnx.onnx",
-        model_url=(
-            "https://huggingface.co/nickpai/lane-detection-unet-ncnn/"
-            "resolve/main/unet_depthwise_nano/"
-            "unet_depthwise_nano_jit.pnnx.onnx"
-        ),
     ),
     "unet_depthwise_small": LaneModelSpec(
         name="unet_depthwise_small",
@@ -50,30 +43,8 @@ MODEL_SPECS = {
         dataset="BDD100K",
         license="MIT",
         params="253,919 params / 5.88 GFLOPs",
-        notes="Still-small depthwise UNet with more capacity than Nano.",
+        notes="Small depthwise UNet with more capacity than Nano.",
         model_path="unet_depthwise_small/unet_depthwise_small_jit.pnnx.onnx",
-        model_url=(
-            "https://huggingface.co/nickpai/lane-detection-unet-ncnn/"
-            "resolve/main/unet_depthwise_small/"
-            "unet_depthwise_small_jit.pnnx.onnx"
-        ),
-    ),
-    "ufld_culane_resnet18": LaneModelSpec(
-        name="ufld_culane_resnet18",
-        title="Ultra-Fast-Lane-Detection ResNet18 CULane",
-        format="onnx",
-        input_width=800,
-        input_height=288,
-        dataset="CULane",
-        license="MIT",
-        params="ResNet18 backbone",
-        notes="Row-wise lane detector; useful as a different architecture baseline.",
-        archive_url=(
-            "https://s3.ap-northeast-2.wasabisys.com/"
-            "pinto-model-zoo/140_Ultra-Fast-Lane-Detection/"
-            "resources_culane.tar.gz"
-        ),
-        archive_glob="**/*.onnx",
     ),
 }
 
@@ -91,11 +62,4 @@ def get_model_spec(name):
 
 
 def resolve_model_path(name):
-    spec = get_model_spec(name)
-    if spec.model_path is not None:
-        return MODEL_ROOT / spec.model_path
-
-    candidates = sorted(MODEL_ROOT.glob(spec.archive_glob or "*.onnx"))
-    if not candidates:
-        return MODEL_ROOT / spec.name / f"{spec.name}.onnx"
-    return candidates[0]
+    return MODEL_ROOT / get_model_spec(name).model_path
