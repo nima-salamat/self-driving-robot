@@ -1,4 +1,5 @@
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -293,7 +294,12 @@ class RecordingAdversarialTests(unittest.TestCase):
         import types
         from unittest.mock import patch
 
-        from manager.output_manager import OutputManager
+        fake_cv2 = types.SimpleNamespace(
+            VideoWriter_fourcc=lambda *args: 0,
+            VideoWriter=lambda *args, **kwargs: None,
+        )
+        with patch.dict(sys.modules, {"cv2": fake_cv2}):
+            from manager.output_manager import OutputManager
 
         with tempfile.TemporaryDirectory() as tmp:
             config = types.SimpleNamespace(
