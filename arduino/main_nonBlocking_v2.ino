@@ -25,6 +25,7 @@
 const uint32_t BAUD_RATE = 115200UL;
 
 const uint32_t STATUS_INTERVAL_MS = 50UL;
+const uint32_t HOST_HEARTBEAT_TIMEOUT_MS = 500UL;
 const uint32_t BUTTON_POLL_MS = 25UL;
 const uint32_t BUTTON_DEBOUNCE_MS = 35UL;
 
@@ -1140,6 +1141,7 @@ void handleButtons(uint32_t nowMs) {
    ========================= */
 void processSerialLine(char *rawLine);
 void sendStatus();
+void serviceHostWatchdog(uint32_t nowMs);
 
 void pollSerial() {
   const size_t MAX_BYTES_PER_LOOP = 256;
@@ -1198,6 +1200,40 @@ void handlePulseCommandLine(const char *line) {
   }
 }
 
+void serviceHostWatchdog(uint32_t nowMs) {
+  if (!hostHeartbeatSeen) return;
+  if ((uint32_t)(nowMs - lastHostHeartbeatMs) <= HOST_HEARTBEAT_TIMEOUT_MS) return;
+
+  const bool motionNeedsHost =
+      currentMotorSpeed != 0 ||
+      pulseActive ||
+      pulsePaused ||
+      queueCount > 0 ||
+      pendingHostMotorValid ||
+      pendingHostServoValid;
+
+  if (!motionNeedsHost) return;
+
+  clearPulseQueue();
+  pulseActive = false;
+  pulsePaused = false;
+  adaptiveActive = false;
+  pendingHostMotorValid = false;
+  pendingHostServoValid = false;
+  directionChangePending = false;
+  pendingDirectionSpeed = 0;
+  laneState = LANE_NORMAL;
+  lane = 'R';
+
+  writeMotorHardware(0);
+  centerServo();
+  panel.stop();
+
+  // Keep the watchdog armed. If the host comes back, the next heartbeat
+  // is enough to restore liveness; motion must still be commanded explicitly.
+  lastHostHeartbeatMs = nowMs;
+}
+
 void processSerialLine(char *rawLine) {
   char lineCopy[SERIAL_LINE_MAX + 1];
   strncpy(lineCopy, rawLine, SERIAL_LINE_MAX);
@@ -1208,6 +1244,12 @@ void processSerialLine(char *rawLine) {
 
   if (emergencyStopActive) {
     if (equalsIgnoreCase(line, "resume")) exitForceStop();
+    return;
+  }
+
+  if (equalsIgnoreCase(line, "heartbeat")) {
+    lastHostHeartbeatMs = millis();
+    hostHeartbeatSeen = true;
     return;
   }
 
@@ -1407,6 +1449,7 @@ void loop() {
   panel.update(nowMs);
   handleButtons(nowMs);
   pollSerial();
+  serviceHostWatchdog(nowMs);
   updateUltra(nowMs);
   serviceDirectionChange(nowMs);
 
