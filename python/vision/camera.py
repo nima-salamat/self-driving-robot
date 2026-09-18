@@ -53,7 +53,8 @@ class Camera:
         if self.pi_mode:
             try:
                 config_pi = self.picam.create_preview_configuration(
-                    main={"size": (self.width, self.height), "format": "RGB888"}
+                    main={"size": (self.width, self.height), "format": "RGB888"},
+                    queue=False,
                 )
                 self.picam.configure(config_pi)
                 
