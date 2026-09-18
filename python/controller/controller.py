@@ -1,6 +1,7 @@
 import time
 from arduino.arduino_connection import ArduinoConnection
 from controller.pid_controller import PIDController
+from controller.motion_history import MotionHistory
 
 class RobotController:
     def __init__(self, config=None):
@@ -34,6 +35,7 @@ class RobotController:
             reconnect_timeout=getattr(self.config, "SERIAL_RECONNECT_TIMEOUT", 0.5),
             telemetry_enabled=True,
             telemetry_buffer_size=getattr(self.config, "SERIAL_TELEMETRY_BUFFER_SIZE", 100),
+            heartbeat_interval=getattr(self.config, "HOST_HEARTBEAT_INTERVAL", 0.1),
             enabled=not self.without_arduino,
         )
         self.connection.set_print_telemetry(
@@ -65,8 +67,16 @@ class RobotController:
         self.command_sequence = 0
         self._telemetry_parse_failures = 0
         self.last_command = None
+        self.motion_history = MotionHistory(
+            max_pulses=getattr(self.config, "MOTION_HISTORY_MAX_PULSES", 200),
+            max_events=getattr(self.config, "MOTION_HISTORY_MAX_EVENTS", 128),
+        )
+        setattr(self.config, "motion_history", self.motion_history)
 
-    def _send_command(self, cmd: str):
+    def record_event(self, event, metadata=None):
+        self.motion_history.record_event(event, metadata=metadata)
+
+    def _send_command(self, cmd: str, *, event=None, record_motion=False, metadata=None):
         command = cmd.strip()
         started = time.monotonic()
         success = self.connection.send_command(command + "\n")
@@ -85,6 +95,23 @@ class RobotController:
             "transmitted_at": finished if success else None,
             "latency_ms": (finished - started) * 1000.0,
         }
+
+        if success and event is not None:
+            self.motion_history.record_event(
+                event,
+                metadata={
+                    "command": command,
+                    **dict(metadata or {}),
+                },
+            )
+
+        if success and record_motion:
+            self.motion_history.record_pulse_command(
+                command,
+                event=event or "pulse_command",
+                metadata=metadata,
+            )
+
         return success
 
     def _sync_connection_state(self):
@@ -126,11 +153,16 @@ class RobotController:
         self.current_speed = speed if success else 0
         return success
 
-    def stop(self):
-        """Stop the robot"""
+    def stop(self, reason=None):
+        """Stop the robot and optionally record a semantic stop event."""
         self._sync_connection_state()
         self.current_speed = 0
         self.pid.reset()
+        if reason is not None:
+            self.record_event(
+                "stop",
+                {"reason": str(reason), "angle": self.current_angle},
+            )
         return self._send_command("stop")
 
     def set_angle(self, angle: int):
@@ -161,11 +193,21 @@ class RobotController:
             speed = self.current_speed if self.current_speed < 0 else -150
         self.motor(-abs(speed))
         
-    def forward_pulse(self, s):
-        self._send_command(s)
+    def forward_pulse(self, s, event="forward_pulse", metadata=None):
+        return self._send_command(
+            s,
+            event=event,
+            record_motion=True,
+            metadata=metadata,
+        )
     
-    def backward_pulse(self, s):
-        self._send_command(s)
+    def backward_pulse(self, s, event="backward_pulse", metadata=None):
+        return self._send_command(
+            s,
+            event=event,
+            record_motion=True,
+            metadata=metadata,
+        )
         
     def read(self):
         """
@@ -206,7 +248,7 @@ class RobotController:
     def set_angle_by_error(self, error, lane_type):
         if lane_type == "none":
             self.pid.reset()
-            self.stop()
+            self.stop(reason="lane_lost")
             return False
         return self.set_angle(self.calculate_angle_by_error(error))
 
