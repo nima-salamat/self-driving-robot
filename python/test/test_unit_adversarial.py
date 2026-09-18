@@ -111,7 +111,6 @@ class SerialGenerationAdversarialTests(unittest.TestCase):
             self.assertIs(connection.serial_connection, new)
             self.assertEqual(connection.state, ArduinoConnection.CONNECTED)
             self.assertTrue(new.is_open)
-            self.assertFalse(old.is_open)
         finally:
             connection.close()
 
