@@ -680,7 +680,7 @@ bool enqueueSequence(const char *sequence) {
   uint8_t tokenCount = 0;
 
   char *token = strtok(work, " \t");
-  while (token && tokenCount < 32) {
+  while (token && tokenCount < 64) {
     tokens[tokenCount++] = token;
     token = strtok(nullptr, " \t");
   }
