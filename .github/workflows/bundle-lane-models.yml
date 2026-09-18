@@ -8,6 +8,7 @@ on:
       - ".github/workflows/bundle-lane-models.yml"
       - "python/tools/download_lane_models.py"
       - "python/vision/ml_lane/registry.py"
+      - "python/vision/ml_lane/__init__.py"
   workflow_dispatch:
 
 permissions:
