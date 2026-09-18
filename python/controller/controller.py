@@ -50,6 +50,10 @@ class RobotController:
         self.connection.set_print_telemetry(
             bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
         )
+        if not self.without_arduino:
+            startup_wait = max(0.0, float(getattr(self.config, "SERIAL_STARTUP_WAIT", 3.0)))
+            if startup_wait and not self.connection.wait_until_connected(startup_wait):
+                print("Arduino not connected during startup; recovery continues in background.")
         self.current_angle = 90
         self.current_speed = 0
         self.pid = PIDController(
