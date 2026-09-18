@@ -24,6 +24,9 @@ class Camera:
         self.resize_height = resize_height or getattr(self.config, 'resize_height', 480)
         self.mode = mode or getattr(self.config, 'CAMERA_MODE', 'opencv')
         self.usbcam_addr = getattr(self.config, 'USBCAM_ADDR', 0)
+        self.allow_picam_fallback = bool(
+            getattr(self.config, 'CAMERA_FALLBACK_TO_OPENCV', False)
+        )
 
         self.pi_mode = False
         self.camera_initialized = False
@@ -37,10 +40,12 @@ class Camera:
                 self.picam = Picamera2()
                 self.setup_camera()
                 logger.info("Using Picamera2")
-            except Exception as e:
-                logger.error(f"Failed to initialize Picamera2: {e}")
-                logger.info("Falling back to OpenCV")
+            except Exception:
+                logger.exception("Failed to initialize Picamera2")
                 self.pi_mode = False
+                if not self.allow_picam_fallback:
+                    raise
+                logger.warning("Falling back to OpenCV camera by explicit configuration")
                 self.cap = cv2.VideoCapture(self.usbcam_addr)
                 self.setup_camera()
         else:
@@ -81,6 +86,12 @@ class Camera:
                 raise
 
         else:
+            if self.mode == "picam" and Picamera2 is None and not self.allow_picam_fallback:
+                raise RuntimeError(
+                    "Picamera2 is unavailable for CAMERA_MODE='picam'; "
+                    "enable CAMERA_FALLBACK_TO_OPENCV to allow webcam fallback"
+                )
+
             # OpenCV camera setup
             if getattr(self, 'cap', None) is None or not self.cap.isOpened():
                 self.cap = cv2.VideoCapture(self.usbcam_addr)

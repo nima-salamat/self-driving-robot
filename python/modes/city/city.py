@@ -2,8 +2,6 @@ import modes.city.config_city as config_city
 
 from utils.config_mode import set_city_mode
 # set_city_mode()
-from utils import json_config
-
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
@@ -22,12 +20,10 @@ import cv2
 import numpy as np
 import time
 import threading
-import sys
 from utils.fps import FPS
 from utils.roi_manager import crop_image
 
 
-logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # keep defaults (config_city can override)
@@ -120,11 +116,15 @@ class Robot:
                     self.control.forward_pulse(f"f {HARDCODE_SPEED}  220 90")
                     time.sleep(0.1)
 
+    def _shutdown_requested(self):
+        event = getattr(config_city, "SHUTDOWN_EVENT", None)
+        return bool(event is not None and event.is_set())
+
     def run(self):
         logger.info("starting")
         self.fps.start()
         try:
-            while True:
+            while not self._shutdown_requested():
                 self.fps.update()
                 if config_city.RUN_LVL == "STOP":
                     self.control.stop()
@@ -197,6 +197,7 @@ class Robot:
                     if status == "stopped":
                         self.control.stop()
                         time.sleep(config_city.DELAY)
+                        self._pace_control_loop()
                         continue
                     
                 else:
@@ -228,13 +229,14 @@ class Robot:
                             self.sign_detector.process_frame(frame, debug_frame=debug_frame)
 
                     self.handle_debug_stream(result, frame, angle, crosswalk, "crosswalk", "")
-                    
+                    self._pace_control_loop()
                     continue
                 
                 if crosswalk and time.time() - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
                     self.check_crosswalk()
+                    self._pace_control_loop()
                     continue
                 
                 if config_city.AUTO_UPDATE_KP:
@@ -427,19 +429,18 @@ class Robot:
         except Exception:
             logger.exception("Cleanup failed: serial state detach")
 
-        sys.exit(0)
 
 def start():
-    json_config.load()
+    robot = Robot()
+    robot.flask_thread = None
 
     if config_city.STREAM:
-        flask_thread = threading.Thread(
+        robot.flask_thread = threading.Thread(
             target=start_stream,
             args=(config_city,),
             daemon=True,
             name="flask-stream",
         )
-        flask_thread.start()
-    robot = Robot()
-    robot.flask_thread = flask_thread if config_city.STREAM else None
+        robot.flask_thread.start()
+
     robot.run()

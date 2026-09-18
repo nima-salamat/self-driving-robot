@@ -3,8 +3,6 @@ import modes.race.config_race as config_race
 from utils.config_mode import set_race_mode
 # set_race_mode()
 
-from utils import json_config
-
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
@@ -24,13 +22,11 @@ import math
 import numpy as np
 import time
 import threading
-import sys
 from utils.fps import FPS
 from utils.roi_manager import crop_image
 
 # Set to False to completely bypass sign and tag processing
 
-logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # keep defaults (config_race can override)
@@ -137,11 +133,15 @@ class Robot:
         config_race.stream_frame_seq = getattr(config_race, "stream_frame_seq", 0) + 1
 
    
+    def _shutdown_requested(self):
+        event = getattr(config_race, "SHUTDOWN_EVENT", None)
+        return bool(event is not None and event.is_set())
+
     def run(self):
         logger.info("starting")
         self.fps.start()
         try:
-            while True:
+            while not self._shutdown_requested():
                 self.fps.update()
                 if config_race.RUN_LVL == "STOP":
                     self.control.stop()
@@ -181,6 +181,7 @@ class Robot:
                 frame, frame_resized = self.camera.capture_frame(with_resize=True)
                 if not self.camera.last_capture_valid or frame_resized is None:
                     self.control.stop()
+                    self._pace_control_loop()
                     continue
                 if config_race.STREAM or config_race.DEBUG:
                     debug_frame = frame.copy()
@@ -219,6 +220,7 @@ class Robot:
                         self.handle_debug_stream(result, frame, angle, status, sign_text)
                         self.control.stop()
                         time.sleep(config_race.DELAY)
+                        self._pace_control_loop()
                         continue
                     
                 # Unconditionally process debug stream outside USE_SIGN to maintain camera feed
@@ -409,19 +411,18 @@ class Robot:
         except Exception:
             logger.exception("Cleanup failed: serial state detach")
 
-        sys.exit(0)
 
 def start():
-    json_config.load()
+    robot = Robot()
+    robot.flask_thread = None
 
     if config_race.STREAM:
-        flask_thread = threading.Thread(
+        robot.flask_thread = threading.Thread(
             target=start_stream,
             args=(config_race,),
             daemon=True,
             name="flask-stream",
         )
-        flask_thread.start()
-    robot = Robot()
-    robot.flask_thread = flask_thread if config_race.STREAM else None
+        robot.flask_thread.start()
+
     robot.run()

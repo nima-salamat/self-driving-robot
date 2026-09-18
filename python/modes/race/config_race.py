@@ -11,6 +11,7 @@ USBCAM_ADDR = 0
 
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
+CAMERA_FALLBACK_TO_OPENCV = False
 
 
 # --- ROI Shape Features ---
