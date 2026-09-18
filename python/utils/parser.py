@@ -4,62 +4,61 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Self-driving robot runtime.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     parser.add_argument(
         "--mode",
         choices=["city", "race"],
         default="city",
-        help="Run mode.",
+        help="Run mode (default: city).",
     )
 
     parser.add_argument(
         "--debug",
         action="store_true",
         default=None,
-        help="Enable debug output.",
+        help="Enable debug output; overrides the mode configuration.",
     )
 
     parser.add_argument(
         "--stream",
         action="store_true",
         default=None,
-        help="Enable the web stream.",
+        help="Enable the web stream; overrides the mode configuration.",
     )
 
     parser.add_argument(
         "--stream-host",
         default=None,
-        help="Stream bind address.",
+        help="Stream bind address; overrides the mode configuration.",
     )
 
     parser.add_argument(
         "--stream-control",
         action="store_true",
         default=None,
-        help="Allow the web dashboard to change runtime settings.",
+        help="Allow the web dashboard to change runtime settings; overrides the mode configuration.",
     )
 
     parser.add_argument(
         "--without-arduino",
         action="store_true",
         default=None,
-        help="Run without opening the Arduino serial connection.",
+        help="Run without opening the Arduino serial connection; overrides the mode configuration.",
     )
 
     parser.add_argument(
         "--fps",
         action="store_true",
         default=None,
-        help="Show the runtime FPS counter.",
+        help="Show the runtime FPS counter; overrides the mode configuration.",
     )
 
     parser.add_argument(
         "--performance",
         action="store_true",
         default=None,
-        help="Enable runtime performance diagnostics.",
+        help="Enable runtime performance diagnostics; overrides the mode configuration.",
     )
 
     parser.add_argument(
@@ -88,14 +87,14 @@ def parse_args():
         type=float,
         default=None,
         metavar="SECONDS",
-        help="Timeout for each Arduino hardware-contract exchange.",
+        help="Timeout for each Arduino hardware-contract exchange (default: 3 seconds).",
     )
 
     parser.add_argument(
         "--camera-mode",
         choices=["picam", "webcam", "opencv"],
         default=None,
-        help="Select the camera backend. 'webcam' and 'opencv' use OpenCV VideoCapture.",
+        help="Select the camera backend; overrides the mode configuration.",
     )
 
     parser.add_argument(
@@ -103,7 +102,7 @@ def parse_args():
         type=int,
         default=None,
         metavar="INDEX",
-        help="OpenCV camera index when using webcam/opencv.",
+        help="OpenCV camera index when using webcam/opencv; overrides the mode configuration.",
     )
 
     parser.add_argument(
