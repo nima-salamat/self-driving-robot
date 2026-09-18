@@ -1,259 +1,314 @@
-# Python Runtime & Arduino Hardware Contract
+# Python Runtime
 
-این بخش روش اجرای Python و قرارداد سخت‌افزاری جدید با Arduino را توضیح می‌دهد.
+This directory contains the runtime, configuration system, Arduino transport, vision pipeline, and operational tools for the self-driving robot.
 
-## حالت عادی
+## Quick start
 
-بدون flag جدید، ارتباط Python همان رفتار قبلی را دارد:
+From the repository root:
 
 ~~~bash
 python python/main.py --mode race
 ~~~
 
-## حالت Strict Hardware Contract
-
-برای firmware جدید:
+Or from the \`python/\` directory:
 
 ~~~bash
-python python/main.py \
-  --mode race \
-  --arduino-config python/arduino_configs/mega2560_default.json
+cd python
+python main.py --mode race
 ~~~
 
-با دادن --arduino-config، Python قبل از شروع control loop:
+The default mode is \`city\`.
 
-1. به Arduino وصل می‌شود.
-2. firmware ID و protocol version را می‌گیرد.
-3. config JSON را locally validate می‌کند.
-4. تمام moduleها و optionها را به Arduino می‌فرستد.
-5. پاسخ و echo Arduino را بررسی می‌کند.
-6. fingerprint FNV-1a را در دو طرف مقایسه می‌کند.
-7. فقط بعد از موفقیت کامل وارد Race/City می‌شود.
+## Command-line help
 
-هر mismatch یا ERR CFG باعث توقف startup می‌شود.
-
-خروجی خطای این بخش با exit code 2 خاتمه پیدا می‌کند.
-
-## Flagها
-
-### --arduino-config PATH
-
-فعال‌کردن strict hardware contract و مشخص‌کردن JSON profile.
+Run:
 
 ~~~bash
-python python/main.py \
-  --mode race \
-  --arduino-config python/arduino_configs/mega2560_default.json
+cd python
+python main.py --help
 ~~~
 
-### --arduino-contract-timeout SECONDS
-
-timeout هر مرحله از handshake.
-
-پیش‌فرض:
+The exact line wrapping can vary by Python/terminal width. The command exposes the following interface:
 
 ~~~text
-3.0
+usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
+               [--stream-host STREAM_HOST] [--stream-control]
+               [--without-arduino] [--fps] [--performance] [--preflight]
+               [--read-arduino-output] [--arduino-config PATH]
+               [--arduino-contract-timeout SECONDS]
+               [--camera-mode {picam,webcam,opencv}]
+               [--camera-index INDEX]
+               [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
+
+Self-driving robot runtime.
+
+options:
+  -h, --help
+                        show this help message and exit
+  --mode {city,race}   Run mode. Default: city
+  --debug              Enable debug output
+  --stream             Enable the web stream
+  --stream-host STREAM_HOST
+                        Stream bind address
+  --stream-control     Allow the web dashboard to change runtime settings
+  --without-arduino    Run without opening the Arduino serial connection
+  --fps                Show the runtime FPS counter
+  --performance        Enable runtime performance diagnostics
+  --preflight          Run startup diagnostics and exit without entering
+                        the control loop
+  --read-arduino-output
+                        Print telemetry lines received from Arduino
+  --arduino-config PATH
+                        Enable the strict Arduino hardware contract using PATH
+  --arduino-contract-timeout SECONDS
+                        Timeout for each Arduino hardware-contract exchange
+  --camera-mode {picam,webcam,opencv}
+                        Select the camera backend. 'webcam' and 'opencv' use
+                        OpenCV VideoCapture
+  --camera-index INDEX
+                        OpenCV camera index when using webcam/opencv
+  --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
+                        Enable ML lane detection with the selected model
 ~~~
 
-مثال:
+## Configuration precedence
+
+Configuration is loaded in this order:
+
+~~~text
+1. Mode defaults from config_city.py or config_race.py
+2. python/city.json or python/race.json
+3. Explicit command-line flags
+~~~
+
+A value supplied by an explicit CLI flag always has priority over the value loaded from JSON.
+
+An omitted flag does not overwrite the JSON value.
+
+For example, when \`race.json\` contains:
+
+~~~json
+{
+  "STREAM": true,
+  "CAMERA_MODE": "picam",
+  "USBCAM_ADDR": 0
+}
+~~~
+
+this command preserves those JSON values:
 
 ~~~bash
-python python/main.py \
+python main.py --mode race
+~~~
+
+while this command overrides only the camera mode:
+
+~~~bash
+python main.py --mode race --camera-mode webcam
+~~~
+
+The same rule applies to the existing boolean flags such as \`--stream\`, \`--debug\`, \`--fps\`, and \`--performance\`: they override JSON only when the user explicitly supplies the flag.
+
+## Camera configuration
+
+Camera settings are available in both JSON configuration and CLI overrides.
+
+### JSON
+
+The active mode loads its JSON from:
+
+~~~text
+python/city.json
+python/race.json
+~~~
+
+Relevant settings:
+
+~~~json
+{
+  "CAMERA_MODE": "picam",
+  "USBCAM_ADDR": 0,
+  "CAM_WIDTH": 640,
+  "CAM_HEIGHT": 480,
+  "resize_width": 380,
+  "resize_height": 230
+}
+~~~
+
+Supported camera modes:
+
+- \`picam\`: Raspberry Pi Camera through Picamera2.
+- \`webcam\`: OpenCV \`VideoCapture\`.
+- \`opencv\`: Alias for the OpenCV backend.
+
+### CLI
+
+Select the camera backend at runtime:
+
+~~~bash
+python main.py --mode race --camera-mode webcam
+~~~
+
+Select a specific USB camera index:
+
+~~~bash
+python main.py --mode race --camera-mode webcam --camera-index 1
+~~~
+
+The CLI camera options override the corresponding JSON values.
+
+When \`CAMERA_MODE=picam\`, \`--camera-index\` has no effect.
+
+## Arduino hardware contract
+
+The strict hardware contract is opt-in.
+
+Example:
+
+~~~bash
+python main.py \
   --mode race \
-  --arduino-config python/arduino_configs/mega2560_default.json \
+  --arduino-config arduino_configs/mega2560_default.json
+~~~
+
+This requires \`arduino/main_configurable_v1.ino\`.
+
+Python verifies:
+
+1. Arduino firmware ID.
+2. Protocol version.
+3. Board ID.
+4. Module and pin acknowledgements.
+5. Configuration fingerprint.
+
+Any contract error stops startup before Race or City begins.
+
+The timeout can be changed with:
+
+~~~bash
+python main.py \
+  --mode race \
+  --arduino-config arduino_configs/mega2560_default.json \
   --arduino-contract-timeout 5
 ~~~
 
-### ترکیب ممنوع
+The strict contract cannot be combined with \`--without-arduino\`.
 
-این دو گزینه با هم قابل استفاده نیستند:
+## Common run examples
+
+### City
+
+~~~bash
+python main.py --mode city
+~~~
+
+### Race
+
+~~~bash
+python main.py --mode race
+~~~
+
+### Race with a USB webcam
+
+~~~bash
+python main.py --mode race --camera-mode webcam --camera-index 0
+~~~
+
+### Race with strict Arduino validation
+
+~~~bash
+python main.py \
+  --mode race \
+  --arduino-config arduino_configs/mega2560_default.json
+~~~
+
+### Race with strict Arduino validation and webcam
+
+~~~bash
+python main.py \
+  --mode race \
+  --arduino-config arduino_configs/mega2560_default.json \
+  --camera-mode webcam \
+  --camera-index 0
+~~~
+
+### Hardware-free run
+
+~~~bash
+python main.py --mode race --without-arduino
+~~~
+
+### Startup diagnostics
+
+~~~bash
+python main.py --mode race --preflight
+~~~
+
+### Performance diagnostics
+
+~~~bash
+python main.py --mode race --performance
+~~~
+
+### Print Arduino telemetry
+
+~~~bash
+python main.py --mode race --read-arduino-output
+~~~
+
+## ML lane detection
+
+ML lane detection is opt-in:
+
+~~~bash
+python main.py --mode race --ml-lane-model unet_depthwise_nano
+~~~
+
+Supported models:
 
 ~~~text
---arduino-config
---without-arduino
+unet_depthwise_nano
+unet_depthwise_small
 ~~~
 
-## Config JSON
+## Tests
 
-فایل نمونه:
+Run the hardware-free unit suite from the repository root:
+
+~~~bash
+PYTHONPATH=python python -m unittest discover -s python/test -p 'test_unit_*.py' -v
+~~~
+
+The configurable Arduino firmware also has a GitHub Actions compile workflow:
 
 ~~~text
-python/arduino_configs/mega2560_default.json
+.github/workflows/arduino-configurable.yml
 ~~~
 
-ساختار اصلی:
+The CI workflow compiles \`main_configurable_v1.ino\` for Arduino Mega 2560.
 
-~~~json
-{
-  "schema_version": 1,
-  "config_id": "mega2560_default",
-  "firmware": {
-    "id": "main_configurable_v1",
-    "protocol": 1
-  },
-  "board": "mega2560",
-  "modules": [
-    {
-      "type": "motor",
-      "id": 0,
-      "pwm": 10,
-      "dir": 12
-    },
-    {
-      "type": "servo",
-      "id": 0,
-      "pin": 9,
-      "min": 30,
-      "max": 150,
-      "center": 90
-    },
-    {
-      "type": "ultrasonic",
-      "name": "left",
-      "trig": 4,
-      "echo": 5
-    }
-  ],
-  "options": {
-    "stop_distance_cm": 35,
-    "pulse_stop_distance_cm": 10,
-    "side_return_distance_cm": 20,
-    "ultrasonic_interval_ms": 50,
-    "host_heartbeat_timeout_ms": 500,
-    "pulse_stall_timeout_ms": 900,
-    "direction_deadtime_ms": 15
-  }
-}
-~~~
-
-## مدل moduleها
-
-### Motor
-
-~~~json
-{
-  "type": "motor",
-  "id": 0,
-  "pwm": 10,
-  "dir": 12
-}
-~~~
-
-### Servo
-
-~~~json
-{
-  "type": "servo",
-  "id": 0,
-  "pin": 9,
-  "min": 30,
-  "max": 150,
-  "center": 90
-}
-~~~
-
-### Ultrasonic
-
-~~~json
-{
-  "type": "ultrasonic",
-  "name": "right",
-  "trig": 6,
-  "echo": 7
-}
-~~~
-
-### Encoder
-
-~~~json
-{
-  "type": "encoder",
-  "id": 0,
-  "pin": 2
-}
-~~~
-
-### TM1638
-
-~~~json
-{
-  "type": "tm1638",
-  "stb": 26,
-  "clk": 28,
-  "dio": 30,
-  "force_stop_button": 0,
-  "resume_button": 7
-}
-~~~
-
-## معماری فایل‌ها
+## Project structure
 
 ~~~text
 python/
 ├── main.py
-├── controller/
-│   └── controller.py
+├── base_config.py
+├── city.json
+├── race.json
 ├── arduino/
 │   ├── arduino_connection.py
 │   └── hardware_contract.py
 ├── arduino_configs/
 │   └── mega2560_default.json
+├── controller/
+├── modes/
+├── vision/
+├── utils/
 └── test/
-    └── test_unit_arduino_contract.py
 ~~~
 
-hardware_contract.py مسئول:
+## Design notes
 
-- parse و validation profile
-- ساخت protocol commands
-- محاسبه fingerprint
-- انتظار برای ACK
-- مقایسه echo
-- اعلام خطای strict startup
+The current serial transport is asynchronous. Telemetry is drained by a background reader, and the controller does not wait for a response after every command.
 
-## جریان کامل
-
-~~~text
-Python
-  │
-  │ hello
-  ▼
-Arduino
-  │ HELLO main_configurable_v1 1 mega2560
-  │
-  │ cfg begin ...
-  │ cfg motor ...
-  │ cfg servo ...
-  │ cfg ultrasonic ...
-  │ cfg encoder ...
-  │ cfg option ...
-  │ cfg end ... FNV32
-  ▼
-Arduino validation
-  │
-  ├── ERR CFG ...  ──────> Python stops
-  │
-  └── CFG ECHO ...
-      CFG READY ... FNV32
-              │
-              ▼
-       Python fingerprint check
-              │
-        ┌─────┴─────┐
-        │           │
-      match      mismatch
-        │           │
-       OK        Python stops
-        │
-        ▼
-   Race / City
-~~~
-
-## تفاوت با firmwareهای قدیمی
-
-firmwareهای قدیمی پین‌ها را داخل .ino تعریف می‌کنند. در نتیجه عوض‌کردن سخت‌افزار یعنی تغییر و upload firmware.
-
-در main_configurable_v1.ino همان firmware می‌تواند برای profileهای مختلف استفاده شود؛ فقط JSON و wiring باید تغییر کند.
-
-این قابلیت عمداً opt-in است تا deploymentهای فعلی بدون تغییر باقی بمانند.
+The strict Arduino contract is intentionally separate from normal operation so existing deployments can continue using their current firmware. It can be enabled explicitly when a robot is known to use \`main_configurable_v1.ino\`.
