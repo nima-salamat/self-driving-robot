@@ -93,14 +93,18 @@ class Robot:
 
         # Send commands to Arduino only when hardware control is enabled.
         if not getattr(config_race, "WITHOUT_ARDUINO", False):
-            self.control._send_command(cmd_avoid_left)
-            time.sleep(0.4)
-            self.control._send_command("save left")
-            time.sleep(0.4)
-            self.control._send_command(cmd_return_right)
-            time.sleep(0.4)
-            self.control._send_command("save right")
-            time.sleep(0.4)
+            startup_commands = (
+                (cmd_avoid_left, 0.4),
+                ("save left", 0.4),
+                (cmd_return_right, 0.4),
+                ("save right", 0.4),
+            )
+            for command, delay in startup_commands:
+                if self._shutdown_requested():
+                    break
+                self.control._send_command(command)
+                if self._sleep_interruptible(delay):
+                    break
 
 
         self.vision = VisionProcessor()
@@ -126,6 +130,14 @@ class Robot:
         if self.health is not None:
             from utils.health import HealthState
             self.health.set_lifecycle(HealthState.READY)
+
+    def _sleep_interruptible(self, seconds):
+        event = getattr(config_race, "SHUTDOWN_EVENT", None)
+        seconds = max(0.0, float(seconds))
+        if event is None:
+            time.sleep(seconds)
+            return False
+        return bool(event.wait(seconds))
 
     def _pace_control_loop(self):
         period = max(0.001, float(getattr(config_race, "CONTROL_PERIOD", 0.01)))
@@ -239,7 +251,8 @@ class Robot:
                     if status == "stopped":
                         self.handle_debug_stream(result, frame, angle, status, sign_text)
                         self.control.stop()
-                        time.sleep(config_race.DELAY)
+                        if self._sleep_interruptible(config_race.DELAY):
+                            break
                         self._pace_control_loop()
                         continue
                     

@@ -760,3 +760,57 @@ class StalePerceptionHealthTests(unittest.TestCase):
         snapshot = monitor.snapshot_runtime(config)
         self.assertEqual(snapshot["state"], HealthState.FAULT)
         self.assertIn("perception_stale", snapshot["faults"])
+
+
+class ShutdownManeuverAdversarialTests(unittest.TestCase):
+    def test_race_interruptible_sleep_observes_shutdown_event(self):
+        import threading
+        from modes.race.race import Robot
+        from modes.race import race as race_module
+
+        event = threading.Event()
+        previous = getattr(race_module.config_race, "SHUTDOWN_EVENT", None)
+        race_module.config_race.SHUTDOWN_EVENT = event
+        try:
+            robot = Robot.__new__(Robot)
+            self.assertFalse(robot._sleep_interruptible(0.0))
+            event.set()
+            self.assertTrue(robot._sleep_interruptible(1.0))
+        finally:
+            race_module.config_race.SHUTDOWN_EVENT = previous
+
+    def test_city_crosswalk_does_not_send_pulse_after_shutdown(self):
+        import threading
+        from modes.city import city as city_module
+
+        event = threading.Event()
+        previous = getattr(city_module.config_city, "SHUTDOWN_EVENT", None)
+        city_module.config_city.SHUTDOWN_EVENT = event
+
+        class FakeControl:
+            def __init__(self):
+                self.commands = []
+
+            def set_angle(self, angle):
+                self.commands.append(("angle", angle))
+
+            def signal_right(self):
+                self.commands.append(("signal", "right"))
+
+            def forward_pulse(self, command):
+                self.commands.append(("pulse", command))
+
+        robot = city_module.Robot.__new__(city_module.Robot)
+        robot.control = FakeControl()
+        robot.last_tag = city_module.TURN_RIGHT
+        robot.crosswalk_time_start = time.time() - city_module.config_city.CROSSWALK_SLEEP
+        robot.crosswalk_last_seen = time.time()
+
+        event.set()
+        try:
+            robot.check_crosswalk()
+            self.assertFalse(
+                any(kind == "pulse" for kind, _ in robot.control.commands)
+            )
+        finally:
+            city_module.config_city.SHUTDOWN_EVENT = previous
