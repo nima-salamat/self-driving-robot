@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "config_id": "mega2560_default",
+  "firmware": {
+    "id": "main_configurable_v1",
+    "protocol": 1
+  },
+  "board": "mega2560",
+  "modules": [
+    {"type": "motor", "id": 0, "pwm": 10, "dir": 12},
+    {"type": "motor", "id": 1, "pwm": 11, "dir": 13},
+    {"type": "servo", "id": 0, "pin": 9, "min": 30, "max": 150, "center": 90},
+    {"type": "encoder", "id": 0, "pin": 2},
+    {"type": "ultrasonic", "name": "left", "trig": 4, "echo": 5},
+    {"type": "ultrasonic", "name": "right", "trig": 6, "echo": 7},
+    {"type": "ultrasonic", "name": "side", "trig": 8, "echo": 24},
+    {"type": "tm1638", "stb": 26, "clk": 28, "dio": 30, "force_stop_button": 0, "resume_button": 7}
+  ],
+  "options": {
+    "stop_distance_cm": 35,
+    "pulse_stop_distance_cm": 10,
+    "side_return_distance_cm": 20,
+    "ultrasonic_interval_ms": 50,
+    "host_heartbeat_timeout_ms": 500,
+    "pulse_stall_timeout_ms": 900,
+    "direction_deadtime_ms": 15
+  }
+}
