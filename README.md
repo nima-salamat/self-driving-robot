@@ -89,27 +89,32 @@ arduino/
 
 ### Arduino Communication Protocol
 
-Commands are sent as single-character strings:
-- `F` - Forward
-- `B` - Backward
-- `L` - Turn left (servo)
-- `R` - Turn right (servo)
-- `S` - Stop
-- `+` - Increase speed
-- `-` - Decrease speed
-- `U` - Update sensor data (returns JSON)
+The current Python runtime uses 115200 baud and line-based commands with the non-blocking firmware family.
 
-**Response Format**:
-```json
-{
-  "motorSpeed": 200,
-  "servo": 90,
-  "ultraLeft": 45,
-  "ultraRight": 42,
-  "ultraSide": 35,
-  "encoder": 1250
-}
-```
+Typical current commands:
+
+~~~text
+motor 200
+servo 90
+stop
+resume
+left
+right
+set left <pulse sequence>
+set right <pulse sequence>
+save left
+save right
+status
+heartbeat
+~~~
+
+Current telemetry is a six-field line:
+
+~~~text
+<lane> <motion> <right_distance_cm> <left_distance_cm> <loop_hz> <pulse_active>
+~~~
+
+The legacy single-character/JSON protocol belongs to older Arduino firmware and is not the current Python contract. See [arduino/README.md](arduino/README.md) for firmware differences.
 
 ---
 
