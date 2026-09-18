@@ -2,14 +2,14 @@ import signal
 import sys
 import threading
 
-from utils.parser import parse_args
-from utils.config_mode import set_city_mode, set_race_mode
-from utils import json_config
-from utils.preflight import run_preflight
-from utils.logging_setup import configure_logging
-from utils.runtime_metrics import RuntimeMetrics
-from utils.health import HealthMonitor
 from arduino.hardware_contract import ArduinoHardwareConfigError
+from utils import json_config
+from utils.config_mode import set_city_mode, set_race_mode
+from utils.health import HealthMonitor
+from utils.logging_setup import configure_logging
+from utils.parser import parse_args
+from utils.preflight import run_preflight
+from utils.runtime_metrics import RuntimeMetrics
 import base_config
 
 
@@ -21,35 +21,46 @@ def _install_shutdown_handlers(shutdown_event):
     signal.signal(signal.SIGTERM, request_shutdown)
 
 
+def _apply_cli_overrides(config, args):
+    overrides = {
+        "DEBUG": args.debug,
+        "STREAM": args.stream,
+        "SHOW_FPS": args.fps,
+        "PERFORMANCE": args.performance,
+        "WITHOUT_ARDUINO": args.without_arduino,
+        "READ_ARDUINO_OUTPUT": args.read_arduino_output,
+        "STREAM_ALLOW_CONTROL": args.stream_control,
+        "CAMERA_MODE": args.camera_mode,
+        "USBCAM_ADDR": args.camera_index,
+        "ARDUINO_CONFIG": args.arduino_config,
+        "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
+    }
+
+    for name, value in overrides.items():
+        if value is not None:
+            setattr(config, name, value)
+
+    if args.ml_lane_model is not None:
+        config.USE_ML_LANE_DETECTOR = True
+        config.ML_LANE_MODEL = args.ml_lane_model
+
+
 if __name__ == "__main__":
     args = parse_args()
 
     if args.mode == "city":
         from modes.city import config_city as config
         from modes.city import start
+
         set_city_mode()
     else:
         from modes.race import config_race as config
         from modes.race import start
+
         set_race_mode()
 
-    # Load JSON first so explicit CLI flags remain authoritative.
     json_config.load()
-
-    config.DEBUG = args.debug
-    config.STREAM = args.stream
-    config.SHOW_FPS = args.fps
-    config.PERFORMANCE = args.performance
-    config.WITHOUT_ARDUINO = args.without_arduino
-    config.READ_ARDUINO_OUTPUT = args.read_arduino_output
-    config.ARDUINO_CONFIG = args.arduino_config
-    config.ARDUINO_CONTRACT_TIMEOUT = args.arduino_contract_timeout
-    config.STREAM_ALLOW_CONTROL = args.stream_control
-    config.USE_ML_LANE_DETECTOR = args.ml_lane_model is not None
-    if args.ml_lane_model is not None:
-        config.ML_LANE_MODEL = args.ml_lane_model
-    if args.stream_host:
-        config.STREAM_HOST = args.stream_host
+    _apply_cli_overrides(config, args)
 
     if args.ml_lane_model is not None and args.mode != "race":
         raise SystemExit("--ml-lane-model is currently supported only in race mode")
@@ -57,10 +68,16 @@ if __name__ == "__main__":
     if args.arduino_config and args.without_arduino:
         raise SystemExit("--arduino-config cannot be used together with --without-arduino")
 
+    if args.camera_index is not None and args.camera_index < 0:
+        raise SystemExit("--camera-index must be a non-negative integer")
+
     config.MODE = args.mode
     base_config.MODE = args.mode
 
-    configure_logging(debug=args.debug, log_dir=getattr(config, "OUTPUT_DIR", "output"))
+    configure_logging(
+        debug=getattr(config, "DEBUG", False),
+        log_dir=getattr(config, "OUTPUT_DIR", "output"),
+    )
 
     if args.preflight:
         report = run_preflight(config)
