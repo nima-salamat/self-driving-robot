@@ -47,6 +47,7 @@ class Robot:
         self.control = RobotController(config=config_city)
         config_city.arduino_connection = self.control.connection
         self.flask_thread = None
+        self._next_control_time = time.monotonic()
 
         # hardcode the left and right lane change
         if not getattr(config_city, "WITHOUT_ARDUINO", False):
@@ -68,6 +69,15 @@ class Robot:
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
         self.object_detector = ObjectDetector()
+
+    def _pace_control_loop(self):
+        period = max(0.001, float(getattr(config_city, "CONTROL_PERIOD", 0.01)))
+        self._next_control_time += period
+        delay = self._next_control_time - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        else:
+            self._next_control_time = time.monotonic()
 
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
@@ -217,9 +227,8 @@ class Robot:
                 else:
                     self.control.set_angle(result["steering_angle"])
                     
-                time.sleep(config_city.DELAY)
-                self.control.set_speed(SPEED)  
-                time.sleep(config_city.DELAY)
+                self.control.set_speed(SPEED)
+                self._pace_control_loop()
 
         except KeyboardInterrupt:
             logger.error("error KeyboardInterrupt")
@@ -237,7 +246,8 @@ class Robot:
                                     config_city.OBJ_LEFT_ROI, 
                                     config_city.OBJ_RIGHT_ROI
         )
-        print(self.object_detector.detect(object_frame)[1])
+        detected = self.object_detector.detect(object_frame)[1]
+        logger.debug("Object detector result: %s", detected)
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         
