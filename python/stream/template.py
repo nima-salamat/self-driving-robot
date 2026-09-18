@@ -73,6 +73,12 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
   </div>
 
   <div class="right-panel">
+    <div class="card">
+      <div class="section-title">Arduino Telemetry</div>
+      <div id="arduino_status" class="small status-line">Waiting for serial state...</div>
+      <pre id="arduino_output" style="max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;background:#050b15;border-radius:8px;color:var(--txt);font-size:12px;white-space:pre-wrap"></pre>
+    </div>
+
   
     <div class="card">
       <div class="section-title">Bird's Eye View (BEV) Config</div>
@@ -854,6 +860,8 @@ stopAllBtn.addEventListener('click', () => {
         stopAllBtn.style.background = '#ef4444'; // Red for stop
         startFrameLoop();
         valUpdateTimer = setInterval(fetchValuesLoop, 4000);
+    setInterval(updateArduinoOutput, 1000);
+    updateArduinoOutput();
         updateFrameModeText();
         showToast('Sync Resumed');
     }
@@ -968,6 +976,20 @@ document.getElementById('toggle_record_btn').addEventListener('click', () => {
 });
 
 /* ---------- Init ---------- */
+function updateArduinoOutput(){
+    if(!syncActive) return;
+    fetch('/api/arduino-output')
+        .then(r=>r.json())
+        .then(j=>{
+            const status = document.getElementById('arduino_status');
+            const output = document.getElementById('arduino_output');
+            status.textContent = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
+            output.textContent = (j.lines || []).join('\n');
+            output.scrollTop = output.scrollHeight;
+        })
+        .catch(()=>{});
+}
+
 function fetchValuesLoop() {
     if(!syncActive) return;
     fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }});
