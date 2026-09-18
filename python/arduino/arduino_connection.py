@@ -171,9 +171,18 @@ class ArduinoConnection:
                 while not self._stop_event.is_set() and time.monotonic() < deadline:
                     time.sleep(min(0.05, deadline - time.monotonic()))
 
-            self._consecutive_reconnect_failures = 0
-            self._set_state(self.CONNECTED)
-            logger.info("Arduino serial connected: %s @ %s", self.port, self.baudrate)
+            if self._stop_event.is_set():
+                with self._serial_lock:
+                    connection = self.serial_connection
+                    self.serial_connection = None
+                    if connection is not None:
+                        try:
+                            connection.close()
+                        except Exception:
+                            pass
+                self._set_state(self.DISCONNECTED)
+                return False
+
             return True
         except (serial.SerialException, OSError) as exc:
             self.serial_connection = None
@@ -194,10 +203,20 @@ class ArduinoConnection:
                 if self.connected:
                     continue
                 if self._open_serial():
-                    self._establish_safe_state()
+                    if self._establish_safe_state():
+                        self._consecutive_reconnect_failures = 0
+                        self._set_state(self.CONNECTED)
+                        logger.info(
+                            "Arduino serial connected: %s @ %s",
+                            self.port,
+                            self.baudrate,
+                        )
+                    elif self._consecutive_reconnect_failures >= self.max_retries:
+                        # Back off after repeated failures without blocking the control thread.
+                        self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
                 elif self._consecutive_reconnect_failures >= self.max_retries:
                     # Back off after repeated failures without blocking the control thread.
-                    time.sleep(min(self.reconnect_interval * 4.0, 5.0))
+                    self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
 
     def _establish_safe_state(self):
         """Send a safe stop/center sequence before normal control resumes."""
