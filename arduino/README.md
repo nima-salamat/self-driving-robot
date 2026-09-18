@@ -218,8 +218,13 @@ load
 
 status
 u
+lane auto
+lane manual
+lane stop
 ~~~
 
+The `left` and `right` commands are directional signal events. They do not start a lane-change maneuver. Automatic lane changes are controlled by the lane state machine.
+  
 Pulse groups use:
 
 ~~~text
@@ -228,6 +233,25 @@ b <speed> <pulses> <angle>
 ~~~
 
 Multiple pulse groups can be sent in a single line.
+
+## Lane automation
+
+When lane automation is enabled:
+
+1. A front obstacle detected by ultrasonic sensors named `left` or `right` can trigger the configured left-lane sequence.
+2. While the robot is in the left lane, an ultrasonic sensor named `side` can trigger the configured return-to-right sequence.
+3. A return sequence completes based on encoder pulses instead of a fixed wall-clock duration.
+4. `lane manual` disables automatic lane changes and leaves obstacle handling to the explicit stop/resume path.
+
+Control commands:
+
+~~~text
+lane auto
+lane manual
+lane stop
+~~~
+
+The feature requires at least one configured encoder because lane sequences are pulse-based.
 
 ## Safety features
 
@@ -241,6 +265,7 @@ The configurable firmware includes:
 - Fixed-size serial input buffering.
 - AVR watchdog support.
 - Optional TM1638 force-stop and resume controls.
+- Configurable lane-change and side-return thresholds.
 
 ## Example profile
 
