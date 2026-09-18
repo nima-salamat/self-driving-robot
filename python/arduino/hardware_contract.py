@@ -365,10 +365,11 @@ def perform_hardware_handshake(connection, path, timeout=3.0):
 
     for name, value in config["options"].items():
         command = f"cfg option {name} {value}"
+        expected_ack = f"CFG ACCEPT {config_id} option {name} {value}"
         _send_and_wait(
             connection,
             command,
-            lambda line, config_id=config_id: line.startswith(f"CFG ACCEPT {config_id} option "),
+            lambda line, expected_ack=expected_ack: line == expected_ack,
             timeout,
             f"option {name}",
         )
