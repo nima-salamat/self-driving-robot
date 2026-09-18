@@ -183,6 +183,7 @@ uint32_t directionChangeDueMs = 0;
 int pendingHostMotor = 0;
 bool pendingHostMotorValid = false;
 int pendingHostServo = 90;
+uint8_t pendingHostServoId = 0;
 bool pendingHostServoValid = false;
 
 bool forceStopActive = false;
@@ -683,6 +684,7 @@ void setServo(uint8_t index, int angle) {
 
   if (pulseActive) {
     pendingHostServo = angle;
+    pendingHostServoId = index;
     pendingHostServoValid = true;
     return;
   }
@@ -782,8 +784,8 @@ void finishPulseSequence() {
     if (!forceStopActive && !emergencyStopActive) requestMotorSpeed(requested);
   }
 
-  if (pendingHostServoValid && activeConfig.servoCount > 0) {
-    setServoHardware(0, pendingHostServo);
+  if (pendingHostServoValid && pendingHostServoId < activeConfig.servoCount) {
+    setServoHardware(pendingHostServoId, pendingHostServo);
     pendingHostServoValid = false;
   }
 }
@@ -1231,6 +1233,7 @@ void applyHardwareConfig() {
   emergencyStopActive = false;
   pendingHostMotorValid = false;
   pendingHostServoValid = false;
+  pendingHostServoId = 0;
   currentMotorSpeed = 0;
   hostHeartbeatSeen = false;
   hostTimeoutReported = false;
@@ -1607,15 +1610,16 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
 
       int signedSpeed = (int)speed;
       if (pulseActive) {
-        pendingHostMotor = signedSpeed;
-        pendingHostMotorValid = true;
-      } else {
-        signedSpeed = constrain(signedSpeed, -255, 255);
-        int magnitude = abs(signedSpeed);
-        int direction = signedSpeed >= 0 ? HIGH : LOW;
-        digitalWrite(activeConfig.motors[id].dir, direction);
-        analogWrite(activeConfig.motors[id].pwm, magnitude);
+        Serial.println("ERR MOTOR_ID_DURING_PULSE");
+        return;
       }
+
+      signedSpeed = constrain(signedSpeed, -255, 255);
+      int magnitude = abs(signedSpeed);
+      int direction = signedSpeed >= 0 ? HIGH : LOW;
+      digitalWrite(activeConfig.motors[id].dir, direction);
+      analogWrite(activeConfig.motors[id].pwm, magnitude);
+      if (id == 0) currentMotorSpeed = signedSpeed;
       return;
     }
 
