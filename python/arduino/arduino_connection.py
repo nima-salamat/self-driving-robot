@@ -58,6 +58,11 @@ class ArduinoConnection:
         self._print_telemetry = False
         self._last_error = None
         self._consecutive_reconnect_failures = 0
+        self._telemetry_started_at = time.monotonic()
+        self._telemetry_lines_received = 0
+        self._telemetry_bytes_received = 0
+        self._telemetry_dropped_lines = 0
+        self._last_telemetry_at = None
 
         if self.enabled:
             self._reconnect_thread = threading.Thread(
@@ -95,11 +100,26 @@ class ArduinoConnection:
         return lines
 
     def telemetry_status(self, limit=50):
+        now = time.monotonic()
+        with self._telemetry_lock:
+            lines_received = self._telemetry_lines_received
+            bytes_received = self._telemetry_bytes_received
+            dropped_lines = self._telemetry_dropped_lines
+            last_telemetry_at = self._last_telemetry_at
+            buffered = len(self._telemetry)
+        elapsed = max(0.0, now - self._telemetry_started_at)
         return {
             "enabled": self._telemetry_enabled,
             "connected": self.connected,
             "state": self.state,
             "lines": self.telemetry_snapshot(limit),
+            "lines_received": lines_received,
+            "bytes_received": bytes_received,
+            "dropped_lines": dropped_lines,
+            "buffered_lines": buffered,
+            "line_rate_hz": lines_received / elapsed if elapsed > 0 else 0.0,
+            "last_line_age_s": (max(0.0, now - last_telemetry_at) if last_telemetry_at is not None else None),
+            "reconnect_failures": self._consecutive_reconnect_failures,
         }
 
     def _set_state(self, state, error=None):
@@ -262,6 +282,11 @@ class ArduinoConnection:
                 continue
 
             with self._telemetry_lock:
+                self._telemetry_lines_received += 1
+                self._telemetry_bytes_received += len(raw) + 1
+                self._last_telemetry_at = time.monotonic()
+                if len(self._telemetry) == self._telemetry.maxlen:
+                    self._telemetry_dropped_lines += 1
                 self._telemetry.append(line)
 
             if self._print_telemetry:
