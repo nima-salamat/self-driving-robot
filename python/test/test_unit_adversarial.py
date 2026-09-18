@@ -254,12 +254,7 @@ class RecordingAdversarialTests(unittest.TestCase):
         import types
         from unittest.mock import patch
 
-        fake_cv2 = types.SimpleNamespace(
-            VideoWriter_fourcc=lambda *args: 0,
-            VideoWriter=lambda *args, **kwargs: None,
-        )
-        with patch.dict(sys.modules, {"cv2": fake_cv2}):
-            from manager.output_manager import OutputManager
+        from manager.output_manager import OutputManager
 
         with tempfile.TemporaryDirectory() as tmp:
             config = types.SimpleNamespace(
@@ -630,28 +625,21 @@ class CameraInitializationAdversarialTests(unittest.TestCase):
                 self.released = True
 
         fake_capture = FakeCapture()
-        fake_cv2 = types.SimpleNamespace(
-            VideoCapture=lambda *_args, **_kwargs: fake_capture,
-            CAP_PROP_FRAME_WIDTH=3,
-            CAP_PROP_FRAME_HEIGHT=4,
-            CAP_PROP_FPS=5,
-            CAP_PROP_BUFFERSIZE=6,
+        import importlib
+        camera_module = importlib.import_module("vision.camera")
+        config = types.SimpleNamespace(
+            CAMERA_MODE="webcam",
+            USBCAM_ADDR=0,
+            CAM_WIDTH=640,
+            CAM_HEIGHT=480,
+            resize_width=380,
+            resize_height=230,
+            CAMERA_FALLBACK_TO_OPENCV=False,
         )
-        with patch.dict(sys.modules, {"cv2": fake_cv2}):
-            import importlib
-            camera_module = importlib.import_module("vision.camera")
-            config = types.SimpleNamespace(
-                CAMERA_MODE="webcam",
-                USBCAM_ADDR=0,
-                CAM_WIDTH=640,
-                CAM_HEIGHT=480,
-                resize_width=380,
-                resize_height=230,
-                CAMERA_FALLBACK_TO_OPENCV=False,
-            )
+        with patch.object(camera_module.cv2, "VideoCapture", return_value=fake_capture):
             with self.assertRaises(RuntimeError):
                 camera_module.Camera(config=config)
-            self.assertTrue(fake_capture.released)
+        self.assertTrue(fake_capture.released)
 
 
 class ProgressHealthAdversarialTests(unittest.TestCase):
@@ -709,14 +697,8 @@ class StreamFailureAdversarialTests(unittest.TestCase):
         import types
         from unittest.mock import patch
 
-        fake_cv2 = types.SimpleNamespace(
-            imencode=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                RuntimeError("simulated encoder failure")
-            )
-        )
-        with patch.dict(sys.modules, {"cv2": fake_cv2}):
-            import importlib
-            stream_module = importlib.import_module("stream")
+                import importlib
+        stream_module = importlib.import_module("stream")
             config = types.SimpleNamespace(
                 MODE="test",
                 debug_frames_list=[object()],
