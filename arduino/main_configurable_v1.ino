@@ -251,8 +251,8 @@ void loadLaneSequences() {
 
   if (storage.magic != EEPROM_MAGIC ||
       storage.checksum != eepromChecksum(data, checkLength) ||
-      strlen(storage.left) > MAX_SEQUENCE_CHARS ||
-      strlen(storage.right) > MAX_SEQUENCE_CHARS) {
+      boundedLength(storage.left, sizeof(storage.left)) >= sizeof(storage.left) ||
+      boundedLength(storage.right, sizeof(storage.right)) >= sizeof(storage.right)) {
     setDefaultLaneSequences();
     return;
   }
@@ -281,8 +281,8 @@ void saveLaneSequences(bool saveLeft, bool saveRight) {
   const uint8_t *currentData = reinterpret_cast<const uint8_t *>(&current);
   if (current.magic != EEPROM_MAGIC ||
       current.checksum != eepromChecksum(currentData, sizeof(LaneStorage) - sizeof(current.checksum)) ||
-      strlen(current.left) > MAX_SEQUENCE_CHARS ||
-      strlen(current.right) > MAX_SEQUENCE_CHARS) {
+      boundedLength(current.left, sizeof(current.left)) >= sizeof(current.left) ||
+      boundedLength(current.right, sizeof(current.right)) >= sizeof(current.right)) {
     current = storage;
   }
 
@@ -522,6 +522,14 @@ bool validateConfig(const HardwareConfig &cfg, char *error, size_t errorSize) {
   }
 
   return true;
+}
+
+size_t boundedLength(const char *text, size_t maximum) {
+  size_t length = 0;
+  while (length < maximum && text[length] != ' ') {
+    ++length;
+  }
+  return length;
 }
 
 bool parseLongStrict(const char *text, long minimum, long maximum, long &out) {
@@ -1641,6 +1649,10 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
   }
 
   if (strcmp(tokens[0], "left") == 0) {
+    if (activeConfig.encoderCount == 0) {
+      Serial.println("ERR LEFT_NO_ENCODER");
+      return;
+    }
     if (!enqueueSequenceText(leftSequence)) {
       Serial.println("ERR LEFT_SEQUENCE");
       return;
@@ -1651,6 +1663,10 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
   }
 
   if (strcmp(tokens[0], "right") == 0) {
+    if (activeConfig.encoderCount == 0) {
+      Serial.println("ERR RIGHT_NO_ENCODER");
+      return;
+    }
     if (!enqueueSequenceText(rightSequence)) {
       Serial.println("ERR RIGHT_SEQUENCE");
       return;
@@ -1694,6 +1710,10 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
   if (tokens[0][1] == '\0' &&
       (tolower((unsigned char)tokens[0][0]) == 'f' ||
        tolower((unsigned char)tokens[0][0]) == 'b')) {
+    if (activeConfig.encoderCount == 0) {
+      Serial.println("ERR PULSE_NO_ENCODER");
+      return;
+    }
     if (count % 4 != 0 || count < 4) {
       Serial.println("ERR PULSE_ARGS");
       return;
