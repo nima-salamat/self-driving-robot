@@ -28,6 +28,7 @@ class ArduinoConnection:
         telemetry_enabled=True,
         telemetry_buffer_size=100,
         command_write_timeout=0.1,
+        heartbeat_interval=0.1,
         enabled=True,
     ):
         self.port = port
@@ -38,6 +39,7 @@ class ArduinoConnection:
         self.reconnect_interval = max(0.05, float(reconnect_interval))
         self.reconnect_timeout = max(0.05, float(reconnect_timeout))
         self.command_write_timeout = max(0.01, float(command_write_timeout))
+        self.heartbeat_interval = max(0.05, float(heartbeat_interval))
         self.enabled = bool(enabled)
 
         self.serial_connection = None
@@ -50,6 +52,7 @@ class ArduinoConnection:
         self._connected_event = threading.Event()
         self._reader_thread = None
         self._reconnect_thread = None
+        self._heartbeat_thread = None
         self._telemetry_thread_started = False
         self._rx_buffer = bytearray()
         self._telemetry = deque(maxlen=max(1, int(telemetry_buffer_size)))
@@ -74,6 +77,12 @@ class ArduinoConnection:
             )
             self._reconnect_thread.start()
             self._ensure_reader_started()
+            self._heartbeat_thread = threading.Thread(
+                target=self._heartbeat_loop,
+                name="arduino-heartbeat",
+                daemon=True,
+            )
+            self._heartbeat_thread.start()
             self._request_reconnect()
 
     @property
@@ -333,6 +342,34 @@ class ArduinoConnection:
                 print(f"[Arduino] {line}", flush=True)
 
     @if_is_not_windows
+    def _heartbeat_loop(self):
+        heartbeat = b"heartbeat\\n"
+        while not self._stop_event.is_set():
+            if self.enabled and self.connected:
+                try:
+                    with self._serial_lock:
+                        connection = self.serial_connection
+                        if connection is None or not connection.is_open:
+                            raise serial.SerialException(
+                                "Arduino connection is not open"
+                            )
+                        connection.write(heartbeat)
+                        connection.flush()
+                except (serial.SerialException, OSError, TimeoutError) as exc:
+                    self._mark_disconnected(
+                        exc,
+                        expected_connection=connection,
+                    )
+                except Exception as exc:
+                    logger.exception("Arduino heartbeat failed")
+                    self._mark_disconnected(
+                        exc,
+                        expected_connection=connection,
+                    )
+
+            self._stop_event.wait(self.heartbeat_interval)
+
+    @if_is_not_windows
     def send_command(self, command):
         if not self.enabled:
             return False
@@ -382,7 +419,11 @@ class ArduinoConnection:
                 except Exception:
                     logger.exception("Failed to close Arduino serial connection")
 
-        for thread in (self._reader_thread, self._reconnect_thread):
+        for thread in (
+            self._reader_thread,
+            self._reconnect_thread,
+            self._heartbeat_thread,
+        ):
             if thread and thread.is_alive() and thread is not threading.current_thread():
                 thread.join(timeout=1.0)
 
