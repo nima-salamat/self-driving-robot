@@ -42,6 +42,59 @@ class HealthMonitor:
             else:
                 self._faults.pop(name, None)
 
+    def snapshot_runtime(self, config):
+        """Return health plus current hardware resource state."""
+        snapshot = self.snapshot()
+        faults = dict(snapshot["faults"])
+        resources = {}
+
+        connection = getattr(config, "arduino_connection", None)
+        if connection is not None:
+            connected = bool(getattr(connection, "connected", False))
+            enabled = not bool(getattr(config, "WITHOUT_ARDUINO", False))
+            resources["arduino"] = {
+                "enabled": enabled,
+                "connected": connected,
+                "state": getattr(connection, "state", "UNKNOWN"),
+                "last_error": getattr(connection, "last_error", None),
+            }
+            if enabled and not connected:
+                faults["arduino_serial"] = {
+                    "severity": FaultSeverity.CRITICAL,
+                    "message": getattr(connection, "last_error", None) or getattr(connection, "state", "DISCONNECTED"),
+                    "age_s": 0.0,
+                }
+
+        camera = getattr(config, "camera", None)
+        if camera is not None:
+            initialized = bool(getattr(camera, "camera_initialized", False))
+            resources["camera"] = {
+                "initialized": initialized,
+                "last_capture_valid": bool(getattr(camera, "last_capture_valid", False)),
+                "consecutive_failures": int(getattr(camera, "consecutive_failures", 0)),
+            }
+            if not initialized:
+                faults["camera"] = {
+                    "severity": FaultSeverity.CRITICAL,
+                    "message": "camera not initialized",
+                    "age_s": 0.0,
+                }
+
+        if any(fault["severity"] == FaultSeverity.CRITICAL for fault in faults.values()):
+            state = HealthState.FAULT
+        elif faults:
+            state = HealthState.DEGRADED
+        elif snapshot["lifecycle"] == HealthState.STARTING:
+            state = HealthState.READY
+        else:
+            state = snapshot["state"]
+
+        return {
+            **snapshot,
+            "state": state,
+            "faults": faults,
+            "resources": resources,
+        }
     def snapshot(self):
         with self._lock:
             faults = {
