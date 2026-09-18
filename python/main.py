@@ -54,6 +54,9 @@ if __name__ == "__main__":
     if args.ml_lane_model is not None and args.mode != "race":
         raise SystemExit("--ml-lane-model is currently supported only in race mode")
 
+    if args.arduino_config and args.without_arduino:
+        raise SystemExit("--arduino-config cannot be used together with --without-arduino")
+
     config.MODE = args.mode
     base_config.MODE = args.mode
 
