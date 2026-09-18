@@ -115,7 +115,7 @@ class Robot:
         self.last_sign_result_id = 0
         
         # Initialize sign detector strictly based on USE_SIGN variable
-        if USE_SIGN:
+        if getattr(config_race, "USE_SIGN", False):
             detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
             self.sign_detector = AsyncSignDetector(detector)
         else:
@@ -264,9 +264,18 @@ class Robot:
                 
                 control_started = time.monotonic()
                 if config_race.USE_PID:
-                    self.control.set_angle_by_error(result["error"], result["lane_type"])
+                    control_ok = self.control.set_angle_by_error(
+                        result["error"],
+                        result["lane_type"],
+                    )
+                    if not control_ok:
+                        self._pace_control_loop()
+                        continue
                 else:
-                    self.control.set_angle(result["steering_angle"])
+                    control_ok = self.control.set_angle(result["steering_angle"])
+                    if not control_ok:
+                        self._pace_control_loop()
+                        continue
 
                 self.control.set_speed(SPEED)
                 if self.metrics is not None:
