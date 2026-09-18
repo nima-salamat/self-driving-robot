@@ -74,6 +74,7 @@ class LaneModelTests(unittest.TestCase):
         self.assertTrue(result["perception_valid"])
         self.assertEqual(result["lane_type"], "both")
         self.assertIn("ml_latency_ms", result)
+        self.assertIn("ml_inference_ms", result)
         self.assertEqual(detector.net.opt.num_threads, 4)
 
 
