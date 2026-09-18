@@ -44,12 +44,14 @@ class Robot:
     def __init__(self):
         self.camera = Camera(config=config_city)
         self.control = RobotController(config=config_city)
+        self.flask_thread = None
 
-        # hardcode the left and right lane change 
-        self.control._send_command("set left b 170 110 70 b 170 80 125")
-        time.sleep(0.4)
-        self.control._send_command("set right f 170 70 125 f 170 70 70")
-        time.sleep(0.4)
+        # hardcode the left and right lane change
+        if not getattr(config_city, "WITHOUT_ARDUINO", False):
+            self.control._send_command("set left b 170 110 70 b 170 80 125")
+            time.sleep(0.4)
+            self.control._send_command("set right f 170 70 125 f 170 70 70")
+            time.sleep(0.4)
 
         self.vision = VisionProcessor()
         self.apriltag_detector = ApriltagDetector(config=config_city)
@@ -114,6 +116,9 @@ class Robot:
                     time.sleep(config_city.DELAY)
                     
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    if not self.camera.last_capture_valid or frame_resized is None:
+                        self.control.stop()
+                        continue
                     debug_frame=None
                     result = self.vision.detect(frame_resized, debug_frame=None)
                     
@@ -137,6 +142,9 @@ class Robot:
                 
                 if self.crosswalk_time_start == 0:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    if not self.camera.last_capture_valid or frame_resized is None:
+                        self.control.stop()
+                        continue
                     if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()
                     else:
@@ -172,6 +180,9 @@ class Robot:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    if not self.camera.last_capture_valid or frame_resized is None:
+                        self.control.stop()
+                        continue
                     self.check_crosswalk()
                     
                     if config_city.DEBUG or config_city.STREAM:
@@ -211,7 +222,7 @@ class Robot:
             logger.error("error KeyboardInterrupt")
             
         except Exception as e:
-            logger.error(f"error {e}")
+            logger.exception("Unhandled robot loop exception")
         finally:
             self.close()
             logger.info("exited")
@@ -360,15 +371,8 @@ class Robot:
         if config_city.DEBUG:
             _(cv2.destroyAllWindows)()
             
-        if config_city.STREAM:
-            try:
-                import requests
-                requests.post("http://127.0.0.1:5000/shutdown")
-            except Exception:
-                pass
-
-            if flask_thread.is_alive():
-                flask_thread.join()
+        if self.flask_thread and self.flask_thread.is_alive():
+            self.flask_thread.join(timeout=1.0)
         sys.exit(0)
 
 def start():
@@ -376,10 +380,12 @@ def start():
 
     if config_city.STREAM:
         flask_thread = threading.Thread(
-            target=start_stream, 
-            args=(config_city,), 
-            daemon=False
+            target=start_stream,
+            args=(config_city,),
+            daemon=True,
+            name="flask-stream",
         )
         flask_thread.start()
     robot = Robot()
+    robot.flask_thread = flask_thread if config_city.STREAM else None
     robot.run()
