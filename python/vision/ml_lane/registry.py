@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 
 MODEL_ROOT = Path(__file__).resolve().parents[2] / "models" / "lane"
@@ -16,10 +17,10 @@ class LaneModelSpec:
     license: str
     params: str
     notes: str
-    model_path: str | None = None
-    model_url: str | None = None
-    archive_url: str | None = None
-    archive_glob: str | None = None
+    model_path: Optional[str] = None
+    model_url: Optional[str] = None
+    archive_url: Optional[str] = None
+    archive_glob: Optional[str] = None
 
 
 MODEL_SPECS = {
@@ -72,7 +73,7 @@ MODEL_SPECS = {
             "pinto-model-zoo/140_Ultra-Fast-Lane-Detection/"
             "resources_culane.tar.gz"
         ),
-        archive_glob="**/*onnx*",
+        archive_glob="**/*.onnx",
     ),
 }
 
