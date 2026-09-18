@@ -58,6 +58,7 @@ class RobotController:
                     contract_path,
                     timeout=getattr(self.config, "ARDUINO_CONTRACT_TIMEOUT", 3.0),
                 )
+                self._arduino_contract_ready = True
                 print(
                     "[Arduino contract] OK "
                     f"firmware={report['firmware_id']} "
@@ -90,6 +91,7 @@ class RobotController:
         self.command_sequence = 0
         self._telemetry_parse_failures = 0
         self.last_command = None
+        self._arduino_contract_ready = not bool(getattr(self.config, "ARDUINO_CONFIG", None))
         self.motion_history = MotionHistory(
             max_pulses=getattr(self.config, "MOTION_HISTORY_MAX_PULSES", 200),
             max_events=getattr(self.config, "MOTION_HISTORY_MAX_EVENTS", 128),
@@ -145,6 +147,21 @@ class RobotController:
             self.current_speed = 0
             self.pid.reset()
             self._last_connection_state = connected
+
+            if not connected:
+                self._arduino_contract_ready = not bool(
+                    getattr(self.config, "ARDUINO_CONFIG", None)
+                )
+
+        if connected and not self._arduino_contract_ready:
+            contract_path = getattr(self.config, "ARDUINO_CONFIG", None)
+            if contract_path:
+                perform_hardware_handshake(
+                    self.connection,
+                    contract_path,
+                    timeout=getattr(self.config, "ARDUINO_CONTRACT_TIMEOUT", 3.0),
+                )
+                self._arduino_contract_ready = True
 
     def hardware_ready(self):
         return self.without_arduino or self.connection.connected
