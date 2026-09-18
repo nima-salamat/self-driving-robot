@@ -47,6 +47,7 @@ class Robot:
     def __init__(self):
         self.camera = Camera(config=config_race)
         self.control = RobotController(config=config_race)
+        self.flask_thread = None
         
         # Calculate dynamic obstacle avoidance parameters
         lane_width = 30      # cm
@@ -88,16 +89,16 @@ class Robot:
             f"f 230 {travel_pulse} {left_angle}"
         )
 
-        # Send commands to Arduino
-        self.control._send_command(cmd_avoid_left)
-        time.sleep(0.4)
-        self.control._send_command("save left")
-        time.sleep(0.4)
-
-        self.control._send_command(cmd_return_right)
-        time.sleep(0.4)
-        self.control._send_command("save right")
-        time.sleep(0.4)
+        # Send commands to Arduino only when hardware control is enabled.
+        if not getattr(config_race, "WITHOUT_ARDUINO", False):
+            self.control._send_command(cmd_avoid_left)
+            time.sleep(0.4)
+            self.control._send_command("save left")
+            time.sleep(0.4)
+            self.control._send_command(cmd_return_right)
+            time.sleep(0.4)
+            self.control._send_command("save right")
+            time.sleep(0.4)
 
 
         self.vision = VisionProcessor()
@@ -135,6 +136,9 @@ class Robot:
                     time.sleep(config_race.DELAY)
                     
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    if not self.camera.last_capture_valid or frame_resized is None:
+                        self.control.stop()
+                        continue
                     debug_frame=None
                     result = self.vision.detect(frame_resized, debug_frame=None)
                     self.handle_debug_stream(result, frame, SERVO_CENTER, False, "stopped")
@@ -155,6 +159,9 @@ class Robot:
                 angle = SERVO_CENTER
             
                 frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                if not self.camera.last_capture_valid or frame_resized is None:
+                    self.control.stop()
+                    continue
                 if config_race.STREAM or config_race.DEBUG:
                     debug_frame = frame.copy()
                 else:
@@ -210,7 +217,7 @@ class Robot:
             logger.error("error KeyboardInterrupt")
             
         except Exception as e:
-            logger.error(f"error {e}")
+            logger.exception("Unhandled robot loop exception")
         finally:
             self.close()
             logger.info("exited")
@@ -258,7 +265,7 @@ class Robot:
                 if sign_result['text'] == "TURN LEFT":
                     tag_id = TURN_LEFT
                 elif sign_result['text'] == "TURN RIGHT":
-                    tag_id = STRAIGHT
+                    tag_id = TURN_RIGHT
                 elif sign_result['text'] == "STRAIGHT":
                     tag_id = STRAIGHT
                 elif sign_result['text'] == "STOP":
@@ -362,15 +369,8 @@ class Robot:
         if config_race.DEBUG:
             _(cv2.destroyAllWindows)()
             
-        if config_race.STREAM:
-            try:
-                import requests
-                requests.post("http://127.0.0.1:5000/shutdown")
-            except Exception:
-                pass
-
-            if flask_thread.is_alive():
-                flask_thread.join()
+        if self.flask_thread and self.flask_thread.is_alive():
+            self.flask_thread.join(timeout=1.0)
         sys.exit(0)
 
 def start():
@@ -378,10 +378,12 @@ def start():
 
     if config_race.STREAM:
         flask_thread = threading.Thread(
-            target=start_stream, 
-            args=(config_race,), 
-            daemon=False
+            target=start_stream,
+            args=(config_race,),
+            daemon=True,
+            name="flask-stream",
         )
         flask_thread.start()
     robot = Robot()
+    robot.flask_thread = flask_thread if config_race.STREAM else None
     robot.run()
