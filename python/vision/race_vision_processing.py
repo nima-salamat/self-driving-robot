@@ -96,9 +96,10 @@ class VisionProcessor:
     def detect(self, frame, debug_frame=None):
         if frame is None:
             return {
-                "steering_angle": self.last_steering,
-                "error": self.last_error,
+                "steering_angle": SERVO_CENTER,
+                "error": 0,
                 "lane_type": "none",
+                "perception_valid": False,
                 "debug": {"rl_draw": None, "ll_draw": None, "combined": None},
                 "kp": 0
             }
@@ -397,6 +398,7 @@ class VisionProcessor:
             "steering_angle": steering_angle,
             "error": error,
             "lane_type": lane_type,
+            "perception_valid": True,
             "debug": debug,
             "kp": kp
         }
