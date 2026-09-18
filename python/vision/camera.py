@@ -28,7 +28,6 @@ class Camera:
         self.pi_mode = False
         self.camera_initialized = False
         self.last_capture_valid = False
-        self.last_capture_valid = False
         self.consecutive_failures = 0
         self.camera_calibration = CameraCalibration()
 
@@ -153,6 +152,7 @@ class Camera:
 
     def release(self):
         self.camera_initialized = False
+        self.last_capture_valid = False
         if self.pi_mode:
             try:
                 self.picam.stop()
