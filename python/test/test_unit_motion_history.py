@@ -97,13 +97,9 @@ class ArduinoHeartbeatTests(unittest.TestCase):
                 connection.serial_connection = fake
             connection._set_state(ArduinoConnection.CONNECTED)
 
-            worker = threading.Thread(target=connection._heartbeat_loop, daemon=True)
-            worker.start()
-            time.sleep(0.07)
-            connection._stop_event.set()
-            worker.join(timeout=1.0)
-
-            self.assertGreaterEqual(fake.writes.count(b"heartbeat\n"), 2)
+            self.assertTrue(connection._send_heartbeat())
+            self.assertTrue(connection._send_heartbeat())
+            self.assertEqual(fake.writes.count(b"heartbeat\n"), 2)
         finally:
             connection.close()
 
