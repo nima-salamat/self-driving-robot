@@ -229,7 +229,7 @@ serial            # Serial communication with Arduino
 
 ### Step 1: Arduino Setup
 
-1. Open `arduino/main_nonBlocking.ino` in Arduino IDE
+1. Open `arduino/main_nonBlocking_v2.ino` in Arduino IDE. This is the hardened firmware that matches the current Python serial transport.
 2. Install required libraries (if not pre-installed):
    - UltrasonicSensor (custom)
    - PulseQueue (custom)
@@ -320,45 +320,97 @@ python test/test_traffic_light.py
 
 ## 📡 Communication Protocol
 
-### Serial Connection Details
+The current Python runtime communicates with the Arduino at **115200 baud** using line-based commands.
 
-| Parameter | Value |
-|-----------|-------|
-| Baud Rate | 9600 |
-| Timeout | 2 seconds |
-| Handshake | CTS/RTS |
+### Host commands
 
-### Command Flow
+The active controller uses commands such as:
 
 ```
-Python App
-    ↓
-[Vision Processing + Control Logic]
-    ↓
-[Generate Motor/Servo Commands]
-    ↓
-Arduino Serial Handler
-    ↓
-Arduino Board
-    ↓
-[Sensor Reading + Motor Control]
-    ↓
-JSON Response
-    ↓
-Python App
+motor 200
+servo 90
+stop
+left
+right
+set left <pulse sequence>
+set right <pulse sequence>
+save left
+save right
+status
+heartbeat
 ```
 
-### Sensor Data Update
+A pulse group has the form:
 
-To get current sensor readings:
-
-```python
-# Python side (via arduino_connection.py)
-sensor_data = arduino.read_sensors()  # Sends 'U' command
-# Returns dict: {motorSpeed, servo, ultraLeft, ultraRight, ultraSide, encoder}
+```
+f <speed> <pulses> <angle>
+b <speed> <pulses> <angle>
 ```
 
----
+Multiple pulse groups can be sent in one line.
+
+### Telemetry
+
+The current firmware reports six fields:
+
+```
+<lane> <motion> <right_distance_cm> <left_distance_cm> <loop_hz> <pulse_active>
+```
+
+Example:
+
+```
+R F 25 30 1000 0
+```
+
+Python drains telemetry asynchronously through `ArduinoConnection`; it does not wait for a reply after every control command.
+
+### Host heartbeat / fail-safe
+
+Python sends a `heartbeat` line periodically while the serial connection is active.
+
+The active `main_nonBlocking_v2.ino` firmware uses a 500 ms host-heartbeat watchdog. When host liveness expires while motion or a pulse sequence is active, the firmware clears the pending motion, stops the motors, and centers the steering.
+
+This watchdog is intentionally implemented on the Arduino side because a Python process crash cannot send a final `stop` command.
+
+### Motion history
+
+Python now keeps a bounded in-memory trace of the last **200 commanded individual pulse units** plus a separate semantic event history.
+
+Pulse records include:
+
+- direction
+- speed
+- steering angle
+- pulse index inside the operation
+- event name
+- source
+- timestamp
+- metadata
+
+Semantic events can describe boundaries such as:
+
+```
+hardcode_lane_change_configured
+crosswalk_stop_started
+crosswalk_maneuver_started
+crosswalk_turn_left
+crosswalk_turn_right
+crosswalk_straight
+lane_lost
+```
+
+The history is intentionally passive. It does not make recovery decisions.
+
+The future route-recovery coordinator should be implemented in:
+
+```
+python/controller/motion_recovery.py
+```
+
+It should use the history to identify a verified safe boundary and replay only a bounded portion of the trace. It must not blindly replay all 200 pulses.
+
+The current history represents **Python-issued commanded pulses**, not guaranteed physical encoder-completed pulses. A future protocol revision can add pulse lifecycle telemetry so Python can distinguish commanded, executing, completed, and aborted motion.
 
 ## 🛠️ Troubleshooting
 
