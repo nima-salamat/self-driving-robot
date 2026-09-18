@@ -332,6 +332,7 @@ def perform_hardware_handshake(connection, path, timeout=3.0):
 
     for module in config["modules"]:
         kind = module["type"]
+        expected_echo = _module_echo(module)
         if kind == "motor":
             command = f"cfg motor {module['id']} {module['pwm']} {module['dir']}"
         elif kind == "servo":
@@ -349,10 +350,15 @@ def perform_hardware_handshake(connection, path, timeout=3.0):
                 f"{module['force_stop_button']} {module['resume_button']}"
             )
 
+        expected_ack = (
+            f"CFG ACCEPT {config_id} tm1638"
+            if kind == "tm1638"
+            else f"CFG ACCEPT {config_id} {expected_echo}"
+        )
         _send_and_wait(
             connection,
             command,
-            lambda line, config_id=config_id: line.startswith(f"CFG ACCEPT {config_id} "),
+            lambda line, expected_ack=expected_ack: line == expected_ack,
             timeout,
             f"{kind} module",
         )
