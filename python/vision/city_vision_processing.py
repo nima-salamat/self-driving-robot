@@ -21,9 +21,22 @@ class VisionProcessor:
         self._morph_kernel = np.ones((3, 3), np.uint8)
         self._lsd = cv2.createLineSegmentDetector(0)
 
-    def _extract_line(self, line):
-        line = np.asarray(line).flatten()
-        return line[0], line[1], line[2], line[3]
+    @staticmethod
+    def _extract_line(line):
+        return line[0]
+
+    @staticmethod
+    def _angle_target_score(angle, target_angle, sigma):
+        diff = abs(angle - target_angle)
+        return math.exp(-(diff ** 2) / (2 * sigma ** 2))
+
+    def _expected_lane_angle(self, side):
+        if getattr(conf, "USE_BEV", False):
+            return 90
+        camera_pitch = math.radians(CAMERA_PITCH_DEG)
+        y_projection = CAMERA_HEIGHT / math.tan(-camera_pitch)
+        alpha = math.degrees(math.atan((LANE_WIDTH / 2) / y_projection))
+        return 90 + alpha if side == "right" else 90 - alpha
 
     def _best_mid_x(self, lines, roi_w, roi_h, side=""):
         if lines is None:
@@ -57,29 +70,14 @@ class VisionProcessor:
             else:
                 norm_x_side = max(0.0, min(1.0, 1.0 - abs(x_mid - roi_w_center) / roi_w_center))
             
-            def angle_target_score(angle, target_angle, sigma=15):
-                diff = abs(angle - target_angle)
-                return math.exp(-(diff ** 2) / (2 * sigma ** 2))
-
-            def expected_lane_angle(side, h=CAMERA_HEIGHT, lane_width=LANE_WIDTH, camera_pitch_deg=CAMERA_PITCH_DEG):
-                camera_pitch = math.radians(camera_pitch_deg)
-                Yp = h / math.tan(-camera_pitch)  
-                alpha = math.degrees(math.atan((lane_width / 2) / Yp))
-                if hasattr(conf, 'USE_BEV') and conf.USE_BEV:
-                    return 90
-                if side == "right":
-                    return 90 + alpha
-                else:
-                    return 90 - alpha
-
             if side == "left":
-                target_angle = expected_lane_angle("left")
-                angle_score = angle_target_score(angle, target_angle, sigma=20)
+                target_angle = self._expected_lane_angle("left")
+                angle_score = self._angle_target_score(angle, target_angle, sigma=20)
             elif side == "right":
-                target_angle = expected_lane_angle("right")
-                angle_score = angle_target_score(angle, target_angle, sigma=20)
+                target_angle = self._expected_lane_angle("right")
+                angle_score = self._angle_target_score(angle, target_angle, sigma=20)
             else:
-                angle_score = angle_target_score(angle, 90, sigma=25)
+                angle_score = self._angle_target_score(angle, 90, sigma=25)
 
             score = (
                 0.25 * norm_length +
