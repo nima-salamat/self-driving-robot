@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from flask import Flask, Response, request, render_template_string, jsonify
+from werkzeug.serving import make_server
 from .template import HTML_TEMPLATE
 
 logger = logging.getLogger(__name__)
@@ -333,11 +334,32 @@ class WebStreamer:
         return jsonify(success=True)
 
 def start_stream(config):
-
     streamer = WebStreamer(config)
-    streamer.app.run(
-        host=getattr(config, "STREAM_HOST", "127.0.0.1"),
-        port=int(getattr(config, "STREAM_PORT", 5000)),
+    server = make_server(
+        getattr(config, "STREAM_HOST", "127.0.0.1"),
+        int(getattr(config, "STREAM_PORT", 5000)),
+        streamer.app,
         threaded=True,
-        debug=False,
     )
+    config.streamer = streamer
+    config.stream_server = server
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        if getattr(config, "stream_server", None) is server:
+            config.stream_server = None
+        if getattr(config, "streamer", None) is streamer:
+            config.streamer = None
+
+
+def stop_stream(config):
+    server = getattr(config, "stream_server", None)
+    if server is None:
+        return False
+    try:
+        server.shutdown()
+        return True
+    except Exception:
+        logger.exception("Failed to stop stream server")
+        return False

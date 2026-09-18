@@ -450,3 +450,44 @@ class RecordingFailureAdversarialTests(unittest.TestCase):
                 return True
             time.sleep(0.01)
         return False
+
+
+class StreamLifecycleAdversarialTests(unittest.TestCase):
+    def test_stream_server_can_be_shutdown_and_restarted(self):
+        import types
+        from unittest.mock import patch
+
+        from stream import start_stream, stop_stream
+
+        class FakeServer:
+            def __init__(self):
+                self.started = threading.Event()
+                self.stopped = threading.Event()
+                self.closed = False
+
+            def serve_forever(self):
+                self.started.set()
+                self.stopped.wait(2.0)
+
+            def shutdown(self):
+                self.stopped.set()
+
+            def server_close(self):
+                self.closed = True
+
+        config = types.SimpleNamespace(
+            MODE="test",
+            STREAM_HOST="127.0.0.1",
+            STREAM_PORT=5000,
+        )
+        server = FakeServer()
+        with patch("stream.make_server", return_value=server):
+            thread = threading.Thread(target=start_stream, args=(config,))
+            thread.start()
+            self.assertTrue(server.started.wait(2.0))
+            self.assertTrue(stop_stream(config))
+            thread.join(2.0)
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(server.closed)
+            self.assertIsNone(getattr(config, "stream_server", None))
+            self.assertFalse(stop_stream(config))

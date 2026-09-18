@@ -15,7 +15,7 @@ from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP, USE_SIGN)
-from stream import start_stream
+from stream import start_stream, stop_stream
 import logging
 import cv2
 import math
@@ -434,6 +434,10 @@ class Robot:
                 logger.exception("Cleanup failed: OpenCV windows")
 
         if self.flask_thread and self.flask_thread.is_alive():
+            try:
+                stop_stream(config_race)
+            except Exception:
+                logger.exception("Failed to stop Flask stream")
             self.flask_thread.join(timeout=1.0)
 
         try:
