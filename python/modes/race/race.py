@@ -181,6 +181,9 @@ class Robot:
                     debug_frame = None
                 
                 result = self.vision.detect(frame_resized, debug_frame)
+                if not result.get("perception_valid", True):
+                    self.control.stop()
+                    continue
 
                 angle = result.get("steering_angle")
                 
