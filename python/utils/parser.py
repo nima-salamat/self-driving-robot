@@ -73,6 +73,24 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--arduino-config",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Enable the strict Arduino hardware contract and load the expected "
+            "firmware/module/pin configuration from PATH."
+        ),
+    )
+
+    parser.add_argument(
+        "--arduino-contract-timeout",
+        type=float,
+        default=3.0,
+        help="Seconds to wait for each Arduino hardware-contract reply.",
+    )
+
+
+    parser.add_argument(
         "--ml-lane-model",
         choices=[
             "unet_depthwise_nano",
