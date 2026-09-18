@@ -64,8 +64,11 @@ class Robot:
         self.stop_last_seen = None
         self.read_sign_counter = 0
         self.last_sign_result_id = 0
-        detector = SVMTrafficSignDetector() if config_city.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
-        self.sign_detector = AsyncSignDetector(detector)
+        if config_city.WITH_SIGN:
+            detector = SVMTrafficSignDetector() if config_city.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
+            self.sign_detector = AsyncSignDetector(detector)
+        else:
+            self.sign_detector = None
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS()
