@@ -692,16 +692,21 @@ class StreamFailureAdversarialTests(unittest.TestCase):
         import types
         from unittest.mock import patch
 
-                import importlib
+        import importlib
         stream_module = importlib.import_module("stream")
-            config = types.SimpleNamespace(
-                MODE="test",
-                debug_frames_list=[object()],
-                stream_frame_seq=1,
-            )
-            streamer = stream_module.WebStreamer(config)
+        config = types.SimpleNamespace(
+            MODE="test",
+            debug_frames_list=[object()],
+            stream_frame_seq=1,
+        )
+        streamer = stream_module.WebStreamer(config)
+        with patch.object(
+            stream_module.cv2,
+            "imencode",
+            side_effect=RuntimeError("simulated encoder failure"),
+        ):
             response = streamer.video_feed_frame()
-            self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 503)
 
 
 class TelemetryLongLineAdversarialTests(unittest.TestCase):
