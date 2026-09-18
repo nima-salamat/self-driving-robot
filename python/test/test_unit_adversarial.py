@@ -226,3 +226,90 @@ class SignFreshnessAdversarialTests(unittest.TestCase):
             self.assertIsNone(worker.latest(max_age_s=0.0))
         finally:
             worker.close()
+
+
+class BlockingVideoWriter:
+    def __init__(self):
+        self.writes = []
+        self.started = threading.Event()
+        self.release_event = threading.Event()
+        self.is_opened = True
+        self.released = False
+
+    def isOpened(self):
+        return self.is_opened
+
+    def write(self, frame):
+        self.writes.append(frame)
+        self.started.set()
+        self.release_event.wait(5.0)
+
+    def release(self):
+        self.released = True
+
+
+class RecordingAdversarialTests(unittest.TestCase):
+    def test_stop_recording_does_not_wait_for_stuck_writer(self):
+        import tempfile
+        import types
+        from unittest.mock import patch
+
+        from manager.output_manager import OutputManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                OUTPUT_DIR=tmp,
+                VIDEO_FPS=20,
+                VIDEO_CODEC="mp4v",
+                MIN_FREE_DISK_MB=0,
+            )
+            writer = BlockingVideoWriter()
+            manager = OutputManager(config_module=config, output_dir=tmp)
+
+            with patch("manager.output_manager.cv2.VideoWriter", return_value=writer):
+                manager.start_recording((1, 1))
+                self.assertTrue(manager.write_frame("frame-1"))
+                self.assertTrue(writer.started.wait(2.0))
+
+                started = time.monotonic()
+                path = manager.stop_recording()
+                elapsed = time.monotonic() - started
+
+                self.assertIsNotNone(path)
+                self.assertLess(elapsed, 0.2)
+                self.assertFalse(manager.is_recording())
+
+            writer.release_event.set()
+            manager.close()
+            self.assertTrue(writer.released)
+
+    def test_full_queue_never_blocks_control_path(self):
+        import tempfile
+        import types
+        from unittest.mock import patch
+
+        from manager.output_manager import OutputManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                OUTPUT_DIR=tmp,
+                VIDEO_FPS=20,
+                VIDEO_CODEC="mp4v",
+                MIN_FREE_DISK_MB=0,
+            )
+            writer = BlockingVideoWriter()
+            manager = OutputManager(config_module=config, output_dir=tmp)
+
+            with patch("manager.output_manager.cv2.VideoWriter", return_value=writer):
+                manager.start_recording((1, 1))
+                self.assertTrue(manager.write_frame("frame-1"))
+                self.assertTrue(writer.started.wait(2.0))
+
+                for i in range(2, 10):
+                    self.assertTrue(manager.write_frame(f"frame-{i}"))
+
+                stats = manager.stats()
+                self.assertGreater(stats["dropped_video_frames"], 0)
+
+            writer.release_event.set()
+            manager.close()
