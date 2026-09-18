@@ -50,9 +50,17 @@ class Robot:
 
         # hardcode the left and right lane change
         if not getattr(config_city, "WITHOUT_ARDUINO", False):
-            self.control._send_command("set left b 170 110 70 b 170 80 125")
+            self.control._send_command(
+                "set left b 170 110 70 b 170 80 125",
+                event="hardcode_lane_change_configured",
+                metadata={"side": "left"},
+            )
             time.sleep(0.4)
-            self.control._send_command("set right f 170 70 125 f 170 70 70")
+            self.control._send_command(
+                "set right f 170 70 125 f 170 70 70",
+                event="hardcode_lane_change_configured",
+                metadata={"side": "right"},
+            )
             time.sleep(0.4)
 
         self.vision = VisionProcessor()
@@ -104,6 +112,13 @@ class Robot:
         if now - self.crosswalk_last_seen>= config_city.CROSSWALK_THRESH_SPEND:
             self.crosswalk_time_start = now
             self.crosswalk_last_seen = now
+            self.control.record_event(
+                "crosswalk_stop_started",
+                {
+                    "planned_duration_s": config_city.CROSSWALK_SLEEP,
+                    "last_tag": self.last_tag,
+                },
+            )
 
         if self.crosswalk_time_start != 0:
             elapsed = now - self.crosswalk_time_start
@@ -112,6 +127,10 @@ class Robot:
                 logger.debug(f"navigate with tag: {self.last_tag}")
                 if self._shutdown_requested():
                     return
+                self.control.record_event(
+                    "crosswalk_maneuver_started",
+                    {"tag": self.last_tag},
+                )
                 self.control.set_angle(90)
                 if self._sleep_interruptible(0.3):
                     return
@@ -125,7 +144,9 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 50 70 f {HARDCODE_SPEED} 170 120"
+                        f"f {HARDCODE_SPEED} 50 70 f {HARDCODE_SPEED} 170 120",
+                        event="crosswalk_turn_right",
+                        metadata={"tag": self.last_tag},
                     )
                     if self._sleep_interruptible(0.1):
                         return
@@ -138,7 +159,9 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 120 60"
+                        f"f {HARDCODE_SPEED} 120 90 f {HARDCODE_SPEED} 120 60",
+                        event="crosswalk_turn_left",
+                        metadata={"tag": self.last_tag},
                     )
                     if self._sleep_interruptible(0.1):
                         return
@@ -147,7 +170,11 @@ class Robot:
                         return
                     if self._shutdown_requested():
                         return
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED} 220 90")
+                    self.control.forward_pulse(
+                        f"f {HARDCODE_SPEED} 220 90",
+                        event="crosswalk_straight",
+                        metadata={"tag": self.last_tag},
+                    )
                     if self._sleep_interruptible(0.1):
                         return
                 else:
@@ -307,9 +334,18 @@ class Robot:
                 
                 control_started = time.monotonic()
                 if config_city.USE_PID:
-                    self.control.set_angle_by_error(result["error"], result["lane_type"])
+                    control_ok = self.control.set_angle_by_error(
+                        result["error"],
+                        result["lane_type"],
+                    )
+                    if not control_ok:
+                        self._pace_control_loop()
+                        continue
                 else:
-                    self.control.set_angle(result["steering_angle"])
+                    control_ok = self.control.set_angle(result["steering_angle"])
+                    if not control_ok:
+                        self._pace_control_loop()
+                        continue
 
                 self.control.set_speed(SPEED)
                 if self.metrics is not None:
