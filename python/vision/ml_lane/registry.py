@@ -20,6 +20,10 @@ class LaneModelSpec:
     model_path: str
     model_url: str
     sha256: str
+    ncnn_param_path: str
+    ncnn_bin_path: str
+    ncnn_param_url: str
+    ncnn_bin_url: str
 
 
 MODEL_SPECS = {
@@ -39,6 +43,10 @@ MODEL_SPECS = {
             "resolve/main/unet_depthwise_nano/unet_depthwise_nano_jit.pnnx.onnx"
         ),
         sha256="1c9452041f0f3e02cb1478bc495c1cd6b8a14a0acb00ad9843c93e1d1eef3bd0",
+        ncnn_param_path="weights/unet_depthwise_nano_jit.ncnn.param",
+        ncnn_bin_path="weights/unet_depthwise_nano_jit.ncnn.bin",
+        ncnn_param_url="https://huggingface.co/nickpai/lane-detection-unet-ncnn/resolve/main/unet_depthwise_nano/unet_depthwise_nano_jit.ncnn.param",
+        ncnn_bin_url="https://huggingface.co/nickpai/lane-detection-unet-ncnn/resolve/main/unet_depthwise_nano/unet_depthwise_nano_jit.ncnn.bin",
     ),
     "unet_depthwise_small": LaneModelSpec(
         name="unet_depthwise_small",
@@ -56,6 +64,10 @@ MODEL_SPECS = {
             "resolve/main/unet_depthwise_small/unet_depthwise_small_jit.pnnx.onnx"
         ),
         sha256="ade2232685f81001e6ea6c8baf7ba6108a60fdb989f0a349fe143efb4671adb8",
+        ncnn_param_path="weights/unet_depthwise_small_jit.ncnn.param",
+        ncnn_bin_path="weights/unet_depthwise_small_jit.ncnn.bin",
+        ncnn_param_url="https://huggingface.co/nickpai/lane-detection-unet-ncnn/resolve/main/unet_depthwise_small/unet_depthwise_small_jit.ncnn.param",
+        ncnn_bin_url="https://huggingface.co/nickpai/lane-detection-unet-ncnn/resolve/main/unet_depthwise_small/unet_depthwise_small_jit.ncnn.bin",
     ),
 }
 
