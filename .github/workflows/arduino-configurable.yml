@@ -1,0 +1,32 @@
+name: Arduino configurable firmware
+
+on:
+  push:
+    paths:
+      - "arduino/main_configurable_v1.ino"
+      - ".github/workflows/arduino-configurable.yml"
+  pull_request:
+    paths:
+      - "arduino/main_configurable_v1.ino"
+      - ".github/workflows/arduino-configurable.yml"
+
+jobs:
+  compile-configurable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install AVR core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+
+      - name: Compile Mega2560 firmware
+        run: |
+          arduino-cli compile \
+            --fqbn arduino:avr:mega:cpu=atmega2560 \
+            arduino/main_configurable_v1.ino
