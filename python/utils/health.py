@@ -65,6 +65,20 @@ class HealthMonitor:
                     "age_s": 0.0,
                 }
 
+        metrics = getattr(config, "runtime_metrics", None)
+        if metrics is not None:
+            metric_snapshot = metrics.snapshot()
+            perception_valid = metric_snapshot.get("last_perception_valid")
+            resources["perception"] = {
+                "last_valid": perception_valid,
+                "last_age_ms": metric_snapshot.get("last_perception_age_ms"),
+            }
+            if perception_valid is False:
+                faults["perception"] = {
+                    "severity": FaultSeverity.CRITICAL,
+                    "message": "latest perception result is invalid",
+                    "age_s": 0.0,
+                }
         camera = getattr(config, "camera", None)
         if camera is not None:
             initialized = bool(getattr(camera, "camera_initialized", False))
