@@ -193,6 +193,7 @@ char rightSequence[MAX_SEQUENCE_CHARS + 1];
 
 uint32_t lastHostHeartbeatMs = 0;
 bool hostHeartbeatSeen = false;
+bool hostTimeoutReported = false;
 
 uint32_t lastStatusMs = 0;
 uint32_t lastLoopHzMs = 0;
@@ -276,6 +277,15 @@ void saveLaneSequences(bool saveLeft, bool saveRight) {
 
   LaneStorage current;
   EEPROM.get(0, current);
+
+  const uint8_t *currentData = reinterpret_cast<const uint8_t *>(&current);
+  if (current.magic != EEPROM_MAGIC ||
+      current.checksum != eepromChecksum(currentData, sizeof(LaneStorage) - sizeof(current.checksum)) ||
+      strlen(current.left) > MAX_SEQUENCE_CHARS ||
+      strlen(current.right) > MAX_SEQUENCE_CHARS) {
+    current = storage;
+  }
+
   if (saveLeft) {
     strncpy(current.left, storage.left, MAX_SEQUENCE_CHARS);
     current.left[MAX_SEQUENCE_CHARS] = '\0';
@@ -309,13 +319,13 @@ uint32_t configFingerprint(const HardwareConfig &cfg) {
   char line[80];
 
   for (uint8_t i = 0; i < cfg.motorCount; ++i) {
-    snprintf(line, sizeof(line), "motor|%u|%u|%u\n",
+    snprintf(line, sizeof(line), "motor %u %u %u\n",
              cfg.motors[i].id, cfg.motors[i].pwm, cfg.motors[i].dir);
     fnv1aAdd(hash, line);
   }
 
   for (uint8_t i = 0; i < cfg.servoCount; ++i) {
-    snprintf(line, sizeof(line), "servo|%u|%u|%u|%u|%u\n",
+    snprintf(line, sizeof(line), "servo %u %u %u %u %u\n",
              cfg.servos[i].id,
              cfg.servos[i].pin,
              cfg.servos[i].minAngle,
@@ -325,7 +335,7 @@ uint32_t configFingerprint(const HardwareConfig &cfg) {
   }
 
   for (uint8_t i = 0; i < cfg.ultraCount; ++i) {
-    snprintf(line, sizeof(line), "ultrasonic|%s|%u|%u\n",
+    snprintf(line, sizeof(line), "ultrasonic %s %u %u\n",
              cfg.ultras[i].name,
              cfg.ultras[i].trig,
              cfg.ultras[i].echo);
@@ -333,31 +343,31 @@ uint32_t configFingerprint(const HardwareConfig &cfg) {
   }
 
   for (uint8_t i = 0; i < cfg.encoderCount; ++i) {
-    snprintf(line, sizeof(line), "encoder|%u|%u\n",
+    snprintf(line, sizeof(line), "encoder %u %u\n",
              cfg.encoders[i].id, cfg.encoders[i].pin);
     fnv1aAdd(hash, line);
   }
 
   if (cfg.tm.enabled) {
-    snprintf(line, sizeof(line), "tm1638|%u|%u|%u|%u|%u\n",
+    snprintf(line, sizeof(line), "tm1638 %u %u %u %u %u\n",
              cfg.tm.stb, cfg.tm.clk, cfg.tm.dio,
              cfg.tm.forceStopButton, cfg.tm.resumeButton);
     fnv1aAdd(hash, line);
   }
 
-  snprintf(line, sizeof(line), "option|stop_distance_cm|%u\n", cfg.options.stopDistanceCm);
+  snprintf(line, sizeof(line), "option stop_distance_cm %u\n", cfg.options.stopDistanceCm);
   fnv1aAdd(hash, line);
-  snprintf(line, sizeof(line), "option|pulse_stop_distance_cm|%u\n", cfg.options.pulseStopDistanceCm);
+  snprintf(line, sizeof(line), "option pulse_stop_distance_cm %u\n", cfg.options.pulseStopDistanceCm);
   fnv1aAdd(hash, line);
-  snprintf(line, sizeof(line), "option|side_return_distance_cm|%u\n", cfg.options.sideReturnDistanceCm);
+  snprintf(line, sizeof(line), "option side_return_distance_cm %u\n", cfg.options.sideReturnDistanceCm);
   fnv1aAdd(hash, line);
-  snprintf(line, sizeof(line), "option|ultrasonic_interval_ms|%u\n", cfg.options.ultrasonicIntervalMs);
+  snprintf(line, sizeof(line), "option ultrasonic_interval_ms %u\n", cfg.options.ultrasonicIntervalMs);
   fnv1aAdd(hash, line);
-  snprintf(line, sizeof(line), "option|host_heartbeat_timeout_ms|%u\n", cfg.options.hostHeartbeatTimeoutMs);
+  snprintf(line, sizeof(line), "option host_heartbeat_timeout_ms %u\n", cfg.options.hostHeartbeatTimeoutMs);
   fnv1aAdd(hash, line);
-  snprintf(line, sizeof(line), "option|pulse_stall_timeout_ms|%u\n", cfg.options.pulseStallTimeoutMs);
+  snprintf(line, sizeof(line), "option pulse_stall_timeout_ms %u\n", cfg.options.pulseStallTimeoutMs);
   fnv1aAdd(hash, line);
-  snprintf(line, sizeof(line), "option|direction_deadtime_ms|%u\n", cfg.options.directionDeadtimeMs);
+  snprintf(line, sizeof(line), "option direction_deadtime_ms %u\n", cfg.options.directionDeadtimeMs);
   fnv1aAdd(hash, line);
 
   return hash;
@@ -482,11 +492,6 @@ bool validateConfig(const HardwareConfig &cfg, char *error, size_t errorSize) {
       snprintf(error, errorSize, "TM1638_CONFIG");
       return false;
     }
-  }
-
-  for (uint8_t i = 0; i < cfg.motorCount; ++i) {
-    if (pinAlreadyUsed(cfg, cfg.motors[i].pwm) &&
-        false) return false;
   }
 
   for (uint8_t pin = 2; pin <= 53; ++pin) {
@@ -817,7 +822,6 @@ void startNextPulse() {
 
   setServoHardware(0, activePulse.angle);
 
-  resetEncoder:
   noInterrupts();
   encoderPulses[0] = 0;
   encoderLastUs[0] = micros();
@@ -987,8 +991,36 @@ void updateHostSafety(uint32_t nowMs) {
     requestMotorSpeed(0);
     if (pulseActive) pulsePaused = true;
     emergencyStopActive = true;
-    Serial.println("ERR HOST_HEARTBEAT_TIMEOUT");
+    if (!hostTimeoutReported) {
+      Serial.println("ERR HOST_HEARTBEAT_TIMEOUT");
+      hostTimeoutReported = true;
+    }
   }
+}
+
+void tmWriteByte(uint8_t value) {
+  for (uint8_t i = 0; i < 8; ++i) {
+    digitalWrite(activeConfig.tm.clk, LOW);
+    digitalWrite(activeConfig.tm.dio, (value & 0x01) ? HIGH : LOW);
+    delayMicroseconds(1);
+    digitalWrite(activeConfig.tm.clk, HIGH);
+    delayMicroseconds(1);
+    value >>= 1;
+  }
+}
+
+uint8_t tmReadByte() {
+  uint8_t value = 0;
+  for (uint8_t i = 0; i < 8; ++i) {
+    digitalWrite(activeConfig.tm.clk, LOW);
+    delayMicroseconds(1);
+    if (digitalRead(activeConfig.tm.dio)) {
+      value |= (uint8_t)(1U << i);
+    }
+    digitalWrite(activeConfig.tm.clk, HIGH);
+    delayMicroseconds(1);
+  }
+  return value;
 }
 
 uint8_t readTM1638Buttons() {
@@ -996,15 +1028,18 @@ uint8_t readTM1638Buttons() {
 
   uint8_t value = 0;
   digitalWrite(activeConfig.tm.stb, LOW);
+  tmWriteByte(0x42);
+  pinMode(activeConfig.tm.dio, INPUT_PULLUP);
 
-  for (uint8_t i = 0; i < 8; ++i) {
-    digitalWrite(activeConfig.tm.clk, LOW);
-    bool bitValue = digitalRead(activeConfig.tm.dio) == HIGH;
-    digitalWrite(activeConfig.tm.clk, HIGH);
-    if (bitValue) value |= (uint8_t)(1U << i);
+  for (uint8_t row = 0; row < 4; ++row) {
+    uint8_t b = tmReadByte();
+    if (b & 0x01) value |= (uint8_t)(1U << (row * 2));
+    if (b & 0x10) value |= (uint8_t)(1U << (row * 2 + 1));
   }
 
   digitalWrite(activeConfig.tm.stb, HIGH);
+  pinMode(activeConfig.tm.dio, OUTPUT);
+  digitalWrite(activeConfig.tm.dio, HIGH);
   return value;
 }
 
@@ -1190,6 +1225,7 @@ void applyHardwareConfig() {
   pendingHostServoValid = false;
   currentMotorSpeed = 0;
   hostHeartbeatSeen = false;
+  hostTimeoutReported = false;
   lastHostHeartbeatMs = millis();
   ultraBusy = false;
   waitingRise = false;
@@ -1515,6 +1551,7 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
     }
     lastHostHeartbeatMs = millis();
     hostHeartbeatSeen = true;
+    hostTimeoutReported = false;
     return;
   }
 
