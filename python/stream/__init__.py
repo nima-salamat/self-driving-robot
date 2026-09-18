@@ -7,6 +7,7 @@ import time
 from flask import Flask, Response, request, render_template_string, jsonify
 from werkzeug.serving import make_server
 from .template import HTML_TEMPLATE
+from base_config import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class WebStreamer:
 
     def ui_filename(self):
         mode = getattr(self.config, "MODE", "mode")
-        return f"{mode}_ui.json"
+        return os.path.join(str(BASE_DIR), f"{mode}_ui.json")
 
     def load_ui_settings(self):
         fname = self.ui_filename()
@@ -118,7 +119,7 @@ class WebStreamer:
 
     def config_filename(self):
         mode = getattr(self.config, "MODE", "mode")
-        return f"{mode}.json"
+        return os.path.join(str(BASE_DIR), f"{mode}.json")
 
     def save_conf_to_json(self):
         filename = self.config_filename()
