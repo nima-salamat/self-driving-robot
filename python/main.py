@@ -41,6 +41,9 @@ if __name__ == "__main__":
     config.WITHOUT_ARDUINO = args.without_arduino
     config.READ_ARDUINO_OUTPUT = args.read_arduino_output
     config.STREAM_ALLOW_CONTROL = args.stream_control
+    config.USE_ML_LANE_DETECTOR = args.ml_lane_model is not None
+    if args.ml_lane_model is not None:
+        config.ML_LANE_MODEL = args.ml_lane_model
     if args.stream_host:
         config.STREAM_HOST = args.stream_host
 
