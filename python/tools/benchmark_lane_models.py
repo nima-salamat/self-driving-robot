@@ -20,10 +20,40 @@ def format_ms(value):
     return f"{value:.2f} ms"
 
 
-def benchmark(detector, source, warmup, frames, display, output):
-    cap = cv2.VideoCapture(0 if source == "camera" else source)
+def _open_source(source, camera_mode):
+    if source != "camera":
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            raise RuntimeError(f"Could not open input: {source}")
+        return cap, None
+
+    if camera_mode == "picam":
+        from modes.race import config_race
+        from vision.camera import Camera
+
+        config_race.DEBUG = False
+        config_race.STREAM = False
+        camera = Camera(config=config_race)
+        return None, camera
+
+    cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        raise RuntimeError(f"Could not open input: {source}")
+        raise RuntimeError("Could not open OpenCV camera index 0")
+    return cap, None
+
+
+def _read_source(cap, camera):
+    if camera is not None:
+        frame, resized = camera.capture_frame(with_resize=True)
+        if not camera.last_capture_valid or resized is None:
+            return False, None
+        return True, resized
+
+    return cap.read()
+
+
+def benchmark(detector, source, warmup, frames, display, output, camera_mode):
+    cap, camera = _open_source(source, camera_mode)
 
     writer = None
     total_frames = 0
@@ -32,14 +62,14 @@ def benchmark(detector, source, warmup, frames, display, output):
     wall_start = time.monotonic()
 
     for _ in range(max(0, warmup)):
-        ok, frame = cap.read()
+        ok, frame = _read_source(cap, camera)
         if not ok:
             break
         detector.detect(frame)
 
     start = time.monotonic()
     while total_frames < frames:
-        ok, frame = cap.read()
+        ok, frame = _read_source(cap, camera)
         if not ok:
             break
 
@@ -74,7 +104,10 @@ def benchmark(detector, source, warmup, frames, display, output):
 
     if writer is not None:
         writer.release()
-    cap.release()
+    if cap is not None:
+        cap.release()
+    if camera is not None:
+        camera.release()
     if display:
         cv2.destroyAllWindows()
 
@@ -106,7 +139,13 @@ def main():
     parser.add_argument("--list", action="store_true", help="List available models")
     parser.add_argument("--model", choices=[m.name for m in list_models()])
     parser.add_argument("--input", help="Video/image sequence source path")
-    parser.add_argument("--camera", action="store_true", help="Use camera index 0")
+    parser.add_argument("--camera", action="store_true", help="Use the project camera")
+    parser.add_argument(
+        "--camera-mode",
+        choices=["picam", "opencv"],
+        default="picam",
+        help="Camera backend when --camera is used",
+    )
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--display", action="store_true")
@@ -135,6 +174,7 @@ def main():
         args.frames,
         args.display,
         args.output,
+        args.camera_mode,
     )
 
 
