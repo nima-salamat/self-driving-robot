@@ -51,6 +51,26 @@ def _validate(name, value):
 
     if name == "PID_MAX_DT" and value < 0.001:
         raise ValueError("PID_MAX_DT is too small")
+
+    if name == "OUTPUT_LIMITS":
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            raise ValueError("OUTPUT_LIMITS must contain two numbers")
+        if any(not isinstance(v, (int, float)) or isinstance(v, bool) for v in value):
+            raise ValueError("OUTPUT_LIMITS must contain numeric values")
+        if value[0] >= value[1]:
+            raise ValueError("OUTPUT_LIMITS minimum must be below maximum")
+
+    if name == "BAUD_RATE":
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("BAUD_RATE must be a positive integer")
+
+    if name == "SERIAL_PORT":
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("SERIAL_PORT must be a non-empty string")
+
+    if name == "CAMERA_MODE" and value not in ("picam", "webcam", "opencv"):
+        raise ValueError("CAMERA_MODE must be picam or webcam")
+
     return value
 
 
