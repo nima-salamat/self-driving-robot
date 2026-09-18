@@ -7,6 +7,7 @@ _LOGGER_CONFIGURED = "_self_driving_robot_logging_configured"
 
 
 def configure_logging(debug=False, log_dir="output"):
+    logging.disable(logging.NOTSET)
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if debug else logging.INFO)
 

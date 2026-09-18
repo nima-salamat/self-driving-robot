@@ -74,6 +74,7 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
 
   <div class="right-panel">
     <div class="card">
+      <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
       <div class="section-title">Arduino Telemetry</div>
       <div id="arduino_status" class="small status-line">Waiting for serial state...</div>
       <pre id="arduino_output" style="max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;background:#050b15;border-radius:8px;color:var(--txt);font-size:12px;white-space:pre-wrap"></pre>
@@ -202,6 +203,14 @@ const frameModeDisplay = document.getElementById('frame_mode');
 let values = {{ values|tojson }};
 let ui = {{ ui|tojson }};
 let advanced = {{ advanced|tojson }};
+const STREAM_CONTROL_ALLOWED = {{ stream_control|default(false)|tojson }};
+
+const controlNotice = document.getElementById('control_notice');
+if (controlNotice) {
+    controlNotice.textContent = STREAM_CONTROL_ALLOWED
+        ? 'Dashboard control is enabled.'
+        : 'Dashboard is read-only. Start with --stream-control to allow runtime changes.';
+}
 
 let selectedVar = 'NONE';
 let markerHighlight = null;

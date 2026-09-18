@@ -143,16 +143,24 @@ class WebStreamer:
         self.app.add_url_rule('/toggle_record', 'toggle_record', self.toggle_record, methods=['POST'])
         self.app.add_url_rule('/freeze_frame', 'freeze_frame', self.freeze_frame, methods=['POST'])
         self.app.add_url_rule('/unfreeze_frame', 'unfreeze_frame', self.unfreeze_frame, methods=['POST'])
-        self.app.add_url_rule('/shutdown', 'shutdown', self.shutdown, methods=['POST'])
 
     def index(self):
         values = {var: self.get_base_var(var) for var in VARIABLES}
         advanced_current = self.get_all_advanced()
         return render_template_string(HTML_TEMPLATE, variables=VARIABLES, values=values, 
                                       ui=self.ui_settings, advanced=advanced_current, 
-                                      mode=getattr(self.config, "MODE", "mode"))
+                                      mode=getattr(self.config, "MODE", "mode"),
+                                      stream_control=bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False)))
+
+    def _control_allowed(self):
+        return bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False))
+
+    def _control_denied(self):
+        return jsonify(success=False, message="stream control is disabled"), 403
 
     def update_conf(self):
+        if not self._control_allowed():
+            return self._control_denied()
         try:
             data = request.get_json() or request.form.to_dict()
             updated = {}
@@ -178,6 +186,8 @@ class WebStreamer:
         return jsonify(advanced=self.get_all_advanced())
 
     def set_advanced(self):
+        if not self._control_allowed():
+            return self._control_denied()
         data = request.get_json() or {}
         try:
             for k, default_v in ADVANCED_VARS.items():
@@ -215,6 +225,8 @@ class WebStreamer:
         return jsonify(ui=self.ui_settings)
 
     def set_ui(self):
+        if not self._control_allowed():
+            return self._control_denied()
         data = request.get_json() or {}
         if "colors" in data: 
             self.ui_settings["colors"].update({k:v for k,v in data["colors"].items() if k in self.ui_settings["colors"]})
@@ -253,10 +265,14 @@ class WebStreamer:
         return jsonify(status)
 
     def take_picture(self):
+        if not self._control_allowed():
+            return self._control_denied()
         setattr(self.config, "TAKE_PICTURE", True)
         return jsonify(success=True)
 
     def toggle_record(self):
+        if not self._control_allowed():
+            return self._control_denied()
         current = getattr(self.config, "RECORD_VIDEO", False)
         new_val = not current
         setattr(self.config, "RECORD_VIDEO", new_val)
@@ -264,6 +280,8 @@ class WebStreamer:
         return jsonify(success=True, recording=new_val)
 
     def freeze_frame(self):
+        if not self._control_allowed():
+            return self._control_denied()
         frames_list = getattr(self.config, "debug_frames_list", [])
         if frames_list:
             setattr(self.config, "frozen_debug_frame", frames_list[-1].copy())
@@ -271,15 +289,18 @@ class WebStreamer:
         return jsonify(success=False, message="No frame available")
 
     def unfreeze_frame(self):
-        if hasattr(self.config, "frozen_debug_frame"): 
+        if not self._control_allowed():
+            return self._control_denied()
+        if hasattr(self.config, "frozen_debug_frame"):
             delattr(self.config, "frozen_debug_frame")
         return jsonify(success=True)
-
-    def shutdown(self): 
-        os._exit(0)
-
 
 def start_stream(config):
 
     streamer = WebStreamer(config)
-    streamer.app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
+    streamer.app.run(
+        host=getattr(config, "STREAM_HOST", "127.0.0.1"),
+        port=int(getattr(config, "STREAM_PORT", 5000)),
+        threaded=True,
+        debug=False,
+    )
