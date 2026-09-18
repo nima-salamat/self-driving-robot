@@ -37,7 +37,7 @@ BOOL_KEYS = {
     "WITHOUT_ARDUINO", "READ_ARDUINO_OUTPUT", "USE_PID", "AUTO_UPDATE_KP",
     "USE_BEV", "DETECT_OBJECT", "STREAM", "DEBUG", "SHOW_FPS",
     "WITH_SIGN", "WITH_APRILTAG", "RECORD_VIDEO", "TAKE_PICTURE",
-    "STREAM_ALLOW_CONTROL", "PERFORMANCE",
+    "STREAM_ALLOW_CONTROL", "PERFORMANCE", "CAMERA_FALLBACK_TO_OPENCV",
 }
 
 
@@ -107,10 +107,7 @@ def load():
     config_module = config_city if base_config.MODE == "city" else config_race
     filename = "city.json" if base_config.MODE == "city" else "race.json"
 
-    try:
-        if getattr(config_module, "CHANGE_WITH_JSON", False):
-            _load_into(config_module, filename)
-    except json.JSONDecodeError:
-        logger.exception("Invalid JSON configuration: %s", filename)
-    except (OSError, ValueError, TypeError):
-        logger.exception("Invalid configuration values in %s", filename)
+    if getattr(config_module, "CHANGE_WITH_JSON", False):
+        _load_into(config_module, filename)
+
+    logger.info("Configuration loaded: %s", filename)

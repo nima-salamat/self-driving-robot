@@ -31,6 +31,9 @@ if __name__ == "__main__":
         from modes.race import start
         set_race_mode()
 
+    # Load JSON first so explicit CLI flags remain authoritative.
+    json_config.load()
+
     config.DEBUG = args.debug
     config.STREAM = args.stream
     config.SHOW_FPS = args.fps
@@ -44,7 +47,6 @@ if __name__ == "__main__":
     config.MODE = args.mode
     base_config.MODE = args.mode
 
-    json_config.load()
     configure_logging(debug=args.debug, log_dir=getattr(config, "OUTPUT_DIR", "output"))
 
     if args.preflight:
