@@ -68,6 +68,8 @@ class RobotController:
         )
         
         self.last_angle = 90
+        self.command_sequence = 0
+        self.last_command = None
         self._initialized = True
 
     def _send_command(self, cmd: str):

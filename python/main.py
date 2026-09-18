@@ -6,6 +6,8 @@ from utils.config_mode import set_city_mode, set_race_mode
 from utils import json_config
 from utils.preflight import run_preflight
 from utils.logging_setup import configure_logging
+from utils.runtime_metrics import RuntimeMetrics
+from utils.health import HealthMonitor
 import base_config
 
 
@@ -49,6 +51,9 @@ if __name__ == "__main__":
         report = run_preflight(config)
         print(report.format())
         raise SystemExit(0 if report.ok else 1)
+
+    config.runtime_metrics = RuntimeMetrics()
+    config.health_monitor = HealthMonitor()
 
     shutdown_event = threading.Event()
     config.SHUTDOWN_EVENT = shutdown_event

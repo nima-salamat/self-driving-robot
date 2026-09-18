@@ -1,4 +1,5 @@
 from time import sleep
+import time
 import cv2
 import logging
 from utils.camera_calibration import CameraCalibration
@@ -118,13 +119,23 @@ class Camera:
     
     def capture_frame(self, with_resize=True):
 
+        started = time.monotonic()
         frame = None
         frame_resized = None
         self.last_capture_valid = False
 
+        def finish(result_frame, result_resized, valid):
+            metrics = getattr(self.config, "runtime_metrics", None)
+            if metrics is not None:
+                metrics.record_camera(
+                    (time.monotonic() - started) * 1000.0,
+                    valid,
+                )
+            return result_frame, result_resized
+
         if not self.camera_initialized:
             logger.error("Camera not initialized")
-            return frame, frame_resized
+            return finish(frame, frame_resized, False)
 
         try:
             if self.pi_mode:
@@ -157,7 +168,7 @@ class Camera:
 
             self.last_capture_valid = True
             self.consecutive_failures = 0
-            return frame, frame_resized
+            return finish(frame, frame_resized, True)
 
         except Exception:
             self.consecutive_failures += 1
