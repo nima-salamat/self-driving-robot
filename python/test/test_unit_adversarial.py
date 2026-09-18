@@ -91,3 +91,111 @@ class SerialAdversarialTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeControllerConnection:
+    def __init__(self, *args, **kwargs):
+        self.connected = True
+        self.closed = False
+        self.result = True
+        self.commands = []
+
+    def set_print_telemetry(self, enabled):
+        self.print_telemetry = enabled
+
+    def wait_until_connected(self, timeout):
+        return self.connected
+
+    def send_command(self, command):
+        self.commands.append(command)
+        return self.result
+
+    def close(self):
+        self.closed = True
+
+
+def make_controller_config(mode="race"):
+    import types
+    return types.SimpleNamespace(
+        MODE=mode,
+        KP=1.0,
+        KI=0.0,
+        KD=0.1,
+        KT=0.0,
+        OUTPUT_LIMITS=(-80, 80),
+        MIN_SERVO_ANGLE=55,
+        MAX_SERVO_ANGLE=125,
+        SERVO_CENTER=90,
+        SERVO_DIRECTION="ltr",
+        WITHOUT_ARDUINO=False,
+        SERIAL_PORT="/dev/null",
+        BAUD_RATE=115200,
+        SERIAL_TIMEOUT=0.1,
+        SERIAL_MAX_RETRIES=1,
+        SERIAL_STARTUP_WAIT=0,
+        SERIAL_REBOOT_WAIT=0,
+        SERIAL_RECONNECT_INTERVAL=0.5,
+        SERIAL_RECONNECT_TIMEOUT=0.1,
+        SERIAL_TELEMETRY_BUFFER_SIZE=4,
+        READ_ARDUINO_OUTPUT=False,
+        PID_MIN_DT=0.001,
+        PID_MAX_DT=0.2,
+        PID_DERIVATIVE_FILTER=0.25,
+    )
+
+
+class ControllerAdversarialTests(unittest.TestCase):
+    def test_failed_commands_do_not_poison_actuator_cache(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            config = make_controller_config()
+            controller = controller_module.RobotController(config=config)
+            controller.connection.result = False
+
+            self.assertFalse(controller.set_angle(110))
+            self.assertIsNone(controller.last_angle)
+            self.assertFalse(controller.motor(150))
+            self.assertEqual(controller.current_speed, 0)
+
+    def test_reconnect_invalidates_cached_actuator_state(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            config = make_controller_config()
+            controller = controller_module.RobotController(config=config)
+            controller.last_angle = 110
+            controller.current_speed = 150
+
+            controller.connection.connected = False
+            controller._sync_connection_state()
+            self.assertIsNone(controller.last_angle)
+            self.assertEqual(controller.current_speed, 0)
+
+            controller.connection.connected = True
+            controller.connection.commands.clear()
+            controller.connection.result = True
+            self.assertTrue(controller.set_angle(110))
+            self.assertIn("servo 110\n", controller.connection.commands)
+
+    def test_controllers_do_not_leak_configuration_between_modes(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            race = controller_module.RobotController(make_controller_config("race"))
+            city = controller_module.RobotController(make_controller_config("city"))
+
+            self.assertIsNot(race, city)
+            self.assertIs(race.config.MODE, "race")
+            self.assertIs(city.config.MODE, "city")
+            self.assertIs(race.pid, not city.pid)
+
+    def test_stop_resets_pid_state(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            controller = controller_module.RobotController(make_controller_config())
+            controller.pid.update(10, now=1.0)
+            self.assertIsNotNone(controller.pid._prev_error)
+            controller.stop()
+            self.assertIsNone(controller.pid._prev_error)
