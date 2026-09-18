@@ -33,6 +33,7 @@ class RuntimeMetrics:
             "serial_command_at": None,
             "camera_at": None,
             "perception_at": None,
+            "last_perception_valid": None,
         }
 
     def _record_timing(self, name, duration_ms):
@@ -58,6 +59,7 @@ class RuntimeMetrics:
     def record_perception(self, duration_ms, valid):
         with self._lock:
             self._last["perception_at"] = time.monotonic()
+            self._last["last_perception_valid"] = bool(valid)
             if not valid:
                 self._counters["perception_failures"] += 1
         self._record_timing("perception", duration_ms)
@@ -109,6 +111,12 @@ class RuntimeMetrics:
         if last["frame_at"] is not None:
             last_frame_age_ms = max(0.0, (now - last["frame_at"]) * 1000.0)
 
+        last_perception_age_ms = None
+        if last["perception_at"] is not None:
+            last_perception_age_ms = max(
+                0.0, (now - last["perception_at"]) * 1000.0
+            )
+
         last_serial_age_ms = None
         if last["serial_command_at"] is not None:
             last_serial_age_ms = max(0.0, (now - last["serial_command_at"]) * 1000.0)
@@ -123,4 +131,6 @@ class RuntimeMetrics:
             "timing": timing,
             "last_frame_age_ms": last_frame_age_ms,
             "last_serial_command_age_ms": last_serial_age_ms,
+            "last_perception_age_ms": last_perception_age_ms,
+            "last_perception_valid": last["last_perception_valid"],
         }

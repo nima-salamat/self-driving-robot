@@ -42,9 +42,12 @@ config_race.DEBUG = False
 
 class Robot:
     def __init__(self):
+        self.metrics = getattr(config_race, "runtime_metrics", None)
+        self.health = getattr(config_race, "health_monitor", None)
         self.camera = Camera(config=config_race)
         self.control = RobotController(config=config_race)
         config_race.arduino_connection = self.control.connection
+        config_race.robot_controller = self.control
         self.flask_thread = None
         self._next_control_time = time.monotonic()
         
