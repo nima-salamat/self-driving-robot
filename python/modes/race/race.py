@@ -143,19 +143,24 @@ class Robot:
             while True:
                 self.fps.update()
                 if config_race.RUN_LVL == "STOP":
-                    time.sleep(config_race.DELAY)
                     self.control.stop()
-                    time.sleep(config_race.DELAY)
                     self.control.set_angle(SERVO_CENTER)
-                    time.sleep(config_race.DELAY)
-                    
-                    frame, frame_resized = self.camera.capture_frame(with_resize=True)
-                    if not self.camera.last_capture_valid or frame_resized is None:
-                        self.control.stop()
-                        continue
-                    debug_frame=None
-                    result = self.vision.detect(frame_resized, debug_frame=None)
-                    self.handle_debug_stream(result, frame, SERVO_CENTER, False, "stopped")
+
+                    if config_race.STREAM or config_race.DEBUG:
+                        frame, _ = self.camera.capture_frame(with_resize=False)
+                        if self.camera.last_capture_valid:
+                            result = {
+                                "steering_angle": SERVO_CENTER,
+                                "error": 0,
+                                "lane_type": "stopped",
+                                "perception_valid": True,
+                                "debug": {"combined": frame},
+                            }
+                            self.handle_debug_stream(
+                                result, frame, SERVO_CENTER,
+                                False, "stopped"
+                            )
+                    self._pace_control_loop()
                     continue
 
                 if config_race.SHOW_FPS:
