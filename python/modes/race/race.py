@@ -134,6 +134,7 @@ class Robot:
 
     def update_debug_frames(self, frame):
         config_race.debug_frames_list.append(frame)
+        config_race.stream_frame_seq = getattr(config_race, "stream_frame_seq", 0) + 1
 
    
     def run(self):
