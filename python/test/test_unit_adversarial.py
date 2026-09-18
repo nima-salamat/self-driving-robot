@@ -491,3 +491,43 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
             self.assertTrue(server.closed)
             self.assertIsNone(getattr(config, "stream_server", None))
             self.assertFalse(stop_stream(config))
+
+
+class PIDNumericalStabilityTests(unittest.TestCase):
+    def test_non_finite_error_resets_without_nan_output(self):
+        from controller.pid_controller import PIDController
+
+        pid = PIDController(
+            kp=1.0,
+            ki=0.5,
+            kd=1.0,
+            dt=0.01,
+            output_limits=(-80, 80),
+        )
+        pid.update(10.0, now=1.0)
+        output = pid.update(float("nan"), now=1.1)
+        self.assertEqual(output, 0.0)
+        self.assertIsNone(pid._prev_error)
+        self.assertEqual(pid._integral, 0.0)
+
+        output = pid.update(float("inf"), now=float("nan"))
+        self.assertEqual(output, 0.0)
+        self.assertIsNone(pid._prev_error)
+
+    def test_abnormal_elapsed_time_remains_bounded(self):
+        import math
+        from controller.pid_controller import PIDController
+
+        pid = PIDController(
+            kp=0.0,
+            ki=0.0,
+            kd=1.0,
+            dt=0.01,
+            output_limits=(-80, 80),
+            min_dt=0.001,
+            max_dt=0.1,
+        )
+        pid.update(0.0, now=1.0)
+        output = pid.update(1000000.0, now=1000.0)
+        self.assertTrue(math.isfinite(output))
+        self.assertLessEqual(abs(output), 80)
