@@ -442,3 +442,49 @@ For issues or questions:
 1. Check the [Troubleshooting](#troubleshooting) section
 2. Review existing test files for usage examples
 3. Enable debug mode for detailed diagnostics
+
+## Operational Diagnostics
+
+The Python runtime includes startup pre-flight checks, rotating logs, runtime health metrics, hardware-free tests, and an offline vision replay tool.
+
+### Pre-flight
+
+Run diagnostics without entering the control loop:
+
+```bash
+python python/main.py --mode race --preflight
+python python/main.py --mode city --preflight
+```
+
+The check covers core Python dependencies, configured sign-model requirements, output storage, camera initialization and frame shape, the configured serial port, the monotonic clock, and the configured stream port.
+
+### Performance and health
+
+Enable periodic performance diagnostics:
+
+```bash
+python python/main.py --mode race --performance
+```
+
+When streaming is enabled, the dashboard exposes runtime health and performance information, including loop timing, camera/perception/serial timing, hardware state, asynchronous sign-worker status, and recording queue statistics.
+
+The stream binds to `127.0.0.1:5000` by default. Dashboard controls that modify runtime settings are disabled unless `--stream-control` is explicitly supplied.
+
+### Hardware-free tests
+
+```bash
+PYTHONPATH=python python -m unittest discover -s python/test -p 'test_unit_*.py' -v
+```
+
+The suite covers the PID controller, configuration validation, runtime metrics, health evaluation, disabled serial transport behavior, and sign-worker failure recovery. GitHub Actions runs compilation and this hardware-free suite.
+
+### Offline vision replay
+
+Replay recorded video without constructing the robot controller or opening Arduino serial:
+
+```bash
+python python/replay.py --mode race --input output/videos/video_1.mp4
+python python/replay.py --mode city --input output/videos/video_1.mp4 --output replay.mp4
+```
+
+The replay reports frame count, perception-valid ratio, processing rate, and loop/perception timing statistics.
