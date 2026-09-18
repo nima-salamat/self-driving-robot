@@ -30,7 +30,7 @@ def download(spec):
         return
 
     temporary = destination.with_suffix(destination.suffix + ".part")
-    print(f"[download] {spec.name}")
+    print(f"[download] {spec.name} ONNX")
     urllib.request.urlretrieve(spec.model_url, temporary)
 
     actual = sha256(temporary)
@@ -42,6 +42,25 @@ def download(spec):
 
     temporary.replace(destination)
     print(f"[ok] {destination} ({destination.stat().st_size / 1024:.1f} KiB)")
+
+    for asset_url, relative_path in (
+        (spec.ncnn_param_url, spec.ncnn_param_path),
+        (spec.ncnn_bin_url, spec.ncnn_bin_path),
+    ):
+        asset = Path(relative_path)
+        asset_path = Path(__file__).resolve().parents[1] / "models" / "lane" / asset.relative_to(Path("weights"))
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        if asset_path.exists() and asset_path.stat().st_size > 0:
+            print(f"[ok] {asset_path} already installed")
+            continue
+        asset_tmp = asset_path.with_suffix(asset_path.suffix + ".part")
+        print(f"[download] {spec.name} {asset_path.name}")
+        urllib.request.urlretrieve(asset_url, asset_tmp)
+        if asset_tmp.stat().st_size == 0:
+            asset_tmp.unlink(missing_ok=True)
+            raise RuntimeError(f"Downloaded empty NCNN asset: {asset_path.name}")
+        asset_tmp.replace(asset_path)
+        print(f"[ok] {asset_path} ({asset_path.stat().st_size / 1024:.1f} KiB)")
 
 
 def main():
