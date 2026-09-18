@@ -2,6 +2,7 @@ import logging
 import cv2
 import json
 import os
+import threading
 from flask import Flask, Response, request, render_template_string, jsonify
 from .template import HTML_TEMPLATE
 
@@ -59,7 +60,7 @@ class WebStreamer:
         
         self.ui_settings = self.load_ui_settings()
         
-        self._jpeg_cache_lock = __import__('threading').Lock()
+        self._jpeg_cache_lock = threading.Lock()
         self._jpeg_cache_frame_id = None
         self._jpeg_cache = None
         self._setup_routes()
