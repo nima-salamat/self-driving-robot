@@ -72,7 +72,10 @@ def _check_output_storage(report, config):
 
 
 def _check_models(report, config):
-    use_sign = bool(getattr(config, "USE_SIGN", False))
+    use_sign = bool(
+        getattr(config, "USE_SIGN", False)
+        or getattr(config, "WITH_SIGN", False)
+    )
     if not use_sign:
         report.add(
             "sign model",
