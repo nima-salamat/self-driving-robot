@@ -120,71 +120,6 @@ class MLLaneDetector:
         center_x, lane_type = self._lane_center_from_mask(mask)
         return mask, center_x, lane_type, {"lanes": []}
 
-    def _decode_ufld(self, raw, frame):
-        output = np.squeeze(raw).astype(np.float32)
-        if output.ndim != 3 or output.shape[2] != 4:
-            raise RuntimeError(f"Unexpected UFLD output shape: {raw.shape}")
-
-        output = output[:, ::-1, :]
-        griding_num = output.shape[0]
-        rows = output.shape[1]
-        lanes = output.shape[2]
-
-        prob = self._softmax(output[:-1], axis=0)
-        idx = np.arange(griding_num, dtype=np.float32) + 1.0
-        loc = np.sum(prob * idx[:, None, None], axis=0)
-        hard = np.argmax(output, axis=0)
-        loc[hard == griding_num] = 0
-
-        row_anchor = [
-            121, 131, 141, 150, 160, 170, 180, 189, 199,
-            209, 219, 228, 238, 248, 258, 267, 277, 287
-        ]
-
-        lane_points = []
-        detected = []
-        col_sample_w = (800.0 - 1.0) / (griding_num - 1)
-
-        for lane_idx in range(lanes):
-            points = []
-            if np.sum(loc[:, lane_idx] != 0) > 2:
-                detected.append(True)
-                for point_idx in range(rows):
-                    value = loc[point_idx, lane_idx]
-                    if value > 0:
-                        x = int(value * col_sample_w * 1640.0 / 800.0) - 1
-                        y = int(590.0 * row_anchor[rows - 1 - point_idx] / 288.0) - 1
-                        points.append((x, y))
-            else:
-                detected.append(False)
-            lane_points.append(points)
-
-        sx = frame.shape[1] / 1640.0
-        sy = frame.shape[0] / 590.0
-        scaled = [
-            [(int(x * sx), int(y * sy)) for x, y in points]
-            for points in lane_points
-        ]
-
-        candidates = []
-        for idx in (1, 2):
-            if detected[idx] and scaled[idx]:
-                points = scaled[idx]
-                near_bottom = max(points, key=lambda p: p[1])
-                candidates.append(near_bottom[0])
-
-        if len(candidates) >= 2:
-            center_x = sum(candidates[:2]) / 2.0
-            lane_type = "both"
-        elif len(candidates) == 1:
-            center_x = candidates[0]
-            lane_type = "only_left" if candidates[0] < frame.shape[1] / 2 else "only_right"
-        else:
-            center_x = None
-            lane_type = "none"
-
-        return None, center_x, lane_type, {"lanes": scaled}
-
     def detect(self, frame, debug_frame=None):
         started = time.monotonic()
 
@@ -198,14 +133,8 @@ class MLLaneDetector:
                 "kp": 0,
             }
 
-        if self.model_name.startswith("unet_depthwise_"):
+        if self.model_name in {"unet_depthwise_nano", "unet_depthwise_small"}:
             mask, center_x, lane_type, meta = self._predict_unet(frame)
-        elif self.model_name == "ufld_culane_resnet18":
-            self.net.setInput(
-                self._prepare_ufld(frame)
-            )
-            raw = self.net.forward()
-            mask, center_x, lane_type, meta = self._decode_ufld(raw, frame)
         else:
             raise ValueError(f"No detector implementation for {self.model_name}")
 
@@ -252,17 +181,7 @@ class MLLaneDetector:
             "ml_latency_ms": elapsed_ms,
         }
 
-    def _prepare_ufld(self, frame):
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        resized = cv2.resize(
-            rgb,
-            (self.spec.input_width, self.spec.input_height),
-            interpolation=cv2.INTER_LINEAR,
-        ).astype(np.float32)
-        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        normalized = (resized / 255.0 - mean) / std
-        return np.transpose(normalized, (2, 0, 1))[None, ...]
+
 
 def create_ml_lane_detector(config):
     enabled = bool(getattr(config, "USE_ML_LANE_DETECTOR", False))
