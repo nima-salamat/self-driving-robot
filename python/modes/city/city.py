@@ -45,6 +45,7 @@ class Robot:
     def __init__(self):
         self.camera = Camera(config=config_city)
         self.control = RobotController(config=config_city)
+        config_city.arduino_connection = self.control.connection
         self.flask_thread = None
 
         # hardcode the left and right lane change
