@@ -1,13 +1,12 @@
 import logging
-import math
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from .registry import get_model_spec
 from .bundled import ensure_model_materialized
+from .registry import get_model_spec
 
 
 logger = logging.getLogger(__name__)
@@ -18,49 +17,50 @@ class MLLaneDetector:
         self.spec = get_model_spec(model_name)
         self.model_name = model_name
         self.model_root = Path(model_root) if model_root else Path(__file__).resolve().parents[2] / "models" / "lane"
-        self.model_path = self._resolve_path()
-        if not self.model_path.exists():
-            raise FileNotFoundError(
-                f"Lane model '{model_name}' is not installed: {self.model_path}. "
-                f"Run: python python/tools/download_lane_models.py --model {model_name}"
-            )
+        self.param_path, self.bin_path = ensure_model_materialized(model_name)
 
-        self.net = cv2.dnn.readNetFromONNX(str(self.model_path))
-        self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-        self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
-        self.cpu_threads = max(1, int(cpu_threads))
         try:
-            cv2.setNumThreads(self.cpu_threads)
-        except Exception:
-            logger.debug("OpenCV thread count could not be configured", exc_info=True)
+            import ncnn
+        except ImportError as exc:
+            raise RuntimeError(
+                "NCNN Python runtime is required for ML lane detection. "
+                "Install it with: pip install ncnn"
+            ) from exc
 
-        self.input_name = None
-        self.output_names = self.net.getUnconnectedOutLayersNames()
+        self.ncnn = ncnn
+        self.net = ncnn.Net()
+        self.net.opt.use_vulkan_compute = False
+        self.net.opt.num_threads = max(1, int(cpu_threads))
+
+        ret = self.net.load_param(str(self.param_path))
+        if ret != 0:
+            raise RuntimeError(f"Failed to load NCNN param: {self.param_path} (code {ret})")
+        ret = self.net.load_model(str(self.bin_path))
+        if ret != 0:
+            raise RuntimeError(f"Failed to load NCNN weights: {self.bin_path} (code {ret})")
+
+        self.input_blob = "in0"
+        self.output_blob = "out0"
 
     def info(self):
         return {
             "name": self.spec.name,
             "title": self.spec.title,
-            "format": self.spec.format,
+            "runtime": "ncnn",
             "input": [self.spec.input_height, self.spec.input_width],
             "dataset": self.spec.dataset,
             "license": self.spec.license,
             "params": self.spec.params,
-            "model_path": str(self.model_path),
+            "param_path": str(self.param_path),
+            "bin_path": str(self.bin_path),
         }
-
-    @staticmethod
-    def _softmax(x, axis=0):
-        x = x - np.max(x, axis=axis, keepdims=True)
-        exp_x = np.exp(x)
-        return exp_x / np.sum(exp_x, axis=axis, keepdims=True)
 
     @staticmethod
     def _lane_center_from_mask(mask):
         binary = mask > 0.45
         h, w = binary.shape
-        y0 = int(h * 0.55)
-        band = binary[y0:]
+        band = binary[int(h * 0.55):]
+
         if not np.any(band):
             return None, "none"
 
@@ -71,21 +71,27 @@ class MLLaneDetector:
             return None, "none"
 
         groups = []
-        start = prev = int(active[0])
+        start = previous = int(active[0])
         for value in active[1:]:
             value = int(value)
-            if value > prev + 6:
-                groups.append((start, prev))
+            if value > previous + 6:
+                groups.append((start, previous))
                 start = value
-            prev = value
-        groups.append((start, prev))
+            previous = value
+        groups.append((start, previous))
 
-        centers = [(a + b) / 2.0 for a, b in groups if b - a + 1 >= 2]
+        centers = [
+            (left + right) / 2.0
+            for left, right in groups
+            if right - left + 1 >= 2
+        ]
+
         if len(centers) >= 2:
             left, right = centers[0], centers[-1]
             return (left + right) / 2.0, "both"
 
-        return centers[0], "only_left" if centers[0] < w / 2 else "only_right"
+        center = centers[0]
+        return center, "only_left" if center < w / 2 else "only_right"
 
     def _predict_unet(self, frame):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -94,27 +100,39 @@ class MLLaneDetector:
             (self.spec.input_width, self.spec.input_height),
             interpolation=cv2.INTER_AREA,
         )
-        blob = resized.astype(np.float32) / 255.0
-        blob = np.transpose(blob, (2, 0, 1))[None, ...]
-        self.net.setInput(blob)
-        raw = self.net.forward()
-        output = np.squeeze(raw).astype(np.float32)
+        chw = np.transpose(resized.astype(np.float32) / 255.0, (2, 0, 1))
 
-        if output.ndim == 3:
-            output = output[0]
-        if output.ndim != 2:
-            raise RuntimeError(f"Unexpected UNet output shape: {raw.shape}")
+        mat = self.ncnn.Mat(chw)
+        extractor = self.net.create_extractor()
 
-        if float(output.max()) > 1.0 or float(output.min()) < 0.0:
-            output = 1.0 / (1.0 + np.exp(-np.clip(output, -30.0, 30.0)))
+        ret = extractor.input(self.input_blob, mat)
+        if ret != 0:
+            raise RuntimeError(f"NCNN input failed with code {ret}")
 
-        mask = cv2.resize(
-            output,
+        ret, output = extractor.extract(self.output_blob)
+        if ret != 0:
+            raise RuntimeError(f"NCNN extraction failed with code {ret}")
+
+        result = np.array(output, copy=True).astype(np.float32)
+        result = np.squeeze(result)
+        if result.ndim != 2:
+            raise RuntimeError(f"Unexpected NCNN output shape: {result.shape}")
+
+        if result.size == 0:
+            return np.zeros((frame.shape[0], frame.shape[1]), dtype=np.float32), None, "none", {}
+
+        if float(result.min()) < 0.0 or float(result.max()) > 1.0:
+            result = 1.0 / (1.0 + np.exp(-np.clip(result, -30.0, 30.0)))
+
+        lane_mask = 1.0 - result
+
+        lane_mask = cv2.resize(
+            lane_mask,
             (frame.shape[1], frame.shape[0]),
             interpolation=cv2.INTER_LINEAR,
         )
-        center_x, lane_type = self._lane_center_from_mask(mask)
-        return mask, center_x, lane_type, {"lanes": []}
+        center_x, lane_type = self._lane_center_from_mask(lane_mask)
+        return lane_mask, center_x, lane_type, {"lanes": []}
 
     def detect(self, frame, debug_frame=None):
         started = time.monotonic()
@@ -129,13 +147,11 @@ class MLLaneDetector:
                 "kp": 0,
             }
 
-        if self.model_name in {"unet_depthwise_nano", "unet_depthwise_small"}:
-            mask, center_x, lane_type, meta = self._predict_unet(frame)
-        else:
-            raise ValueError(f"No detector implementation for {self.model_name}")
+        mask, center_x, lane_type, meta = self._predict_unet(frame)
 
         width = frame.shape[1]
         frame_center = width / 2.0
+
         if center_x is None:
             error = 0.0
             lane_type = "none"
@@ -148,15 +164,29 @@ class MLLaneDetector:
         if mask is not None:
             mask_u8 = np.uint8(np.clip(mask, 0.0, 1.0) * 255.0)
             _, mask_bin = cv2.threshold(mask_u8, 100, 255, cv2.THRESH_BINARY)
-            contours, _ = cv2.findContours(mask_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(
+                mask_bin,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
+            )
             cv2.drawContours(vis, contours, -1, (0, 255, 0), 2)
-        for lane in meta.get("lanes", []):
-            for x, y in lane:
-                cv2.circle(vis, (x, y), 2, (0, 255, 255), -1)
 
-        cv2.line(vis, (int(frame_center), 0), (int(frame_center), vis.shape[0]), (0, 0, 255), 1)
+        cv2.line(
+            vis,
+            (int(frame_center), 0),
+            (int(frame_center), vis.shape[0]),
+            (0, 0, 255),
+            1,
+        )
+
         if center_x is not None:
-            cv2.line(vis, (int(center_x), 0), (int(center_x), vis.shape[0]), (255, 0, 255), 1)
+            cv2.line(
+                vis,
+                (int(center_x), 0),
+                (int(center_x), vis.shape[0]),
+                (255, 0, 255),
+                1,
+            )
 
         if debug_frame is not None and debug_frame.shape[:2] != vis.shape[:2]:
             vis = cv2.resize(
@@ -178,11 +208,11 @@ class MLLaneDetector:
         }
 
 
-
 def create_ml_lane_detector(config):
     enabled = bool(getattr(config, "USE_ML_LANE_DETECTOR", False))
     if not enabled:
         return None
+
     model_name = getattr(config, "ML_LANE_MODEL", "unet_depthwise_nano")
     threads = int(getattr(config, "ML_LANE_CPU_THREADS", 4))
     return MLLaneDetector(model_name, cpu_threads=threads)
