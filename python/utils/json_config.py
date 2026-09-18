@@ -29,12 +29,15 @@ RANGES = {
     "resize_width": (32, 4096),
     "resize_height": (32, 4096),
     "SPEED": (-255, 255),
+    "MIN_FREE_DISK_MB": (0, 1024 * 1024),
+    "STREAM_PORT": (1, 65535),
 }
 
 BOOL_KEYS = {
     "WITHOUT_ARDUINO", "READ_ARDUINO_OUTPUT", "USE_PID", "AUTO_UPDATE_KP",
     "USE_BEV", "DETECT_OBJECT", "STREAM", "DEBUG", "SHOW_FPS",
     "WITH_SIGN", "WITH_APRILTAG", "RECORD_VIDEO", "TAKE_PICTURE",
+    "STREAM_ALLOW_CONTROL", "PERFORMANCE",
 }
 
 
@@ -67,6 +70,10 @@ def _validate(name, value):
     if name == "SERIAL_PORT":
         if not isinstance(value, str) or not value.strip():
             raise ValueError("SERIAL_PORT must be a non-empty string")
+
+    if name in {"OUTPUT_DIR", "STREAM_HOST"}:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{name} must be a non-empty string")
 
     if name == "CAMERA_MODE" and value not in ("picam", "webcam", "opencv"):
         raise ValueError("CAMERA_MODE must be picam or webcam")

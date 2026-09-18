@@ -199,3 +199,10 @@ DETECT_OBJECT = False
 # Traffic sign detector method
 SIGN_DETECTOR_METHOD = "yolo"  # "yolo" or "svm"
 USE_SIGN = False
+OUTPUT_DIR = "output"
+MIN_FREE_DISK_MB = 256
+STREAM_HOST = "127.0.0.1"
+STREAM_PORT = 5000
+STREAM_ALLOW_CONTROL = False
+SHUTDOWN_EVENT = None
+PERFORMANCE = False
