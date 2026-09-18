@@ -702,3 +702,26 @@ class ProgressHealthAdversarialTests(unittest.TestCase):
         snapshot = monitor.snapshot_runtime(config)
         self.assertEqual(snapshot["state"], HealthState.DEGRADED)
         self.assertIn("sign_worker_stalled", snapshot["faults"])
+
+
+class StreamFailureAdversarialTests(unittest.TestCase):
+    def test_video_api_returns_degraded_response_on_encode_failure(self):
+        import types
+        from unittest.mock import patch
+
+        fake_cv2 = types.SimpleNamespace(
+            imencode=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("simulated encoder failure")
+            )
+        )
+        with patch.dict(sys.modules, {"cv2": fake_cv2}):
+            import importlib
+            stream_module = importlib.import_module("stream")
+            config = types.SimpleNamespace(
+                MODE="test",
+                debug_frames_list=[object()],
+                stream_frame_seq=1,
+            )
+            streamer = stream_module.WebStreamer(config)
+            response = streamer.video_feed_frame()
+            self.assertEqual(response.status_code, 503)

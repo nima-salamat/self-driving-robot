@@ -251,10 +251,15 @@ class WebStreamer:
         frame_id = getattr(self.config, "stream_frame_seq", id(frame))
         with self._jpeg_cache_lock:
             if frame_id != self._jpeg_cache_frame_id or self._jpeg_cache is None:
-                ret, buffer = cv2.imencode('.jpg', frame)
-                if not ret:
-                    return Response('', status=204)
-                self._jpeg_cache = buffer.tobytes()
+                try:
+                    ret, buffer = cv2.imencode('.jpg', frame)
+                    if not ret:
+                        return Response('', status=204)
+                    payload = buffer.tobytes()
+                except Exception:
+                    logger.exception("Failed to encode stream frame")
+                    return Response('', status=503)
+                self._jpeg_cache = payload
                 self._jpeg_cache_frame_id = frame_id
             payload = self._jpeg_cache
         return Response(payload, mimetype='image/jpeg')
