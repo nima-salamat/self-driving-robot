@@ -313,3 +313,82 @@ class RecordingAdversarialTests(unittest.TestCase):
 
             writer.release_event.set()
             manager.close()
+
+
+class HealthAdversarialTests(unittest.TestCase):
+    def test_camera_capture_failure_is_not_reported_healthy(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            WITH_SIGN=False,
+            camera=types.SimpleNamespace(
+                camera_initialized=True,
+                last_capture_valid=False,
+                last_capture_at=time.monotonic(),
+                consecutive_failures=3,
+            ),
+        )
+        monitor.set_lifecycle(HealthState.RUNNING)
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.FAULT)
+        self.assertIn("camera", snapshot["faults"])
+
+    def test_dead_sign_worker_is_reported(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            WITH_SIGN=True,
+            sign_detector=types.SimpleNamespace(
+                status=lambda: {"worker_alive": False, "last_error": None}
+            ),
+        )
+        monitor.set_lifecycle(HealthState.RUNNING)
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.FAULT)
+        self.assertIn("sign_worker", snapshot["faults"])
+
+    def test_stale_arduino_telemetry_is_distinguished_from_connection(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=False,
+            arduino_connection=types.SimpleNamespace(
+                connected=True,
+                state="CONNECTED",
+                last_error=None,
+                telemetry_status=lambda limit=0: {
+                    "state": "CONNECTED",
+                    "last_line_age_s": 5.0,
+                },
+            ),
+        )
+        monitor.set_lifecycle(HealthState.RUNNING)
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.DEGRADED)
+        self.assertTrue(snapshot["resources"]["arduino"]["connected"])
+        self.assertFalse(snapshot["resources"]["arduino"]["telemetry_fresh"])
+
+    def test_shutdown_state_cannot_be_overridden_by_dynamic_fault(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        monitor.set_lifecycle(HealthState.SHUTTING_DOWN)
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=False,
+            arduino_connection=types.SimpleNamespace(
+                connected=False,
+                state="DISCONNECTED",
+                last_error="closed",
+            ),
+        )
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.SHUTTING_DOWN)

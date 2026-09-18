@@ -33,6 +33,7 @@ class Camera:
         self.pi_mode = False
         self.camera_initialized = False
         self.last_capture_valid = False
+        self.last_capture_at = None
         self.consecutive_failures = 0
         self.camera_calibration = CameraCalibration()
 
@@ -126,6 +127,7 @@ class Camera:
         self.last_capture_valid = False
 
         def finish(result_frame, result_resized, valid):
+            self.last_capture_at = time.monotonic()
             metrics = getattr(self.config, "runtime_metrics", None)
             if metrics is not None:
                 metrics.record_camera(
