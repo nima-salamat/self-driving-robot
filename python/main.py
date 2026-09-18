@@ -17,6 +17,7 @@ if __name__ == '__main__':
     config.STREAM = args.stream
     config.SHOW_FPS = args.fps
     config.WITHOUT_ARDUINO = args.without_arduino
+    config.READ_ARDUINO_OUTPUT = args.read_arduino_output
     config.MODE = args.mode
     base_config.MODE = args.mode
     
