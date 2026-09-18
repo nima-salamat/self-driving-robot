@@ -33,6 +33,7 @@ RANGES = {
     "SPEED": (-255, 255),
     "MIN_FREE_DISK_MB": (0, 1024 * 1024),
     "STREAM_PORT": (1, 65535),
+    "USBCAM_ADDR": (0, 64),
 }
 
 BOOL_KEYS = {
@@ -78,7 +79,7 @@ def _validate(name, value):
             raise ValueError(f"{name} must be a non-empty string")
 
     if name == "CAMERA_MODE" and value not in ("picam", "webcam", "opencv"):
-        raise ValueError("CAMERA_MODE must be picam or webcam")
+        raise ValueError("CAMERA_MODE must be one of: picam, webcam, opencv")
 
     return value
 
