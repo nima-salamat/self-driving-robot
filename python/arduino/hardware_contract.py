@@ -271,6 +271,8 @@ def _wait_for(connection, predicate, timeout, description):
     deadline = time.monotonic() + max(0.1, float(timeout))
     while time.monotonic() < deadline:
         for line in _snapshot_lines(connection):
+            if line.startswith("ERR "):
+                _fail(f"Arduino rejected the hardware contract: {line}")
             if predicate(line):
                 return line
         time.sleep(0.01)
