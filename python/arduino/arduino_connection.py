@@ -57,6 +57,7 @@ class ArduinoConnection:
         self._telemetry_enabled = bool(telemetry_enabled)
         self._print_telemetry = False
         self._last_error = None
+        self._consecutive_reconnect_failures = 0
 
         if self.enabled:
             self._reconnect_thread = threading.Thread(
@@ -138,8 +139,8 @@ class ArduinoConnection:
                 connection = serial.Serial(
                     self.port,
                     self.baudrate,
-                    timeout=self.timeout,
-                    write_timeout=self.command_write_timeout,
+                    timeout=min(self.timeout, self.reconnect_timeout),
+                    write_timeout=self.reconnect_timeout,
                 )
                 self.serial_connection = connection
 
@@ -150,11 +151,13 @@ class ArduinoConnection:
                 while not self._stop_event.is_set() and time.monotonic() < deadline:
                     time.sleep(min(0.05, deadline - time.monotonic()))
 
+            self._consecutive_reconnect_failures = 0
             self._set_state(self.CONNECTED)
             logger.info("Arduino serial connected: %s @ %s", self.port, self.baudrate)
             return True
         except (serial.SerialException, OSError) as exc:
             self.serial_connection = None
+            self._consecutive_reconnect_failures += 1
             self._set_state(self.DISCONNECTED, exc)
             return False
 
@@ -172,6 +175,9 @@ class ArduinoConnection:
                     continue
                 if self._open_serial():
                     self._establish_safe_state()
+                elif self._consecutive_reconnect_failures >= self.max_retries:
+                    # Back off after repeated failures without blocking the control thread.
+                    time.sleep(min(self.reconnect_interval * 4.0, 5.0))
 
     def _establish_safe_state(self):
         """Send a safe stop/center sequence before normal control resumes."""
