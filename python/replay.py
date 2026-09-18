@@ -23,12 +23,12 @@ def main():
     if args.mode == "race":
         import base_config
         from modes.race import config_race as config
-        from modes.race.config_race import VisionProcessor
+        from vision.race_vision_processing import VisionProcessor
         from utils.config_mode import set_race_mode
     else:
         import base_config
         from modes.city import config_city as config
-        from modes.city.config_city import VisionProcessor
+        from vision.city_vision_processing import VisionProcessor
         from utils.config_mode import set_city_mode
 
     if args.mode == "race":
@@ -37,6 +37,9 @@ def main():
         set_city_mode()
 
     base_config.MODE = args.mode
+    from utils import json_config
+    json_config.load()
+
     cap = cv2.VideoCapture(args.input)
     if not cap.isOpened():
         raise RuntimeError(f"Unable to open replay input: {args.input}")
