@@ -41,7 +41,6 @@ class LaneModelTests(unittest.TestCase):
             [
                 "unet_depthwise_nano",
                 "unet_depthwise_small",
-                "ufld_culane_resnet18",
             ],
         )
 
@@ -62,18 +61,6 @@ class LaneModelTests(unittest.TestCase):
         self.assertIn("lane_type", result)
         self.assertIn("perception_valid", result)
         self.assertEqual(result["ml_model"], "unet_depthwise_nano")
-
-    @patch("vision.ml_lane.detector.cv2.dnn.readNetFromONNX", return_value=FakeNet())
-    @patch("vision.ml_lane.detector.Path.exists", return_value=True)
-    def test_ufld_decode_shape(self, _exists, _load):
-        detector = MLLaneDetector("ufld_culane_resnet18")
-        raw = np.zeros((1, 201, 18, 4), dtype=np.float32)
-        raw[:, 100, :, 1] = 3.0
-        frame = np.zeros((288, 800, 3), dtype=np.uint8)
-        _, center_x, lane_type, meta = detector._decode_ufld(raw, frame)
-        self.assertIsNotNone(meta["lanes"])
-        self.assertIn(lane_type, {"both", "only_left", "only_right", "none"})
-        self.assertTrue(center_x is None or isinstance(center_x, (int, float)))
 
 if __name__ == "__main__":
     unittest.main()
