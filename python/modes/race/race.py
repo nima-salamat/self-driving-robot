@@ -123,6 +123,10 @@ class Robot:
         self.fps = FPS(config=config_race)
         self.object_detector = ObjectDetector()
 
+        if self.health is not None:
+            from utils.health import HealthState
+            self.health.set_lifecycle(HealthState.READY)
+
     def _pace_control_loop(self):
         period = max(0.001, float(getattr(config_race, "CONTROL_PERIOD", 0.01)))
         self._next_control_time += period
@@ -145,6 +149,10 @@ class Robot:
         logger.info("starting")
         self.fps.start()
         try:
+            if self.health is not None:
+                from utils.health import HealthState
+                self.health.set_lifecycle(HealthState.RUNNING)
+
             while not self._shutdown_requested():
                 self.fps.update()
                 self.fps.maybe_log_performance()
@@ -390,6 +398,10 @@ class Robot:
                         logger.error(f"stop_recording failed: {e}")
 
     def close(self):
+        if self.health is not None:
+            from utils.health import HealthState
+            self.health.set_lifecycle(HealthState.SHUTTING_DOWN)
+
         cleanup = [
             ("stop", self.control.stop),
             ("center servo", lambda: self.control.set_angle(90)),
