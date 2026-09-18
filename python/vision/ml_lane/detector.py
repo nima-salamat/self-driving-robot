@@ -6,7 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .registry import get_model_spec, resolve_model_path
+from .registry import get_model_spec
+from .bundled import ensure_model_materialized
 
 
 logger = logging.getLogger(__name__)
@@ -35,11 +36,6 @@ class MLLaneDetector:
 
         self.input_name = None
         self.output_names = self.net.getUnconnectedOutLayersNames()
-
-    def _resolve_path(self):
-        if self.spec.model_path is not None:
-            return self.model_root / self.spec.model_path
-        return resolve_model_path(self.model_name)
 
     def info(self):
         return {
