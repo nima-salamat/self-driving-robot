@@ -18,7 +18,8 @@ class LaneModelSpec:
     params: str
     notes: str
     model_path: str
-    model_source: str = "bundled"
+    model_url: str
+    sha256: str
 
 
 MODEL_SPECS = {
@@ -32,7 +33,12 @@ MODEL_SPECS = {
         license="MIT",
         params="52,191 params / 3.00 GFLOPs",
         notes="Very small depthwise UNet lane segmentation model.",
-        model_path="unet_depthwise_nano/unet_depthwise_nano_jit.pnnx.onnx",
+        model_path="weights/unet_depthwise_nano_jit.pnnx.onnx",
+        model_url=(
+            "https://huggingface.co/nickpai/lane-detection-unet-ncnn/"
+            "resolve/main/unet_depthwise_nano/unet_depthwise_nano_jit.pnnx.onnx"
+        ),
+        sha256="1c9452041f0f3e02cb1478bc495c1cd6b8a14a0acb00ad9843c93e1d1eef3bd0",
     ),
     "unet_depthwise_small": LaneModelSpec(
         name="unet_depthwise_small",
@@ -44,7 +50,12 @@ MODEL_SPECS = {
         license="MIT",
         params="253,919 params / 5.88 GFLOPs",
         notes="Small depthwise UNet with more capacity than Nano.",
-        model_path="unet_depthwise_small/unet_depthwise_small_jit.pnnx.onnx",
+        model_path="weights/unet_depthwise_small_jit.pnnx.onnx",
+        model_url=(
+            "https://huggingface.co/nickpai/lane-detection-unet-ncnn/"
+            "resolve/main/unet_depthwise_small/unet_depthwise_small_jit.pnnx.onnx"
+        ),
+        sha256="ade2232685f81001e6ea6c8baf7ba6108a60fdb989f0a349fe143efb4671adb8",
     ),
 }
 
