@@ -11,6 +11,7 @@ default_height = 230
 
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
+CAMERA_FALLBACK_TO_OPENCV = False
 
 # --- Camera Defaults ---
 CAM_WIDTH = 640

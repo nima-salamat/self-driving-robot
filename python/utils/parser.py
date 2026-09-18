@@ -19,9 +19,22 @@ def parse_args():
 
     parser.add_argument(
         "--stream",
-        default=False,
         action="store_true",
+        default=False,
         help="Enable stream"
+    )
+
+    parser.add_argument(
+        "--stream-host",
+        default=None,
+        help="Stream bind address (default comes from mode config)"
+    )
+
+    parser.add_argument(
+        "--stream-control",
+        action="store_true",
+        default=False,
+        help="Allow the web dashboard to change runtime settings"
     )
 
     parser.add_argument(
@@ -36,6 +49,20 @@ def parse_args():
         default=False,
         action="store_true",
         help="Avg fps"
+    )
+
+    parser.add_argument(
+        "--performance",
+        action="store_true",
+        default=False,
+        help="Enable runtime performance diagnostics"
+    )
+
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        default=False,
+        help="Run startup diagnostics and exit without starting the robot"
     )
 
     parser.add_argument(

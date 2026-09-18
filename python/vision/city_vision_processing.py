@@ -98,6 +98,7 @@ class VisionProcessor:
                 "steering_angle": self.last_steering,
                 "error": self.last_error,
                 "lane_type": "none",
+                "perception_valid": False,
                 "crosswalk": False,
                 "debug": {"rl_draw": None, "ll_draw": None, "combined": None, "cw_draw": None},
                 "kp": 0

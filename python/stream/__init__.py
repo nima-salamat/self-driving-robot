@@ -3,6 +3,7 @@ import cv2
 import json
 import os
 import threading
+import time
 from flask import Flask, Response, request, render_template_string, jsonify
 from .template import HTML_TEMPLATE
 
@@ -139,20 +140,29 @@ class WebStreamer:
         self.app.add_url_rule('/set_ui', 'set_ui', self.set_ui, methods=['POST'])
         self.app.add_url_rule('/video_feed_frame', 'video_feed_frame', self.video_feed_frame)
         self.app.add_url_rule('/api/arduino-output', 'arduino_output', self.arduino_output)
+        self.app.add_url_rule('/api/health', 'health', self.health)
         self.app.add_url_rule('/take_picture', 'take_picture', self.take_picture, methods=['POST'])
         self.app.add_url_rule('/toggle_record', 'toggle_record', self.toggle_record, methods=['POST'])
         self.app.add_url_rule('/freeze_frame', 'freeze_frame', self.freeze_frame, methods=['POST'])
         self.app.add_url_rule('/unfreeze_frame', 'unfreeze_frame', self.unfreeze_frame, methods=['POST'])
-        self.app.add_url_rule('/shutdown', 'shutdown', self.shutdown, methods=['POST'])
 
     def index(self):
         values = {var: self.get_base_var(var) for var in VARIABLES}
         advanced_current = self.get_all_advanced()
         return render_template_string(HTML_TEMPLATE, variables=VARIABLES, values=values, 
                                       ui=self.ui_settings, advanced=advanced_current, 
-                                      mode=getattr(self.config, "MODE", "mode"))
+                                      mode=getattr(self.config, "MODE", "mode"),
+                                      stream_control=bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False)))
+
+    def _control_allowed(self):
+        return bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False))
+
+    def _control_denied(self):
+        return jsonify(success=False, message="stream control is disabled"), 403
 
     def update_conf(self):
+        if not self._control_allowed():
+            return self._control_denied()
         try:
             data = request.get_json() or request.form.to_dict()
             updated = {}
@@ -178,6 +188,8 @@ class WebStreamer:
         return jsonify(advanced=self.get_all_advanced())
 
     def set_advanced(self):
+        if not self._control_allowed():
+            return self._control_denied()
         data = request.get_json() or {}
         try:
             for k, default_v in ADVANCED_VARS.items():
@@ -215,6 +227,8 @@ class WebStreamer:
         return jsonify(ui=self.ui_settings)
 
     def set_ui(self):
+        if not self._control_allowed():
+            return self._control_denied()
         data = request.get_json() or {}
         if "colors" in data: 
             self.ui_settings["colors"].update({k:v for k,v in data["colors"].items() if k in self.ui_settings["colors"]})
@@ -244,6 +258,41 @@ class WebStreamer:
             payload = self._jpeg_cache
         return Response(payload, mimetype='image/jpeg')
 
+    def health(self):
+        monitor = getattr(self.config, "health_monitor", None)
+        metrics = getattr(self.config, "runtime_metrics", None)
+        controller = getattr(self.config, "robot_controller", None)
+
+        payload = {
+            "health": (
+                monitor.snapshot_runtime(self.config)
+                if monitor is not None
+                else {"state": "UNKNOWN", "lifecycle": "UNKNOWN", "faults": {}}
+            ),
+            "metrics": metrics.snapshot() if metrics is not None else {},
+        }
+
+        sign_detector = getattr(self.config, "sign_detector", None)
+        output_manager = getattr(self.config, "output_manager", None)
+        if sign_detector is not None:
+            payload["sign_detector"] = sign_detector.status()
+        if output_manager is not None:
+            payload["recording"] = output_manager.stats()
+
+        if controller is not None:
+            command = controller.last_command
+            payload["control"] = {
+                "angle": controller.last_angle,
+                "speed": controller.current_speed,
+                "command": command,
+                "command_age_ms": (
+                    max(0.0, (time.monotonic() - command["transmitted_at"]) * 1000.0)
+                    if command and command.get("transmitted_at") is not None
+                    else None
+                ),
+            }
+
+        return jsonify(payload)
     def arduino_output(self):
         connection = getattr(self.config, "arduino_connection", None)
         if connection is None:
@@ -253,10 +302,14 @@ class WebStreamer:
         return jsonify(status)
 
     def take_picture(self):
+        if not self._control_allowed():
+            return self._control_denied()
         setattr(self.config, "TAKE_PICTURE", True)
         return jsonify(success=True)
 
     def toggle_record(self):
+        if not self._control_allowed():
+            return self._control_denied()
         current = getattr(self.config, "RECORD_VIDEO", False)
         new_val = not current
         setattr(self.config, "RECORD_VIDEO", new_val)
@@ -264,6 +317,8 @@ class WebStreamer:
         return jsonify(success=True, recording=new_val)
 
     def freeze_frame(self):
+        if not self._control_allowed():
+            return self._control_denied()
         frames_list = getattr(self.config, "debug_frames_list", [])
         if frames_list:
             setattr(self.config, "frozen_debug_frame", frames_list[-1].copy())
@@ -271,15 +326,18 @@ class WebStreamer:
         return jsonify(success=False, message="No frame available")
 
     def unfreeze_frame(self):
-        if hasattr(self.config, "frozen_debug_frame"): 
+        if not self._control_allowed():
+            return self._control_denied()
+        if hasattr(self.config, "frozen_debug_frame"):
             delattr(self.config, "frozen_debug_frame")
         return jsonify(success=True)
-
-    def shutdown(self): 
-        os._exit(0)
-
 
 def start_stream(config):
 
     streamer = WebStreamer(config)
-    streamer.app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)
+    streamer.app.run(
+        host=getattr(config, "STREAM_HOST", "127.0.0.1"),
+        port=int(getattr(config, "STREAM_PORT", 5000)),
+        threaded=True,
+        debug=False,
+    )

@@ -2,8 +2,6 @@ import modes.city.config_city as config_city
 
 from utils.config_mode import set_city_mode
 # set_city_mode()
-from utils import json_config
-
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
@@ -22,12 +20,10 @@ import cv2
 import numpy as np
 import time
 import threading
-import sys
 from utils.fps import FPS
 from utils.roi_manager import crop_image
 
 
-logging.disable(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # keep defaults (config_city can override)
@@ -43,9 +39,12 @@ config_city.DEBUG = False
 
 class Robot:
     def __init__(self):
+        self.metrics = getattr(config_city, "runtime_metrics", None)
+        self.health = getattr(config_city, "health_monitor", None)
         self.camera = Camera(config=config_city)
         self.control = RobotController(config=config_city)
         config_city.arduino_connection = self.control.connection
+        config_city.robot_controller = self.control
         self.flask_thread = None
         self._next_control_time = time.monotonic()
 
@@ -69,10 +68,15 @@ class Robot:
             self.sign_detector = AsyncSignDetector(detector)
         else:
             self.sign_detector = None
+        setattr(config_city, "sign_detector", self.sign_detector)
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
-        self.fps = FPS()
+        self.fps = FPS(config=config_city)
         self.object_detector = ObjectDetector()
+
+        if self.health is not None:
+            from utils.health import HealthState
+            self.health.set_lifecycle(HealthState.READY)
 
     def _pace_control_loop(self):
         period = max(0.001, float(getattr(config_city, "CONTROL_PERIOD", 0.01)))
@@ -120,12 +124,21 @@ class Robot:
                     self.control.forward_pulse(f"f {HARDCODE_SPEED}  220 90")
                     time.sleep(0.1)
 
+    def _shutdown_requested(self):
+        event = getattr(config_city, "SHUTDOWN_EVENT", None)
+        return bool(event is not None and event.is_set())
+
     def run(self):
         logger.info("starting")
         self.fps.start()
         try:
-            while True:
+            if self.health is not None:
+                from utils.health import HealthState
+                self.health.set_lifecycle(HealthState.RUNNING)
+
+            while not self._shutdown_requested():
                 self.fps.update()
+                self.fps.maybe_log_performance()
                 if config_city.RUN_LVL == "STOP":
                     self.control.stop()
                     self.control.set_angle(SERVO_CENTER)
@@ -164,15 +177,23 @@ class Robot:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
                         self.control.stop()
+                        self._pace_control_loop()
                         continue
                     if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()
                     else:
                         debug_frame = None
                     
+                    perception_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
-                    if not result.get("perception_valid", True):
+                    if self.metrics is not None:
+                        self.metrics.record_perception(
+                            (time.monotonic() - perception_started) * 1000.0,
+                            bool(result.get("perception_valid", False)),
+                        )
+                    if not result.get("perception_valid", False):
                         self.control.stop()
+                        self._pace_control_loop()
                         continue
 
                     angle = result.get("steering_angle")
@@ -197,6 +218,7 @@ class Robot:
                     if status == "stopped":
                         self.control.stop()
                         time.sleep(config_city.DELAY)
+                        self._pace_control_loop()
                         continue
                     
                 else:
@@ -205,6 +227,7 @@ class Robot:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
                         self.control.stop()
+                        self._pace_control_loop()
                         continue
                     self.check_crosswalk()
                     result = {
@@ -218,7 +241,13 @@ class Robot:
 
                     if config_city.DEBUG or config_city.STREAM:
                         debug_frame = frame.copy()
+                        perception_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
+                        if self.metrics is not None:
+                            self.metrics.record_perception(
+                                (time.monotonic() - perception_started) * 1000.0,
+                                bool(result.get("perception_valid", False)),
+                            )
                         angle = result.get("steering_angle")
                         crosswalk = result.get("crosswalk", False)
 
@@ -228,24 +257,30 @@ class Robot:
                             self.sign_detector.process_frame(frame, debug_frame=debug_frame)
 
                     self.handle_debug_stream(result, frame, angle, crosswalk, "crosswalk", "")
-                    
+                    self._pace_control_loop()
                     continue
                 
                 if crosswalk and time.time() - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
                     self.control.stop()
                     time.sleep(2*config_city.DELAY)
                     self.check_crosswalk()
+                    self._pace_control_loop()
                     continue
                 
                 if config_city.AUTO_UPDATE_KP:
                     self.control.update_kp(result["kp"])
                 
+                control_started = time.monotonic()
                 if config_city.USE_PID:
                     self.control.set_angle_by_error(result["error"], result["lane_type"])
                 else:
                     self.control.set_angle(result["steering_angle"])
-                    
+
                 self.control.set_speed(SPEED)
+                if self.metrics is not None:
+                    self.metrics.record_control(
+                        (time.monotonic() - control_started) * 1000.0
+                    )
                 self._pace_control_loop()
 
         except KeyboardInterrupt:
@@ -389,6 +424,10 @@ class Robot:
                         logger.error(f"stop_recording failed: {e}")
 
     def close(self):
+        if self.health is not None:
+            from utils.health import HealthState
+            self.health.set_lifecycle(HealthState.SHUTTING_DOWN)
+
         cleanup = [
             ("stop", self.control.stop),
             ("center servo", lambda: self.control.set_angle(90)),
@@ -427,19 +466,18 @@ class Robot:
         except Exception:
             logger.exception("Cleanup failed: serial state detach")
 
-        sys.exit(0)
 
 def start():
-    json_config.load()
+    robot = Robot()
+    robot.flask_thread = None
 
     if config_city.STREAM:
-        flask_thread = threading.Thread(
+        robot.flask_thread = threading.Thread(
             target=start_stream,
             args=(config_city,),
             daemon=True,
             name="flask-stream",
         )
-        flask_thread.start()
-    robot = Robot()
-    robot.flask_thread = flask_thread if config_city.STREAM else None
+        robot.flask_thread.start()
+
     robot.run()

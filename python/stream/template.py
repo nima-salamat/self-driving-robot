@@ -74,12 +74,20 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
 
   <div class="right-panel">
     <div class="card">
+      <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
       <div class="section-title">Arduino Telemetry</div>
       <div id="arduino_status" class="small status-line">Waiting for serial state...</div>
       <pre id="arduino_output" style="max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;background:#050b15;border-radius:8px;color:var(--txt);font-size:12px;white-space:pre-wrap"></pre>
     </div>
 
   
+      <div class="card">
+        <div class="section-title">Runtime Health</div>
+        <div id="health_state" class="status-line">State: UNKNOWN</div>
+        <div id="health_faults" class="small">Faults: none</div>
+        <div id="health_metrics" class="small" style="margin-top:6px;"></div>
+      </div>
+
     <div class="card">
       <div class="section-title">Bird's Eye View (BEV) Config</div>
       <div class="form-row" style="margin-bottom: 10px;">
@@ -202,6 +210,14 @@ const frameModeDisplay = document.getElementById('frame_mode');
 let values = {{ values|tojson }};
 let ui = {{ ui|tojson }};
 let advanced = {{ advanced|tojson }};
+const STREAM_CONTROL_ALLOWED = {{ stream_control|default(false)|tojson }};
+
+const controlNotice = document.getElementById('control_notice');
+if (controlNotice) {
+    controlNotice.textContent = STREAM_CONTROL_ALLOWED
+        ? 'Dashboard control is enabled.'
+        : 'Dashboard is read-only. Start with --stream-control to allow runtime changes.';
+}
 
 let selectedVar = 'NONE';
 let markerHighlight = null;
@@ -860,6 +876,7 @@ stopAllBtn.addEventListener('click', () => {
         stopAllBtn.style.background = '#ef4444'; // Red for stop
         startFrameLoop();
         valUpdateTimer = setInterval(fetchValuesLoop, 4000);
+    setInterval(updateHealth, 1000);
     setInterval(updateArduinoOutput, 1000);
     updateArduinoOutput();
         updateFrameModeText();
@@ -976,6 +993,35 @@ document.getElementById('toggle_record_btn').addEventListener('click', () => {
 });
 
 /* ---------- Init ---------- */
+function updateHealth(){
+    if(!syncActive) return;
+    fetch('/api/health')
+        .then(r=>r.json())
+        .then(j=>{
+            const h = j.health || {};
+            const m = j.metrics || {};
+            const t = m.timing || {};
+            const state = document.getElementById('health_state');
+            const faults = document.getElementById('health_faults');
+            const metrics = document.getElementById('health_metrics');
+            state.textContent = 'State: ' + (h.state || 'UNKNOWN');
+            const names = Object.keys(h.faults || {});
+            faults.textContent = 'Faults: ' + (names.length ? names.join(', ') : 'none');
+            const loop = t.loop || {};
+            const camera = t.camera || {};
+            const perception = t.perception || {};
+            const serial = t.serial || {};
+            metrics.textContent =
+                'FPS avg ' + (m.avg_fps || 0).toFixed(1) +
+                ' | loop p95 ' + (loop.p95_ms || 0).toFixed(1) + ' ms' +
+                ' | loop max ' + (loop.max_ms || 0).toFixed(1) + ' ms' +
+                ' | camera p95 ' + (camera.p95_ms || 0).toFixed(1) + ' ms' +
+                ' | perception p95 ' + (perception.p95_ms || 0).toFixed(1) + ' ms' +
+                ' | serial p95 ' + (serial.p95_ms || 0).toFixed(1) + ' ms';
+        })
+        .catch(()=>{});
+}
+
 function updateArduinoOutput(){
     if(!syncActive) return;
     fetch('/api/arduino-output')

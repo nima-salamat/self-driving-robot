@@ -3,6 +3,7 @@ import logging
 import os
 import queue
 import re
+import shutil
 import threading
 import cv2
 
@@ -19,6 +20,8 @@ class OutputManager:
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_module = config_module
+        if config_module is not None:
+            setattr(config_module, "output_manager", self)
 
         if output_dir is None and getattr(config_module, 'OUTPUT_DIR', None):
             output_dir = getattr(config_module, 'OUTPUT_DIR')
@@ -93,6 +96,18 @@ class OutputManager:
 
             fps = fps or self.default_fps
             codec = codec or self.default_codec
+
+            minimum_mb = max(
+                0.0,
+                float(getattr(self.config_module, "MIN_FREE_DISK_MB", 256)),
+            )
+            free_mb = shutil.disk_usage(self.output_dir).free / (1024 * 1024)
+            if free_mb < minimum_mb:
+                raise RuntimeError(
+                    f"Insufficient disk space for recording: "
+                    f"{free_mb:.1f} MiB free, minimum {minimum_mb:.1f} MiB"
+                )
+
             path = self.next_video_path(ext=ext)
             h, w = int(frame_shape[0]), int(frame_shape[1])
 
@@ -170,6 +185,16 @@ class OutputManager:
                 self.video_writer = None
                 self.current_video_path = None
                 self.recording = False
+
+    def stats(self):
+        with self._lock:
+            return {
+                "recording": bool(self.recording),
+                "current_video_path": self.current_video_path,
+                "dropped_video_frames": int(self.dropped_video_frames),
+                "queue_depth": self._write_queue.qsize(),
+                "writer_alive": self._writer_thread.is_alive(),
+            }
 
     def is_recording(self):
         with self._lock:

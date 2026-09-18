@@ -1,4 +1,5 @@
 from time import sleep
+import time
 import cv2
 import logging
 from utils.camera_calibration import CameraCalibration
@@ -17,6 +18,7 @@ class Camera:
                  mode=None):
 
         self.config = config
+        setattr(self.config, "camera", self)
         
         self.width = width or getattr(self.config, 'CAM_WIDTH', 640)
         self.height = height or getattr(self.config, 'CAM_HEIGHT', 480)
@@ -24,6 +26,9 @@ class Camera:
         self.resize_height = resize_height or getattr(self.config, 'resize_height', 480)
         self.mode = mode or getattr(self.config, 'CAMERA_MODE', 'opencv')
         self.usbcam_addr = getattr(self.config, 'USBCAM_ADDR', 0)
+        self.allow_picam_fallback = bool(
+            getattr(self.config, 'CAMERA_FALLBACK_TO_OPENCV', False)
+        )
 
         self.pi_mode = False
         self.camera_initialized = False
@@ -37,10 +42,12 @@ class Camera:
                 self.picam = Picamera2()
                 self.setup_camera()
                 logger.info("Using Picamera2")
-            except Exception as e:
-                logger.error(f"Failed to initialize Picamera2: {e}")
-                logger.info("Falling back to OpenCV")
+            except Exception:
+                logger.exception("Failed to initialize Picamera2")
                 self.pi_mode = False
+                if not self.allow_picam_fallback:
+                    raise
+                logger.warning("Falling back to OpenCV camera by explicit configuration")
                 self.cap = cv2.VideoCapture(self.usbcam_addr)
                 self.setup_camera()
         else:
@@ -81,6 +88,12 @@ class Camera:
                 raise
 
         else:
+            if self.mode == "picam" and Picamera2 is None and not self.allow_picam_fallback:
+                raise RuntimeError(
+                    "Picamera2 is unavailable for CAMERA_MODE='picam'; "
+                    "enable CAMERA_FALLBACK_TO_OPENCV to allow webcam fallback"
+                )
+
             # OpenCV camera setup
             if getattr(self, 'cap', None) is None or not self.cap.isOpened():
                 self.cap = cv2.VideoCapture(self.usbcam_addr)
@@ -107,13 +120,23 @@ class Camera:
     
     def capture_frame(self, with_resize=True):
 
+        started = time.monotonic()
         frame = None
         frame_resized = None
         self.last_capture_valid = False
 
+        def finish(result_frame, result_resized, valid):
+            metrics = getattr(self.config, "runtime_metrics", None)
+            if metrics is not None:
+                metrics.record_camera(
+                    (time.monotonic() - started) * 1000.0,
+                    valid,
+                )
+            return result_frame, result_resized
+
         if not self.camera_initialized:
             logger.error("Camera not initialized")
-            return frame, frame_resized
+            return finish(frame, frame_resized, False)
 
         try:
             if self.pi_mode:
@@ -122,7 +145,7 @@ class Camera:
                 if frame is None or frame.size == 0:
                     logger.warning("Picamera2 returned empty frame")
                     self.consecutive_failures += 1
-                    return frame, frame_resized
+                    return finish(frame, frame_resized, False)
 
             else:
                 ret, frame = self.cap.read()
@@ -130,7 +153,7 @@ class Camera:
                 if not ret or frame is None:
                     logger.warning("OpenCV camera returned no frame")
                     self.consecutive_failures += 1
-                    return frame, frame_resized
+                    return finish(frame, frame_resized, False)
 
             frame = self.camera_calibration.undistort(frame)
 
@@ -146,12 +169,12 @@ class Camera:
 
             self.last_capture_valid = True
             self.consecutive_failures = 0
-            return frame, frame_resized
+            return finish(frame, frame_resized, True)
 
         except Exception:
             self.consecutive_failures += 1
             logger.exception("Error capturing frame")
-            return frame, frame_resized
+            return finish(frame, frame_resized, False)
 
     def release(self):
         self.camera_initialized = False

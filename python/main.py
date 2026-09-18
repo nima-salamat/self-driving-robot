@@ -1,7 +1,25 @@
+import signal
+import threading
+
 from utils.parser import parse_args
 from utils.config_mode import set_city_mode, set_race_mode
+from utils import json_config
+from utils.preflight import run_preflight
+from utils.logging_setup import configure_logging
+from utils.runtime_metrics import RuntimeMetrics
+from utils.health import HealthMonitor
 import base_config
-if __name__ == '__main__':
+
+
+def _install_shutdown_handlers(shutdown_event):
+    def request_shutdown(signum, _frame):
+        shutdown_event.set()
+
+    signal.signal(signal.SIGINT, request_shutdown)
+    signal.signal(signal.SIGTERM, request_shutdown)
+
+
+if __name__ == "__main__":
     args = parse_args()
 
     if args.mode == "city":
@@ -13,12 +31,35 @@ if __name__ == '__main__':
         from modes.race import start
         set_race_mode()
 
+    # Load JSON first so explicit CLI flags remain authoritative.
+    json_config.load()
+
     config.DEBUG = args.debug
     config.STREAM = args.stream
     config.SHOW_FPS = args.fps
+    config.PERFORMANCE = args.performance
     config.WITHOUT_ARDUINO = args.without_arduino
     config.READ_ARDUINO_OUTPUT = args.read_arduino_output
+    config.STREAM_ALLOW_CONTROL = args.stream_control
+    if args.stream_host:
+        config.STREAM_HOST = args.stream_host
+
     config.MODE = args.mode
     base_config.MODE = args.mode
-    
+
+    configure_logging(debug=args.debug, log_dir=getattr(config, "OUTPUT_DIR", "output"))
+
+    if args.preflight:
+        report = run_preflight(config)
+        print(report.format())
+        raise SystemExit(0 if report.ok else 1)
+
+    config.runtime_metrics = RuntimeMetrics()
+    config.health_monitor = HealthMonitor()
+
+    shutdown_event = threading.Event()
+    config.SHUTDOWN_EVENT = shutdown_event
+    base_config.SHUTDOWN_EVENT = shutdown_event
+    _install_shutdown_handlers(shutdown_event)
+
     start()

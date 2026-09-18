@@ -67,12 +67,38 @@ class RobotController:
             derivative_filter=getattr(self.config, "PID_DERIVATIVE_FILTER", 0.25),
         )
         
+        setattr(self.config, "robot_controller", self)
+        setattr(self.config, "arduino_connection", self.connection)
+
         self.last_angle = 90
+        self.command_sequence = 0
+        self._telemetry_parse_failures = 0
+        self.last_command = None
         self._initialized = True
 
     def _send_command(self, cmd: str):
-        cmd = cmd.strip() + "\n"
-        return self.connection.send_command(cmd)
+        command = cmd.strip()
+        started = time.monotonic()
+        success = self.connection.send_command(command + "\n")
+        finished = time.monotonic()
+
+        metrics = getattr(self.config, "runtime_metrics", None)
+        if metrics is not None:
+            metrics.record_serial((finished - started) * 1000.0, success)
+
+        self.command_sequence += 1
+        self.last_command = {
+            "sequence": self.command_sequence,
+            "command": command,
+            "success": bool(success),
+            "generated_at": started,
+            "transmitted_at": finished if success else None,
+            "latency_ms": (finished - started) * 1000.0,
+        }
+        return success
+
+    def hardware_ready(self):
+        return self.without_arduino or self.connection.connected
 
     def servo(self, angle: int):
         if angle < self.min_servo_angle:
@@ -88,6 +114,11 @@ class RobotController:
         elif speed < -255:
             speed = -255
             
+        if speed != 0 and not self.without_arduino and not self.connection.connected:
+            self.connection.send_command("stop\n")
+            self.current_speed = 0
+            return False
+
         if self.current_speed == speed:
             return True
         self.current_speed = speed
@@ -128,6 +159,9 @@ class RobotController:
             read data from arduino . . . 
         """
         command = self.connection.read_command().strip()
+        if not command:
+            return {}
+
         commands = command.split(" ")
         if len(commands) == 6:
             try:

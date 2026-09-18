@@ -12,6 +12,7 @@ USBCAM_ADDR = 0
 
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
+CAMERA_FALLBACK_TO_OPENCV = False
 
 
 # --- ROI Shape Features ---
@@ -199,3 +200,11 @@ DETECT_OBJECT = False
 
 # Traffic sign detector method
 SIGN_DETECTOR_METHOD = "yolo"  # "yolo" or "svm"
+
+OUTPUT_DIR = "output"
+MIN_FREE_DISK_MB = 256
+STREAM_HOST = "127.0.0.1"
+STREAM_PORT = 5000
+STREAM_ALLOW_CONTROL = False
+SHUTDOWN_EVENT = None
+PERFORMANCE = False
