@@ -83,6 +83,8 @@ class ConfigValidationTests(unittest.TestCase):
 
 class ArduinoConnectionTests(unittest.TestCase):
     def test_disabled_transport_is_safe(self):
+        original_config = base_config.CONFIG_MODULE
+        base_config.CONFIG_MODULE = None
         connection = ArduinoConnection(enabled=False)
         try:
             self.assertFalse(connection.connected)
@@ -90,6 +92,7 @@ class ArduinoConnectionTests(unittest.TestCase):
             self.assertEqual(connection.read_command(), "")
         finally:
             connection.close()
+            base_config.CONFIG_MODULE = original_config
 
 
 class AsyncSignDetectorTests(unittest.TestCase):
