@@ -232,7 +232,7 @@ class WebStreamer:
         
         if frame is None: 
             return Response('', status=204)
-        frame_id = id(frame)
+        frame_id = getattr(self.config, "stream_frame_seq", id(frame))
         with self._jpeg_cache_lock:
             if frame_id != self._jpeg_cache_frame_id or self._jpeg_cache is None:
                 ret, buffer = cv2.imencode('.jpg', frame)
