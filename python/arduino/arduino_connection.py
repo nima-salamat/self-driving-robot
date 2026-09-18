@@ -65,6 +65,7 @@ class ArduinoConnection:
                 daemon=True,
             )
             self._reconnect_thread.start()
+            self._ensure_reader_started()
             self._request_reconnect()
 
     @property
