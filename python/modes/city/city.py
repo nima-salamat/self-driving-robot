@@ -85,6 +85,7 @@ class Robot:
 
     def update_debug_frames(self, frame):
         config_city.debug_frames_list.append(frame)
+        config_city.stream_frame_seq = getattr(config_city, "stream_frame_seq", 0) + 1
 
     def check_crosswalk(self):
         now = time.time()
