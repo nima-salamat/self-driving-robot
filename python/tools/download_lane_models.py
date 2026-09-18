@@ -47,7 +47,7 @@ def download(spec):
         (spec.ncnn_bin_url, spec.ncnn_bin_path),
     ):
         asset = Path(relative_path)
-        asset_path = Path(__file__).resolve().parents[1] / "models" / "lane" / asset.relative_to(Path("weights"))
+        asset_path = Path(__file__).resolve().parents[1] / "models" / "lane" / asset
         asset_path.parent.mkdir(parents=True, exist_ok=True)
         if asset_path.exists() and asset_path.stat().st_size > 0:
             print(f"[ok] {asset_path} already installed")
