@@ -219,7 +219,7 @@ class MLLaneDetector:
 
         steering_angle = int(np.clip(90.0 - 0.45 * error, 30.0, 150.0))
 
-        vis = (debug_frame.copy() if debug_frame is not None else frame.copy())
+        vis = frame.copy()
         if mask is not None:
             mask_u8 = np.uint8(np.clip(mask, 0.0, 1.0) * 255.0)
             _, mask_bin = cv2.threshold(mask_u8, 100, 255, cv2.THRESH_BINARY)
@@ -232,6 +232,13 @@ class MLLaneDetector:
         cv2.line(vis, (int(frame_center), 0), (int(frame_center), vis.shape[0]), (0, 0, 255), 1)
         if center_x is not None:
             cv2.line(vis, (int(center_x), 0), (int(center_x), vis.shape[0]), (255, 0, 255), 1)
+
+        if debug_frame is not None and debug_frame.shape[:2] != vis.shape[:2]:
+            vis = cv2.resize(
+                vis,
+                (debug_frame.shape[1], debug_frame.shape[0]),
+                interpolation=cv2.INTER_LINEAR,
+            )
 
         elapsed_ms = (time.monotonic() - started) * 1000.0
         return {
