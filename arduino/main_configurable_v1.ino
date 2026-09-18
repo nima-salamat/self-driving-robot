@@ -218,7 +218,16 @@ uint32_t ultraStartedUs = 0;
 uint32_t echoStartedUs = 0;
 uint32_t ultraCooldownUntilUs = 0;
 
+bool laneChangingMode = true;
 char lane = 'R';
+
+enum LaneState {
+  LANE_NORMAL = 0,
+  LANE_LEFT,
+  LANE_RETURNING
+};
+
+LaneState laneState = LANE_NORMAL;
 
 uint16_t eepromChecksum(const uint8_t *data, size_t length) {
   uint16_t sum = 0xA55A;
@@ -778,6 +787,11 @@ void finishPulseSequence() {
   pulseRemaining = 0;
   requestMotorSpeed(0);
 
+  if (laneState == LANE_RETURNING && queueCount == 0) {
+    laneState = LANE_NORMAL;
+    lane = 'R';
+  }
+
   if (pendingHostMotorValid) {
     int requested = pendingHostMotor;
     pendingHostMotorValid = false;
@@ -878,6 +892,30 @@ bool pulseObstacle() {
   int right = ultraDistance("right");
   return (left > 0 && left <= activeConfig.options.pulseStopDistanceCm) ||
          (right > 0 && right <= activeConfig.options.pulseStopDistanceCm);
+}
+
+void startLaneChangeLeft() {
+  if (!laneChangingMode || laneState != LANE_NORMAL || pulseActive) return;
+  if (activeConfig.encoderCount == 0 || !enqueueSequenceText(leftSequence)) {
+    Serial.println("ERR LEFT_SEQUENCE");
+    return;
+  }
+
+  laneState = LANE_LEFT;
+  lane = 'L';
+  if (!pulseActive) startNextPulse();
+}
+
+void startReturnToRightLane() {
+  if (laneState != LANE_LEFT || pulseActive) return;
+  if (activeConfig.encoderCount == 0 || !enqueueSequenceText(rightSequence)) {
+    Serial.println("ERR RIGHT_SEQUENCE");
+    return;
+  }
+
+  laneState = LANE_RETURNING;
+  lane = 'R';
+  if (!pulseActive) startNextPulse();
 }
 
 void pausePulse() {
@@ -1234,6 +1272,8 @@ void applyHardwareConfig() {
   adaptiveActive = false;
   forceStopActive = false;
   emergencyStopActive = false;
+  laneState = LANE_NORMAL;
+  lane = 'R';
   pendingHostMotorValid = false;
   pendingHostServoValid = false;
   pendingHostServoId = 0;
@@ -1571,6 +1611,8 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
 
   if (strcmp(tokens[0], "stop") == 0) {
     stopRobot(true);
+    laneState = LANE_NORMAL;
+    lane = 'R';
     return;
   }
 
@@ -1656,30 +1698,29 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
   }
 
   if (strcmp(tokens[0], "left") == 0) {
-    if (activeConfig.encoderCount == 0) {
-      Serial.println("ERR LEFT_NO_ENCODER");
-      return;
-    }
-    if (!enqueueSequenceText(leftSequence)) {
-      Serial.println("ERR LEFT_SEQUENCE");
-      return;
-    }
-    lane = 'L';
-    if (!pulseActive) startNextPulse();
+    Serial.println("EVENT SIGNAL_LEFT");
     return;
   }
 
   if (strcmp(tokens[0], "right") == 0) {
-    if (activeConfig.encoderCount == 0) {
-      Serial.println("ERR RIGHT_NO_ENCODER");
+    Serial.println("EVENT SIGNAL_RIGHT");
+    return;
+  }
+
+  if (strcmp(tokens[0], "lane") == 0) {
+    if (count == 2 && strcmp(tokens[1], "auto") == 0) {
+      laneChangingMode = true;
+      Serial.println("EVENT LANE_AUTO");
       return;
     }
-    if (!enqueueSequenceText(rightSequence)) {
-      Serial.println("ERR RIGHT_SEQUENCE");
+    if (count == 2 &&
+        (strcmp(tokens[1], "manual") == 0 ||
+         strcmp(tokens[1], "stop") == 0)) {
+      laneChangingMode = false;
+      Serial.println("EVENT LANE_MANUAL");
       return;
     }
-    lane = 'R';
-    if (!pulseActive) startNextPulse();
+    Serial.println("ERR LANE_ARGS");
     return;
   }
 
@@ -1905,6 +1946,27 @@ void loop() {
     }
 
     updatePulse(nowMs);
+
+    if (!pulseActive && queueCount > 0 && !forceStopActive && !emergencyStopActive) {
+      startNextPulse();
+    }
+
+    int sideDistance = ultraDistance("side");
+    if (laneChangingMode && laneState == LANE_NORMAL && !pulseActive &&
+        normalObstacle()) {
+      startLaneChangeLeft();
+    } else if (!laneChangingMode && laneState == LANE_NORMAL &&
+               normalObstacle() && !pulseActive) {
+      requestMotorSpeed(0);
+      emergencyStopActive = true;
+      Serial.println("ERR OBSTACLE");
+    }
+
+    if (laneChangingMode && laneState == LANE_LEFT && !pulseActive &&
+        sideDistance > 0 &&
+        sideDistance <= activeConfig.options.sideReturnDistanceCm) {
+      startReturnToRightLane();
+    }
 
     if ((uint32_t)(nowMs - lastStatusMs) >= STATUS_INTERVAL_MS) {
       lastStatusMs = nowMs;
