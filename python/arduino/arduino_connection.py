@@ -341,31 +341,37 @@ class ArduinoConnection:
             if self._print_telemetry:
                 print(f"[Arduino] {line}", flush=True)
 
-    def _heartbeat_loop(self):
-        heartbeat = b"heartbeat\n"
-        while not self._stop_event.is_set():
-            if self.enabled and self.connected:
-                try:
-                    with self._serial_lock:
-                        connection = self.serial_connection
-                        if connection is None or not connection.is_open:
-                            raise serial.SerialException(
-                                "Arduino connection is not open"
-                            )
-                        connection.write(heartbeat)
-                        connection.flush()
-                except (serial.SerialException, OSError, TimeoutError) as exc:
-                    self._mark_disconnected(
-                        exc,
-                        expected_connection=connection,
-                    )
-                except Exception as exc:
-                    logger.exception("Arduino heartbeat failed")
-                    self._mark_disconnected(
-                        exc,
-                        expected_connection=connection,
-                    )
+    def _send_heartbeat(self):
+        if not self.enabled or not self.connected:
+            return False
 
+        try:
+            with self._serial_lock:
+                connection = self.serial_connection
+                if connection is None or not connection.is_open:
+                    raise serial.SerialException(
+                        "Arduino connection is not open"
+                    )
+                connection.write(b"heartbeat\n")
+                connection.flush()
+            return True
+        except (serial.SerialException, OSError, TimeoutError) as exc:
+            self._mark_disconnected(
+                exc,
+                expected_connection=connection,
+            )
+            return False
+        except Exception as exc:
+            logger.exception("Arduino heartbeat failed")
+            self._mark_disconnected(
+                exc,
+                expected_connection=connection,
+            )
+            return False
+
+    def _heartbeat_loop(self):
+        while not self._stop_event.is_set():
+            self._send_heartbeat()
             self._stop_event.wait(self.heartbeat_interval)
 
     @if_is_not_windows
