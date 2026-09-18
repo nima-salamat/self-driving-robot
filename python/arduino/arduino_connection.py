@@ -63,6 +63,7 @@ class ArduinoConnection:
         self._telemetry_bytes_received = 0
         self._telemetry_dropped_lines = 0
         self._last_telemetry_at = None
+        self._connected_at = None
 
         if self.enabled:
             self._reconnect_thread = threading.Thread(
@@ -120,6 +121,11 @@ class ArduinoConnection:
             "line_rate_hz": lines_received / elapsed if elapsed > 0 else 0.0,
             "last_line_age_s": (max(0.0, now - last_telemetry_at) if last_telemetry_at is not None else None),
             "reconnect_failures": self._consecutive_reconnect_failures,
+            "connected_age_s": (
+                max(0.0, now - self._connected_at)
+                if self._connected_at is not None
+                else None
+            ),
         }
 
     def _set_state(self, state, error=None):
@@ -127,8 +133,10 @@ class ArduinoConnection:
             self._state = state
             self._last_error = str(error) if error else None
         if state == self.CONNECTED:
+            self._connected_at = time.monotonic()
             self._connected_event.set()
         else:
+            self._connected_at = None
             self._connected_event.clear()
 
     def _request_reconnect(self):

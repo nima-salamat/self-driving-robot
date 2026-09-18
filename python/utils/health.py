@@ -93,6 +93,21 @@ class HealthMonitor:
                     or "DISCONNECTED",
                     "age_s": 0.0,
                 }
+            elif enabled and telemetry_age is None:
+                connected_age = (
+                    telemetry_status.get("connected_age_s")
+                    if telemetry_status is not None
+                    else None
+                )
+                if (
+                    connected_age is not None
+                    and connected_age > self.SERIAL_TELEMETRY_MAX_AGE_S
+                ):
+                    faults["arduino_telemetry_missing"] = {
+                        "severity": FaultSeverity.WARNING,
+                        "message": "Arduino is connected but no telemetry has arrived",
+                        "age_s": connected_age,
+                    }
             elif (
                 enabled
                 and telemetry_age is not None
@@ -185,6 +200,21 @@ class HealthMonitor:
                         "last_error", "sign detector worker is not alive"
                     ),
                     "age_s": 0.0,
+                }
+            elif (
+                sign_status.get("inference_in_flight")
+                and sign_status.get("last_submit_age_s") is not None
+                and sign_status["last_submit_age_s"] > float(
+                    getattr(config, "SIGN_RESULT_MAX_AGE", 0.75)
+                )
+            ):
+                faults["sign_worker_stalled"] = {
+                    "severity": FaultSeverity.WARNING,
+                    "message": (
+                        f"sign inference has been in flight for "
+                        f"{sign_status['last_submit_age_s']:.2f}s"
+                    ),
+                    "age_s": sign_status["last_submit_age_s"],
                 }
             elif (
                 sign_status.get("last_result_age_s") is not None

@@ -17,6 +17,7 @@ class AsyncSignDetector:
         self._completed = 0
         self._failures = 0
         self._last_result_at = None
+        self._last_submit_at = None
         self._last_latency_ms = None
         self._last_error = None
         self._stop = threading.Event()
@@ -30,11 +31,11 @@ class AsyncSignDetector:
     def submit(self, frame, debug_frame=None):
         if frame is None:
             return None
+        submitted_at = time.monotonic()
         with self._lock:
             self._next_id += 1
             request_id = self._next_id
-
-        submitted_at = time.monotonic()
+            self._last_submit_at = submitted_at
         request = (request_id, frame, debug_frame, submitted_at)
         try:
             self._requests.put_nowait(request)
@@ -119,6 +120,12 @@ class AsyncSignDetector:
                     if self._latest is not None
                     else None
                 ),
+                "last_submit_age_s": (
+                    max(0.0, time.monotonic() - self._last_submit_at)
+                    if self._last_submit_at is not None
+                    else None
+                ),
+                "inference_in_flight": self._completed < self._submitted,
                 "last_latency_ms": self._last_latency_ms,
                 "last_error": self._last_error,
             }

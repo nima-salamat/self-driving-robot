@@ -653,3 +653,52 @@ class CameraInitializationAdversarialTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 camera_module.Camera(config=config)
             self.assertTrue(fake_capture.released)
+
+
+class ProgressHealthAdversarialTests(unittest.TestCase):
+    def test_connected_silent_arduino_is_degraded(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=False,
+            arduino_connection=types.SimpleNamespace(
+                connected=True,
+                state="CONNECTED",
+                last_error=None,
+                telemetry_status=lambda limit=0: {
+                    "state": "CONNECTED",
+                    "last_line_age_s": None,
+                    "connected_age_s": 5.0,
+                },
+            ),
+        )
+        monitor.set_lifecycle(HealthState.RUNNING)
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.DEGRADED)
+        self.assertIn("arduino_telemetry_missing", snapshot["faults"])
+
+    def test_live_but_stalled_sign_worker_is_degraded(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            WITH_SIGN=True,
+            SIGN_RESULT_MAX_AGE=0.75,
+            sign_detector=types.SimpleNamespace(
+                status=lambda: {
+                    "worker_alive": True,
+                    "submitted": 10,
+                    "completed": 9,
+                    "last_submit_age_s": 3.0,
+                    "last_result_age_s": 0.01,
+                }
+            ),
+        )
+        monitor.set_lifecycle(HealthState.RUNNING)
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.DEGRADED)
+        self.assertIn("sign_worker_stalled", snapshot["faults"])
