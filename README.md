@@ -79,6 +79,8 @@ arduino/
 ├── main.ino                 # Primary firmware
 ├── main_Blocking.ino        # Blocking (legacy) version
 ├── main_nonBlocking.ino     # Non-blocking version (recommended)
+├── main_nonBlocking_v2.ino  # Hardened fixed-pin version
+├── main_configurable_v1.ino # Configurable firmware with Python hardware-contract handshake
 └── libraries/               # Custom libraries
     ├── UltrasonicSensor/    # Distance measurement
     ├── PulseQueue/          # Command queue
@@ -229,14 +231,10 @@ serial            # Serial communication with Arduino
 
 ### Step 1: Arduino Setup
 
-1. Open `arduino/main_nonBlocking_v2.ino` in Arduino IDE. This is the hardened firmware that matches the current Python serial transport.
-2. Install required libraries (if not pre-installed):
-   - UltrasonicSensor (custom)
-   - PulseQueue (custom)
-   - Encoder (custom)
-   - Servo (built-in)
-3. Upload to your Arduino board
-4. Note the COM port (e.g., `COM3` on Windows, `/dev/ttyUSB0` on Linux)
+1. Choose the firmware documented in [arduino/README.md](arduino/README.md).
+2. For `main_configurable_v1.ino`, the hardware layout is supplied by Python at startup; the firmware uses the Arduino core plus Servo and EEPROM.
+3. Upload the selected firmware to your Arduino board.
+4. Note the serial port (for example `COM3` on Windows or `/dev/ttyUSB0` on Linux).
 
 ### Step 2: Python Environment
 
@@ -289,6 +287,9 @@ Options:
   --stream                 Enable web video stream
   --fps                    Show FPS counter
   --without-arduino        Run without Arduino connection (simulation)
+  --arduino-config PATH    Enable strict Arduino hardware-contract handshake
+  --arduino-contract-timeout SECONDS
+                           Timeout for each contract exchange (default: 3)
 ```
 
 ### Examples
@@ -539,6 +540,24 @@ Available names are:
 - `unet_depthwise_small`
 
 ML lane detection is not used in the normal runtime unless explicitly enabled. The Arduino firmware and protocol are unchanged.
+
+## Configurable Arduino Hardware Contract
+
+The new opt-in hardware contract is documented separately:
+
+- [arduino/README.md](arduino/README.md)
+- [python/README.md](python/README.md)
+- Sample profile: [python/arduino_configs/mega2560_default.json](python/arduino_configs/mega2560_default.json)
+
+Start with the contract enabled:
+
+~~~bash
+python python/main.py \
+  --mode race \
+  --arduino-config python/arduino_configs/mega2560_default.json
+~~~
+
+The Python side verifies the Arduino firmware ID, protocol version, board, echoed module configuration, and a shared FNV-1a fingerprint before Race/City startup.
 
 ## Operational Diagnostics
 
