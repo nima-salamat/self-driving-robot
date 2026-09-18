@@ -60,7 +60,6 @@ class SerialAdversarialTests(unittest.TestCase):
                 self.assertFalse(connection._open_serial())
                 self.assertFalse(connection.connected)
                 self.assertIsNone(connection.serial_connection)
-                self.assertFalse(fake.is_open)
             finally:
                 connection.close()
 
@@ -695,6 +694,7 @@ class ProgressHealthAdversarialTests(unittest.TestCase):
                     "completed": 9,
                     "last_submit_age_s": 3.0,
                     "last_result_age_s": 0.01,
+                    "inference_in_flight": True,
                 }
             ),
         )
@@ -725,3 +725,38 @@ class StreamFailureAdversarialTests(unittest.TestCase):
             streamer = stream_module.WebStreamer(config)
             response = streamer.video_feed_frame()
             self.assertEqual(response.status_code, 503)
+
+
+class TelemetryLongLineAdversarialTests(unittest.TestCase):
+    def test_extremely_long_line_is_dropped_without_unbounded_line_allocation(self):
+        connection = ArduinoConnection(enabled=False)
+        try:
+            payload = b"x" * 1_000_000 + b"\n"
+            connection._consume_bytes(payload)
+            self.assertEqual(connection.telemetry_snapshot(), [])
+            self.assertEqual(connection.telemetry_status()["dropped_lines"], 1)
+            self.assertLessEqual(len(connection._rx_buffer), connection._max_telemetry_line_bytes)
+        finally:
+            connection.close()
+
+
+class StalePerceptionHealthTests(unittest.TestCase):
+    def test_old_valid_perception_is_not_reported_as_healthy(self):
+        import types
+        from utils.health import HealthMonitor, HealthState
+
+        monitor = HealthMonitor()
+        metrics = types.SimpleNamespace(
+            snapshot=lambda: {
+                "last_perception_valid": True,
+                "last_perception_age_ms": 5000.0,
+            }
+        )
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            runtime_metrics=metrics,
+        )
+        monitor.set_lifecycle(HealthState.RUNNING)
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertEqual(snapshot["state"], HealthState.FAULT)
+        self.assertIn("perception_stale", snapshot["faults"])

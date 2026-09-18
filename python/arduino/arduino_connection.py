@@ -55,6 +55,7 @@ class ArduinoConnection:
         self._telemetry = deque(maxlen=max(1, int(telemetry_buffer_size)))
         self._telemetry_lock = threading.Lock()
         self._telemetry_enabled = bool(telemetry_enabled)
+        self._max_telemetry_line_bytes = 4096
         self._print_telemetry = False
         self._last_error = None
         self._consecutive_reconnect_failures = 0
@@ -298,9 +299,17 @@ class ArduinoConnection:
         while True:
             newline = self._rx_buffer.find(b"\n")
             if newline < 0:
-                if len(self._rx_buffer) > 16384:
+                if len(self._rx_buffer) > self._max_telemetry_line_bytes:
                     self._rx_buffer.clear()
+                    with self._telemetry_lock:
+                        self._telemetry_dropped_lines += 1
                 break
+
+            if newline > self._max_telemetry_line_bytes:
+                del self._rx_buffer[:newline + 1]
+                with self._telemetry_lock:
+                    self._telemetry_dropped_lines += 1
+                continue
 
             raw = bytes(self._rx_buffer[:newline])
             del self._rx_buffer[:newline + 1]

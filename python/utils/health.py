@@ -20,6 +20,7 @@ class HealthMonitor:
     """Small explicit lifecycle/fault state tracker shared by runtime diagnostics."""
 
     CAMERA_MAX_AGE_S = 1.0
+    PERCEPTION_MAX_AGE_S = 1.0
     SERIAL_TELEMETRY_MAX_AGE_S = 1.0
 
     def __init__(self):
@@ -135,6 +136,19 @@ class HealthMonitor:
                     "severity": FaultSeverity.CRITICAL,
                     "message": "latest perception result is invalid",
                     "age_s": (perception_age_ms or 0.0) / 1000.0,
+                }
+            elif (
+                lifecycle == HealthState.RUNNING
+                and perception_age_ms is not None
+                and perception_age_ms > self.PERCEPTION_MAX_AGE_S * 1000.0
+            ):
+                faults["perception_stale"] = {
+                    "severity": FaultSeverity.CRITICAL,
+                    "message": (
+                        f"latest perception result is "
+                        f"{perception_age_ms / 1000.0:.2f}s old"
+                    ),
+                    "age_s": perception_age_ms / 1000.0,
                 }
 
         camera = getattr(config, "camera", None)
