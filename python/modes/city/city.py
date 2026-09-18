@@ -336,7 +336,9 @@ class Robot:
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
                 self.read_sign_counter = 0
                 self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
-                latest_sign = self.sign_detector.latest()
+                latest_sign = self.sign_detector.latest(
+                    max_age_s=getattr(config_city, "SIGN_RESULT_MAX_AGE", 0.75)
+                )
                 if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
                     return None, False, debug_frame, None
                 self.last_sign_result_id = latest_sign[0]

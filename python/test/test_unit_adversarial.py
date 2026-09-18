@@ -188,7 +188,7 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertIsNot(race, city)
             self.assertIs(race.config.MODE, "race")
             self.assertIs(city.config.MODE, "city")
-            self.assertIs(race.pid, not city.pid)
+            self.assertIsNot(race.pid, city.pid)
 
     def test_stop_resets_pid_state(self):
         from controller import controller as controller_module
@@ -199,3 +199,30 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertIsNotNone(controller.pid._prev_error)
             controller.stop()
             self.assertIsNone(controller.pid._prev_error)
+
+
+class SignFreshnessAdversarialTests(unittest.TestCase):
+    def test_completed_result_has_input_metadata_and_expires(self):
+        from traffic_sign_detector.async_detector import AsyncSignDetector
+
+        done = threading.Event()
+
+        class FakeDetector:
+            def process_frame(self, frame, debug_frame=None):
+                done.set()
+                return {"label": frame}
+
+        worker = AsyncSignDetector(FakeDetector())
+        try:
+            request_id = worker.submit("frame-1")
+            self.assertEqual(request_id, 1)
+            self.assertTrue(done.wait(2.0))
+
+            latest = worker.latest()
+            self.assertIsNotNone(latest)
+            self.assertEqual(latest[0], 1)
+            self.assertEqual(latest[1]["label"], "frame-1")
+            self.assertLessEqual(latest[2], latest[3])
+            self.assertIsNone(worker.latest(max_age_s=0.0))
+        finally:
+            worker.close()
