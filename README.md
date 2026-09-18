@@ -283,19 +283,46 @@ python main.py --mode race
 
 ### Command-Line Arguments
 
-```bash
-python main.py [OPTIONS]
+Run:
 
-Options:
-  --mode {city, race}      Operating mode (default: city)
-  --debug                  Enable debug output
-  --stream                 Enable web video stream
-  --fps                    Show FPS counter
-  --without-arduino        Run without Arduino connection (simulation)
-  --arduino-config PATH    Enable strict Arduino hardware-contract handshake
-  --arduino-contract-timeout SECONDS
-                           Timeout for each contract exchange (default: 3)
-```
+~~~bash
+python main.py --help
+~~~
+
+The main runtime exposes:
+
+~~~text
+usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
+               [--stream-host STREAM_HOST] [--stream-control]
+               [--without-arduino] [--fps] [--performance] [--preflight]
+               [--read-arduino-output] [--arduino-config PATH]
+               [--arduino-contract-timeout SECONDS]
+               [--camera-mode {picam,webcam,opencv}]
+               [--camera-index INDEX]
+               [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
+
+Self-driving robot runtime.
+~~~
+
+For the complete option descriptions and practical examples, see [python/README.md](python/README.md).
+
+### Configuration precedence
+
+Configuration is applied in this order:
+
+~~~text
+mode defaults -> city.json/race.json -> explicit CLI flags
+~~~
+
+An explicitly supplied CLI value always wins over JSON. An omitted flag does not overwrite the JSON value.
+
+Camera selection follows the same rule:
+
+~~~bash
+python main.py --mode race --camera-mode webcam --camera-index 0
+~~~
+
+The camera backend and index can also be stored in the active mode JSON file.
 
 ### Examples
 
@@ -432,7 +459,7 @@ python -m serial.tools.list_ports
 # Linux: ls /dev/ttyUSB*
 ```
 
-**Solution**: Update the port in configuration or pass via `--port` argument
+**Solution**: Update `SERIAL_PORT` in the active mode configuration or JSON configuration.
 
 ### Camera Issues
 
