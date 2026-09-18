@@ -72,4 +72,14 @@ def parse_args():
         help="Display Arduino telemetry collected by the background serial reader"
     )
 
+    parser.add_argument(
+        "--ml-lane-model",
+        choices=[
+            "unet_depthwise_nano",
+            "unet_depthwise_small",
+        ],
+        default=None,
+        help="Enable ML lane detection with the selected model. Omit to keep the existing detector."
+    )
+
     return parser.parse_args()

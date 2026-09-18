@@ -1,0 +1,41 @@
+name: Bundle lane model weights
+
+on:
+  push:
+    branches:
+      - lane-model-benchmark
+    paths:
+      - ".github/workflows/bundle-lane-models.yml"
+      - "python/tools/download_lane_models.py"
+      - "python/vision/ml_lane/registry.py"
+      - "python/vision/ml_lane/__init__.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and verify model weights
+        run: python3 python/tools/download_lane_models.py --model all
+
+      - name: Commit verified weights
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add python/models/lane/weights
+          if git diff --cached --quiet; then
+            echo "No model changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(lane-models): bundle verified ONNX and NCNN weights"
+          git push
