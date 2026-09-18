@@ -371,6 +371,12 @@ class Robot:
             except Exception:
                 logger.exception("Cleanup failed: %s", name)
 
+        if self.sign_detector is not None:
+            try:
+                self.sign_detector.close()
+            except Exception:
+                logger.exception("Cleanup failed: sign detector")
+
         try:
             self.output.close()
         except Exception:
