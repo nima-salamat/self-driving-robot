@@ -403,3 +403,50 @@ class HealthAdversarialTests(unittest.TestCase):
         )
         snapshot = monitor.snapshot_runtime(config)
         self.assertEqual(snapshot["state"], HealthState.SHUTTING_DOWN)
+
+
+class FailingVideoWriter(BlockingVideoWriter):
+    def write(self, frame):
+        self.writes.append(frame)
+        raise RuntimeError("simulated writer failure")
+
+
+class RecordingFailureAdversarialTests(unittest.TestCase):
+    def test_writer_failure_is_released_and_reported_once(self):
+        import tempfile
+        import types
+        from unittest.mock import patch
+
+        from manager.output_manager import OutputManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                OUTPUT_DIR=tmp,
+                VIDEO_FPS=20,
+                VIDEO_CODEC="mp4v",
+                MIN_FREE_DISK_MB=0,
+            )
+            writer = FailingVideoWriter()
+            manager = OutputManager(config_module=config, output_dir=tmp)
+            try:
+                with patch("manager.output_manager.cv2.VideoWriter", return_value=writer):
+                    manager.start_recording((1, 1))
+                    self.assertTrue(manager.write_frame("bad-frame"))
+                    self.assertTrue(
+                        self._wait(lambda: manager.stats()["writer_failures"] == 1)
+                    )
+                    self.assertTrue(writer.released)
+                    self.assertFalse(manager.is_recording())
+                    self.assertEqual(manager.stats()["writer_failures"], 1)
+                    self.assertIn("simulated writer failure", manager.stats()["last_error"])
+            finally:
+                manager.close()
+
+    @staticmethod
+    def _wait(predicate, timeout=2.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return False

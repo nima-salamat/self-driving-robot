@@ -184,6 +184,10 @@ class OutputManager:
                     writer.write(frame)
             except Exception as exc:
                 self.logger.exception("Failed to write video frame")
+                try:
+                    writer.release()
+                except Exception:
+                    self.logger.exception("Failed to release failed video writer")
                 with self._lock:
                     self._writer_failures += 1
                     self._last_error = f"{type(exc).__name__}: {exc}"
