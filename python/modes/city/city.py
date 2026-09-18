@@ -287,6 +287,14 @@ class Robot:
                         self.stop_last_seen = time.time()
                     self.last_tag = tag_id
         elif config_city.WITH_SIGN:
+            if self.sign_detector is None:
+                detector = (
+                    SVMTrafficSignDetector()
+                    if config_city.SIGN_DETECTOR_METHOD == "svm"
+                    else YOLOTrafficSignDetector()
+                )
+                self.sign_detector = AsyncSignDetector(detector)
+
             self.read_sign_counter += 1
             tag_id = None
             if self.read_sign_counter >= config_city.READ_SIGN_THRESHOLD:
