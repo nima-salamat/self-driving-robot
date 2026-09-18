@@ -341,7 +341,6 @@ class ArduinoConnection:
             if self._print_telemetry:
                 print(f"[Arduino] {line}", flush=True)
 
-    @if_is_not_windows
     def _heartbeat_loop(self):
         heartbeat = b"heartbeat\\n"
         while not self._stop_event.is_set():
