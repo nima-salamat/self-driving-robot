@@ -537,7 +537,7 @@ function refreshDebugFrame(){
   });
   $("debug_preview").src="/api/debug_frame?"+params.toString();
 }
-function startDebugLoop(){clearInterval(debugTimer);refreshDebugFrame();debugTimer=setInterval(refreshDebugFrame,750);}
+function startDebugLoop(){clearInterval(debugTimer);refreshDebugFrame();debugTimer=setInterval(refreshDebugFrame,200);}
 $("debug_view").addEventListener("change",refreshDebugFrame);
 $("debug_threshold").addEventListener("input",()=>{if($("debug_view").value==="fixed")refreshDebugFrame();});
 $("debug_adaptive_block").addEventListener("input",()=>{if($("debug_view").value==="adaptive")refreshDebugFrame();});
