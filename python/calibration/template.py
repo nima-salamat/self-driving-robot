@@ -333,6 +333,9 @@ let qualityLoaded = false;
 let boardLoaded = false;
 let lastCaptureCount = -1;
 let debugTimer = null;
+let statusInFlight = false;
+let statusFailures = 0;
+let bannerTimer = null;
 
 function showBanner(message, kind="error"){
   const el = $("banner");
@@ -344,15 +347,46 @@ function hideBanner(){
   el.className = "banner";
   el.textContent = "";
 }
+function showTransient(message){
+  clearTimeout(bannerTimer);
+  showBanner(message,"info");
+  bannerTimer = setTimeout(hideBanner,2200);
+}
+function noteStatusFailure(error){
+  statusFailures += 1;
+  // Do not flash an error for a single dropped poll. Show it only when
+  // the backend has been unreachable for several consecutive polls.
+  if(statusFailures >= 3){
+    const message = error && error.name === "AbortError"
+      ? "Calibration backend is not responding."
+      : "Cannot reach calibration backend.";
+    showBanner(message,"error");
+  }
+}
+function noteStatusSuccess(){
+  statusFailures = 0;
+  if($("banner").classList.contains("show")){
+    hideBanner();
+  }
+}
 async function api(url, options={}, meta={}){
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6000);
   try{
-    const response = await fetch(url,{...options,signal:controller.signal});
+    const response = await fetch(
+      url,
+      {
+        ...options,
+        signal:controller.signal,
+        cache:"no-store"
+      }
+    );
     let payload = null;
     try{ payload = await response.json(); }catch(_){ payload = null; }
     if(!response.ok){
-      const message = payload && payload.message ? payload.message : "Request failed (" + response.status + ")";
+      const message = payload && payload.message
+        ? payload.message
+        : "Request failed (" + response.status + ")";
       throw new Error(message);
     }
     if(payload && payload.success === false){
@@ -363,8 +397,8 @@ async function api(url, options={}, meta={}){
     if(meta.silent) throw error;
     const message = error && error.name === "AbortError"
       ? "Calibration backend request timed out."
-      : (error && error.message) || "Cannot reach calibration backend.";
-    showBanner(message);
+      : (error && error.message) || "Calibration request failed.";
+    showBanner(message,"error");
     throw error;
   }finally{
     clearTimeout(timer);
@@ -439,9 +473,13 @@ function renderStatus(s){
   $("fps").value=Number(s.requested_fps || 30).toFixed(0);
 }
 async function getStatus(){
+  if(statusInFlight) return;
+  statusInFlight=true;
   try{
     const s=await api("/api/status",{}, {silent:true});
+    noteStatusSuccess();
     renderStatus(s);
+
     if(!settingsLoaded){
       $("detector_mode").value=s.detector_mode;
       $("auto_capture_enabled").checked=!!s.auto_capture_enabled;
@@ -464,10 +502,15 @@ async function getStatus(){
       lastCaptureCount=s.captured_images;
       await refreshCaptures(false);
     }
-    if(s.last_camera_error) showBanner(s.last_camera_error);
-    else if($("banner").classList.contains("show")) hideBanner();
-  }catch(_){
-    if(!$("banner").classList.contains("show")) showBanner("Cannot reach the calibration backend. The live camera may have stopped.");
+
+    // Camera errors belong to the camera state, not to network connectivity.
+    if(s.last_camera_error){
+      showBanner(s.last_camera_error,"error");
+    }
+  }catch(error){
+    noteStatusFailure(error);
+  }finally{
+    statusInFlight=false;
   }
 }
 async function refreshCaptures(selectNewest=true){
@@ -554,7 +597,7 @@ $("capture_select").onchange=()=>{
 $("capture").onclick=async()=>{
   try{
     const result=await post("/api/capture");
-    showBanner(result.message || "Capture complete.","info");
+    showTransient(result.message || "Capture complete.");
     await refreshCaptures(true);await getStatus();setTimeout(hideBanner,1800);
   }catch(_){}
 };
@@ -562,14 +605,14 @@ $("clear").onclick=async()=>{
   if(!confirm("Delete all captured calibration images and their metadata?"))return;
   try{
     const result=await post("/api/clear");
-    showBanner(result.message || "Captures cleared.","info");
+    showTransient(result.message || "Captures cleared.");
     await refreshCaptures(true);await getStatus();setTimeout(hideBanner,1600);
   }catch(_){}
 };
 $("calibrate").onclick=async()=>{
   try{
     const result=await post("/api/calibrate");
-    showBanner(result.message || "Calibration started.","info");
+    showTransient(result.message || "Calibration started.");
     await getStatus();setTimeout(hideBanner,1500);
   }catch(_){}
 };
