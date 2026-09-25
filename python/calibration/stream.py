@@ -12,10 +12,17 @@ except ImportError:  # pragma: no cover - Linux exposes fcntl.
     fcntl = None
 
 import cv2
-from flask import Flask, Response, jsonify, render_template_string, request
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    render_template_string,
+    request,
+    send_from_directory,
+)
 from werkzeug.serving import make_server
 
-from .calibrator import CameraCalibrator
+from .calibrator import CameraCalibration, CameraCalibrator
 from .capture import CalibrationImageStore
 from .config import create_camera_config
 from .template import CALIBRATION_HTML
@@ -177,8 +184,16 @@ class CalibrationStreamServer:
         self._camera_thread = None
         self._calibration_thread = None
         self._operation_lock = threading.Lock()
+        self._calibrator_lock = threading.RLock()
         self._accepted_features = []
         self.last_rejection_reason = None
+
+        self.auto_capture_enabled = False
+        self.auto_capture_interval = 1.0
+        self.last_auto_capture_at = 0.0
+        self.auto_captured_images = 0
+        self.calibration_preview_enabled = False
+        self._calibration_preview = None
 
         self.requested_fps = float(target_fps)
         self.actual_fps = None
@@ -211,21 +226,25 @@ class CalibrationStreamServer:
                     )
 
                 if frame is not None and self.camera.last_capture_valid:
-                    evaluated = self.calibrator.evaluate_frame(frame)
-                    quality_reason = self.calibrator.quality_reason(evaluated)
-                    evaluated["quality_valid"] = quality_reason is None
-                    evaluated["quality_reason"] = quality_reason
+                    with self._calibrator_lock:
+                        evaluated = self.calibrator.evaluate_frame(frame)
+                        quality_reason = self.calibrator.quality_reason(evaluated)
+                        evaluated["quality_valid"] = quality_reason is None
+                        evaluated["quality_reason"] = quality_reason
 
-                    self.chessboard_detected = bool(
-                        evaluated["valid"]
-                    )
+                    self.chessboard_detected = bool(evaluated["valid"])
                     self.last_rejection_reason = quality_reason
                     self._last_detection = evaluated
 
-                    display = evaluated.get(
-                        "preview",
-                        frame,
-                    )
+                    self._maybe_auto_capture(frame, evaluated)
+
+                    if (
+                        self.calibration_preview_enabled
+                        and self._calibration_preview is not None
+                    ):
+                        display = self._calibration_preview.undistort(frame)
+                    else:
+                        display = evaluated.get("preview", frame).copy()
                     cv2.putText(
                         display,
                         (
@@ -445,6 +464,125 @@ class CalibrationStreamServer:
                 + b"\r\n"
             )
 
+    def _save_evaluated_frame(self, raw_frame, evaluation, auto=False):
+        if not evaluation.get("quality_valid"):
+            return False, evaluation.get(
+                "quality_reason",
+                "frame rejected",
+            )
+
+        with self._calibrator_lock:
+            if self.calibrator.is_duplicate(
+                evaluation,
+                self._accepted_features,
+            ):
+                reason = "too similar to another accepted view"
+                if not auto:
+                    self.last_rejection_reason = reason
+                return False, reason
+
+            path = self.image_store.next_path()
+            if not cv2.imwrite(str(path), raw_frame):
+                return False, "Failed to save calibration image."
+
+            self._accepted_features.append(evaluation["feature"])
+
+        self.last_rejection_reason = None
+        if auto:
+            self.last_auto_capture_at = time.monotonic()
+            self.auto_captured_images += 1
+        return True, f"Saved {path.name}"
+
+    def _maybe_auto_capture(self, raw_frame, evaluation):
+        if not self.auto_capture_enabled:
+            return
+        if (
+            self._calibration_thread is not None
+            and self._calibration_thread.is_alive()
+        ):
+            return
+        if not evaluation.get("quality_valid"):
+            return
+
+        now = time.monotonic()
+        if now - self.last_auto_capture_at < self.auto_capture_interval:
+            return
+
+        with self._operation_lock:
+            saved, _ = self._save_evaluated_frame(
+                raw_frame,
+                evaluation,
+                auto=True,
+            )
+        if saved:
+            logger.info(
+                "Auto-captured calibration image #%d",
+                self.image_store.count(),
+            )
+
+    def set_auto_capture(self, enabled, interval=None):
+        self.auto_capture_enabled = bool(enabled)
+        if interval is not None:
+            interval = float(interval)
+            if not 0.2 <= interval <= 30.0:
+                raise ValueError(
+                    "auto_capture_interval must be between 0.2 and 30 seconds"
+                )
+            self.auto_capture_interval = interval
+        if not self.auto_capture_enabled:
+            self.last_auto_capture_at = 0.0
+
+    def set_detector_mode(self, mode):
+        mode = str(mode).lower().strip()
+        if mode not in {"auto", "classic", "sb"}:
+            raise ValueError("detector_mode must be one of: auto, classic, sb")
+        with self._calibrator_lock:
+            self.calibrator.detector_mode = mode
+
+    def set_quality_settings(
+        self,
+        min_coverage=None,
+        min_sharpness=None,
+        min_edge_margin=None,
+        duplicate_distance=None,
+    ):
+        values = {
+            "min_coverage": min_coverage,
+            "min_sharpness": min_sharpness,
+            "min_edge_margin": min_edge_margin,
+            "duplicate_distance": duplicate_distance,
+        }
+        with self._calibrator_lock:
+            for name, value in values.items():
+                if value is None:
+                    continue
+                value = float(value)
+                if value <= 0:
+                    raise ValueError(f"{name} must be greater than zero")
+                if name == "min_coverage" and value > 1:
+                    raise ValueError("min_coverage must be at most 1")
+                if name == "min_edge_margin" and value > 0.5:
+                    raise ValueError("min_edge_margin must be at most 0.5")
+                if name == "duplicate_distance" and value > 5:
+                    raise ValueError("duplicate_distance must be at most 5")
+                setattr(self.calibrator, name, value)
+
+    def set_calibration_preview(self, enabled):
+        enabled = bool(enabled)
+        if enabled:
+            if not self.output_file.exists():
+                raise ValueError("No calibration model exists yet.")
+            preview = CameraCalibration(
+                self.output_file,
+                enabled=True,
+            )
+            if not preview.enabled:
+                raise ValueError(
+                    preview.last_error or "Calibration model is not usable."
+                )
+            self._calibration_preview = preview
+        self.calibration_preview_enabled = enabled
+
     def capture(self):
         if (
             self._calibration_thread is not None
@@ -458,23 +596,12 @@ class CalibrationStreamServer:
             raw = self.current_raw_frame()
             if raw is None:
                 return False, "No raw camera frame is available."
-            fresh = self.calibrator.evaluate_frame(raw)
-            reason = self.calibrator.quality_reason(fresh)
-            if reason is not None:
-                self.last_rejection_reason = reason
-                return False, reason
-            if self.calibrator.is_duplicate(
-                fresh,
-                self._accepted_features,
-            ):
-                self.last_rejection_reason = "too similar to another accepted view"
-                return False, self.last_rejection_reason
-            path = self.image_store.next_path()
-            if not cv2.imwrite(str(path), raw):
-                return False, "Failed to save calibration image."
-            self._accepted_features.append(fresh["feature"])
-            self.last_rejection_reason = None
-            return True, f"Saved {path.name}"
+            with self._calibrator_lock:
+                fresh = self.calibrator.evaluate_frame(raw)
+                reason = self.calibrator.quality_reason(fresh)
+            fresh["quality_valid"] = reason is None
+            fresh["quality_reason"] = reason
+            return self._save_evaluated_frame(raw, fresh)
 
     def _run_calibration(self):
         with self._operation_lock:
@@ -485,6 +612,8 @@ class CalibrationStreamServer:
                     self.output_file,
                 )
                 self._last_calibration = result
+                self._calibration_preview = None
+                self.calibration_preview_enabled = False
                 self._calibration_state = (
                     "calibrated"
                     if result.get("acceptable_for_runtime", True)
@@ -562,6 +691,20 @@ class CalibrationStreamServer:
             "board_squares": list(self.board_squares),
             "square_size": self.calibrator.square_size,
             "min_valid_images": self.min_valid_images,
+            "detector_mode": self.calibrator.detector_mode,
+            "detector": (
+                self._last_detection.get("detector")
+                if self._last_detection
+                else None
+            ),
+            "min_coverage": self.calibrator.min_coverage,
+            "min_sharpness": self.calibrator.min_sharpness,
+            "min_edge_margin": self.calibrator.min_edge_margin,
+            "duplicate_distance": self.calibrator.duplicate_distance,
+            "auto_capture_enabled": self.auto_capture_enabled,
+            "auto_capture_interval": self.auto_capture_interval,
+            "auto_captured_images": self.auto_captured_images,
+            "calibration_preview_enabled": self.calibration_preview_enabled,
             "captured_images": self.image_store.count(),
             "network_addresses": discover_network_addresses(),
             "detector": (
@@ -624,6 +767,13 @@ class CalibrationStreamServer:
                     "board_rows",
                     "square_size",
                     "min_valid_images",
+                    "detector_mode",
+                    "min_coverage",
+                    "min_sharpness",
+                    "min_edge_margin",
+                    "duplicate_distance",
+                    "auto_capture_enabled",
+                    "auto_capture_interval",
                 }
                 unknown = sorted(set(data) - supported)
                 if unknown:
@@ -631,7 +781,6 @@ class CalibrationStreamServer:
                         success=False,
                         message=f"Unsupported settings: {', '.join(unknown)}",
                     ), 400
-
                 if not data:
                     return jsonify(
                         success=False,
@@ -661,6 +810,38 @@ class CalibrationStreamServer:
                         ),
                     )
 
+                if "detector_mode" in data:
+                    self.set_detector_mode(data["detector_mode"])
+
+                quality_keys = {
+                    "min_coverage",
+                    "min_sharpness",
+                    "min_edge_margin",
+                    "duplicate_distance",
+                }
+                if quality_keys.intersection(data):
+                    self.set_quality_settings(
+                        min_coverage=data.get("min_coverage"),
+                        min_sharpness=data.get("min_sharpness"),
+                        min_edge_margin=data.get("min_edge_margin"),
+                        duplicate_distance=data.get("duplicate_distance"),
+                    )
+
+                if (
+                    "auto_capture_enabled" in data
+                    or "auto_capture_interval" in data
+                ):
+                    self.set_auto_capture(
+                        data.get(
+                            "auto_capture_enabled",
+                            self.auto_capture_enabled,
+                        ),
+                        data.get(
+                            "auto_capture_interval",
+                            self.auto_capture_interval,
+                        ),
+                    )
+
                 if "fps" in data:
                     self.set_fps(float(data["fps"]))
 
@@ -671,6 +852,13 @@ class CalibrationStreamServer:
                     checkerboard_inner_corners=list(self.calibrator.checkerboard),
                     square_size=self.calibrator.square_size,
                     min_valid_images=self.min_valid_images,
+                    detector_mode=self.calibrator.detector_mode,
+                    min_coverage=self.calibrator.min_coverage,
+                    min_sharpness=self.calibrator.min_sharpness,
+                    min_edge_margin=self.calibrator.min_edge_margin,
+                    duplicate_distance=self.calibrator.duplicate_distance,
+                    auto_capture_enabled=self.auto_capture_enabled,
+                    auto_capture_interval=self.auto_capture_interval,
                 )
             except (TypeError, ValueError) as exc:
                 status = (
@@ -692,6 +880,53 @@ class CalibrationStreamServer:
                 return jsonify(
                     success=False,
                     message="Failed to update calibration stream settings",
+                ), 500
+
+        @app.get("/api/captures")
+        def api_captures():
+            files = self.image_store.paths()
+            return jsonify(
+                captures=[
+                    {
+                        "filename": path.name,
+                        "url": f"/api/captures/{path.name}",
+                    }
+                    for path in reversed(files)
+                ]
+            )
+
+        @app.get("/api/captures/<path:filename>")
+        def capture_file(filename):
+            return send_from_directory(
+                self.image_dir,
+                filename,
+            )
+
+        @app.post("/api/preview")
+        def api_preview():
+            try:
+                data = request.get_json(silent=True) or {}
+                value = data.get("enabled", False)
+                if not isinstance(value, bool):
+                    return jsonify(
+                        success=False,
+                        message="enabled must be boolean",
+                    ), 400
+                self.set_calibration_preview(value)
+                return jsonify(
+                    success=True,
+                    enabled=self.calibration_preview_enabled,
+                )
+            except (TypeError, ValueError) as exc:
+                return jsonify(
+                    success=False,
+                    message=str(exc),
+                ), 409
+            except Exception:
+                logger.exception("Failed to toggle calibration preview")
+                return jsonify(
+                    success=False,
+                    message="Failed to toggle calibration preview",
                 ), 500
 
         @app.post("/api/capture")
@@ -720,6 +955,8 @@ class CalibrationStreamServer:
                 removed = self.image_store.clear()
                 self._accepted_features.clear()
                 self.last_rejection_reason = None
+                self.last_auto_capture_at = 0.0
+                self.auto_captured_images = 0
 
             return jsonify(
                 success=True,
