@@ -1256,6 +1256,11 @@ class CalibrationStreamServer:
             self.last_rejection_reason = None
 
     def _enter_calibrated_mode(self, preview):
+        if preview is None or not preview.enabled:
+            raise ValueError(
+                getattr(preview, "last_error", None)
+                or "Calibration model is not usable."
+            )
         self._auto_capture_before_calibrated = self.auto_capture_enabled
         self.auto_capture_enabled = False
         self.last_auto_capture_at = 0.0
@@ -1532,8 +1537,9 @@ class CalibrationStreamServer:
             "actual_fps": self.actual_fps,
             "detection_fps": (
                 1.0 / self.detection_interval
-                if self.detection_interval > 0
-                else None
+                if self.workspace_mode == "calibration"
+                and self.detection_interval > 0
+                else 0.0
             ),
             "detection_interval": self.detection_interval,
             "detection_count": detection_count,
@@ -2050,6 +2056,14 @@ class CalibrationStreamServer:
 
         @app.post("/api/clear")
         def api_clear():
+            if self.workspace_mode != "calibration":
+                return jsonify(
+                    success=False,
+                    message=(
+                        "Switch to calibration mode before changing "
+                        "the dataset."
+                    ),
+                ), 409
             if (
                 self._calibration_thread is not None
                 and self._calibration_thread.is_alive()
