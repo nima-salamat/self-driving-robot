@@ -762,6 +762,74 @@ $("apply_quality").onclick=async()=>{
     qualityLoaded=true;hideBanner();
   }catch(_){}
 };
+$("capture").onclick=async()=>{
+  const button=$("capture");
+  button.disabled=true;
+  try{
+    const result=await post("/api/capture");
+    showTransient(result.message || "Capture saved.");
+    lastCaptureCount=-1;
+    await refreshCaptures(true);
+    await getStatus();
+  }catch(_){
+    try{ await getStatus(); }catch(__){}
+  }
+};
+
+$("calibrate").onclick=async()=>{
+  const button=$("calibrate");
+  if(currentMode !== "calibration") return;
+  button.disabled=true;
+  try{
+    const result=await post("/api/calibrate");
+    showTransient(result.message || "Calibration started.");
+    await getStatus();
+  }catch(_){
+    try{ await getStatus(); }catch(__){}
+  }
+};
+
+$("cancel_calibration").onclick=async()=>{
+  const button=$("cancel_calibration");
+  button.disabled=true;
+  try{
+    const result=await post("/api/calibrate/cancel");
+    showTransient(result.message || "Cancellation requested.");
+    await getStatus();
+  }catch(_){
+    try{ await getStatus(); }catch(__){}
+  }finally{
+    button.disabled=false;
+  }
+};
+
+$("export_model").onclick=()=>{
+  if($("export_model").disabled) return;
+  window.location.href="/api/calibration/export";
+};
+
+$("mode_calibration").onclick=async()=>{
+  if($("mode_calibration").disabled) return;
+  try{
+    const result=await post("/api/mode",{mode:"calibration"});
+    renderMode(result.mode || "calibration", true);
+    await getStatus();
+  }catch(_){
+    try{ await getStatus(); }catch(__){}
+  }
+};
+
+$("mode_calibrated").onclick=async()=>{
+  if($("mode_calibrated").disabled) return;
+  try{
+    const result=await post("/api/mode",{mode:"calibrated"});
+    renderMode(result.mode || "calibrated", true);
+    await getStatus();
+  }catch(_){
+    try{ await getStatus(); }catch(__){}
+  }
+};
+
 function openCapture(url, filename){
   if(!url) return;
   $("capture_modal_image").src=url+"?t="+Date.now();
