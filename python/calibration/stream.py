@@ -679,6 +679,7 @@ class CalibrationStreamServer:
         board_rows,
         square_size,
         min_valid_images=None,
+        replace_captures=False,
     ):
         try:
             board_cols = int(board_cols)
@@ -751,11 +752,20 @@ class CalibrationStreamServer:
                         "cannot be changed."
                     )
 
-                if self.image_store.count() > 0:
+                if self.workspace_mode != "calibration":
                     raise ValueError(
-                        "Clear captured calibration images before "
-                        "changing the board configuration."
+                        "Switch to calibration mode before changing "
+                        "the board configuration."
                     )
+
+                if self.image_store.count() > 0:
+                    if not replace_captures:
+                        raise ValueError(
+                            "Captured calibration images exist; confirm "
+                            "replacement to clear them before changing "
+                            "the board configuration."
+                        )
+                    self.image_store.clear()
 
                 self.calibrator = CameraCalibrator(
                     checkerboard=new_inner_corners,
@@ -784,6 +794,16 @@ class CalibrationStreamServer:
                 self._last_calibration = None
                 self._last_calibration_message = None
                 self._calibration_state = "not calibrated"
+                self._calibration_preview = None
+                self.calibration_preview_enabled = False
+                if self.output_file.exists():
+                    try:
+                        self.output_file.unlink()
+                    except OSError as exc:
+                        logger.warning(
+                            "Failed to remove stale calibration model: %s",
+                            exc,
+                        )
 
     def _validate_fps(self, fps):
         fps = float(fps)
@@ -1326,6 +1346,8 @@ class CalibrationStreamServer:
 
     def _run_calibration(self):
         with self._operation_lock:
+            self._calibration_cancel.clear()
+            self._enter_calibration_mode()
             self._calibration_state = "calibrating"
             self._last_calibration_message = (
                 "Calibration is running against the accepted captures."
@@ -1338,11 +1360,10 @@ class CalibrationStreamServer:
                         metadata_loader=(
                             self.image_store.load_metadata
                         ),
+                        cancel_event=self._calibration_cancel,
                     )
 
                 self._last_calibration = result
-                self._calibration_preview = None
-                self.calibration_preview_enabled = False
 
                 if result.get(
                     "acceptable_for_runtime",
@@ -1367,6 +1388,9 @@ class CalibrationStreamServer:
                         reasons
                     )
 
+                self._enter_calibrated_mode(
+                    CameraCalibration(self.output_file, enabled=True)
+                )
                 logger.info(
                     "Calibration complete: valid=%d rms=%.6f "
                     "reprojection=%.6f quality=%s",
@@ -1387,6 +1411,11 @@ class CalibrationStreamServer:
 
     def start_calibration(self):
         with self._operation_lock:
+            if self.workspace_mode != "calibration":
+                return (
+                    False,
+                    "Switch to calibration mode before running calibration.",
+                )
             if (
                 self._calibration_thread is not None
                 and self._calibration_thread.is_alive()
@@ -1396,6 +1425,7 @@ class CalibrationStreamServer:
                     "Calibration is already running.",
                 )
 
+            self._calibration_cancel.clear()
             self._calibration_thread = threading.Thread(
                 target=self._run_calibration,
                 daemon=True,
@@ -1403,6 +1433,14 @@ class CalibrationStreamServer:
             )
             self._calibration_thread.start()
             return True, "Calibration started."
+
+    def cancel_calibration(self):
+        thread = self._calibration_thread
+        if thread is None or not thread.is_alive():
+            return False, "Calibration is not running."
+        self._calibration_cancel.set()
+        self._last_calibration_message = "Calibration cancellation requested."
+        return True, "Calibration cancellation requested."
 
     def status(self):
         result = self._last_calibration or {}
@@ -1420,6 +1458,12 @@ class CalibrationStreamServer:
             duplicate_distance = (
                 calibrator.duplicate_distance
             )
+            max_mean_reprojection_error = (
+                calibrator.max_mean_reprojection_error
+            )
+            max_view_reprojection_error = (
+                calibrator.max_view_reprojection_error
+            )
 
         with self._detection_state_lock:
             evaluation = self._last_detection
@@ -1429,11 +1473,17 @@ class CalibrationStreamServer:
             chessboard_detected = self.chessboard_detected
             last_rejection_reason = self.last_rejection_reason
 
-        detection_state = self._detection_state(
-            evaluation
+        detection_state = (
+            self._detection_state(evaluation)
+            if self.workspace_mode == "calibration"
+            else "DETECTOR_DISABLED"
         )
 
-        if evaluation:
+        if self.workspace_mode != "calibration":
+            detection_message = (
+                "Detector and auto-capture are disabled in calibrated mode."
+            )
+        elif evaluation:
             if detection_state == "READY_FOR_CAPTURE":
                 detection_message = (
                     "Board detected and quality checks passed."
@@ -1456,6 +1506,9 @@ class CalibrationStreamServer:
             )
 
         return {
+            "workspace_mode": self.workspace_mode,
+            "detector_enabled": self.workspace_mode == "calibration",
+            "calibration_model_available": self.output_file.exists(),
             "camera_mode": getattr(
                 self.config,
                 "CAMERA_MODE",
