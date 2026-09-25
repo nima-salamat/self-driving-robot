@@ -591,8 +591,11 @@ class CameraCalibrator:
         )
         return coverage, center, edge_margin, feature
 
-    def evaluate_frame(self, image):
-        found, corners, gray, detector = self.detect_corners_detailed(image)
+    def evaluate_frame(self, image, allow_recovery=True):
+        found, corners, gray, detector = self.detect_corners_detailed(
+            image,
+            allow_recovery=allow_recovery,
+        )
         sharpness = (
             float(
                 cv2.Laplacian(
