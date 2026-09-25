@@ -1136,7 +1136,7 @@ class CameraCalibration:
         self.dist_coeffs = None
         self.image_size = None
 
-        self._new_camera_matrix_cache = {}
+        self._undistort_cache = {}
         self._cache_lock = threading.RLock()
         self.last_error = None
         self.quality_status = "legacy-unverified"
@@ -1279,7 +1279,7 @@ class CameraCalibration:
         key = (width, height)
         try:
             with self._cache_lock:
-                cached = self._new_camera_matrix_cache.get(key)
+                cached = self._undistort_cache.get(key)
                 if cached is None:
                     matrix = self._scaled_camera_matrix(
                         width,
@@ -1289,12 +1289,20 @@ class CameraCalibration:
                         matrix,
                         self.dist_coeffs,
                         (width, height),
-                        1,
+                        0,
                         (width, height),
                     )
-                    cached = (matrix, new_matrix)
-                    self._new_camera_matrix_cache[key] = cached
-                matrix, new_matrix = cached
+                    map1, map2 = cv2.initUndistortRectifyMap(
+                        matrix,
+                        self.dist_coeffs,
+                        None,
+                        new_matrix,
+                        (width, height),
+                        cv2.CV_16SC2,
+                    )
+                    cached = (matrix, new_matrix, map1, map2)
+                    self._undistort_cache[key] = cached
+                matrix, new_matrix, _map1, _map2 = cached
 
             reshaped = np.asarray(
                 points,
@@ -1328,25 +1336,33 @@ class CameraCalibration:
 
         try:
             with self._cache_lock:
-                cached = self._new_camera_matrix_cache.get(key)
+                cached = self._undistort_cache.get(key)
                 if cached is None:
                     matrix = self._scaled_camera_matrix(width, height)
                     new_matrix, _ = cv2.getOptimalNewCameraMatrix(
                         matrix,
                         self.dist_coeffs,
                         (width, height),
-                        1,
+                        0,
                         (width, height),
                     )
-                    cached = (matrix, new_matrix)
-                    self._new_camera_matrix_cache[key] = cached
-                matrix, new_matrix = cached
-            return cv2.undistort(
+                    map1, map2 = cv2.initUndistortRectifyMap(
+                        matrix,
+                        self.dist_coeffs,
+                        None,
+                        new_matrix,
+                        (width, height),
+                        cv2.CV_16SC2,
+                    )
+                    cached = (matrix, new_matrix, map1, map2)
+                    self._undistort_cache[key] = cached
+                _matrix, _new_matrix, map1, map2 = cached
+            return cv2.remap(
                 frame,
-                matrix,
-                self.dist_coeffs,
-                None,
-                new_matrix,
+                map1,
+                map2,
+                cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
             )
         except Exception as exc:
             self.last_error = str(exc)
