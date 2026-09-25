@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -129,6 +130,71 @@ class SecondPassStreamTests(unittest.TestCase):
 
 
 class CalibrationStreamBoardSettingsTests(unittest.TestCase):
+    def test_status_stays_responsive_during_detector_work(self):
+        import threading
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=160,
+                CAM_HEIGHT=120,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                started = threading.Event()
+                release = threading.Event()
+
+                def slow_evaluate(*_args, **_kwargs):
+                    started.set()
+                    release.wait(timeout=1.0)
+                    return {
+                        "valid": False,
+                        "detected": False,
+                        "quality_valid": False,
+                        "corners": None,
+                        "coverage": 0.0,
+                        "center": None,
+                        "sharpness": 0.0,
+                        "edge_margin": 0.0,
+                        "feature": None,
+                        "detector": "test",
+                        "detection_view": "none",
+                        "detection_scale": 1.0,
+                        "quality_reason": "board not detected",
+                    }
+
+                server.calibrator.evaluate_frame = slow_evaluate
+                frame = np.zeros((120, 160, 3), dtype=np.uint8)
+                server._publish(frame, frame)
+
+                worker = threading.Thread(
+                    target=server._detection_loop,
+                    daemon=True,
+                )
+                worker.start()
+
+                self.assertTrue(started.wait(timeout=1.0))
+                begin = time.monotonic()
+                server.status()
+                elapsed = time.monotonic() - begin
+
+                release.set()
+                server._stop_event.set()
+                server._detection_wakeup.set()
+                worker.join(timeout=1.0)
+
+                self.assertLess(
+                    elapsed,
+                    0.25,
+                    f"status blocked behind detector for {elapsed:.3f}s",
+                )
+
     def test_web_board_configuration_uses_square_counts(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = types.SimpleNamespace(
