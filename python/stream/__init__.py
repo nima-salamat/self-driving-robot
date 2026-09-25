@@ -141,6 +141,8 @@ class WebStreamer:
         self.app.add_url_rule('/get_ui', 'get_ui', self.get_ui)
         self.app.add_url_rule('/set_ui', 'set_ui', self.set_ui, methods=['POST'])
         self.app.add_url_rule('/video_feed_frame', 'video_feed_frame', self.video_feed_frame)
+        self.app.add_url_rule('/video_feed', 'video_feed', self.video_feed)
+        self.app.add_url_rule('/api/mode', 'mode', self.mode)
         self.app.add_url_rule('/api/arduino-output', 'arduino_output', self.arduino_output)
         self.app.add_url_rule('/api/health', 'health', self.health)
         self.app.add_url_rule('/take_picture', 'take_picture', self.take_picture, methods=['POST'])
@@ -264,6 +266,86 @@ class WebStreamer:
                 self._jpeg_cache_frame_id = frame_id
             payload = self._jpeg_cache
         return Response(payload, mimetype='image/jpeg')
+
+    def mode(self):
+        mode = getattr(self.config, "MODE", "mode")
+        features = {
+            "lane_detector": (
+                getattr(self.config, "CITY_LANE_DETECTOR", "default")
+                if mode == "city"
+                else "default"
+            ),
+            "ml_lane_detector": bool(
+                getattr(self.config, "USE_ML_LANE_DETECTOR", False)
+            ),
+            "bev": bool(
+                getattr(self.config, "USE_BEV", False)
+            ),
+            "stream": bool(
+                getattr(self.config, "STREAM", False)
+            ),
+            "recording": bool(
+                getattr(self.config, "RECORD_VIDEO", False)
+            ),
+        }
+        return jsonify(
+            mode=mode,
+            config_file=os.path.basename(self.config_filename()),
+            features=features,
+        )
+
+    def video_feed(self):
+        def generate():
+            last_frame_id = None
+            while True:
+                frozen = getattr(self.config, "frozen_debug_frame", None)
+                if frozen is not None:
+                    frame = frozen
+                    frame_id = "frozen"
+                else:
+                    frames_list = getattr(self.config, "debug_frames_list", [])
+                    frame = frames_list[-1] if frames_list else None
+                    frame_id = getattr(
+                        self.config,
+                        "stream_frame_seq",
+                        id(frame) if frame is not None else None,
+                    )
+
+                if frame is None:
+                    time.sleep(0.05)
+                    continue
+
+                if frame_id == last_frame_id:
+                    time.sleep(0.01)
+                    continue
+
+                try:
+                    ret, buffer = cv2.imencode(
+                        ".jpg",
+                        frame,
+                        [cv2.IMWRITE_JPEG_QUALITY, 85],
+                    )
+                except Exception:
+                    logger.exception("Failed to encode MJPEG stream frame")
+                    time.sleep(0.05)
+                    continue
+
+                if not ret:
+                    time.sleep(0.05)
+                    continue
+
+                last_frame_id = frame_id
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + buffer.tobytes()
+                    + b"\r\n"
+                )
+
+        return Response(
+            generate(),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
 
     def health(self):
         monitor = getattr(self.config, "health_monitor", None)
