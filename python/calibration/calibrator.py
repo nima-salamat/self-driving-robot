@@ -26,7 +26,7 @@ class CameraCalibrator:
         square_size=1.0,
         min_valid_images=10,
         min_coverage=0.03,
-        min_sharpness=20.0,
+        min_sharpness=10.0,
         min_edge_margin=0.01,
         duplicate_distance=0.05,
         max_mean_reprojection_error=1.0,
@@ -110,14 +110,25 @@ class CameraCalibrator:
         """
         Yield candidate grayscale views for chessboard detection.
 
-        - direct: original grayscale
-        - clahe: contrast-enhanced (helps uneven lighting on physical boards)
-        - padded: white border (helps when board touches frame edge)
+        Order is intentional: cheap/common views first, recovery views last.
+        - direct / blur / invert / clahe: same geometry, offset (0, 0)
+        - padded variants: white border when board touches the frame edge
 
         Coordinates from padded views are offset so callers stay in original
-        image space. CLAHE uses offset (0, 0).
+        image space.
         """
         yield gray, (0, 0), "direct"
+
+        # Light blur reduces sensor noise that breaks classic finder on Pi cams.
+        try:
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            yield blurred, (0, 0), "blur"
+        except cv2.error:
+            pass
+
+        # Inverted polarity helps when the printed board reads as white-on-black
+        # under strong exposure / auto-gain.
+        yield cv2.bitwise_not(gray), (0, 0), "invert"
 
         try:
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -147,6 +158,8 @@ class CameraCalibrator:
             yield padded_clahe, (padding, padding), "padded_clahe"
         except cv2.error:
             pass
+
+        yield cv2.bitwise_not(padded), (padding, padding), "padded_invert"
 
     def _canonicalize_corners(self, corners, detected_pattern, offset):
         points = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
@@ -244,10 +257,12 @@ class CameraCalibrator:
         )
 
         detectors = []
-        if self.detector_mode in {"auto", "classic"}:
-            detectors.append(("classic", self._try_classic_detector))
+        # SB first in auto: more robust on physical boards / uneven lighting.
+        # Classic remains as a fast/compatible fallback.
         if self.detector_mode in {"auto", "sb"}:
             detectors.append(("sb", self._try_sb_detector))
+        if self.detector_mode in {"auto", "classic"}:
+            detectors.append(("classic", self._try_classic_detector))
 
         if not detectors:
             return False, None, gray, "none"
@@ -270,13 +285,16 @@ class CameraCalibrator:
                     if canonical is None:
                         continue
 
-                    refined = cv2.cornerSubPix(
-                        gray,
-                        canonical,
-                        (11, 11),
-                        (-1, -1),
-                        self.criteria,
-                    )
+                    try:
+                        refined = cv2.cornerSubPix(
+                            gray,
+                            canonical,
+                            (11, 11),
+                            (-1, -1),
+                            self.criteria,
+                        )
+                    except cv2.error:
+                        refined = canonical
                     return True, refined, gray, detector_name
 
         return False, None, gray, "none"
