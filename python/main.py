@@ -34,7 +34,7 @@ def _apply_cli_overrides(config, args):
         "USBCAM_ADDR": args.camera_index,
         "ARDUINO_CONFIG": args.arduino_config,
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
-        "CITY_LANE_DETECTOR": args.city_lane_detector,
+        "CITY_LANE_DETECTOR": getattr(args, "city_lane_detector", None),
     }
 
     for name, value in overrides.items():
