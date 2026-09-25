@@ -51,5 +51,6 @@ def create_camera_config(
     config.CALIBRATION_TARGET_FPS = (
         float(target_fps) if target_fps is not None else 30.0
     )
+    config.CAMERA_FPS = config.CALIBRATION_TARGET_FPS
 
     return config

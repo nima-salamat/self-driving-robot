@@ -1,15 +1,19 @@
 import cv2
 import numpy as np
 import os
+from pathlib import Path
 
 try:
     from base_config import BASE_DIR
 except ImportError:
-    BASE_DIR = "." 
+    BASE_DIR = Path(__file__).resolve().parents[1]
+
+from train_sign_detector.labels import SIGN_NAMES
+
 
 class TrafficSignDetector:
     def __init__(self, model_path=None):
-        self.SIGNS = ["ERROR", "STOP", "TURN RIGHT", "TURN LEFT", "STRAIGHT", "PARK"]
+        self.SIGNS = list(SIGN_NAMES)
         self.count = 0 
         
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -30,16 +34,31 @@ class TrafficSignDetector:
         else:
             self.model_file = model_path
             
-        self.model = cv2.ml.RTrees_create()
-        
+        self.model = None
+        self.model_type = None
         if os.path.exists(self.model_file):
-            self.model = self.model.load(self.model_file)
+            try:
+                self.model = cv2.ml.SVM_load(str(self.model_file))
+                self.model_type = "svm"
+            except Exception:
+                try:
+                    self.model = cv2.ml.RTrees_load(str(self.model_file))
+                    self.model_type = "legacy-rtrees"
+                except Exception as exc:
+                    print(
+                        f"Warning: failed to load traffic-sign model "
+                        f"{self.model_file}: {exc}"
+                    )
         else:
-            alt_path = os.path.join(BASE_DIR, 'rf_model.xml')
+            alt_path = os.path.join(str(BASE_DIR), 'rf_model.xml')
             if os.path.exists(alt_path):
-                self.model = self.model.load(alt_path)
+                self.model = cv2.ml.RTrees_load(alt_path)
+                self.model_type = "legacy-rtrees"
             else:
-                print(f"Warning: Model file not found at {self.model_file} or {alt_path}")
+                print(
+                    f"Warning: Model file not found at "
+                    f"{self.model_file} or {alt_path}"
+                )
 
     def extract_features(self, image):
         img_resized = cv2.resize(image, (32, 32))
@@ -156,11 +175,12 @@ class TrafficSignDetector:
             if 0 < sign_type < len(self.SIGNS):
                 text = self.SIGNS[sign_type]
                 
-                output_dir = "signs_output"
-                if not os.path.exists(output_dir):
-                    os.makedirs(output_dir)
-                    
-                cv2.imwrite(f"{output_dir}/{self.count}_{text}.png", sign)
+                output_dir = Path(BASE_DIR) / "signs_output"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(
+                    str(output_dir / f"{self.count}_{text}.png"),
+                    sign,
+                )
                 
                 if debug_frame is not None:
                     cv2.rectangle(debug_frame, coordinate[0], coordinate[1], (0, 255, 0), 2)

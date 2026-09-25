@@ -35,6 +35,7 @@ def _apply_cli_overrides(config, args):
         "ARDUINO_CONFIG": args.arduino_config,
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
         "CITY_LANE_DETECTOR": getattr(args, "city_lane_detector", None),
+        "STREAM_HOST": args.stream_host,
     }
 
     for name, value in overrides.items():

@@ -47,12 +47,15 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
 
     <div class="status">
       <div>Detection: <span id="detection" class="warn">waiting</span></div>
+      <div>Capture: <span id="capture_eligible" class="warn">-</span></div>
       <div>Captured: <span id="captured">0</span></div>
       <div>Camera: <span id="camera">-</span></div>
       <div>Requested FPS: <span id="requested_fps">-</span></div>
       <div>Measured FPS: <span id="actual_fps">-</span></div>
+      <div>FPS limits: <span id="fps_limits">-</span></div>
       <div>Calibration: <span id="calibration_state">not calibrated</span></div>
       <div id="metrics" class="small"></div>
+      <div id="rejection" class="small err"></div>
     </div>
 
     <div class="row">
@@ -79,6 +82,16 @@ async function getStatus(){
     const r=await fetch('/api/status');
     const s=await r.json();
     document.getElementById('captured').textContent=s.captured_images;
+    document.getElementById('capture_eligible').textContent =
+      s.capture_eligible ? 'ready' : 'not ready';
+    document.getElementById('capture_eligible').className =
+      s.capture_eligible ? 'ok' : 'warn';
+    document.getElementById('fps_limits').textContent =
+      s.camera_fps_limits === null ? '-' :
+      Number(s.camera_fps_limits[0]).toFixed(1) + ' - ' +
+      Number(s.camera_fps_limits[1]).toFixed(1) + ' FPS';
+    document.getElementById('rejection').textContent =
+      s.last_rejection_reason || '';
     document.getElementById('camera').textContent=
       s.camera_mode + ' / ' + s.width + 'x' + s.height;
     document.getElementById('requested_fps').textContent=

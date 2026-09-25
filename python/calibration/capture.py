@@ -20,8 +20,9 @@ class CalibrationImageStore:
         next_index = max(indices, default=0) + 1
         return self.image_dir / f"calib_{next_index:03d}.jpg"
 
-    def count(self):
-        return len(list(self.image_dir.glob("calib_*.jpg")))
+
+    def paths(self):
+        return sorted(self.image_dir.glob("calib_*.jpg"))
 
     def clear(self):
         removed = 0

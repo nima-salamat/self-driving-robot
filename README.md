@@ -687,3 +687,51 @@ python python/replay.py --mode city --input output/videos/video_1.mp4 --output r
 ```
 
 The replay reports frame count, perception-valid ratio, processing rate, and loop/perception timing statistics.
+
+## Traffic-sign dataset collection
+
+The traffic-sign collector now lives under `python/train_sign_detector/`. The canonical training dataset and newly collected data are deliberately separate:
+
+```text
+python/train_sign_detector/
+├── dataset/              # existing canonical training dataset
+├── collected_dataset/    # newly captured samples
+├── dataset_collector.py
+├── classification.py
+├── labels.py
+└── main.py
+```
+
+The authoritative class mapping is numeric and shared by the collector, trainer, and runtime detector:
+
+```text
+0 ERROR
+1 STOP
+2 TURN RIGHT
+3 TURN LEFT
+4 STRAIGHT
+5 PARK
+```
+
+Collect samples without depending on the shell working directory:
+
+```bash
+python python/train_sign_detector/dataset_collector.py --mode race
+```
+
+By default new data is saved under `python/train_sign_detector/collected_dataset/`. To train directly from a collected set, pass it explicitly:
+
+```bash
+python python/train_sign_detector/main.py --train --dataset python/train_sign_detector/collected_dataset --file_name video.mp4
+```
+
+The existing `dataset/` is not overwritten by the collector. The root `python/dataset_collector.py` entrypoint remains as a compatibility wrapper.
+
+### Camera FPS semantics
+
+The runtime distinguishes requested camera FPS from measured camera delivery FPS. The control/vision loop FPS remains a separate runtime metric, and the HTTP stream consumes the newest published frame instead of acting as the camera producer. For Picamera2, requested frame rate is expressed through `FrameDurationLimits` for the configured camera mode; unsupported ranges are rejected rather than reported as achieved.
+
+### Calibration network exposure
+
+`python -m calibration.stream --host 0.0.0.0` exposes operational endpoints that can capture images, clear images, change camera FPS, and start calibration. The calibration stream has no built-in authentication, so use it only on a trusted network.
+

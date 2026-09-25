@@ -4,9 +4,11 @@ import json
 import os
 import threading
 import time
+from collections import deque
 from flask import Flask, Response, request, render_template_string, jsonify
 from werkzeug.serving import make_server
 from .template import HTML_TEMPLATE
+from .capabilities import mode_capabilities, marker_mode, set_marker_mode
 from base_config import BASE_DIR
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,10 @@ class WebStreamer:
         self.ui_settings = self.load_ui_settings()
         
         self._jpeg_cache_lock = threading.Lock()
+        self._frame_lock = getattr(config, "stream_frame_lock", None)
+        if self._frame_lock is None:
+            self._frame_lock = threading.RLock()
+            setattr(config, "stream_frame_lock", self._frame_lock)
         self._jpeg_cache_frame_id = None
         self._jpeg_cache = None
         self._setup_routes()
@@ -156,7 +162,8 @@ class WebStreamer:
         return render_template_string(HTML_TEMPLATE, variables=VARIABLES, values=values, 
                                       ui=self.ui_settings, advanced=advanced_current, 
                                       mode=getattr(self.config, "MODE", "mode"),
-                                      stream_control=bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False)))
+                                      stream_control=bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False)),
+                                      capabilities=mode_capabilities(self.config))
 
     def _control_allowed(self):
         return bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False))
@@ -194,7 +201,48 @@ class WebStreamer:
     def set_advanced(self):
         if not self._control_allowed():
             return self._control_denied()
-        data = request.get_json() or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify(
+                success=False,
+                message="request body must be a JSON object",
+            ), 400
+        capabilities = mode_capabilities(self.config)
+        unsupported = []
+        if "USE_BEV" in data and not capabilities.get("supports_bev", False):
+            unsupported.append("USE_BEV")
+        crosswalk_keys = {
+            "CROSSWALK_THRESHOLD",
+            "CROSSWALK_SLEEP",
+            "CROSSWALK_THRESH_SPEND",
+            "CW_TRAPEZOID_MODE",
+            "CW_TOP_WIDTH_FACTOR",
+        }
+        if (
+            any(key in data for key in crosswalk_keys)
+            and not capabilities.get("supports_crosswalk", False)
+        ):
+            unsupported.extend(
+                sorted(key for key in crosswalk_keys if key in data)
+            )
+        lane_shape_keys = {
+            "LANE_ROI_MODE",
+            "RL_TOP_WIDTH_FACTOR",
+            "LL_TOP_WIDTH_FACTOR",
+        }
+        if (
+            any(key in data for key in lane_shape_keys)
+            and not capabilities.get("supports_lane_roi", False)
+        ):
+            unsupported.extend(
+                sorted(key for key in lane_shape_keys if key in data)
+            )
+        if unsupported:
+            return jsonify(
+                success=False,
+                message="unsupported controls for active mode",
+                unsupported=unsupported,
+            ), 409
         try:
             for k, default_v in ADVANCED_VARS.items():
                 if k in data:
@@ -205,7 +253,9 @@ class WebStreamer:
                         val = max(-5.0, min(5.0, float(val)))
                     
                     expected_type = type(default_v)
-                    if expected_type == bool: val = bool(val)
+                    if expected_type == bool:
+                        if not isinstance(val, bool):
+                            raise ValueError(f"{k} must be boolean")
                     elif expected_type == int: val = int(val)
                     elif expected_type == float: val = float(val)
                     else: val = str(val)
@@ -216,9 +266,26 @@ class WebStreamer:
                 setattr(self.config, "RUN_LVL", data["RUN_LVL"] if data["RUN_LVL"] in ("MOVE","STOP") else "MOVE")
                 
             if "WITH_SIGN" in data or "WITH_APRILTAG" in data:
-                use_sign = bool(data.get("WITH_SIGN", getattr(self.config, "WITH_SIGN", True)))
-                setattr(self.config, "WITH_SIGN", use_sign)
-                setattr(self.config, "WITH_APRILTAG", not use_sign)
+                sign = data.get(
+                    "WITH_SIGN",
+                    getattr(self.config, "WITH_SIGN", False),
+                )
+                tag = data.get(
+                    "WITH_APRILTAG",
+                    getattr(self.config, "WITH_APRILTAG", False),
+                )
+                if not isinstance(sign, bool) or not isinstance(tag, bool):
+                    raise ValueError(
+                        "WITH_SIGN and WITH_APRILTAG must be boolean"
+                    )
+                if sign and tag:
+                    raise ValueError(
+                        "WITH_SIGN and WITH_APRILTAG cannot both be true"
+                    )
+                set_marker_mode(
+                    self.config,
+                    "sign" if sign else "apriltag" if tag else "none",
+                )
             
         except Exception as e:
             logger.exception("Invalid advanced payload")
@@ -242,12 +309,17 @@ class WebStreamer:
         return jsonify(success=True, ui=self.ui_settings)
 
     def video_feed_frame(self):
-        frozen = getattr(self.config, "frozen_debug_frame", None)
-        if frozen is not None: 
-            frame = frozen
-        else:
-            frames_list = getattr(self.config, "debug_frames_list", [])
-            frame = frames_list[-1] if frames_list else None
+        with self._frame_lock:
+            frozen = getattr(self.config, "frozen_debug_frame", None)
+            if frozen is not None:
+                frame = frozen.copy()
+            else:
+                frames_list = getattr(self.config, "debug_frames_list", [])
+                frame = (
+                    frames_list[-1].copy()
+                    if frames_list and frames_list[-1] is not None
+                    else None
+                )
         
         if frame is None: 
             return Response('', status=204)
@@ -269,55 +341,61 @@ class WebStreamer:
 
     def mode(self):
         mode = getattr(self.config, "MODE", "mode")
-        features = {
-            "lane_detector": (
-                getattr(self.config, "CITY_LANE_DETECTOR", "default")
-                if mode == "city"
-                else "default"
-            ),
-            "ml_lane_detector": bool(
-                getattr(self.config, "USE_ML_LANE_DETECTOR", False)
-            ),
-            "bev": bool(
-                getattr(self.config, "USE_BEV", False)
-            ),
-            "stream": bool(
-                getattr(self.config, "STREAM", False)
-            ),
-            "recording": bool(
-                getattr(self.config, "RECORD_VIDEO", False)
-            ),
-        }
+        capabilities = mode_capabilities(self.config)
         return jsonify(
             mode=mode,
             config_file=os.path.basename(self.config_filename()),
-            features=features,
+            features={
+                "lane_detector": capabilities.get("lane_detector", "default"),
+                "ml_lane_detector": capabilities.get("ml_lane_detector", False),
+                "bev": capabilities.get("bev", False),
+                "stream": capabilities.get("stream_enabled", False),
+                "recording": capabilities.get("recording_enabled", False),
+                "sign": capabilities.get("sign_enabled", False),
+                "apriltag": capabilities.get("apriltag_enabled", False),
+                "object_detection": capabilities.get(
+                    "object_detection_enabled", False
+                ),
+                "crosswalk": capabilities.get("supports_crosswalk", False),
+                "marker_mode": marker_mode(self.config),
+            },
+            capabilities=capabilities,
+            controlling_settings={
+                "lane_detector": (
+                    "CITY_LANE_DETECTOR"
+                    if mode == "city"
+                    else "USE_ML_LANE_DETECTOR"
+                ),
+                "marker_mode": ["WITH_SIGN", "WITH_APRILTAG"],
+                "bev": "USE_BEV",
+            },
         )
 
     def video_feed(self):
         def generate():
             last_frame_id = None
             while True:
-                frozen = getattr(self.config, "frozen_debug_frame", None)
-                if frozen is not None:
-                    frame = frozen
-                    frame_id = "frozen"
-                else:
-                    frames_list = getattr(self.config, "debug_frames_list", [])
-                    frame = frames_list[-1] if frames_list else None
-                    frame_id = getattr(
-                        self.config,
-                        "stream_frame_seq",
-                        id(frame) if frame is not None else None,
-                    )
-
-                if frame is None:
-                    time.sleep(0.05)
-                    continue
-
-                if frame_id == last_frame_id:
-                    time.sleep(0.01)
-                    continue
+                with self._frame_lock:
+                    frozen = getattr(self.config, "frozen_debug_frame", None)
+                    if frozen is not None:
+                        frame = frozen.copy()
+                        frame_id = "frozen"
+                    else:
+                        frames_list = getattr(
+                            self.config,
+                            "debug_frames_list",
+                            [],
+                        )
+                        frame = (
+                            frames_list[-1].copy()
+                            if frames_list and frames_list[-1] is not None
+                            else None
+                        )
+                        frame_id = getattr(
+                            self.config,
+                            "stream_frame_seq",
+                            id(frame) if frame is not None else None,
+                        )
 
                 try:
                     ret, buffer = cv2.imencode(
@@ -381,6 +459,27 @@ class WebStreamer:
                 ),
             }
 
+        payload["stream"] = {
+            "frame_seq": getattr(self.config, "stream_frame_seq", 0),
+            "buffered_frames": len(
+                getattr(self.config, "debug_frames_list", [])
+            ),
+        }
+        camera = getattr(self.config, "camera", None)
+        if camera is not None:
+            payload["camera"] = {
+                "requested_fps": getattr(
+                    camera, "requested_frame_rate", None
+                ),
+                "measured_fps": getattr(
+                    camera, "measured_frame_rate", None
+                ),
+                "hardware_limits": (
+                    camera.get_frame_rate_limits()
+                    if hasattr(camera, "get_frame_rate_limits")
+                    else None
+                ),
+            }
         return jsonify(payload)
     def arduino_output(self):
         connection = getattr(self.config, "arduino_connection", None)
@@ -408,10 +507,15 @@ class WebStreamer:
     def freeze_frame(self):
         if not self._control_allowed():
             return self._control_denied()
-        frames_list = getattr(self.config, "debug_frames_list", [])
-        if frames_list:
-            setattr(self.config, "frozen_debug_frame", frames_list[-1].copy())
-            return jsonify(success=True)
+        with self._frame_lock:
+            frames_list = getattr(self.config, "debug_frames_list", [])
+            if frames_list:
+                setattr(
+                    self.config,
+                    "frozen_debug_frame",
+                    frames_list[-1].copy(),
+                )
+                return jsonify(success=True)
         return jsonify(success=False, message="No frame available")
 
     def unfreeze_frame(self):
@@ -422,15 +526,24 @@ class WebStreamer:
         return jsonify(success=True)
 
 def start_stream(config):
+    config.stream_start_error = None
+    config.stream_ready_event = threading.Event()
     streamer = WebStreamer(config)
-    server = make_server(
-        getattr(config, "STREAM_HOST", "127.0.0.1"),
-        int(getattr(config, "STREAM_PORT", 5000)),
-        streamer.app,
-        threaded=True,
-    )
+    try:
+        server = make_server(
+            getattr(config, "STREAM_HOST", "127.0.0.1"),
+            int(getattr(config, "STREAM_PORT", 5000)),
+            streamer.app,
+            threaded=True,
+        )
+    except Exception as exc:
+        config.stream_start_error = f"{type(exc).__name__}: {exc}"
+        config.stream_ready_event.set()
+        logger.exception("Failed to start stream server")
+        return
     config.streamer = streamer
     config.stream_server = server
+    config.stream_ready_event.set()
     try:
         server.serve_forever()
     finally:
@@ -439,6 +552,28 @@ def start_stream(config):
             config.stream_server = None
         if getattr(config, "streamer", None) is streamer:
             config.streamer = None
+
+
+def publish_debug_frame(config, frame):
+    """Publish only the newest frame, preserving the legacy list API."""
+    if frame is None:
+        return
+    lock = getattr(config, "stream_frame_lock", None)
+    if lock is None:
+        lock = threading.RLock()
+        setattr(config, "stream_frame_lock", lock)
+    with lock:
+        frames = getattr(config, "debug_frames_list", None)
+        if frames is None:
+            frames = []
+            setattr(config, "debug_frames_list", frames)
+        frames[:] = [frame.copy()]
+        config.stream_frame_seq = getattr(config, "stream_frame_seq", 0) + 1
+        timestamps = getattr(config, "stream_frame_timestamps", None)
+        if timestamps is None:
+            timestamps = deque(maxlen=120)
+            setattr(config, "stream_frame_timestamps", timestamps)
+        timestamps.append(time.monotonic())
 
 
 def stop_stream(config):

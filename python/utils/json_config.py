@@ -34,12 +34,13 @@ RANGES = {
     "MIN_FREE_DISK_MB": (0, 1024 * 1024),
     "STREAM_PORT": (1, 65535),
     "USBCAM_ADDR": (0, 64),
+    "CAMERA_FPS": (1.0, 120.0),
 }
 
 BOOL_KEYS = {
     "WITHOUT_ARDUINO", "READ_ARDUINO_OUTPUT", "USE_PID", "AUTO_UPDATE_KP",
     "USE_BEV", "DETECT_OBJECT", "STREAM", "DEBUG", "SHOW_FPS",
-    "WITH_SIGN", "WITH_APRILTAG", "RECORD_VIDEO", "TAKE_PICTURE",
+    "WITH_SIGN", "WITH_APRILTAG", "USE_SIGN", "RECORD_VIDEO", "TAKE_PICTURE",
     "STREAM_ALLOW_CONTROL", "PERFORMANCE", "CAMERA_FALLBACK_TO_OPENCV", "APPLY_CAMERA_CALIBRATION",
 }
 
@@ -100,6 +101,33 @@ def _load_into(config_module, filename):
     for name, value in configs.items():
         _validate(name, value)
         setattr(config_module, name, value)
+
+
+    if any(
+        key in configs
+        for key in ("WITH_SIGN", "WITH_APRILTAG", "USE_SIGN")
+    ):
+        sign = bool(getattr(config_module, "WITH_SIGN", False))
+        tag = bool(getattr(config_module, "WITH_APRILTAG", False))
+        legacy = bool(getattr(config_module, "USE_SIGN", False))
+        if sign and tag:
+            raise ValueError(
+                "WITH_SIGN and WITH_APRILTAG cannot both be true"
+            )
+        if (
+            "WITH_SIGN" not in configs
+            and "WITH_APRILTAG" not in configs
+            and "USE_SIGN" in configs
+        ):
+            marker_name = "sign" if legacy else "none"
+        elif sign:
+            marker_name = "sign"
+        elif tag:
+            marker_name = "apriltag"
+        else:
+            marker_name = "none"
+        from stream.capabilities import set_marker_mode
+        set_marker_mode(config_module, marker_name)
 
     if getattr(config_module, "PID_MAX_DT", 0.0) < getattr(config_module, "PID_MIN_DT", 0.0):
         raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")

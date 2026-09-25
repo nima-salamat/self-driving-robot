@@ -73,6 +73,9 @@ class CalibrationStreamServer:
         self._stop_event = threading.Event()
         self._camera_thread = None
         self._calibration_thread = None
+        self._operation_lock = threading.Lock()
+        self._accepted_features = []
+        self.last_rejection_reason = None
 
         self.requested_fps = float(target_fps)
         self.actual_fps = None
@@ -106,10 +109,14 @@ class CalibrationStreamServer:
 
                 if frame is not None and self.camera.last_capture_valid:
                     evaluated = self.calibrator.evaluate_frame(frame)
+                    quality_reason = self.calibrator.quality_reason(evaluated)
+                    evaluated["quality_valid"] = quality_reason is None
+                    evaluated["quality_reason"] = quality_reason
 
                     self.chessboard_detected = bool(
                         evaluated["valid"]
                     )
+                    self.last_rejection_reason = quality_reason
                     self._last_detection = evaluated
 
                     display = evaluated.get(
@@ -121,9 +128,13 @@ class CalibrationStreamServer:
                         (
                             "CHESSBOARD: "
                             + (
-                                "DETECTED"
-                                if evaluated["valid"]
-                                else "NOT DETECTED"
+                                "READY"
+                                if evaluated.get("quality_valid")
+                                else (
+                                    "DETECTED / REJECTED"
+                                    if evaluated.get("valid")
+                                    else "NOT DETECTED"
+                                )
                             )
                         ),
                         (10, 24),
@@ -268,58 +279,61 @@ class CalibrationStreamServer:
             )
 
     def capture(self):
-        detection = self._last_detection
-        frame = self.current_frame()
-
-        if frame is None or detection is None:
-            return False, "No camera frame is available."
-
-        if not detection.get("valid"):
+        if (
+            self._calibration_thread is not None
+            and self._calibration_thread.is_alive()
+        ):
             return (
                 False,
-                "Chessboard was not detected. "
-                "Move the board and try again.",
+                "Calibration is running; capture is temporarily disabled.",
             )
-
-        # Detection preview contains drawn corners, so save the raw frame
-        # obtained from the camera instead of the display frame.
-        # Use the raw frame already produced by the camera thread.
-        # This avoids concurrent access to Picamera2/OpenCV capture from the
-        # Flask request thread.
-        raw = self.current_raw_frame()
-
-        if raw is None:
-            return False, "No raw camera frame is available."
-
-        fresh = self.calibrator.evaluate_frame(raw)
-        if not fresh["valid"]:
-            return False, "Chessboard disappeared before capture."
-
-        path = self.image_store.next_path()
-        if not cv2.imwrite(str(path), raw):
-            return False, "Failed to save calibration image."
-
-        return True, f"Saved {path.name}"
+        with self._operation_lock:
+            raw = self.current_raw_frame()
+            if raw is None:
+                return False, "No raw camera frame is available."
+            fresh = self.calibrator.evaluate_frame(raw)
+            reason = self.calibrator.quality_reason(fresh)
+            if reason is not None:
+                self.last_rejection_reason = reason
+                return False, reason
+            if self.calibrator.is_duplicate(
+                fresh,
+                self._accepted_features,
+            ):
+                self.last_rejection_reason = "too similar to another accepted view"
+                return False, self.last_rejection_reason
+            path = self.image_store.next_path()
+            if not cv2.imwrite(str(path), raw):
+                return False, "Failed to save calibration image."
+            self._accepted_features.append(fresh["feature"])
+            self.last_rejection_reason = None
+            return True, f"Saved {path.name}"
 
     def _run_calibration(self):
-        self._calibration_state = "calibrating"
-
-        try:
-            result = self.calibrator.calibrate_from_directory(
-                self.image_dir,
-                self.output_file,
-            )
-            self._last_calibration = result
-            self._calibration_state = "calibrated"
-            logger.info(
-                "Calibration complete: valid=%d rms=%.6f reprojection=%.6f",
-                result["valid_images"],
-                result["rms"],
-                result["mean_reprojection_error"],
-            )
-        except Exception:
-            logger.exception("Camera calibration failed")
-            self._calibration_state = "failed"
+        with self._operation_lock:
+            self._calibration_state = "calibrating"
+            try:
+                result = self.calibrator.calibrate_from_directory(
+                    self.image_dir,
+                    self.output_file,
+                )
+                self._last_calibration = result
+                self._calibration_state = (
+                    "calibrated"
+                    if result.get("acceptable_for_runtime", True)
+                    else "quality_failed"
+                )
+                logger.info(
+                    "Calibration complete: valid=%d rms=%.6f "
+                    "reprojection=%.6f quality=%s",
+                    result["valid_images"],
+                    result["rms"],
+                    result["mean_reprojection_error"],
+                    result.get("quality_status", "unknown"),
+                )
+            except Exception:
+                logger.exception("Camera calibration failed")
+                self._calibration_state = "failed"
 
     def start_calibration(self):
         if (
@@ -362,11 +376,43 @@ class CalibrationStreamServer:
             "requested_fps": self.requested_fps,
             "actual_fps": self.actual_fps,
             "chessboard_detected": self.chessboard_detected,
+            "capture_eligible": bool(
+                self._last_detection
+                and self._last_detection.get("quality_valid")
+            ),
+            "last_rejection_reason": self.last_rejection_reason,
+            "camera_fps_limits": (
+                self.camera.get_frame_rate_limits()
+                if hasattr(self.camera, "get_frame_rate_limits")
+                else None
+            ),
+            "image_size": [
+                int(getattr(self.config, "CAM_WIDTH", 0)),
+                int(getattr(self.config, "CAM_HEIGHT", 0)),
+            ],
+            "checkerboard": list(self.calibrator.checkerboard),
             "captured_images": self.image_store.count(),
             "calibration_state": self._calibration_state,
             "last_calibration_error": result.get("rms"),
             "mean_reprojection_error": result.get(
                 "mean_reprojection_error"
+            ),
+            "median_reprojection_error": result.get(
+                "median_reprojection_error"
+            ),
+            "max_reprojection_error": result.get(
+                "max_reprojection_error"
+            ),
+            "per_view_reprojection_error": result.get(
+                "per_view_errors",
+                result.get("per_view_error"),
+            ),
+            "quality_status": result.get(
+                "quality_status",
+                "not evaluated",
+            ),
+            "acceptable_for_runtime": result.get(
+                "acceptable_for_runtime"
             ),
         }
 
@@ -431,7 +477,21 @@ class CalibrationStreamServer:
 
         @app.post("/api/clear")
         def api_clear():
-            removed = self.image_store.clear()
+            if (
+                self._calibration_thread is not None
+                and self._calibration_thread.is_alive()
+            ):
+                return jsonify(
+                    success=False,
+                    message=(
+                        "Calibration is running; clear is temporarily "
+                        "disabled."
+                    ),
+                ), 409
+            with self._operation_lock:
+                removed = self.image_store.clear()
+                self._accepted_features.clear()
+                self.last_rejection_reason = None
 
             return jsonify(
                 success=True,
@@ -450,6 +510,13 @@ class CalibrationStreamServer:
         return app
 
     def serve_forever(self):
+        if self.host in {"0.0.0.0", "::"}:
+            logger.warning(
+                "Calibration stream is bound to %s; /api/capture, "
+                "/api/clear, /api/settings, and /api/calibrate are "
+                "unauthenticated network controls.",
+                self.host,
+            )
         app = self.create_app()
         server = make_server(
             self.host,

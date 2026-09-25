@@ -15,7 +15,7 @@ from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
-from stream import start_stream, stop_stream
+from stream import publish_debug_frame, start_stream, stop_stream
 import logging
 import cv2
 import math
@@ -115,12 +115,12 @@ class Robot:
         self.last_sign_result_id = 0
         
         # Initialize sign detector strictly based on USE_SIGN variable
-        if getattr(config_race, "USE_SIGN", False):
-            detector = SVMTrafficSignDetector() if config_race.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
-            self.sign_detector = AsyncSignDetector(detector)
-        else:
-            self.sign_detector = None
+        self._marker_lock = threading.RLock()
+        self.sign_detector = None
+        if config_race.WITH_SIGN:
+            self._ensure_sign_detector()
         setattr(config_race, "sign_detector", self.sign_detector)
+        config_race.apply_marker_mode = self.apply_marker_mode
             
         # OutputManager instance 
         self.output = OutputManager(config_module=config_race, output_dir=OUTPUT_DIR)
@@ -130,6 +130,30 @@ class Robot:
         if self.health is not None:
             from utils.health import HealthState
             self.health.set_lifecycle(HealthState.READY)
+
+
+    def _ensure_sign_detector(self):
+        if self.sign_detector is not None:
+            return
+        detector = (
+            SVMTrafficSignDetector()
+            if config_race.SIGN_DETECTOR_METHOD == "svm"
+            else YOLOTrafficSignDetector()
+        )
+        self.sign_detector = AsyncSignDetector(detector)
+        setattr(config_race, "sign_detector", self.sign_detector)
+
+    def apply_marker_mode(self, mode):
+        mode = str(mode).lower()
+        with self._marker_lock:
+            if mode == "sign":
+                self._ensure_sign_detector()
+            elif mode not in {"apriltag", "none"}:
+                raise ValueError(f"unsupported marker mode: {mode}")
+            config_race.WITH_SIGN = mode == "sign"
+            config_race.WITH_APRILTAG = mode == "apriltag"
+            if hasattr(config_race, "USE_SIGN"):
+                config_race.USE_SIGN = config_race.WITH_SIGN
 
     def _sleep_interruptible(self, seconds):
         event = getattr(config_race, "SHUTDOWN_EVENT", None)
@@ -149,8 +173,7 @@ class Robot:
             self._next_control_time = time.monotonic()
 
     def update_debug_frames(self, frame):
-        config_race.debug_frames_list.append(frame)
-        config_race.stream_frame_seq = getattr(config_race, "stream_frame_seq", 0) + 1
+        publish_debug_frame(config_race, frame)
 
    
     def _shutdown_requested(self):
@@ -231,14 +254,11 @@ class Robot:
                 status = "running"
                 sign_text = "None"
                 
-                if getattr(config_race, "USE_SIGN", False):
+                if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
                     sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
 
                     status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
                  
-                    if config_race.DETECT_OBJECT:
-                        self.handle_detect_object(frame)
-                    
                     if coordinate is not None:
                         (x1, y1), (x2, y2) = coordinate
                         width = x2 - x1
@@ -256,7 +276,10 @@ class Robot:
                         self._pace_control_loop()
                         continue
                     
-                # Unconditionally process debug stream outside USE_SIGN to maintain camera feed
+                if config_race.DETECT_OBJECT:
+                    self.handle_detect_object(frame)
+
+                # Publish the current debug frame regardless of marker configuration.
                 self.handle_debug_stream(result, frame, angle, status, sign_text)
                     
                 if config_race.AUTO_UPDATE_KP:
@@ -305,7 +328,7 @@ class Robot:
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         # Strict fallback: Skip all processing if USE_SIGN is disabled
-        if not getattr(config_race, "USE_SIGN", False):
+        if not (config_race.WITH_SIGN or config_race.WITH_APRILTAG):
             return None, False, debug_frame, None
             
         sign_tag_frame = crop_image(frame, 
@@ -397,7 +420,6 @@ class Robot:
 
                 cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
 
-            config_race.debug_frames_list = []
             self.update_debug_frames(display_frame)
 
             if getattr(config_race, "TAKE_PICTURE", False):

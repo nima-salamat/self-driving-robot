@@ -1044,11 +1044,44 @@ function fetchValuesLoop() {
 function loadModeFeatures(){
     fetch('/api/mode').then(r=>r.json()).then(j=>{
         const f=j.features || {};
+        const c=j.capabilities || {};
         const lane = f.lane_detector || 'default';
         document.getElementById('mode_features').textContent =
             'Lane: ' + lane +
             ' | BEV: ' + (f.bev ? 'on' : 'off') +
-            ' | ML: ' + (f.ml_lane_detector ? 'on' : 'off');
+            ' | ML: ' + (f.ml_lane_detector ? 'on' : 'off') +
+            ' | Marker: ' + (f.marker_mode || 'none');
+
+        const disable = (el, condition, reason) => {
+            if(!el) return;
+            el.disabled = condition;
+            if(condition) el.title = reason;
+        };
+        const controls = [
+            [document.getElementById('use_bev_toggle'), !c.supports_bev, 'BEV is not supported by the active mode.'],
+            [document.getElementById('confirm_bev_inputs'), !c.supports_bev, 'BEV is not supported by the active mode.'],
+            [document.getElementById('lane_roi_mode'), !c.supports_lane_roi, 'Lane ROI controls are not used by the active lane detector.'],
+            [document.getElementById('confirm_shape'), !c.supports_lane_roi, 'Lane ROI controls are not used by the active lane detector.'],
+            [document.getElementById('rl_factor'), !c.supports_lane_roi, 'Lane ROI controls are not used by the active lane detector.'],
+            [document.getElementById('ll_factor'), !c.supports_lane_roi, 'Lane ROI controls are not used by the active lane detector.'],
+            [document.getElementById('cross_thresh'), !c.supports_crosswalk, 'Crosswalk processing is not supported by the active mode.'],
+            [document.getElementById('crosswalk_sleep'), !c.supports_crosswalk, 'Crosswalk processing is not supported by the active mode.'],
+            [document.getElementById('crosswalk_thresh_spend'), !c.supports_crosswalk, 'Crosswalk processing is not supported by the active mode.'],
+            [document.getElementById('cw_trap_mode'), !c.supports_crosswalk_trapezoid, 'Crosswalk trapezoid processing is not supported by the active mode.'],
+            [document.getElementById('cw_factor'), !c.supports_crosswalk_trapezoid, 'Crosswalk trapezoid processing is not supported by the active mode.'],
+            [document.getElementById('obj_trap_mode'), !c.supports_object_detection, 'Object detection is not supported by the active mode.'],
+            [document.getElementById('obj_factor'), !c.supports_object_detection, 'Object detection is not supported by the active mode.'],
+            [document.getElementById('with_sign'), !c.supports_sign, 'Traffic-sign processing is not supported by the active mode.'],
+            [document.getElementById('with_apriltag'), !c.supports_apriltag, 'AprilTag processing is not supported by the active mode.']
+        ];
+        controls.forEach(item=>disable(item[0], item[1], item[2]));
+        if(!STREAM_CONTROL_ALLOWED){
+            document.querySelectorAll('button,input,select').forEach(el=>{
+                if(el.id !== 'download_json') el.disabled = true;
+            });
+        }
+        document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
+        document.querySelectorAll('input[name^="OBJ_"]').forEach(el=>disable(el, !c.supports_object_detection, 'Object detection ROI is not used by the active mode.'));
     }).catch(()=>{});
 }
 

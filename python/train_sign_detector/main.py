@@ -1,19 +1,29 @@
 import cv2
 import numpy as np
 import os
+from pathlib import Path
 import argparse
 from math import sqrt
-from classification import train_and_evaluate, get_label
+try:
+    from .classification import train_and_evaluate, get_label
+    from .labels import SIGN_NAMES
+except ImportError:
+    from classification import train_and_evaluate, get_label
+    from labels import SIGN_NAMES
 
-SIGNS = ["ERROR", "STOP", "TURN LEFT", "TURN RIGHT", "STRAIGHT", "PARK"]
+SIGNS = list(SIGN_NAMES)
+PACKAGE_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = PACKAGE_DIR / "output"
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
 
 def clean_images():
-    for f in os.listdir('./'):
-        if f.endswith('.png'):
-            try: os.remove(f)
-            except: pass
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for path in OUTPUT_DIR.glob("*.png"):
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 def get_roi(frame):
  
@@ -100,7 +110,7 @@ def localization(original_image, model, count):
         sign_type = get_label(model, sign)
         if 0 < sign_type < len(SIGNS):
             text = SIGNS[sign_type]
-            cv2.imwrite(f"{count}_{text}.png", sign)
+            cv2.imwrite(str(OUTPUT_DIR / f"{count}_{text}.png"), sign)
             cv2.rectangle(frame_draw, coordinate[0], coordinate[1], (0, 255, 0), 2)
             cv2.putText(frame_draw, text, (coordinate[0][0], coordinate[0][1]-15),
                         cv2.FONT_HERSHEY_PLAIN, 1.5, (0, 0, 255), 2)
@@ -115,21 +125,26 @@ def localization(original_image, model, count):
 def main(args):
     clean_images()
     
-    model = train_and_evaluate(retrain=args.train)
+    dataset_path = args.dataset if args.dataset is not None else PACKAGE_DIR / "dataset"
+    model = train_and_evaluate(
+        retrain=args.train,
+        dataset_path=dataset_path,
+    )
     if model is None:
         print("[ERROR] Model failed. Exiting...")
         return
         
     vidcap = cv2.VideoCapture(args.file_name)
     fps = vidcap.get(cv2.CAP_PROP_FPS) or 30.0
-    out = cv2.VideoWriter('output.avi', cv2.VideoWriter_fourcc(*'XVID'), fps, (1280, 480))
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = cv2.VideoWriter(str(OUTPUT_DIR / 'output.avi'), cv2.VideoWriter_fourcc(*'XVID'), fps, (1280, 480))
 
     count, sign_count = 0, 0
     current_sign = None
     coordinates = []
 
     print("[INFO] Processing video...")
-    with open("Output.txt", "w") as file:
+    with open(OUTPUT_DIR / "Output.txt", "w", encoding="utf-8") as file:
         while True:
             success, frame = vidcap.read()
             if not success: break
@@ -166,6 +181,7 @@ if __name__ == '__main__':
     parser.add_argument('--file_name', default="video.mp4", help='Path to the input video file or camera index (0 for default camera)')
     parser.add_argument('--camera', action='store_true')
     parser.add_argument('--train', action='store_true')
+    parser.add_argument('--dataset', type=Path, default=None, help='Training dataset directory; defaults to train_sign_detector/dataset.')
     
     args = parser.parse_args()
     if args.camera: args.file_name = 0  

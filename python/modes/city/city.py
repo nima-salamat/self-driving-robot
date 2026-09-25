@@ -15,7 +15,7 @@ from controller import RobotController
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
-from stream import start_stream, stop_stream
+from stream import publish_debug_frame, start_stream, stop_stream
 import logging
 import cv2
 import numpy as np
@@ -86,12 +86,12 @@ class Robot:
         self.stop_last_seen = None
         self.read_sign_counter = 0
         self.last_sign_result_id = 0
+        self._marker_lock = threading.RLock()
+        self.sign_detector = None
         if config_city.WITH_SIGN:
-            detector = SVMTrafficSignDetector() if config_city.SIGN_DETECTOR_METHOD == "svm" else YOLOTrafficSignDetector()
-            self.sign_detector = AsyncSignDetector(detector)
-        else:
-            self.sign_detector = None
+            self._ensure_sign_detector()
         setattr(config_city, "sign_detector", self.sign_detector)
+        config_city.apply_marker_mode = self.apply_marker_mode
         # OutputManager instance 
         self.output = OutputManager(config_module=config_city, output_dir=OUTPUT_DIR)
         self.fps = FPS(config=config_city)
@@ -100,6 +100,30 @@ class Robot:
         if self.health is not None:
             from utils.health import HealthState
             self.health.set_lifecycle(HealthState.READY)
+
+
+    def _ensure_sign_detector(self):
+        if self.sign_detector is not None:
+            return
+        detector = (
+            SVMTrafficSignDetector()
+            if config_city.SIGN_DETECTOR_METHOD == "svm"
+            else YOLOTrafficSignDetector()
+        )
+        self.sign_detector = AsyncSignDetector(detector)
+        setattr(config_city, "sign_detector", self.sign_detector)
+
+    def apply_marker_mode(self, mode):
+        mode = str(mode).lower()
+        with self._marker_lock:
+            if mode == "sign":
+                self._ensure_sign_detector()
+            elif mode not in {"apriltag", "none"}:
+                raise ValueError(f"unsupported marker mode: {mode}")
+            config_city.WITH_SIGN = mode == "sign"
+            config_city.WITH_APRILTAG = mode == "apriltag"
+            if hasattr(config_city, "USE_SIGN"):
+                config_city.USE_SIGN = config_city.WITH_SIGN
 
     def _sleep_interruptible(self, seconds):
         event = getattr(config_city, "SHUTDOWN_EVENT", None)
@@ -119,8 +143,7 @@ class Robot:
             self._next_control_time = time.monotonic()
 
     def update_debug_frames(self, frame):
-        config_city.debug_frames_list.append(frame)
-        config_city.stream_frame_seq = getattr(config_city, "stream_frame_seq", 0) + 1
+        publish_debug_frame(config_city, frame)
 
     def check_crosswalk(self):
         now = time.time()

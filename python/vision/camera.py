@@ -2,6 +2,7 @@ from time import sleep
 import time
 import cv2
 import logging
+from collections import deque
 from calibration.calibrator import CameraCalibration
 
 try:
@@ -35,6 +36,9 @@ class Camera:
         self.last_capture_valid = False
         self.last_capture_at = None
         self.consecutive_failures = 0
+        self.requested_frame_rate = None
+        self.measured_frame_rate = None
+        self._capture_timestamps = deque(maxlen=120)
         self.camera_calibration = CameraCalibration(
             enabled=bool(getattr(self.config, "APPLY_CAMERA_CALIBRATION", True))
         )
@@ -95,21 +99,21 @@ class Camera:
                 self.picam.configure(config_pi)
                 
                 self.picam.set_controls({
-                    "FrameRate": 60.0,
                     "AeEnable": False,
                     "AwbEnable": False,
-                    "ExposureTime": 16600, 
-                    "AnalogueGain": 6.0, 
+                    "ExposureTime": 16600,
+                    "AnalogueGain": 6.0,
                 })
-
-                try:
-                    pass
-                except Exception as e:
-                    logger.debug(f"Could not set manual camera controls: {e}")
                 
                 self.picam.start()
                 sleep(2)
                 self.camera_initialized = True
+                target_fps = getattr(
+                    self.config,
+                    "CAMERA_FPS",
+                    60.0,
+                )
+                self.set_frame_rate(target_fps)
                 
             except Exception as e:
                 logger.error(f"Picamera2 setup failed: {e}")
@@ -133,7 +137,10 @@ class Camera:
                 
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-            self.cap.set(cv2.CAP_PROP_FPS, 30)
+            self.cap.set(
+                cv2.CAP_PROP_FPS,
+                float(getattr(self.config, "CAMERA_FPS", 30.0)),
+            )
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             
             for _ in range(5): 
@@ -147,6 +154,22 @@ class Camera:
                 logger.error("Webcam test capture failed")
                 raise RuntimeError("Webcam not functioning properly")
     
+    def get_frame_rate_limits(self):
+        if not self.pi_mode:
+            return None
+        controls = getattr(self.picam, "camera_controls", {})
+        limits = controls.get("FrameDurationLimits")
+        if limits is None or len(limits) < 2:
+            return None
+        min_duration = float(limits[0])
+        max_duration = float(limits[1])
+        if min_duration <= 0 or max_duration <= 0:
+            return None
+        return (
+            1_000_000.0 / max_duration,
+            1_000_000.0 / min_duration,
+        )
+
     def set_frame_rate(self, fps):
         """Request a target camera capture rate in frames per second."""
         fps = float(fps)
@@ -154,8 +177,14 @@ class Camera:
             raise ValueError("fps must be greater than zero")
 
         if self.pi_mode:
-            # Picamera2/libcamera exposes frame duration in microseconds.
             frame_duration_us = int(round(1_000_000.0 / fps))
+            limits = self.get_frame_rate_limits()
+            if limits is not None and not limits[0] <= fps <= limits[1]:
+                raise ValueError(
+                    f"requested Picamera2 FPS {fps:.2f} is outside the "
+                    f"configured camera-mode range "
+                    f"{limits[0]:.2f}-{limits[1]:.2f} FPS"
+                )
             try:
                 self.picam.set_controls({
                     "FrameDurationLimits": (
@@ -169,6 +198,9 @@ class Camera:
                     fps,
                 )
                 raise
+            self.requested_frame_rate = fps
+            self._capture_timestamps.clear()
+            self.measured_frame_rate = None
             return
 
         if not self.cap.isOpened():
@@ -183,8 +215,13 @@ class Camera:
                 "OpenCV backend did not accept requested camera FPS %.2f",
                 fps,
             )
+        self.requested_frame_rate = fps
+        self._capture_timestamps.clear()
+        self.measured_frame_rate = None
 
     def get_frame_rate(self):
+        if self.measured_frame_rate is not None:
+            return self.measured_frame_rate
         if self.pi_mode:
             return None
         try:
@@ -247,6 +284,14 @@ class Camera:
 
             self.last_capture_valid = True
             self.consecutive_failures = 0
+            now = time.monotonic()
+            self._capture_timestamps.append(now)
+            if len(self._capture_timestamps) >= 2:
+                span = now - self._capture_timestamps[0]
+                if span > 0:
+                    self.measured_frame_rate = (
+                        (len(self._capture_timestamps) - 1) / span
+                    )
             return finish(frame, frame_resized, True)
 
         except Exception:
