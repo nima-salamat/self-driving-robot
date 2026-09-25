@@ -1149,12 +1149,16 @@ class CalibrationStreamServer:
         min_sharpness=None,
         min_edge_margin=None,
         duplicate_distance=None,
+        max_mean_reprojection_error=None,
+        max_view_reprojection_error=None,
     ):
         values = {
             "min_coverage": min_coverage,
             "min_sharpness": min_sharpness,
             "min_edge_margin": min_edge_margin,
             "duplicate_distance": duplicate_distance,
+            "max_mean_reprojection_error": max_mean_reprojection_error,
+            "max_view_reprojection_error": max_view_reprojection_error,
         }
         with self._calibrator_lock:
             updated = copy.copy(self.calibrator)
@@ -1490,6 +1494,12 @@ class CalibrationStreamServer:
             "min_sharpness": min_sharpness,
             "min_edge_margin": min_edge_margin,
             "duplicate_distance": duplicate_distance,
+            "max_mean_reprojection_error": (
+                self.calibrator.max_mean_reprojection_error
+            ),
+            "max_view_reprojection_error": (
+                self.calibrator.max_view_reprojection_error
+            ),
             "auto_capture_enabled": (
                 self.auto_capture_enabled
             ),
@@ -1621,6 +1631,8 @@ class CalibrationStreamServer:
                     "min_sharpness",
                     "min_edge_margin",
                     "duplicate_distance",
+                    "max_mean_reprojection_error",
+                    "max_view_reprojection_error",
                     "auto_capture_enabled",
                     "auto_capture_interval",
                 }
@@ -1667,6 +1679,8 @@ class CalibrationStreamServer:
                     "min_sharpness",
                     "min_edge_margin",
                     "duplicate_distance",
+                    "max_mean_reprojection_error",
+                    "max_view_reprojection_error",
                 }
                 if quality_keys.intersection(data):
                     self.set_quality_settings(
@@ -1674,6 +1688,12 @@ class CalibrationStreamServer:
                         min_sharpness=data.get("min_sharpness"),
                         min_edge_margin=data.get("min_edge_margin"),
                         duplicate_distance=data.get("duplicate_distance"),
+                        max_mean_reprojection_error=data.get(
+                            "max_mean_reprojection_error"
+                        ),
+                        max_view_reprojection_error=data.get(
+                            "max_view_reprojection_error"
+                        ),
                     )
 
                 if (
@@ -1706,6 +1726,12 @@ class CalibrationStreamServer:
                     min_sharpness=self.calibrator.min_sharpness,
                     min_edge_margin=self.calibrator.min_edge_margin,
                     duplicate_distance=self.calibrator.duplicate_distance,
+                    max_mean_reprojection_error=(
+                        self.calibrator.max_mean_reprojection_error
+                    ),
+                    max_view_reprojection_error=(
+                        self.calibrator.max_view_reprojection_error
+                    ),
                     auto_capture_enabled=self.auto_capture_enabled,
                     auto_capture_interval=self.auto_capture_interval,
                     diversity=self._diversity_summary(),
