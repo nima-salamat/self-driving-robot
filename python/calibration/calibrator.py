@@ -31,6 +31,7 @@ class CameraCalibrator:
         duplicate_distance=0.05,
         max_mean_reprojection_error=1.0,
         max_view_reprojection_error=2.5,
+        detector_mode="auto",
     ):
         if len(checkerboard) == 2:
             self.checkerboard = (
@@ -51,6 +52,13 @@ class CameraCalibrator:
         self.duplicate_distance = float(duplicate_distance)
         self.max_mean_reprojection_error = float(max_mean_reprojection_error)
         self.max_view_reprojection_error = float(max_view_reprojection_error)
+
+        detector_mode = str(detector_mode).lower().strip()
+        if detector_mode not in {"auto", "classic", "sb"}:
+            raise ValueError(
+                "detector_mode must be one of: auto, classic, sb"
+            )
+        self.detector_mode = detector_mode
 
         self.criteria = (
             cv2.TERM_CRITERIA_EPS
@@ -78,6 +86,14 @@ class CameraCalibrator:
         )
 
         self.object_template *= self.square_size
+
+    def set_detector_mode(self, mode):
+        mode = str(mode).lower().strip()
+        if mode not in {"auto", "classic", "sb"}:
+            raise ValueError(
+                "detector_mode must be one of: auto, classic, sb"
+            )
+        self.detector_mode = mode
 
     def detect_corners(self, image):
         found, corners, gray, _ = self.detect_corners_detailed(image)
