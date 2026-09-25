@@ -1412,6 +1412,18 @@ class CalibrationStreamServer:
                         "unknown",
                     ),
                 )
+            except RuntimeError as exc:
+                if str(exc) == "Calibration cancelled":
+                    self._enter_calibration_mode()
+                    self._calibration_state = "not calibrated"
+                    self._last_calibration_message = "Calibration cancelled."
+                else:
+                    logger.exception(
+                        "Camera calibration failed"
+                    )
+                    self._enter_calibration_mode()
+                    self._calibration_state = "failed"
+                    self._last_calibration_message = str(exc)
             except Exception as exc:
                 logger.exception(
                     "Camera calibration failed"
