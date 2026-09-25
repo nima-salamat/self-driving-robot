@@ -19,6 +19,12 @@ from vision.camera import Camera
 
 
 class CalibrationCoreTests(unittest.TestCase):
+    def test_default_calibration_configuration_matches_8x10_20mm_board(self):
+        calibrator = CameraCalibrator()
+        self.assertEqual(calibrator.checkerboard, (7, 9))
+        self.assertEqual(calibrator.square_size, 20.0)
+        self.assertEqual(calibrator.min_valid_images, 10)
+
     def test_blank_frame_does_not_detect_board(self):
         calibrator = CameraCalibrator()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
