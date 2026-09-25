@@ -108,45 +108,50 @@ class CameraCalibrator:
             cv2.COLOR_BGR2GRAY,
         )
 
-        classic_flags = (
-            cv2.CALIB_CB_ADAPTIVE_THRESH
-            | cv2.CALIB_CB_NORMALIZE_IMAGE
-        )
+        # Respect the detector mode exposed by the calibration UI.
+        # "auto" tries the classic detector first and then the more robust SB
+        # detector. "classic" and "sb" are now strict selections.
+        if self.detector_mode in {"auto", "classic"}:
+            classic_flags = (
+                cv2.CALIB_CB_ADAPTIVE_THRESH
+                | cv2.CALIB_CB_NORMALIZE_IMAGE
+            )
 
-        found, corners = cv2.findChessboardCorners(
-            gray,
-            self.checkerboard,
-            classic_flags,
-        )
-
-        if found:
-            refined = cv2.cornerSubPix(
+            found, corners = cv2.findChessboardCorners(
                 gray,
-                corners,
-                (11, 11),
-                (-1, -1),
-                self.criteria,
+                self.checkerboard,
+                classic_flags,
             )
-            return True, refined, gray, "classic"
 
-        sb_detector = getattr(cv2, "findChessboardCornersSB", None)
-        if sb_detector is not None:
-            sb_flags = (
-                cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_EXHAUSTIVE
-                | cv2.CALIB_CB_ACCURACY
-            )
-            try:
-                found_sb, corners_sb = sb_detector(
+            if found:
+                refined = cv2.cornerSubPix(
                     gray,
-                    self.checkerboard,
-                    sb_flags,
+                    corners,
+                    (11, 11),
+                    (-1, -1),
+                    self.criteria,
                 )
-            except cv2.error:
-                found_sb, corners_sb = False, None
+                return True, refined, gray, "classic"
 
-            if found_sb:
-                return True, corners_sb, gray, "sb"
+        if self.detector_mode in {"auto", "sb"}:
+            sb_detector = getattr(cv2, "findChessboardCornersSB", None)
+            if sb_detector is not None:
+                sb_flags = (
+                    cv2.CALIB_CB_NORMALIZE_IMAGE
+                    | cv2.CALIB_CB_EXHAUSTIVE
+                    | cv2.CALIB_CB_ACCURACY
+                )
+                try:
+                    found_sb, corners_sb = sb_detector(
+                        gray,
+                        self.checkerboard,
+                        sb_flags,
+                    )
+                except cv2.error:
+                    found_sb, corners_sb = False, None
+
+                if found_sb:
+                    return True, corners_sb, gray, "sb"
 
         return False, None, gray, "none"
 

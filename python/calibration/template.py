@@ -15,6 +15,12 @@ h1{font-size:18px;margin:0 0 4px}
 .small{font-size:13px;color:var(--muted)}
 .stream-wrap{background:#000;border-radius:10px;overflow:hidden;position:relative}
 .stream-wrap img{display:block;width:100%;height:auto}
+.debug-preview{background:#000;border-radius:10px;overflow:hidden}
+.debug-preview img{display:block;width:100%;height:auto;min-height:180px;object-fit:contain}
+.debug-controls{display:grid;gap:8px;padding:10px;background:#050b15;border-radius:8px}
+.debug-controls .row{justify-content:flex-start}
+.debug-controls input[type=range]{width:180px}
+.debug-note{font-size:12px;color:var(--muted)}
 .controls{display:grid;gap:10px}
 .row{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 button,input{font:inherit}
@@ -41,6 +47,39 @@ select{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1)
     <div class="stream-wrap">
       <img src="/video_feed" alt="Live calibration camera feed">
     </div>
+
+    <details open style="margin-top:12px">
+      <summary>Vision debug: what the chessboard detector sees</summary>
+      <div class="debug-controls">
+        <div class="row">
+          <label for="debug_view">View</label>
+          <select id="debug_view">
+            <option value="gray">Gray (detector input)</option>
+            <option value="normalized">Gray + auto contrast</option>
+            <option value="fixed">Fixed black/white</option>
+            <option value="otsu">Otsu black/white</option>
+            <option value="adaptive">Adaptive black/white</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="debug_threshold">Fixed threshold</label>
+          <input id="debug_threshold" type="range" min="0" max="255" step="1" value="128">
+          <span id="debug_threshold_value">128</span>
+        </div>
+        <div class="row">
+          <label for="debug_adaptive_c">Adaptive C</label>
+          <input id="debug_adaptive_c" type="range" min="-20" max="20" step="1" value="5">
+          <span id="debug_adaptive_c_value">5</span>
+        </div>
+        <div class="debug-note">
+          The actual chessboard detector receives grayscale. The black/white modes below
+          are diagnostic views for tuning lighting/contrast; they do not change calibration.
+        </div>
+        <div class="debug-preview">
+          <img id="debug_preview" alt="Calibration detector debug view">
+        </div>
+      </div>
+    </details>
   </div>
 
   <div class="card controls">
@@ -186,6 +225,44 @@ function applyBoardState(s){
 let detectionSettingsLoaded=false;
 let qualitySettingsLoaded=false;
 let lastKnownCaptureCount=-1;
+
+let debugTimer=null;
+
+function updateDebugLabels(){
+  document.getElementById('debug_threshold_value').textContent =
+    document.getElementById('debug_threshold').value;
+  document.getElementById('debug_adaptive_c_value').textContent =
+    document.getElementById('debug_adaptive_c').value;
+}
+
+function refreshDebugFrame(){
+  const view=document.getElementById('debug_view').value;
+  const threshold=document.getElementById('debug_threshold').value;
+  const adaptiveC=document.getElementById('debug_adaptive_c').value;
+  const url =
+    '/api/debug_frame?view=' + encodeURIComponent(view) +
+    '&threshold=' + encodeURIComponent(threshold) +
+    '&adaptive_c=' + encodeURIComponent(adaptiveC) +
+    '&t=' + Date.now();
+  document.getElementById('debug_preview').src=url;
+}
+
+function startDebugLoop(){
+  clearInterval(debugTimer);
+  updateDebugLabels();
+  refreshDebugFrame();
+  debugTimer=setInterval(refreshDebugFrame, 250);
+}
+
+document.getElementById('debug_view').addEventListener('change',refreshDebugFrame);
+document.getElementById('debug_threshold').addEventListener('input',()=>{
+  updateDebugLabels();
+  if(document.getElementById('debug_view').value==='fixed') refreshDebugFrame();
+});
+document.getElementById('debug_adaptive_c').addEventListener('input',()=>{
+  updateDebugLabels();
+  if(document.getElementById('debug_view').value==='adaptive') refreshDebugFrame();
+});
 
 async function getStatus(){
   try{
@@ -414,6 +491,7 @@ updateBoardPreview();
 
 refreshCaptures(true);
 getStatus();
+startDebugLoop();
 setInterval(getStatus,500);
 </script>
 </body>

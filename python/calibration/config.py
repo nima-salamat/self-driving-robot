@@ -46,6 +46,8 @@ def create_camera_config(
     config.resize_width = config.CAM_WIDTH
     config.resize_height = config.CAM_HEIGHT
     config.APPLY_CAMERA_CALIBRATION = False
+    config.CALIBRATION_AUTO_EXPOSURE = True
+    config.CALIBRATION_AUTO_WB = True
     config.runtime_metrics = None
     config.MODE = "calibration"
     config.CALIBRATION_TARGET_FPS = (
