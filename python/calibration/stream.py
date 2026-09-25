@@ -9,6 +9,7 @@ from flask import Flask, Response, jsonify, render_template_string, request
 from werkzeug.serving import make_server
 
 from .calibrator import CameraCalibrator
+from .capture import CalibrationImageStore
 from .config import create_camera_config
 from .template import CALIBRATION_HTML
 from vision.camera import Camera
@@ -53,7 +54,7 @@ class CalibrationStreamServer:
         self.config = camera_config
         self.image_dir = Path(image_dir)
         self.output_file = Path(output_file)
-        self.image_dir.mkdir(parents=True, exist_ok=True)
+        self.image_store = CalibrationImageStore(self.image_dir)
 
         self.calibrator = CameraCalibrator(
             checkerboard=checkerboard,
@@ -81,17 +82,6 @@ class CalibrationStreamServer:
 
         self.camera = Camera(config=self.config)
         self.camera.set_frame_rate(self.requested_fps)
-
-    def _next_filename(self):
-        indices = []
-        for path in self.image_dir.glob("calib_*.jpg"):
-            try:
-                indices.append(int(path.stem[6:]))
-            except ValueError:
-                continue
-
-        next_index = max(indices, default=0) + 1
-        return self.image_dir / f"calib_{next_index:03d}.jpg"
 
     def _publish(self, raw_frame, display_frame):
         with self._lock:
@@ -301,7 +291,7 @@ class CalibrationStreamServer:
         if not fresh["valid"]:
             return False, "Chessboard disappeared before capture."
 
-        path = self._next_filename()
+        path = self.image_store.next_path()
         if not cv2.imwrite(str(path), raw):
             return False, "Failed to save calibration image."
 
@@ -441,16 +431,7 @@ class CalibrationStreamServer:
 
         @app.post("/api/clear")
         def api_clear():
-            removed = 0
-            for path in self.image_dir.glob("calib_*.jpg"):
-                try:
-                    path.unlink()
-                    removed += 1
-                except OSError:
-                    logger.exception(
-                        "Failed to remove calibration image %s",
-                        path,
-                    )
+            removed = self.image_store.clear()
 
             return jsonify(
                 success=True,
