@@ -1173,6 +1173,7 @@ class CalibrationStreamServer:
                     name,
                     value,
                 )
+            self.calibrator = updated
 
     def set_calibration_preview(self, enabled):
         if not isinstance(enabled, bool):
