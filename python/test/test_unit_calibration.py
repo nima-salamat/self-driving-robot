@@ -253,9 +253,10 @@ class CalibrationCoreTests(unittest.TestCase):
                     detector_mode="auto"
                 ).detect_corners_detailed(frame)
 
-        # Two orientations in fast mode, with no per-frame 4-flag cascade.
-        self.assertLessEqual(classic.call_count, 2)
-        self.assertLessEqual(sb.call_count, 2)
+        # Two orientations in the fast path plus three bounded recovery
+        # views, with no per-detector multi-flag cascade.
+        self.assertLessEqual(classic.call_count, 8)
+        self.assertLessEqual(sb.call_count, 8)
 
     def test_non_finite_quality_setting_is_rejected(self):
         with self.assertRaises(ValueError):
