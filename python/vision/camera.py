@@ -101,10 +101,22 @@ class Camera:
                 if getattr(self.config, "MODE", "") == "calibration":
                     # Calibration needs a well-exposed, high-contrast board across
                     # different positions. Keep runtime's fixed exposure policy
-                    # unchanged and use the camera's automatic controls only here.
+                    # unchanged and use automatic controls only for calibration.
                     self.picam.set_controls({
-                        "AeEnable": True,
-                        "AwbEnable": True,
+                        "AeEnable": bool(
+                            getattr(
+                                self.config,
+                                "CALIBRATION_AUTO_EXPOSURE",
+                                True,
+                            )
+                        ),
+                        "AwbEnable": bool(
+                            getattr(
+                                self.config,
+                                "CALIBRATION_AUTO_WB",
+                                True,
+                            )
+                        ),
                     })
                 else:
                     self.picam.set_controls({
