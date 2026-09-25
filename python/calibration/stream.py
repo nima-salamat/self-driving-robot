@@ -423,6 +423,126 @@ class CalibrationStreamServer:
                 return None
             return self._raw_frame.copy()
 
+    def debug_frame(self, view="gray", threshold=128, adaptive_block=21, adaptive_c=5):
+        """
+        Build a diagnostic view from the current raw camera frame.
+
+        The chessboard detector consumes grayscale directly. Fixed/Otsu/adaptive
+        binary images are diagnostic aids only and do not replace the detector
+        input.
+        """
+        raw = self.current_raw_frame()
+        if raw is None:
+            return None
+
+        gray = cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY)
+        view = str(view or "gray").strip().lower()
+
+        try:
+            threshold = max(0, min(255, int(threshold)))
+        except (TypeError, ValueError):
+            threshold = 128
+
+        try:
+            adaptive_block = int(adaptive_block)
+        except (TypeError, ValueError):
+            adaptive_block = 21
+        if adaptive_block < 3:
+            adaptive_block = 3
+        if adaptive_block % 2 == 0:
+            adaptive_block += 1
+
+        try:
+            adaptive_c = int(adaptive_c)
+        except (TypeError, ValueError):
+            adaptive_c = 5
+
+        if view == "gray":
+            debug = gray
+        elif view == "fixed":
+            _, debug = cv2.threshold(
+                gray,
+                threshold,
+                255,
+                cv2.THRESH_BINARY,
+            )
+        elif view == "otsu":
+            _, debug = cv2.threshold(
+                gray,
+                0,
+                255,
+                cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+            )
+        elif view == "adaptive":
+            debug = cv2.adaptiveThreshold(
+                gray,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,
+                adaptive_block,
+                adaptive_c,
+            )
+        elif view == "normalized":
+            debug = cv2.normalize(
+                gray,
+                None,
+                0,
+                255,
+                cv2.NORM_MINMAX,
+            )
+        else:
+            raise ValueError(
+                "view must be one of: gray, normalized, fixed, otsu, adaptive"
+            )
+
+        display = cv2.cvtColor(debug, cv2.COLOR_GRAY2BGR)
+
+        evaluation = self._last_detection
+        if evaluation is not None and evaluation.get("corners") is not None:
+            cv2.drawChessboardCorners(
+                display,
+                self.calibrator.checkerboard,
+                evaluation["corners"],
+                bool(evaluation.get("valid")),
+            )
+
+        status = (
+            "READY"
+            if evaluation and evaluation.get("quality_valid")
+            else "DETECTED / REJECTED"
+            if evaluation and evaluation.get("valid")
+            else "NOT DETECTED"
+        )
+        detector = (
+            evaluation.get("detector", "none")
+            if evaluation
+            else "none"
+        )
+        cv2.putText(
+            display,
+            f"{view.upper()} | CHESSBOARD: {status} | DETECTOR: {detector}",
+            (10, 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 255, 0) if evaluation and evaluation.get("valid") else (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+        if view == "fixed":
+            cv2.putText(
+                display,
+                f"threshold={threshold}",
+                (10, 48),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
+
+        return display
+
     def mjpeg(self):
         last_seq = -1
 
@@ -751,6 +871,46 @@ class CalibrationStreamServer:
                     "multipart/x-mixed-replace; "
                     "boundary=frame"
                 ),
+            )
+
+        @app.get("/api/debug_frame")
+        def api_debug_frame():
+            view = request.args.get("view", "gray")
+            threshold = request.args.get("threshold", "128")
+            adaptive_block = request.args.get("adaptive_block", "21")
+            adaptive_c = request.args.get("adaptive_c", "5")
+
+            try:
+                frame = self.debug_frame(
+                    view=view,
+                    threshold=threshold,
+                    adaptive_block=adaptive_block,
+                    adaptive_c=adaptive_c,
+                )
+            except ValueError as exc:
+                return jsonify(
+                    success=False,
+                    message=str(exc),
+                ), 400
+
+            if frame is None:
+                return Response(status=204)
+
+            ok, encoded = cv2.imencode(
+                ".jpg",
+                frame,
+                [
+                    cv2.IMWRITE_JPEG_QUALITY,
+                    90,
+                ],
+            )
+            if not ok:
+                return Response(status=204)
+
+            return Response(
+                encoded.tobytes(),
+                mimetype="image/jpeg",
+                headers={"Cache-Control": "no-store"},
             )
 
         @app.get("/api/status")
