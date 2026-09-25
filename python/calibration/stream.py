@@ -279,10 +279,21 @@ class CalibrationStreamServer:
             and detected_at
             and now - detected_at <= detection_freshness
         ):
+            corners = evaluation["corners"]
+            if self.calibration_preview_enabled:
+                preview = self._calibration_preview
+                if preview is not None and preview.enabled:
+                    corners = preview.undistort_points(
+                        corners,
+                        (
+                            int(display.shape[1]),
+                            int(display.shape[0]),
+                        ),
+                    )
             cv2.drawChessboardCorners(
                 display,
                 checkerboard,
-                evaluation["corners"],
+                corners,
                 True,
             )
 
