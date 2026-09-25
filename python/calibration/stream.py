@@ -240,6 +240,23 @@ class CalibrationStreamServer:
             self._frame_seq += 1
             self._lock.notify_all()
 
+    def _display_frame(self, frame):
+        if not self.calibration_preview_enabled:
+            return frame
+
+        preview = self._calibration_preview
+        if preview is None or not preview.enabled:
+            return frame
+
+        try:
+            return preview.undistort(frame)
+        except Exception as exc:
+            logger.exception("Calibration preview failed")
+            self._last_camera_error = (
+                f"Calibration preview failed: {exc}"
+            )
+            return frame
+
     def _decorate_live_frame(self, frame):
         display = frame.copy()
 
@@ -310,7 +327,10 @@ class CalibrationStreamServer:
                     # Wake the detector, but always publish this newest frame
                     # immediately so the HTTP stream cannot build a stale queue.
                     self._detection_wakeup.set()
-                    display = self._decorate_live_frame(frame)
+                    display_source = self._display_frame(frame)
+                    display = self._decorate_live_frame(
+                        display_source
+                    )
                     self._publish(frame, display)
 
                     timestamps.append(now)
@@ -1181,6 +1201,11 @@ class CalibrationStreamServer:
             )
 
         if enabled:
+            if self._calibration_state != "calibrated":
+                raise ValueError(
+                    "A successful calibration is required before "
+                    "calibration preview can be enabled."
+                )
             if not self.output_file.exists():
                 raise ValueError(
                     "No calibration model exists yet."
@@ -1195,6 +1220,8 @@ class CalibrationStreamServer:
                     or "Calibration model is not usable."
                 )
             self._calibration_preview = preview
+        else:
+            self._calibration_preview = None
 
         self.calibration_preview_enabled = enabled
 
