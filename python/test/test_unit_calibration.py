@@ -27,6 +27,59 @@ class CalibrationCoreTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIsNone(result["corners"])
 
+    def test_physical_7x9_board_maps_to_6x8_inner_corners(self):
+        calibrator = CameraCalibrator(
+            checkerboard=(6, 8),
+            square_size=20.0,
+        )
+
+        square = 40
+        board_cols = 7
+        board_rows = 9
+        board = np.zeros(
+            (
+                board_rows * square,
+                board_cols * square,
+            ),
+            dtype=np.uint8,
+        )
+        for row in range(board_rows):
+            for col in range(board_cols):
+                if (row + col) % 2 == 0:
+                    board[
+                        row * square:(row + 1) * square,
+                        col * square:(col + 1) * square,
+                    ] = 255
+
+        frame = cv2.copyMakeBorder(
+            board,
+            40,
+            40,
+            40,
+            40,
+            cv2.BORDER_CONSTANT,
+            value=255,
+        )
+        frame = cv2.cvtColor(
+            frame,
+            cv2.COLOR_GRAY2BGR,
+        )
+
+        found, corners, _gray, detector = (
+            calibrator.detect_corners_detailed(frame)
+        )
+
+        self.assertTrue(found)
+        self.assertEqual(corners.shape, (48, 1, 2))
+        self.assertIn(detector, {"classic", "sb"})
+
+        evaluation = calibrator.evaluate_frame(frame)
+        self.assertTrue(evaluation["valid"])
+        self.assertEqual(
+            evaluation["corners"].shape,
+            (48, 1, 2),
+        )
+
     def test_detector_mode_is_respected(self):
         frame = np.zeros((120, 160, 3), dtype=np.uint8)
 
