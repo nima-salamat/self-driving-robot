@@ -301,6 +301,7 @@ usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
                [--camera-index INDEX]
                [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
                [--city-lane-detector {default,blsf-beta}]
+               [--city-lane-detector {default,blsf-beta}]
 
 Self-driving robot runtime.
 ~~~
