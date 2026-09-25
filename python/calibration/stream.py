@@ -829,12 +829,14 @@ class CalibrationStreamServer:
             if not ok:
                 continue
 
+            payload = encoded.tobytes()
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
-                b"Cache-Control: no-store, no-cache, must-revalidate\r\n"
-                b"Pragma: no-cache\r\n\r\n"
-                + encoded.tobytes()
+                + f"Content-Length: {len(payload)}\r\n".encode("ascii")
+                + b"Cache-Control: no-store, no-cache, must-revalidate\r\n"
+                + b"Pragma: no-cache\r\n\r\n"
+                + payload
                 + b"\r\n"
             )
 
