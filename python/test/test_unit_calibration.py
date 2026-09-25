@@ -25,6 +25,31 @@ class CalibrationCoreTests(unittest.TestCase):
         self.assertEqual(calibrator.square_size, 20.0)
         self.assertEqual(calibrator.min_valid_images, 10)
 
+    def test_live_direct_detection_uses_lightweight_sb_pass(self):
+        calibrator = CameraCalibrator(checkerboard=(6, 8))
+
+        with patch("calibration.calibrator.cv2.findChessboardCornersSB") as sb:
+            with patch("calibration.calibrator.cv2.findChessboardCorners") as classic:
+                sb.return_value = (False, None)
+                classic.return_value = (False, None)
+
+                found, corners, _, detector = (
+                    calibrator.detect_corners_detailed(
+                        np.zeros((120, 160, 3), dtype=np.uint8),
+                        allow_recovery=False,
+                    )
+                )
+
+        self.assertFalse(found)
+        self.assertIsNone(corners)
+        self.assertEqual(detector, "none")
+        self.assertEqual(sb.call_count, 4)
+        self.assertEqual(classic.call_count, 2)
+        exhaustive = getattr(cv2, "CALIB_CB_EXHAUSTIVE", 0)
+        for call in sb.call_args_list:
+            if len(call.args) == 3:
+                self.assertFalse(call.args[2] & exhaustive)
+
     def test_blank_frame_does_not_detect_board(self):
         calibrator = CameraCalibrator()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
