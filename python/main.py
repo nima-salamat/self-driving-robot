@@ -34,6 +34,7 @@ def _apply_cli_overrides(config, args):
         "USBCAM_ADDR": args.camera_index,
         "ARDUINO_CONFIG": args.arduino_config,
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
+        "CITY_LANE_DETECTOR": args.city_lane_detector,
     }
 
     for name, value in overrides.items():
@@ -64,6 +65,9 @@ if __name__ == "__main__":
 
     if args.ml_lane_model is not None and args.mode != "race":
         raise SystemExit("--ml-lane-model is currently supported only in race mode")
+
+    if args.city_lane_detector is not None and args.mode != "city":
+        raise SystemExit("--city-lane-detector is currently supported only in city mode")
 
     if args.arduino_config and args.without_arduino:
         raise SystemExit("--arduino-config cannot be used together with --without-arduino")
