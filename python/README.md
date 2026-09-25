@@ -390,7 +390,7 @@ By default new data is saved under `python/train_sign_detector/collected_dataset
 python python/train_sign_detector/main.py --train --dataset python/train_sign_detector/collected_dataset --file_name video.mp4
 ```
 
-The existing `dataset/` is not overwritten by the collector. The root `python/dataset_collector.py` entrypoint remains as a compatibility wrapper.
+The existing `dataset/` is not overwritten by the collector. The old root `python/dataset_collector.py` wrapper has been removed; use `python/train_sign_detector/dataset_collector.py` directly.
 
 ### Camera FPS semantics
 

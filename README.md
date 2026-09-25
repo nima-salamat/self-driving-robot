@@ -164,21 +164,24 @@ python/
 ├── traffic_sign_detector/           # Traffic sign recognition
 │   └── detector.py                 # Sign detection model
 │
-├── train_sign_detector/             # Model training
+├── train_sign_detector/             # Model training and dataset collection
 │   ├── main.py                     # Training entry point
-│   └── classification.py           # Classification logic
+│   ├── classification.py           # Classification logic
+│   ├── dataset_collector.py         # Dataset collection entry point
+│   └── labels.py                    # Authoritative class mapping
 │
 ├── utils/                           # Utility modules
 │   ├── parser.py                   # Command-line argument parser
 │   ├── config_mode.py              # Configuration utilities
 │   ├── json_config.py              # JSON config handling
 │   ├── fps.py                      # FPS counter
-│   ├── decorators.py               # Utility decorators
-│   └── camera_calibration.py       # Camera calibration
+│   └── decorators.py               # Utility decorators
 │
 ├── calibration/                     # Camera calibration
-│   ├── capture_calibration_images.py  # Collect calibration frames
-│   └── calibrate_camera.py         # Run calibration
+│   ├── calibrate.py                # Offline calibration entry point
+│   ├── calibrator.py               # Calibration algorithms and runtime loader
+│   ├── capture.py                  # Calibration image store
+│   └── stream.py                   # Flask live calibration interface
 │
 └── test/                            # Unit tests
     ├── test_traffic_light.py       # Traffic light tests
@@ -539,7 +542,7 @@ For issues or questions:
 
 ## Camera Calibration Web Stream
 
-Camera calibration is organized under `python/calibration/`. The legacy root scripts remain as compatibility wrappers, but the calibration implementation and Flask UI live in the dedicated module.
+Camera calibration is organized under `python/calibration/`. The package contains the single calibration implementation and both offline and live entry points.
 
 Start the live calibration stream on a Raspberry Pi:
 
@@ -725,7 +728,7 @@ By default new data is saved under `python/train_sign_detector/collected_dataset
 python python/train_sign_detector/main.py --train --dataset python/train_sign_detector/collected_dataset --file_name video.mp4
 ```
 
-The existing `dataset/` is not overwritten by the collector. The root `python/dataset_collector.py` entrypoint remains as a compatibility wrapper.
+The existing `dataset/` is not overwritten by the collector. The old root `python/dataset_collector.py` wrapper has been removed; use `python/train_sign_detector/dataset_collector.py` directly.
 
 ### Camera FPS semantics
 
