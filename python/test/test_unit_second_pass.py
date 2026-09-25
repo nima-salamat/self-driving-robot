@@ -196,6 +196,115 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                 self.assertEqual(payload["square_size"], 20.0)
                 self.assertEqual(payload["min_valid_images"], 12)
 
+    def test_web_detection_and_auto_capture_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                response = server.create_app().test_client().post(
+                    "/api/settings",
+                    json={
+                        "detector_mode": "sb",
+                        "auto_capture_enabled": True,
+                        "auto_capture_interval": 2,
+                        "min_coverage": 0.01,
+                        "min_sharpness": 10,
+                        "min_edge_margin": 0.02,
+                        "duplicate_distance": 0.1,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(server.calibrator.detector_mode, "sb")
+                self.assertTrue(server.auto_capture_enabled)
+                self.assertEqual(server.auto_capture_interval, 2.0)
+                self.assertEqual(server.calibrator.min_sharpness, 10.0)
+
+    def test_auto_capture_saves_accepted_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                server.auto_capture_enabled = True
+                evaluation = {
+                    "quality_valid": True,
+                    "quality_reason": None,
+                    "feature": np.zeros(7, dtype=np.float32),
+                }
+                server._maybe_auto_capture(
+                    np.zeros((24, 32, 3), dtype=np.uint8),
+                    evaluation,
+                )
+                self.assertEqual(server.image_store.count(), 1)
+                self.assertEqual(server.auto_captured_images, 1)
+
+    def test_captures_api_lists_saved_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                path = server.image_store.next_path()
+                cv2.imwrite(str(path), np.zeros((10, 10, 3), dtype=np.uint8))
+                payload = server.create_app().test_client().get(
+                    "/api/captures"
+                ).get_json()
+                self.assertEqual(len(payload["captures"]), 1)
+                self.assertEqual(
+                    payload["captures"][0]["filename"],
+                    path.name,
+                )
+
+    def test_calibration_preview_requires_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                response = server.create_app().test_client().post(
+                    "/api/preview",
+                    json={"enabled": True},
+                )
+                self.assertEqual(response.status_code, 409)
+                self.assertFalse(server.calibration_preview_enabled)
+
     def test_web_rejects_board_changes_when_captures_exist(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = types.SimpleNamespace(
