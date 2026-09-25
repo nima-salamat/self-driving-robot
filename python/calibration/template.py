@@ -287,8 +287,11 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <div class="field"><label for="min_sharpness">Minimum sharpness</label><input id="min_sharpness" type="number" min="0.1" step="1" value="10"></div>
                 <div class="field"><label for="min_edge_margin">Minimum edge margin</label><input id="min_edge_margin" type="number" min="0.001" max="0.5" step="0.001" value="0.01"></div>
                 <div class="field"><label for="duplicate_distance">Duplicate distance</label><input id="duplicate_distance" type="number" min="0.001" max="5" step="0.005" value="0.05"></div>
+                <div class="field"><label for="max_mean_reprojection_error">Max mean reprojection error (px)</label><input id="max_mean_reprojection_error" type="number" min="0.1" max="20" step="0.1" value="2.5"></div>
+                <div class="field"><label for="max_view_reprojection_error">Max per-view error (px)</label><input id="max_view_reprojection_error" type="number" min="0.1" max="30" step="0.1" value="5"></div>
               </div>
               <button id="apply_quality">Apply quality thresholds</button>
+              <div class="note">Calibration quality uses reprojection error; the defaults are 2.5 px mean and 5.0 px maximum view error. Tighten them when you need a stricter gate.</div>
             </div>
           </details>
         </div>
@@ -499,6 +502,8 @@ async function getStatus(){
       $("min_sharpness").value=Number(s.min_sharpness).toFixed(1);
       $("min_edge_margin").value=Number(s.min_edge_margin).toFixed(3);
       $("duplicate_distance").value=Number(s.duplicate_distance).toFixed(3);
+      $("max_mean_reprojection_error").value=Number(s.max_mean_reprojection_error).toFixed(1);
+      $("max_view_reprojection_error").value=Number(s.max_view_reprojection_error).toFixed(1);
       qualityLoaded=true;
     }
     if(!boardLoaded){
@@ -610,12 +615,16 @@ $("apply_quality").onclick=async()=>{
       min_coverage:Number($("min_coverage").value),
       min_sharpness:Number($("min_sharpness").value),
       min_edge_margin:Number($("min_edge_margin").value),
-      duplicate_distance:Number($("duplicate_distance").value)
+      duplicate_distance:Number($("duplicate_distance").value),
+      max_mean_reprojection_error:Number($("max_mean_reprojection_error").value),
+      max_view_reprojection_error:Number($("max_view_reprojection_error").value)
     });
     $("min_coverage").value=Number(result.min_coverage).toFixed(3);
     $("min_sharpness").value=Number(result.min_sharpness).toFixed(1);
     $("min_edge_margin").value=Number(result.min_edge_margin).toFixed(3);
     $("duplicate_distance").value=Number(result.duplicate_distance).toFixed(3);
+    $("max_mean_reprojection_error").value=Number(result.max_mean_reprojection_error).toFixed(1);
+    $("max_view_reprojection_error").value=Number(result.max_view_reprojection_error).toFixed(1);
     qualityLoaded=true;hideBanner();
   }catch(_){}
 };
