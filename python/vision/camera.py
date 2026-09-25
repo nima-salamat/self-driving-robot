@@ -283,9 +283,6 @@ class Camera:
                     self.consecutive_failures += 1
                     return finish(frame, frame_resized, False)
 
-                # Picamera2's RGB888 NumPy capture array uses BGR byte
-                # ordering despite the libcamera format name. This already
-                # matches the OpenCV convention used throughout the pipeline.
             else:
                 ret, frame = self.cap.read()
 
