@@ -115,4 +115,14 @@ def parse_args():
         help="Enable ML lane detection with the selected model.",
     )
 
+    parser.add_argument(
+        "--city-lane-detector",
+        choices=["default", "blsf-beta"],
+        default=None,
+        help=(
+            "City mode lane detector. 'blsf-beta' enables the experimental "
+            "classical BLSF pipeline; default keeps the existing detector."
+        ),
+    )
+
     return parser.parse_args()
