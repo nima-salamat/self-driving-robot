@@ -185,9 +185,12 @@ class CalibrationStreamServer:
         self._frame_seq = 0
         self._stop_event = threading.Event()
         self._camera_thread = None
+        self._detection_thread = None
+        self._detection_wakeup = threading.Event()
         self._calibration_thread = None
         self._operation_lock = threading.Lock()
         self._calibrator_lock = threading.RLock()
+        self._detection_state_lock = threading.Lock()
         self._accepted_features = []
         self.last_rejection_reason = None
 
@@ -208,6 +211,7 @@ class CalibrationStreamServer:
         self._last_camera_error = None
         self._last_detection_at = 0.0
         self._detection_count = 0
+        self._last_detection_duration_ms = None
         self.detection_interval = self._validate_detection_interval(
             getattr(
                 self.config,
@@ -228,10 +232,57 @@ class CalibrationStreamServer:
             self._frame_seq += 1
             self._lock.notify_all()
 
+    def _decorate_live_frame(self, frame):
+        display = frame.copy()
+
+        with self._calibrator_lock:
+            checkerboard = tuple(self.calibrator.checkerboard)
+
+        with self._detection_state_lock:
+            evaluation = self._last_detection
+            detected_at = self._last_detection_at
+
+        now = time.monotonic()
+        detection_freshness = max(
+            0.5,
+            self.detection_interval * 2.5,
+        )
+
+        if (
+            evaluation
+            and evaluation.get("corners") is not None
+            and detected_at
+            and now - detected_at <= detection_freshness
+        ):
+            cv2.drawChessboardCorners(
+                display,
+                checkerboard,
+                evaluation["corners"],
+                True,
+            )
+
+        state = self._detection_state(evaluation)
+        cv2.putText(
+            display,
+            f"CHESSBOARD: {state.replace('_', ' ')}",
+            (10, 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.60,
+            (
+                (0, 255, 0)
+                if state == "READY_FOR_CAPTURE"
+                else (0, 220, 255)
+                if state == "DETECTED_BUT_REJECTED"
+                else (0, 160, 255)
+            ),
+            2,
+            cv2.LINE_AA,
+        )
+        return display
+
     def _camera_loop(self):
         timestamps = []
         next_tick = time.monotonic()
-        next_detection = 0.0
 
         while not self._stop_event.is_set():
             try:
@@ -245,90 +296,14 @@ class CalibrationStreamServer:
                     self.chessboard_detected = False
                 else:
                     now = time.monotonic()
-                    if (
-                        self._last_detection is None
-                        or now >= next_detection
-                    ):
-                        with self._calibrator_lock:
-                            evaluated = self.calibrator.evaluate_frame(
-                                frame
-                            )
-                            quality_reason = (
-                                self.calibrator.quality_reason(
-                                    evaluated
-                                )
-                            )
-                            evaluated["quality_valid"] = (
-                                quality_reason is None
-                            )
-                            evaluated["quality_reason"] = quality_reason
+                    self._last_camera_error = None
 
-                        self._last_detection = evaluated
-                        self._last_detection_at = now
-                        self._detection_count += 1
-                        self.chessboard_detected = bool(
-                            evaluated.get("valid")
-                        )
-                        self.last_rejection_reason = (
-                            quality_reason
-                        )
-                        self._last_camera_error = None
-                        self._maybe_auto_capture(
-                            frame,
-                            evaluated,
-                        )
-                        next_detection = (
-                            now + self.detection_interval
-                        )
-
-                    evaluation = self._last_detection
-                    display = frame.copy()
-
-                    with self._calibrator_lock:
-                        checkerboard = tuple(
-                            self.calibrator.checkerboard
-                        )
-
-                    if (
-                        evaluation
-                        and evaluation.get("corners") is not None
-                        and now - self._last_detection_at
-                        <= max(
-                            0.5,
-                            self.detection_interval * 1.5,
-                        )
-                    ):
-                        cv2.drawChessboardCorners(
-                            display,
-                            checkerboard,
-                            evaluation["corners"],
-                            True,
-                        )
-
-                    state = self._detection_state(
-                        evaluation
-                    )
-                    cv2.putText(
-                        display,
-                        f"CHESSBOARD: {state.replace('_', ' ')}",
-                        (10, 24),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.60,
-                        (
-                            (0, 255, 0)
-                            if state == "READY_FOR_CAPTURE"
-                            else (0, 220, 255)
-                            if state == "DETECTED_BUT_REJECTED"
-                            else (0, 160, 255)
-                        ),
-                        2,
-                        cv2.LINE_AA,
-                    )
-
-                    self._publish(
-                        frame,
-                        display,
-                    )
+                    # The camera producer never waits for chessboard detection.
+                    # Wake the detector, but always publish this newest frame
+                    # immediately so the HTTP stream cannot build a stale queue.
+                    self._detection_wakeup.set()
+                    display = self._decorate_live_frame(frame)
+                    self._publish(frame, display)
 
                     timestamps.append(now)
                     cutoff = now - 2.0
@@ -366,12 +341,84 @@ class CalibrationStreamServer:
         with self._camera_lock:
             self.camera.release()
 
-    def start(self):
+    def _detection_loop(self):
+        next_detection = 0.0
+
+        while not self._stop_event.is_set():
+            now = time.monotonic()
+            wait_for = max(
+                0.0,
+                next_detection - now,
+            )
+
+            # A camera frame can wake this worker early, but only one
+            # detection is allowed per configured interval.
+            self._detection_wakeup.wait(wait_for)
+
+            if self._stop_event.is_set():
+                return
+
+            self._detection_wakeup.clear()
+            now = time.monotonic()
+            if now < next_detection:
+                continue
+
+            raw = self.current_raw_frame()
+            if raw is None:
+                next_detection = now + self.detection_interval
+                continue
+
+            started = time.monotonic()
+            try:
+                with self._calibrator_lock:
+                    evaluated = self.calibrator.evaluate_frame(raw)
+                    quality_reason = self.calibrator.quality_reason(
+                        evaluated
+                    )
+                    evaluated["quality_valid"] = (
+                        quality_reason is None
+                    )
+                    evaluated["quality_reason"] = quality_reason
+
+                finished = time.monotonic()
+                with self._detection_state_lock:
+                    self._last_detection = evaluated
+                    self._last_detection_at = finished
+                    self._detection_count += 1
+                    self._last_detection_duration_ms = round(
+                        (finished - started) * 1000.0,
+                        1,
+                    )
+                    self.chessboard_detected = bool(
+                        evaluated.get("valid")
+                    )
+                    self.last_rejection_reason = quality_reason
+
+                self._maybe_auto_capture(raw, evaluated)
+            except Exception as exc:
+                logger.exception(
+                    "Calibration detection loop failed"
+                )
+            finally:
+                next_detection = time.monotonic() + self.detection_interval
+
+        def start(self):
+        if (
+            self._detection_thread is None
+            or not self._detection_thread.is_alive()
+        ):
+            self._stop_event.clear()
+            self._detection_thread = threading.Thread(
+                target=self._detection_loop,
+                daemon=True,
+                name="calibration-detection",
+            )
+            self._detection_thread.start()
+
         if (
             self._camera_thread is None
             or not self._camera_thread.is_alive()
         ):
-            self._stop_event.clear()
             self._camera_thread = threading.Thread(
                 target=self._camera_loop,
                 daemon=True,
@@ -381,9 +428,16 @@ class CalibrationStreamServer:
 
     def stop(self):
         self._stop_event.set()
+        self._detection_wakeup.set()
 
         with self._lock:
             self._lock.notify_all()
+
+        if (
+            self._detection_thread is not None
+            and self._detection_thread.is_alive()
+        ):
+            self._detection_thread.join(timeout=2.0)
 
         if (
             self._camera_thread is not None
@@ -391,7 +445,7 @@ class CalibrationStreamServer:
         ):
             self._camera_thread.join(timeout=2.0)
 
-    def _validate_detection_interval(self, value):
+        def _validate_detection_interval(self, value):
         try:
             interval = float(value)
         except (TypeError, ValueError):
@@ -777,7 +831,9 @@ class CalibrationStreamServer:
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Cache-Control: no-store, no-cache, must-revalidate\r\n"
+                b"Pragma: no-cache\r\n\r\n"
                 + encoded.tobytes()
                 + b"\r\n"
             )
@@ -1192,7 +1248,14 @@ class CalibrationStreamServer:
                 calibrator.duplicate_distance
             )
 
-        evaluation = self._last_detection
+        with self._detection_state_lock:
+            evaluation = self._last_detection
+            detection_count = self._detection_count
+            last_detection_at = self._last_detection_at
+            detection_duration_ms = self._last_detection_duration_ms
+            chessboard_detected = self.chessboard_detected
+            last_rejection_reason = self.last_rejection_reason
+
         detection_state = self._detection_state(
             evaluation
         )
@@ -1246,28 +1309,29 @@ class CalibrationStreamServer:
                 else None
             ),
             "detection_interval": self.detection_interval,
-            "detection_count": self._detection_count,
+            "detection_count": detection_count,
+            "detection_duration_ms": detection_duration_ms,
             "detection_age_ms": (
                 round(
                     max(
                         0.0,
                         time.monotonic()
-                        - self._last_detection_at,
+                        - last_detection_at,
                     )
                     * 1000.0,
                     1,
                 )
-                if self._last_detection_at
+                if last_detection_at
                 else None
             ),
             "detection_state": detection_state,
             "detection_message": detection_message,
-            "chessboard_detected": self.chessboard_detected,
+            "chessboard_detected": chessboard_detected,
             "capture_eligible": (
                 detection_state
                 == "READY_FOR_CAPTURE"
             ),
-            "last_rejection_reason": self.last_rejection_reason,
+            "last_rejection_reason": last_rejection_reason,
             "last_camera_error": self._last_camera_error,
             "camera_fps_limits": (
                 self.camera.get_frame_rate_limits()
@@ -1377,6 +1441,11 @@ class CalibrationStreamServer:
                     "multipart/x-mixed-replace; "
                     "boundary=frame"
                 ),
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
             )
 
         @app.get("/api/debug_frame")
