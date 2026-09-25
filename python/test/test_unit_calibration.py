@@ -27,6 +27,39 @@ class CalibrationCoreTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIsNone(result["corners"])
 
+    def test_detector_mode_is_respected(self):
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+
+        with patch(
+            "calibration.calibrator.cv2.findChessboardCorners",
+            return_value=(False, None),
+        ) as classic:
+            with patch(
+                "calibration.calibrator.cv2.findChessboardCornersSB",
+                side_effect=AssertionError("SB should not run in classic mode"),
+            ):
+                result = CameraCalibrator(
+                    detector_mode="classic"
+                ).detect_corners_detailed(frame)
+                self.assertFalse(result[0])
+                classic.assert_called_once()
+
+        sb = getattr(cv2, "findChessboardCornersSB", None)
+        if sb is not None:
+            with patch(
+                "calibration.calibrator.cv2.findChessboardCornersSB",
+                return_value=(False, None),
+            ) as sb_detector:
+                with patch(
+                    "calibration.calibrator.cv2.findChessboardCorners",
+                    side_effect=AssertionError("classic should not run in SB mode"),
+                ):
+                    result = CameraCalibrator(
+                        detector_mode="sb"
+                    ).detect_corners_detailed(frame)
+                    self.assertFalse(result[0])
+                    sb_detector.assert_called_once()
+
     def test_create_camera_config_disables_existing_calibration(self):
         config = create_camera_config(
             camera_mode="webcam",
@@ -205,6 +238,45 @@ class CalibrationStreamTests(unittest.TestCase):
                     24.0,
                 )
                 self.assertEqual(server.camera.rate, 24.0)
+
+                server.stop()
+
+    def test_debug_frame_endpoint_returns_image(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="webcam",
+            CAM_WIDTH=160,
+            CAM_HEIGHT=120,
+            resize_width=160,
+            resize_height=120,
+            CAMERA_FALLBACK_TO_OPENCV=False,
+            APPLY_CAMERA_CALIBRATION=False,
+            CALIBRATION_TARGET_FPS=30.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("calibration.stream.Camera", FakeCamera):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                    host="127.0.0.1",
+                    port=0,
+                    target_fps=30,
+                )
+                server._raw_frame = server.camera.frame.copy()
+                client = server.create_app().test_client()
+
+                response = client.get(
+                    "/api/debug_frame?view=fixed&threshold=180"
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.mimetype, "image/jpeg")
+                self.assertGreater(len(response.data), 100)
+
+                response = client.get(
+                    "/api/debug_frame?view=unknown"
+                )
+                self.assertEqual(response.status_code, 400)
 
                 server.stop()
 
