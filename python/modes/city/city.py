@@ -5,6 +5,7 @@ from utils.config_mode import set_city_mode
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
+from vision.blsf_lane import create_blsf_lane_detector
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
@@ -63,7 +64,21 @@ class Robot:
             )
             time.sleep(0.4)
 
-        self.vision = VisionProcessor()
+        lane_detector = getattr(config_city, "CITY_LANE_DETECTOR", "default")
+
+        if lane_detector == "blsf-beta":
+            # BETA: experimental classical BLSF lane detector.
+            # Existing City lane detection remains the default.
+            self.vision = create_blsf_lane_detector(config_city)
+        elif lane_detector == "default":
+            self.vision = VisionProcessor()
+        else:
+            raise ValueError(
+                "Unsupported CITY_LANE_DETECTOR: "
+                f"{lane_detector!r}. Expected 'default' or 'blsf-beta'."
+            )
+
+        logger.info("City lane detector selected: %s", lane_detector)
         self.apriltag_detector = ApriltagDetector(config=config_city)
         self.crosswalk_time_start = 0
         self.crosswalk_last_seen = 0
