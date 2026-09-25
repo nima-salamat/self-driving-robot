@@ -36,19 +36,19 @@ def build_parser():
     parser.add_argument(
         "--checkerboard-cols",
         type=int,
-        default=11,
+        default=7,
         help="Number of inner chessboard corners across.",
     )
     parser.add_argument(
         "--checkerboard-rows",
         type=int,
-        default=7,
+        default=9,
         help="Number of inner chessboard corners down.",
     )
     parser.add_argument(
         "--square-size",
         type=float,
-        default=1.0,
+        default=20.0,
         help="Physical square size in your chosen unit.",
     )
     parser.add_argument(
