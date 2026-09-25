@@ -551,11 +551,9 @@ cd python
 python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
 ~~~
 
-The web UI continuously detects the chessboard, lets you configure the physical board directly (squares across/down, square size in millimeters, and the minimum number of valid images), shows the derived OpenCV inner-corner pattern, shows measured camera FPS, captures only valid raw frames, and runs calibration without opening an OpenCV desktop window.
+The web UI continuously detects the chessboard, lets you configure the physical board directly (squares across/down and square size in millimeters), choose Classic/SB/Auto detection, tune quality thresholds, enable automatic capture with a configurable cooldown and duplicate suppression, and browse captured images in a drop-down gallery.
 
-The detector first uses OpenCV's standard chessboard detector and automatically falls back to the sector-based SB detector when the classic detector cannot find the full pattern.
-
-For the printed target itself, keep the checkerboard at its intended scale (do not use "fit to page"), make sure all squares are complete and sharply printed, and leave a clear white margin around the board. OpenCV documents that a white border around the whole checkerboard improves detection robustness.
+After a successful calibration, **Run with calibration model** toggles live undistortion using the generated calibration file so you can inspect the result immediately.
 
 For example, a physical 7 × 9 board with 20 mm × 20 mm squares is entered as 7 squares across, 9 squares down, and 20 mm square size. The UI automatically uses the corresponding 6 × 8 inner-corner pattern for OpenCV. Changing the board configuration requires clearing previously captured images first so incompatible calibration views cannot be mixed.
 
