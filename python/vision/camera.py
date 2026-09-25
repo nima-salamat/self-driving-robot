@@ -2,7 +2,7 @@ from time import sleep
 import time
 import cv2
 import logging
-from utils.camera_calibration import CameraCalibration
+from calibration.calibrator import CameraCalibration
 
 try:
     from picamera2 import Picamera2
@@ -35,7 +35,9 @@ class Camera:
         self.last_capture_valid = False
         self.last_capture_at = None
         self.consecutive_failures = 0
-        self.camera_calibration = CameraCalibration()
+        self.camera_calibration = CameraCalibration(
+            enabled=bool(getattr(self.config, "APPLY_CAMERA_CALIBRATION", True))
+        )
 
         if self.mode == "picam" and Picamera2 is not None:
             try:
@@ -145,6 +147,54 @@ class Camera:
                 logger.error("Webcam test capture failed")
                 raise RuntimeError("Webcam not functioning properly")
     
+    def set_frame_rate(self, fps):
+        """Request a target camera capture rate in frames per second."""
+        fps = float(fps)
+        if fps <= 0:
+            raise ValueError("fps must be greater than zero")
+
+        if self.pi_mode:
+            # Picamera2/libcamera exposes frame duration in microseconds.
+            frame_duration_us = int(round(1_000_000.0 / fps))
+            try:
+                self.picam.set_controls({
+                    "FrameDurationLimits": (
+                        frame_duration_us,
+                        frame_duration_us,
+                    )
+                })
+            except Exception:
+                logger.exception(
+                    "Failed to set Picamera2 FrameDurationLimits to %.2f FPS",
+                    fps,
+                )
+                raise
+            return
+
+        if not self.cap.isOpened():
+            raise RuntimeError("OpenCV camera is not open")
+
+        requested = self.cap.set(
+            cv2.CAP_PROP_FPS,
+            fps,
+        )
+        if not requested:
+            logger.warning(
+                "OpenCV backend did not accept requested camera FPS %.2f",
+                fps,
+            )
+
+    def get_frame_rate(self):
+        if self.pi_mode:
+            return None
+        try:
+            value = float(
+                self.cap.get(cv2.CAP_PROP_FPS)
+            )
+            return value if value > 0 else None
+        except Exception:
+            return None
+
     def capture_frame(self, with_resize=True):
 
         started = time.monotonic()
