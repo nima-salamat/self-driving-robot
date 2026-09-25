@@ -159,6 +159,7 @@ class CalibrationStreamServer:
         target_fps=30.0,
     ):
         self.config = camera_config
+        setattr(self.config, "APPLY_CAMERA_CALIBRATION", False)
         self.image_dir = Path(image_dir)
         self.output_file = Path(output_file)
         self.image_store = CalibrationImageStore(self.image_dir)
