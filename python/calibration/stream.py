@@ -1641,6 +1641,13 @@ class CalibrationStreamServer:
                 )
                 return jsonify(
                     success=False,
+                    code=(
+                        "CALIBRATION_RUNNING"
+                        if "Calibration is running" in str(exc)
+                        else "CAPTURES_EXIST"
+                        if "Clear captured calibration images" in str(exc)
+                        else "INVALID_SETTINGS"
+                    ),
                     message=str(exc),
                 ), status
             except Exception:
