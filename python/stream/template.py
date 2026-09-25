@@ -40,8 +40,8 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
 <div class="container">
   <div class="card">
     <div class="header">
-      <div class="h1">Interactive ROI Editor</div>
-      <div class="small">Drag to move/resize bounding boxes or BEV corners. Use sliders for Trapezoid shapes.</div>
+      <div class="h1">Interactive ROI Editor — {{ mode|capitalize }} Mode</div>
+      <div class="small">Drag to move/resize bounding boxes or BEV corners. Use sliders for Trapezoid shapes. <span id="mode_features" style="color:var(--accent);"></span></div>
     </div>
     <div class="controls">
       <label class="small" for="variable_select">Select Area</label>
@@ -1041,8 +1041,20 @@ function fetchValuesLoop() {
     fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }});
 }
 
+function loadModeFeatures(){
+    fetch('/api/mode').then(r=>r.json()).then(j=>{
+        const f=j.features || {};
+        const lane = f.lane_detector || 'default';
+        document.getElementById('mode_features').textContent =
+            'Lane: ' + lane +
+            ' | BEV: ' + (f.bev ? 'on' : 'off') +
+            ' | ML: ' + (f.ml_lane_detector ? 'on' : 'off');
+    }).catch(()=>{});
+}
+
 function initApp(){
-    updateInputsFromValues(); 
+    updateInputsFromValues();
+    loadModeFeatures(); 
     document.getElementById('vis_rl').checked = ui.visible.RL;
     document.getElementById('vis_ll').checked = ui.visible.LL;
     document.getElementById('vis_cw').checked = ui.visible.CW;
