@@ -244,7 +244,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <div class="field"><label for="square_size">Square size</label><input id="square_size" type="number" min="0.001" step="0.1" value="1"><small>Any consistent unit; stored as metadata.</small></div>
                 <div class="field"><label for="min_valid_images">Minimum captures</label><input id="min_valid_images" type="number" min="3" max="500" step="1" value="10"></div>
               </div>
-              <div class="note">Inner corners: <strong id="inner_corners">11 × 7</strong> · Physical board: <strong id="board_physical_size">12 × 8</strong>. If your board is sold as “7 × 9 corners”, choose <em>Inner corners</em> and enter 7 × 9 (the actual printed board is 8 × 10 squares).</div>
+              <div class="note">Inner corners: <strong id="inner_corners">11 × 7</strong> · Physical board: <strong id="board_physical_size">12 × 8</strong>. If your board is sold as “7 × 9 corners”, choose <em>Inner corners</em> and enter 7 × 9 (the actual printed board is 8 × 10 squares). Board configuration is locked while captures exist or calibration is running; clear captures before changing the board geometry.</div>
               <button id="apply_board">Apply board settings</button>
             </div>
           </details>
@@ -466,6 +466,10 @@ function renderStatus(s){
   $("detection_age").textContent=s.detection_age_ms==null ? "Detection: waiting" : "Detection: "+Number(s.detection_age_ms).toFixed(0)+" ms old";
   $("capture").disabled=s.detection_state!=="READY_FOR_CAPTURE" || s.calibration_state==="calibrating";
   $("calibrate").disabled=s.calibration_state==="calibrating" || Number(s.captured_images)<Number(s.min_valid_images);
+  $("apply_board").disabled=(
+    s.calibration_state==="calibrating"
+    || Number(s.captured_images)>0
+  );
   $("preview_model").disabled=s.calibration_state!=="calibrated";
   $("preview_model").textContent=s.calibration_preview_enabled ? "Show raw camera" : "Show calibration preview";
   $("rms").textContent=s.rms==null ? "—" : Number(s.rms).toFixed(4)+" px";
@@ -573,8 +577,19 @@ $("apply_board").onclick=async()=>{
       min_valid_images:Number($("min_valid_images").value)
     });
     applyBoardState(result);boardLoaded=true;settingsLoaded=true;qualityLoaded=true;hideBanner();
-  }catch(_){}
-  finally{button.disabled=false;}
+  }catch(error){
+    showBanner(
+      (error && error.message)
+      || "Board configuration could not be applied.",
+      "error"
+    );
+    try{ await getStatus(); }catch(_){}
+  }finally{
+    // renderStatus() owns the disabled state when captures/calibration lock
+    // the board configuration; otherwise restore the button for editing.
+    const hasCaptures=Number(lastCaptureCount)>0;
+    button.disabled=hasCaptures;
+  }
 };
 $("apply_detection").onclick=async()=>{
   try{
