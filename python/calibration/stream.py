@@ -396,9 +396,37 @@ class CalibrationStreamServer:
 
                 self._maybe_auto_capture(raw, evaluated)
             except Exception as exc:
+                finished = time.monotonic()
+                message = f"Detector error: {exc}"
                 logger.exception(
                     "Calibration detection loop failed"
                 )
+                with self._detection_state_lock:
+                    self._last_detection = {
+                        "valid": False,
+                        "detected": False,
+                        "quality_valid": False,
+                        "corners": None,
+                        "coverage": 0.0,
+                        "center": None,
+                        "sharpness": 0.0,
+                        "edge_margin": 0.0,
+                        "feature": None,
+                        "detector": "error",
+                        "detection_view": "error",
+                        "detection_scale": 1.0,
+                        "quality_reason": message,
+                        "gray": None,
+                        "preview": None,
+                    }
+                    self._last_detection_at = finished
+                    self._detection_count += 1
+                    self._last_detection_duration_ms = round(
+                        (finished - started) * 1000.0,
+                        1,
+                    )
+                    self.chessboard_detected = False
+                    self.last_rejection_reason = message
             finally:
                 next_detection = time.monotonic() + self.detection_interval
 
@@ -1274,7 +1302,8 @@ class CalibrationStreamServer:
                 )
             else:
                 detection_message = (
-                    "Chessboard was not detected."
+                    evaluation.get("quality_reason")
+                    or "Chessboard was not detected."
                 )
         elif self._last_camera_error:
             detection_message = self._last_camera_error
