@@ -180,7 +180,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                   <input id="debug_adaptive_c" type="number" min="-20" max="20" step="1" value="5">
                 </div>
               </div>
-              <div class="note">“Detector input” shows the full-resolution grayscale image used by the detector. Threshold/Otsu/adaptive views are diagnostics only.</div>
+              <div class="note">The direct detector input is full-resolution grayscale. Otsu and adaptive thresholding are also tried automatically as fallback detector inputs; these previews refresh only when their settings change.</div>
               <img id="debug_preview" alt="Detector diagnostic preview" style="width:100%;max-height:260px;object-fit:contain;background:#000;border-radius:10px;border:1px solid var(--line)">
             </div>
           </details>
@@ -238,12 +238,13 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
             <summary>Board configuration</summary>
             <div class="section-body">
               <div class="grid-2">
-                <div class="field"><label for="board_cols">Squares across</label><input id="board_cols" type="number" min="2" max="100" step="1" value="12"></div>
-                <div class="field"><label for="board_rows">Squares down</label><input id="board_rows" type="number" min="2" max="100" step="1" value="8"></div>
+                <div class="field"><label for="board_dimension_kind">Board dimensions mean</label><select id="board_dimension_kind"><option value="squares">Physical squares (default)</option><option value="inner_corners">Inner corners (common board specification)</option></select></div>
+                <div class="field"><label for="board_cols">Columns</label><input id="board_cols" type="number" min="2" max="100" step="1" value="12"></div>
+                <div class="field"><label for="board_rows">Rows</label><input id="board_rows" type="number" min="2" max="100" step="1" value="8"></div>
                 <div class="field"><label for="square_size">Square size</label><input id="square_size" type="number" min="0.001" step="0.1" value="1"><small>Any consistent unit; stored as metadata.</small></div>
                 <div class="field"><label for="min_valid_images">Minimum captures</label><input id="min_valid_images" type="number" min="3" max="500" step="1" value="10"></div>
               </div>
-              <div class="note">Inner corners: <strong id="inner_corners">11 × 7</strong> · Physical board: <strong id="board_physical_size">12 × 8</strong></div>
+              <div class="note">Inner corners: <strong id="inner_corners">11 × 7</strong> · Physical board: <strong id="board_physical_size">12 × 8</strong>. If your board is sold as “7 × 9 corners”, choose <em>Inner corners</em> and enter 7 × 9 (the actual printed board is 8 × 10 squares).</div>
               <button id="apply_board">Apply board settings</button>
             </div>
           </details>
@@ -257,7 +258,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <div class="field">
                   <label for="detector_mode">Detector</label>
                   <select id="detector_mode">
-                    <option value="auto">Auto (Classic → SB)</option>
+                    <option value="auto">Auto (SB → Classic fallback)</option>
                     <option value="classic">Classic</option>
                     <option value="sb">SB</option>
                   </select>
@@ -271,7 +272,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <span class="status-label">Auto-capture accepted views</span>
                 <input id="auto_capture_enabled" type="checkbox" style="width:18px;min-height:18px">
               </label>
-              <div class="note">Auto mode tries a cheap direct pass first and enters recovery preprocessing only after that fails.</div>
+              <div class="note">Auto mode tries a direct pass first and enters recovery preprocessing only after that fails.</div>
               <button id="apply_detection">Apply detection options</button>
             </div>
           </details>
@@ -333,6 +334,7 @@ let qualityLoaded = false;
 let boardLoaded = false;
 let lastCaptureCount = -1;
 let debugTimer = null;
+let statusTimer = null;
 let statusInFlight = false;
 let statusFailures = 0;
 let bannerTimer = null;
@@ -413,8 +415,10 @@ function badgeForState(state){
   return [String(state || "WAITING").replace(/_/g," "),"muted"];
 }
 function applyBoardState(s){
-  $("board_cols").value = s.board_squares[0];
-  $("board_rows").value = s.board_squares[1];
+  const useInnerCorners=$("board_dimension_kind").value==="inner_corners";
+  const dimensions=useInnerCorners ? s.checkerboard_inner_corners : s.board_squares;
+  $("board_cols").value = dimensions[0];
+  $("board_rows").value = dimensions[1];
   $("square_size").value = Number(s.square_size).toString();
   $("min_valid_images").value = s.min_valid_images;
   $("inner_corners").textContent = s.checkerboard_inner_corners[0] + " × " + s.checkerboard_inner_corners[1];
@@ -422,8 +426,13 @@ function applyBoardState(s){
 }
 function updateBoardPreview(){
   const cols=Number($("board_cols").value), rows=Number($("board_rows").value), size=Number($("square_size").value);
-  if(cols>=2 && rows>=2) $("inner_corners").textContent=(cols-1)+" × "+(rows-1);
-  if(cols>=2 && rows>=2 && size>0) $("board_physical_size").textContent=(cols*size).toFixed(1)+" × "+(rows*size).toFixed(1);
+  const useInnerCorners=$("board_dimension_kind").value==="inner_corners";
+  const innerCols=useInnerCorners ? cols : cols-1;
+  const innerRows=useInnerCorners ? rows : rows-1;
+  const squareCols=useInnerCorners ? cols+1 : cols;
+  const squareRows=useInnerCorners ? rows+1 : rows;
+  if(innerCols>=1 && innerRows>=1) $("inner_corners").textContent=innerCols+" × "+innerRows;
+  if(squareCols>=2 && squareRows>=2 && size>0) $("board_physical_size").textContent=(squareCols*size).toFixed(1)+" × "+(squareRows*size).toFixed(1);
 }
 function renderDiversity(diversity){
   const grid=$("diversity_grid");
@@ -506,6 +515,7 @@ async function getStatus(){
     noteStatusFailure(error);
   }finally{
     statusInFlight=false;
+    scheduleStatusPoll();
   }
 }
 async function refreshCaptures(selectNewest=true){
@@ -537,19 +547,28 @@ function refreshDebugFrame(){
   });
   $("debug_preview").src="/api/debug_frame?"+params.toString();
 }
-function startDebugLoop(){clearInterval(debugTimer);refreshDebugFrame();debugTimer=setInterval(refreshDebugFrame,200);}
-$("debug_view").addEventListener("change",refreshDebugFrame);
-$("debug_threshold").addEventListener("input",()=>{if($("debug_view").value==="fixed")refreshDebugFrame();});
-$("debug_adaptive_block").addEventListener("input",()=>{if($("debug_view").value==="adaptive")refreshDebugFrame();});
-$("debug_adaptive_c").addEventListener("input",()=>{if($("debug_view").value==="adaptive")refreshDebugFrame();});
-["board_cols","board_rows","square_size"].forEach((id)=>$(id).addEventListener("input",updateBoardPreview));
+function scheduleDebugRefresh(delay=150){
+  clearTimeout(debugTimer);
+  debugTimer=setTimeout(refreshDebugFrame,delay);
+}
+function scheduleStatusPoll(){
+  clearTimeout(statusTimer);
+  if(!document.hidden) statusTimer=setTimeout(getStatus,750);
+}
+$("debug_view").addEventListener("change",()=>scheduleDebugRefresh(0));
+$("debug_threshold").addEventListener("input",()=>{if($("debug_view").value==="fixed")scheduleDebugRefresh();});
+$("debug_adaptive_block").addEventListener("input",()=>{if($("debug_view").value==="adaptive")scheduleDebugRefresh();});
+$("debug_adaptive_c").addEventListener("input",()=>{if($("debug_view").value==="adaptive")scheduleDebugRefresh();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){getStatus();scheduleDebugRefresh(0);}else{clearTimeout(statusTimer);}});
+["board_dimension_kind","board_cols","board_rows","square_size"].forEach((id)=>$(id).addEventListener("input",updateBoardPreview));
 $("apply_fps").onclick=async()=>{try{await post("/api/settings",{fps:Number($("fps").value)});hideBanner();}catch(_){}};
 $("apply_board").onclick=async()=>{
   const button=$("apply_board");button.disabled=true;
   try{
+    const useInnerCorners=$("board_dimension_kind").value==="inner_corners";
     const result=await post("/api/settings",{
-      board_cols:Number($("board_cols").value),
-      board_rows:Number($("board_rows").value),
+      board_cols:Number($("board_cols").value)+(useInnerCorners ? 1 : 0),
+      board_rows:Number($("board_rows").value)+(useInnerCorners ? 1 : 0),
       square_size:Number($("square_size").value),
       min_valid_images:Number($("min_valid_images").value)
     });
@@ -615,7 +634,7 @@ $("preview_model").onclick=async()=>{
   const enabled=$("preview_model").textContent.includes("Show calibration preview");
   try{await post("/api/preview",{enabled});await getStatus();}catch(_){}
 };
-updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);getStatus();startDebugLoop();setInterval(getStatus,750);
+updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();
 </script>
 </body>
 </html>
