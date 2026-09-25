@@ -66,6 +66,7 @@ class CalibrationStreamServer:
 
         self._lock = threading.Condition()
         self._frame = None
+        self._raw_frame = None
         self._frame_seq = 0
         self._stop_event = threading.Event()
         self._camera_thread = None
@@ -92,9 +93,10 @@ class CalibrationStreamServer:
         next_index = max(indices, default=0) + 1
         return self.image_dir / f"calib_{next_index:03d}.jpg"
 
-    def _publish(self, frame):
+    def _publish(self, raw_frame, display_frame):
         with self._lock:
-            self._frame = frame.copy()
+            self._raw_frame = raw_frame.copy()
+            self._frame = display_frame.copy()
             self._frame_seq += 1
             self._lock.notify_all()
 
@@ -144,7 +146,7 @@ class CalibrationStreamServer:
                         cv2.LINE_AA,
                     )
 
-                    self._publish(display)
+                    self._publish(frame, display)
 
                     now = time.monotonic()
                     timestamps.append(now)
@@ -224,6 +226,12 @@ class CalibrationStreamServer:
                 return None
             return self._frame.copy()
 
+    def current_raw_frame(self):
+        with self._lock:
+            if self._raw_frame is None:
+                return None
+            return self._raw_frame.copy()
+
     def mjpeg(self):
         last_seq = -1
 
@@ -281,12 +289,13 @@ class CalibrationStreamServer:
 
         # Detection preview contains drawn corners, so save the raw frame
         # obtained from the camera instead of the display frame.
-        raw = self.camera.capture_frame(
-            with_resize=False
-        )[0]
+        # Use the raw frame already produced by the camera thread.
+        # This avoids concurrent access to Picamera2/OpenCV capture from the
+        # Flask request thread.
+        raw = self.current_raw_frame()
 
-        if raw is None or not self.camera.last_capture_valid:
-            return False, "Failed to capture a fresh raw frame."
+        if raw is None:
+            return False, "No raw camera frame is available."
 
         fresh = self.calibrator.evaluate_frame(raw)
         if not fresh["valid"]:
@@ -477,7 +486,6 @@ class CalibrationStreamServer:
             )
             server.serve_forever()
         finally:
-            server.shutdown()
             server.server_close()
             self.stop()
 
