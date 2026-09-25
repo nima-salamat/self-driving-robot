@@ -239,12 +239,12 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
             <div class="section-body">
               <div class="grid-2">
                 <div class="field"><label for="board_dimension_kind">Board dimensions mean</label><select id="board_dimension_kind"><option value="squares">Physical squares (default)</option><option value="inner_corners">Inner corners (common board specification)</option></select></div>
-                <div class="field"><label for="board_cols">Columns</label><input id="board_cols" type="number" min="2" max="100" step="1" value="12"></div>
-                <div class="field"><label for="board_rows">Rows</label><input id="board_rows" type="number" min="2" max="100" step="1" value="8"></div>
-                <div class="field"><label for="square_size">Square size</label><input id="square_size" type="number" min="0.001" step="0.1" value="1"><small>Any consistent unit; stored as metadata.</small></div>
+                <div class="field"><label for="board_cols">Columns</label><input id="board_cols" type="number" min="2" max="100" step="1" value="8"></div>
+                <div class="field"><label for="board_rows">Rows</label><input id="board_rows" type="number" min="2" max="100" step="1" value="10"></div>
+                <div class="field"><label for="square_size">Square size</label><input id="square_size" type="number" min="0.001" step="0.1" value="20"><small>Any consistent unit; stored as metadata.</small></div>
                 <div class="field"><label for="min_valid_images">Minimum captures</label><input id="min_valid_images" type="number" min="3" max="500" step="1" value="10"></div>
               </div>
-              <div class="note">Inner corners: <strong id="inner_corners">11 × 7</strong> · Physical board: <strong id="board_physical_size">12 × 8</strong>. If your board is sold as “7 × 9 corners”, choose <em>Inner corners</em> and enter 7 × 9 (the actual printed board is 8 × 10 squares). Board configuration is locked while captures exist or calibration is running; clear captures before changing the board geometry.</div>
+              <div class="note">Inner corners: <strong id="inner_corners">7 × 9</strong> · Physical board: <strong id="board_physical_size">8 × 10</strong>. If your board is sold as “7 × 9 corners”, choose <em>Inner corners</em> and enter 7 × 9 (the actual printed board is 8 × 10 squares). Board configuration is locked while captures exist or calibration is running; clear captures before changing the board geometry.</div>
               <button id="apply_board">Apply board settings</button>
             </div>
           </details>
@@ -270,7 +270,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
               </div>
               <label class="status-line">
                 <span class="status-label">Auto-capture accepted views</span>
-                <input id="auto_capture_enabled" type="checkbox" style="width:18px;min-height:18px">
+                <input id="auto_capture_enabled" type="checkbox" checked style="width:18px;min-height:18px">
               </label>
               <div class="note">Auto mode tries a direct pass first and enters recovery preprocessing only after that fails.</div>
               <button id="apply_detection">Apply detection options</button>
