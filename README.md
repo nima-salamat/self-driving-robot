@@ -301,7 +301,6 @@ usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
                [--camera-index INDEX]
                [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
                [--city-lane-detector {default,blsf-beta}]
-               [--city-lane-detector {default,blsf-beta}]
 
 Self-driving robot runtime.
 ~~~
@@ -531,6 +530,28 @@ For issues or questions:
 3. Enable debug mode for detailed diagnostics
 
 
+
+## Camera Calibration Web Stream
+
+Camera calibration is organized under `python/calibration/`. The legacy root scripts remain as compatibility wrappers, but the calibration implementation and Flask UI live in the dedicated module.
+
+Start the live calibration stream on a Raspberry Pi:
+
+~~~bash
+cd python
+python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
+~~~
+
+The web UI continuously detects the chessboard, shows measured camera FPS, lets you change the requested camera FPS, captures only valid raw frames, and runs calibration without opening an OpenCV desktop window.
+
+When calibration images already exist, run:
+
+~~~bash
+cd python
+python -m calibration.calibrate --image-dir assets/images --square-size 1.0
+~~~
+
+The saved calibration contains camera intrinsics, distortion coefficients, source resolution, checkerboard metadata, RMS calibration error, reprojection error, and the accepted/rejected image list.
 
 ## Classical BLSF Lane Detector — City Beta
 
