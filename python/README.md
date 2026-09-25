@@ -216,7 +216,7 @@ Start the raw camera calibration interface instead of the legacy local camera wi
 python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
 ~~~
 
-Open the Raspberry Pi address in a browser. The page exposes live chessboard detection, raw-frame capture, calibration execution, measured FPS, and a configurable requested camera FPS.
+Open the Raspberry Pi address in a browser. The page exposes live chessboard detection, raw-frame capture, calibration execution, measured FPS, and a configurable requested camera FPS. The web calibration UI includes board-size inputs, detector selection, quality-threshold controls, automatic capture, a captured-image gallery, and a live preview through the generated calibration model.
 
 Run the offline calibration step directly when images are already captured:
 
