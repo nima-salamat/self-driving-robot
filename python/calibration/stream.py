@@ -1392,10 +1392,15 @@ class CalibrationStreamServer:
                     self._last_calibration_message = " ".join(
                         reasons
                     )
+                    self._enter_calibration_mode()
 
-                self._enter_calibrated_mode(
-                    CameraCalibration(self.output_file, enabled=True)
-                )
+                if result.get("acceptable_for_runtime", True):
+                    preview = CameraCalibration(
+                        self.output_file,
+                        enabled=True,
+                    )
+                    self._enter_calibrated_mode(preview)
+
                 logger.info(
                     "Calibration complete: valid=%d rms=%.6f "
                     "reprojection=%.6f quality=%s",
@@ -1411,6 +1416,7 @@ class CalibrationStreamServer:
                 logger.exception(
                     "Camera calibration failed"
                 )
+                self._enter_calibration_mode()
                 self._calibration_state = "failed"
                 self._last_calibration_message = str(exc)
 
