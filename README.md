@@ -555,7 +555,7 @@ The web UI continuously detects the chessboard, lets you configure the physical 
 
 After a successful calibration, **Run with calibration model** toggles live undistortion using the generated calibration file so you can inspect the result immediately.
 
-For example, a physical 7 × 9 board with 20 mm × 20 mm squares is entered as 7 squares across, 9 squares down, and 20 mm square size. The UI automatically uses the corresponding 6 × 8 inner-corner pattern for OpenCV. Some boards are instead sold by their inner-corner count: a “7 × 9 corners” board has 8 × 10 physical squares, so choose **Inner corners** in the UI and enter 7 × 9. Changing the board configuration requires clearing previously captured images first so incompatible calibration views cannot be mixed.
+The calibration UI defaults to a physical 8 × 10 board with 20 mm × 20 mm squares. OpenCV receives the corresponding 7 × 9 inner-corner pattern. Auto-capture of accepted views is enabled by default; changing the board configuration still requires clearing previously captured images first so incompatible calibration views cannot be mixed. Some boards are instead sold by their inner-corner count: a “7 × 9 corners” board has 8 × 10 physical squares, so choose **Inner corners** in the UI and enter 7 × 9. Changing the board configuration requires clearing previously captured images first so incompatible calibration views cannot be mixed.
 
 When the stream is started with --host 0.0.0.0, startup logs print the detected LAN/Wi-Fi IPv4 address(es) and ready-to-open URL(s), instead of leaving 0.0.0.0 as the only visible address. 0.0.0.0 means "bind all interfaces"; it is not the address you open in a browser.
 
