@@ -21,6 +21,7 @@ from flask import (
     jsonify,
     render_template_string,
     request,
+    send_file,
     send_from_directory,
 )
 from werkzeug.serving import make_server
@@ -201,6 +202,9 @@ class CalibrationStreamServer:
         self.auto_captured_images = 0
         self.calibration_preview_enabled = False
         self._calibration_preview = None
+        self.workspace_mode = "calibration"
+        self._auto_capture_before_calibrated = True
+        self._calibration_cancel = threading.Event()
 
         self.requested_fps = float(target_fps)
         self.actual_fps = None
@@ -241,6 +245,8 @@ class CalibrationStreamServer:
             self._lock.notify_all()
 
     def _display_frame(self, frame):
+        if self.workspace_mode != "calibrated":
+            return frame
         if not self.calibration_preview_enabled:
             return frame
 
@@ -274,7 +280,8 @@ class CalibrationStreamServer:
         )
 
         if (
-            evaluation
+            self.workspace_mode == "calibration"
+            and evaluation
             and evaluation.get("corners") is not None
             and detected_at
             and now - detected_at <= detection_freshness
@@ -297,7 +304,11 @@ class CalibrationStreamServer:
                 True,
             )
 
-        state = self._detection_state(evaluation)
+        state = (
+            self._detection_state(evaluation)
+            if self.workspace_mode == "calibration"
+            else "DETECTOR_DISABLED"
+        )
         cv2.putText(
             display,
             f"CHESSBOARD: {state.replace('_', ' ')}",
@@ -337,7 +348,8 @@ class CalibrationStreamServer:
                     # The camera producer never waits for chessboard detection.
                     # Wake the detector, but always publish this newest frame
                     # immediately so the HTTP stream cannot build a stale queue.
-                    self._detection_wakeup.set()
+                    if self.workspace_mode == "calibration":
+                        self._detection_wakeup.set()
                     display_source = self._display_frame(frame)
                     display = self._decorate_live_frame(
                         display_source
@@ -397,6 +409,13 @@ class CalibrationStreamServer:
                 return
 
             now = time.monotonic()
+            if self.workspace_mode != "calibration":
+                self._clear_detection_state()
+                if self._stop_event.wait(0.25):
+                    return
+                next_detection = time.monotonic()
+                continue
+
             raw = self.current_raw_frame()
             if raw is None:
                 next_detection = now + self.detection_interval
@@ -1069,6 +1088,8 @@ class CalibrationStreamServer:
         evaluation,
         calibrator=None,
     ):
+        if self.workspace_mode != "calibration":
+            return
         if not self.auto_capture_enabled:
             return
         if (
@@ -1207,17 +1228,45 @@ class CalibrationStreamServer:
                 )
             self.calibrator = updated
 
-    def set_calibration_preview(self, enabled):
-        if not isinstance(enabled, bool):
-            raise ValueError(
-                "enabled must be boolean"
-            )
+    def _clear_detection_state(self):
+        with self._detection_state_lock:
+            self._last_detection = None
+            self._last_detection_at = 0.0
+            self.chessboard_detected = False
+            self.last_rejection_reason = None
 
-        if enabled:
+    def _enter_calibrated_mode(self, preview):
+        self._auto_capture_before_calibrated = self.auto_capture_enabled
+        self.auto_capture_enabled = False
+        self.last_auto_capture_at = 0.0
+        self._calibration_preview = preview
+        self.calibration_preview_enabled = True
+        self.workspace_mode = "calibrated"
+        self._clear_detection_state()
+
+    def _enter_calibration_mode(self):
+        self.workspace_mode = "calibration"
+        self.calibration_preview_enabled = False
+        self._calibration_preview = None
+        self.auto_capture_enabled = self._auto_capture_before_calibrated
+        self._clear_detection_state()
+
+    def set_workspace_mode(self, mode):
+        mode = str(mode or "").strip().lower()
+        if mode not in {"calibration", "calibrated"}:
+            raise ValueError("mode must be calibration or calibrated")
+        if (
+            self._calibration_thread is not None
+            and self._calibration_thread.is_alive()
+        ):
+            raise ValueError(
+                "Calibration is running; stop calibration before changing mode."
+            )
+        if mode == self.workspace_mode:
+            return
+        if mode == "calibrated":
             if not self.output_file.exists():
-                raise ValueError(
-                    "No calibration model exists yet."
-                )
+                raise ValueError("No calibration model exists yet.")
             preview = CameraCalibration(
                 self.output_file,
                 enabled=True,
@@ -1227,13 +1276,23 @@ class CalibrationStreamServer:
                     preview.last_error
                     or "Calibration model is not usable."
                 )
-            self._calibration_preview = preview
+            self._enter_calibrated_mode(preview)
         else:
-            self._calibration_preview = None
+            self._enter_calibration_mode()
 
-        self.calibration_preview_enabled = enabled
+    def set_calibration_preview(self, enabled):
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be boolean")
+        self.set_workspace_mode(
+            "calibrated" if enabled else "calibration"
+        )
 
     def capture(self):
+        if self.workspace_mode != "calibration":
+            return (
+                False,
+                "Switch to calibration mode before capturing views.",
+            )
         if (
             self._calibration_thread is not None
             and self._calibration_thread.is_alive()
