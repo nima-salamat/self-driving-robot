@@ -25,6 +25,30 @@ class CalibrationCoreTests(unittest.TestCase):
         self.assertEqual(calibrator.square_size, 20.0)
         self.assertEqual(calibrator.min_valid_images, 10)
 
+    def test_evaluate_frame_forwards_recovery_option(self):
+        calibrator = CameraCalibrator(checkerboard=(6, 8))
+        with patch.object(
+            calibrator,
+            "detect_corners_detailed",
+            return_value=(
+                False,
+                None,
+                np.zeros((120, 160), dtype=np.uint8),
+                "none",
+            ),
+        ) as detector:
+            result = calibrator.evaluate_frame(
+                np.zeros((120, 160, 3), dtype=np.uint8),
+                allow_recovery=False,
+            )
+
+        self.assertFalse(result["valid"])
+        detector.assert_called_once()
+        self.assertEqual(
+            detector.call_args.kwargs["allow_recovery"],
+            False,
+        )
+
     def test_live_direct_detection_uses_lightweight_sb_pass(self):
         calibrator = CameraCalibrator(checkerboard=(6, 8))
 
