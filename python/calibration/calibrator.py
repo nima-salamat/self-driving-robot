@@ -210,18 +210,21 @@ class CameraCalibrator:
                 dist_coeffs,
             )
 
-            error = cv2.norm(
-                image_point,
-                projected,
-                cv2.NORM_L2,
-            ) / max(
-                1,
-                len(projected),
+            point_count = max(1, len(projected))
+            squared_error = float(
+                cv2.norm(
+                    image_point,
+                    projected,
+                    cv2.NORM_L2,
+                )
+            ) ** 2
+            rms_error = math.sqrt(
+                squared_error / point_count
             )
 
-            per_view_error.append(float(error))
-            total_error += float(error) ** 2 * len(projected)
-            total_points += len(projected)
+            per_view_error.append(float(rms_error))
+            total_error += squared_error
+            total_points += point_count
 
         mean_reprojection_error = math.sqrt(
             total_error / max(1, total_points)
