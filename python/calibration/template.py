@@ -155,7 +155,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <div class="field">
                   <label>Actual detector input</label>
                   <select id="debug_view">
-                    <option value="detector">Detector input (downscaled gray)</option>
+                    <option value="detector">Detector input (full-resolution gray)</option>
                     <option value="clahe">CLAHE recovery view</option>
                     <option value="invert">Inverted recovery view</option>
                     <option value="gray">Full-resolution grayscale</option>
@@ -180,7 +180,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                   <input id="debug_adaptive_c" type="number" min="-20" max="20" step="1" value="5">
                 </div>
               </div>
-              <div class="note">“Detector input” shows the real downscaled grayscale image used by the fast pass. Threshold/Otsu/adaptive views are diagnostics only.</div>
+              <div class="note">“Detector input” shows the full-resolution grayscale image used by the detector. Threshold/Otsu/adaptive views are diagnostics only.</div>
               <img id="debug_preview" alt="Detector diagnostic preview" style="width:100%;max-height:260px;object-fit:contain;background:#000;border-radius:10px;border:1px solid var(--line)">
             </div>
           </details>
