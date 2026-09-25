@@ -148,15 +148,18 @@ class CameraCalibrator:
             patterns.append((rows, cols))
         return patterns
 
-    def _detection_views(self, gray):
+    def _detection_views(self, gray, allow_recovery=True):
         """
-        Yield bounded recovery views for physical chessboard frames.
+        Yield the direct detector input and, when allowed, bounded recovery views.
 
-        The first pass always uses the original full-resolution grayscale frame.
-        Recovery transforms are deliberately finite so a difficult frame cannot
-        turn the live detector into an unbounded sequence of OpenCV searches.
+        The direct pass is used at the normal detection cadence. Recovery
+        preprocessing is intentionally optional because it is substantially more
+        expensive than the direct detector and must not run on every live frame.
         """
         yield gray, (0, 0), "direct"
+
+        if not allow_recovery:
+            return
 
         try:
             clahe = cv2.createCLAHE(
@@ -358,11 +361,19 @@ class CameraCalibrator:
 
         # Do not assume every installed OpenCV build exposes every SB flag.
         # The plain two-argument call remains the compatibility fallback.
-        flag_sets = [
-            normalize | exhaustive | accuracy,
-            normalize,
-            0,
-        ]
+        if robust:
+            flag_sets = [
+                normalize | exhaustive | accuracy,
+                normalize,
+                0,
+            ]
+        else:
+            # Keep the live/direct pass cheap. Exhaustive + accuracy is a
+            # recovery path and should not run at the normal frame cadence.
+            flag_sets = [
+                normalize,
+                0,
+            ]
 
         seen = set()
         for flags in flag_sets:
@@ -443,7 +454,11 @@ class CameraCalibrator:
 
         return None
 
-    def detect_corners_detailed(self, image):
+    def detect_corners_detailed(
+        self,
+        image,
+        allow_recovery=True,
+    ):
         if image is None or image.size == 0:
             return False, None, None, "none"
 
@@ -453,7 +468,10 @@ class CameraCalibrator:
         )
 
         detection = None
-        for view, offset, view_name in self._detection_views(gray):
+        for view, offset, view_name in self._detection_views(
+            gray,
+            allow_recovery=allow_recovery,
+        ):
             detection = self._detect_on_view(
                 view,
                 offset=offset,
