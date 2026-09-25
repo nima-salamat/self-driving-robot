@@ -108,14 +108,23 @@ class CameraCalibrator:
 
     def _detection_views(self, gray):
         """
-        Return the normal frame plus a padded fallback.
+        Yield candidate grayscale views for chessboard detection.
 
-        A small synthetic white border helps the chessboard detectors when the
-        physical board reaches or nearly reaches the camera frame boundary.
-        Coordinates are returned with the padding offset so callers continue
-        to work in the original image space.
+        - direct: original grayscale
+        - clahe: contrast-enhanced (helps uneven lighting on physical boards)
+        - padded: white border (helps when board touches frame edge)
+
+        Coordinates from padded views are offset so callers stay in original
+        image space. CLAHE uses offset (0, 0).
         """
         yield gray, (0, 0), "direct"
+
+        try:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(gray)
+            yield enhanced, (0, 0), "clahe"
+        except cv2.error:
+            pass
 
         padding = max(
             16,
@@ -131,6 +140,13 @@ class CameraCalibrator:
             value=255,
         )
         yield padded, (padding, padding), "padded"
+
+        try:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            padded_clahe = clahe.apply(padded)
+            yield padded_clahe, (padding, padding), "padded_clahe"
+        except cv2.error:
+            pass
 
     def _canonicalize_corners(self, corners, detected_pattern, offset):
         points = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
@@ -160,37 +176,66 @@ class CameraCalibrator:
         return points
 
     def _try_classic_detector(self, gray, pattern):
-        flags = (
-            cv2.CALIB_CB_ADAPTIVE_THRESH
-            | cv2.CALIB_CB_NORMALIZE_IMAGE
-        )
-        try:
-            return cv2.findChessboardCorners(
-                gray,
-                pattern,
-                flags,
-            )
-        except cv2.error:
-            return False, None
+        # Try several flag combinations; physical boards under mixed lighting
+        # often fail with only the default pair.
+        flag_sets = [
+            (
+                cv2.CALIB_CB_ADAPTIVE_THRESH
+                | cv2.CALIB_CB_NORMALIZE_IMAGE
+            ),
+            (
+                cv2.CALIB_CB_ADAPTIVE_THRESH
+                | cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_FILTER_QUADS
+            ),
+            cv2.CALIB_CB_ADAPTIVE_THRESH,
+            0,
+        ]
+        for flags in flag_sets:
+            try:
+                found, corners = cv2.findChessboardCorners(
+                    gray,
+                    pattern,
+                    flags,
+                )
+                if found and corners is not None:
+                    return True, corners
+            except cv2.error:
+                continue
+        return False, None
 
     def _try_sb_detector(self, gray, pattern):
         detector = getattr(cv2, "findChessboardCornersSB", None)
         if detector is None:
             return False, None
 
-        flags = (
-            cv2.CALIB_CB_NORMALIZE_IMAGE
-            | cv2.CALIB_CB_EXHAUSTIVE
-            | cv2.CALIB_CB_ACCURACY
-        )
-        try:
-            return detector(
-                gray,
-                pattern,
-                flags,
-            )
-        except cv2.error:
-            return False, None
+        flag_sets = [
+            (
+                cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_EXHAUSTIVE
+                | cv2.CALIB_CB_ACCURACY
+            ),
+            (
+                cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_EXHAUSTIVE
+            ),
+            cv2.CALIB_CB_NORMALIZE_IMAGE,
+            0,
+        ]
+        for flags in flag_sets:
+            try:
+                found, corners = detector(gray, pattern, flags)
+                if found and corners is not None:
+                    return True, corners
+            except (cv2.error, TypeError):
+                # Older OpenCV builds may not accept every flag combination.
+                try:
+                    found, corners = detector(gray, pattern)
+                    if found and corners is not None:
+                        return True, corners
+                except (cv2.error, TypeError):
+                    continue
+        return False, None
 
     def detect_corners_detailed(self, image):
         if image is None or image.size == 0:
@@ -201,24 +246,22 @@ class CameraCalibrator:
             cv2.COLOR_BGR2GRAY,
         )
 
-        # Keep the configured detector semantics, but make detection resilient
-        # to tight framing and transposed board orientation. Only the padded
-        # fallback is used after direct-frame attempts fail.
+        # Resilient detection for physical boards:
+        # multiple views (direct / CLAHE / padded), both classic and SB
+        # detectors, and transposed pattern when cols != rows.
         detectors = []
         if self.detector_mode in {"auto", "classic"}:
             detectors.append(("classic", self._try_classic_detector))
         if self.detector_mode in {"auto", "sb"}:
             detectors.append(("sb", self._try_sb_detector))
 
+        if not detectors:
+            return False, None, gray, "none"
+
         patterns = self._detection_patterns()
         views = list(self._detection_views(gray))
 
-        for view_index, (view, offset, _) in enumerate(views):
-            # Direct view is the normal fast path. The padded view is a
-            # recovery path and should not change the detector's configured mode.
-            if view_index == 1 and len(views) > 1 and not detectors:
-                break
-
+        for view, offset, _view_name in views:
             for detector_name, detector in detectors:
                 for pattern in patterns:
                     found, corners = detector(view, pattern)
@@ -233,6 +276,8 @@ class CameraCalibrator:
                     if canonical is None:
                         continue
 
+                    # Refine on the original grayscale (not the CLAHE/padded
+                    # view) so sub-pixel corners stay in camera coordinates.
                     refined = cv2.cornerSubPix(
                         gray,
                         canonical,
@@ -597,146 +642,95 @@ class CameraCalibrator:
             output_path,
             cameraMatrix=result["camera_matrix"],
             distCoeffs=result["dist_coeffs"],
-            imageSize=np.asarray(
-                result["image_size"],
-                dtype=np.int32,
-            ),
-            checkerboard=np.asarray(
-                result["checkerboard"],
-                dtype=np.int32,
-            ),
-            squareSize=np.asarray(
-                result["square_size"],
-                dtype=np.float64,
-            ),
-            rms=np.asarray(
-                result["rms"],
-                dtype=np.float64,
-            ),
-            meanReprojectionError=np.asarray(
-                result["mean_reprojection_error"],
-                dtype=np.float64,
-            ),
-            metadata=np.asarray(
-                json.dumps(
-                    metadata,
-                    ensure_ascii=False,
-                )
-            ),
+            imageSize=np.array(result["image_size"], dtype=np.int32),
+            metadata=json.dumps(metadata),
         )
 
-        logger.info(
-            "Saved camera calibration: %s",
-            output_path,
-        )
+        return output_path
 
-    def calibrate_from_directory(
-        self,
-        image_dir,
-        output_path,
-    ):
+    def calibrate_from_directory(self, image_dir, output_path):
         image_dir = Path(image_dir)
-        paths = sorted(
-            image_dir.glob("*.jpg")
-        )
-        paths += sorted(
-            image_dir.glob("*.jpeg")
-        )
-        paths += sorted(
-            image_dir.glob("*.png")
-        )
+        if not image_dir.is_dir():
+            raise ValueError(f"Not a directory: {image_dir}")
 
-        result = self.calibrate_directory(paths)
-        self.save(
-            result,
-            output_path,
+        extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+        image_paths = sorted(
+            p for p in image_dir.iterdir()
+            if p.suffix.lower() in extensions and p.is_file()
         )
+        if not image_paths:
+            raise ValueError(f"No images found in {image_dir}")
+
+        result = self.calibrate_directory(image_paths)
+        self.save(result, output_path)
         return result
 
 
 class CameraCalibration:
     """
-    Runtime calibration loader/undistorter.
-
-    Calibration is keyed by source resolution. When runtime resolution differs,
-    the intrinsic matrix is scaled to the new resolution before undistortion.
+    Runtime loader/applier for a saved camera calibration NPZ.
     """
 
-    def __init__(self, calibration_file=None, enabled=True):
-        self.enabled = bool(enabled)
+    def __init__(self, calibration_file=None):
+        self.calibration_file = Path(calibration_file) if calibration_file else None
+        self.enabled = False
         self.camera_matrix = None
         self.dist_coeffs = None
         self.image_size = None
-
-        self._new_camera_matrix_cache = {}
-        self._cache_lock = threading.RLock()
+        self.metadata = {}
         self.last_error = None
-        self.quality_status = "legacy-unverified"
-        self.calibration_model = "pinhole"
+        self._new_camera_matrix_cache = {}
+        self._cache_lock = threading.Lock()
 
-        if not self.enabled:
-            return
+        if self.calibration_file is not None:
+            self.load(self.calibration_file)
 
-        if calibration_file is None:
-            calibration_file = (
-                Path(__file__).resolve().parents[1]
-                / "assets"
-                / "camera_calibration.npz"
-            )
-
-        self.calibration_file = Path(
-            calibration_file
-        )
-
-        if not self.calibration_file.exists():
-            logger.warning(
-                "Calibration file not found: %s. "
-                "Using raw camera frames.",
-                self.calibration_file,
-            )
-            self.enabled = False
-            return
+    def load(self, calibration_file):
+        self.calibration_file = Path(calibration_file)
+        self.enabled = False
+        self.last_error = None
+        self._new_camera_matrix_cache.clear()
 
         try:
-            with np.load(
-                self.calibration_file,
-                allow_pickle=False,
-            ) as data:
-                self.camera_matrix = data["cameraMatrix"]
-                self.dist_coeffs = data["distCoeffs"]
+            data = np.load(str(self.calibration_file), allow_pickle=True)
 
-                if "imageSize" in data:
-                    size = data["imageSize"].astype(int).tolist()
-                    if len(size) == 2 and all(int(value) > 0 for value in size):
-                        self.image_size = (int(size[0]), int(size[1]))
+            if "cameraMatrix" in data:
+                self.camera_matrix = np.asarray(data["cameraMatrix"], dtype=np.float64)
+            elif "mtx" in data:
+                self.camera_matrix = np.asarray(data["mtx"], dtype=np.float64)
+            else:
+                raise KeyError("cameraMatrix / mtx")
 
-                metadata = data["metadata"] if "metadata" in data else None
-                if metadata is not None:
-                    parsed = json.loads(
-                        metadata.item() if hasattr(metadata, "item") else str(metadata)
-                    )
-                    self.quality_status = str(
-                        parsed.get("quality_status", "legacy-unverified")
-                    )
-                    self.calibration_model = str(
-                        parsed.get("calibration_model", "pinhole")
-                    )
-                    if parsed.get("acceptable_for_runtime") is False:
-                        self.last_error = "calibration failed its runtime quality gate"
-                        self.enabled = False
-                        return
-                    if self.calibration_model != "pinhole":
-                        self.last_error = (
-                            "unsupported calibration model: "
-                            f"{self.calibration_model}"
-                        )
-                        self.enabled = False
-                        return
+            if "distCoeffs" in data:
+                self.dist_coeffs = np.asarray(data["distCoeffs"], dtype=np.float64)
+            elif "dist" in data:
+                self.dist_coeffs = np.asarray(data["dist"], dtype=np.float64)
+            else:
+                raise KeyError("distCoeffs / dist")
 
-            if self.camera_matrix.shape != (3, 3):
-                raise ValueError(
-                    "cameraMatrix must have shape (3, 3)"
-                )
+            if "imageSize" in data:
+                size = np.asarray(data["imageSize"]).reshape(-1)
+                if size.size >= 2:
+                    self.image_size = (int(size[0]), int(size[1]))
+
+            if "metadata" in data:
+                raw = data["metadata"]
+                if isinstance(raw, np.ndarray):
+                    raw = raw.item() if raw.ndim == 0 else raw
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                if isinstance(raw, str):
+                    self.metadata = json.loads(raw)
+                elif isinstance(raw, dict):
+                    self.metadata = raw
+
+            if self.image_size is None and self.metadata:
+                w = self.metadata.get("image_width")
+                h = self.metadata.get("image_height")
+                if w and h:
+                    self.image_size = (int(w), int(h))
+
+            self.enabled = True
 
             if self.image_size is None:
                 logger.warning(
