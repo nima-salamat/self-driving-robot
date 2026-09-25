@@ -23,6 +23,10 @@ button{border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
 .ghost{background:transparent;border:1px solid rgba(255,255,255,.1);color:var(--txt)}
 input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px;width:100px}
 .status{display:grid;gap:6px;padding:10px;background:#050b15;border-radius:8px;font-size:13px}
+details{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);border-radius:9px;padding:8px}
+summary{cursor:pointer;font-weight:600;padding:4px 2px}
+select{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px}
+.check{display:flex;gap:8px;align-items:center}
 .ok{color:#4ade80}.warn{color:#facc15}.err{color:#f87171}
 @media(max-width:900px){.container{grid-template-columns:1fr}}
 </style>
@@ -45,8 +49,10 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
       <div class="small">Use different board positions, tilt, distance, and image coverage.</div>
     </div>
 
-    <div class="status">
-      <div><strong>Board configuration</strong></div>
+    <details open>
+      <summary>Board configuration</summary>
+      <div class="status">
+      <div><strong>Physical checkerboard</strong></div>
       <div class="row">
         <label for="board_cols">Squares across</label>
         <input id="board_cols" type="number" min="2" max="100" step="1" value="12">
@@ -68,12 +74,70 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
         · Physical board: <span id="board_physical_size">12 × 8 mm</span>
       </div>
       <button class="ghost" id="apply_board">Apply board settings</button>
-    </div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Detection & auto capture</summary>
+      <div class="status">
+        <div class="row">
+          <label for="detector_mode">Detector</label>
+          <select id="detector_mode">
+            <option value="auto">Auto (Classic → SB)</option>
+            <option value="classic">Classic</option>
+            <option value="sb">SB (robust)</option>
+          </select>
+        </div>
+        <label class="check">
+          <input id="auto_capture_enabled" type="checkbox">
+          Auto-capture valid detections
+        </label>
+        <div class="row">
+          <label for="auto_capture_interval">Auto-capture interval (s)</label>
+          <input id="auto_capture_interval" type="number" min="0.2" max="30" step="0.1" value="1">
+        </div>
+        <div class="small">Only quality-approved detections are captured; duplicate views are filtered.</div>
+        <button class="ghost" id="apply_detection">Apply detection options</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Quality thresholds</summary>
+      <div class="status">
+        <div class="row">
+          <label for="min_coverage">Minimum coverage</label>
+          <input id="min_coverage" type="number" min="0.001" max="1" step="0.001" value="0.03">
+        </div>
+        <div class="row">
+          <label for="min_sharpness">Minimum sharpness</label>
+          <input id="min_sharpness" type="number" min="0.1" step="1" value="20">
+        </div>
+        <div class="row">
+          <label for="min_edge_margin">Minimum edge margin</label>
+          <input id="min_edge_margin" type="number" min="0.001" max="0.5" step="0.001" value="0.01">
+        </div>
+        <div class="row">
+          <label for="duplicate_distance">Duplicate distance</label>
+          <input id="duplicate_distance" type="number" min="0.001" max="5" step="0.005" value="0.05">
+        </div>
+        <button class="ghost" id="apply_quality">Apply quality thresholds</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Captured images</summary>
+      <div class="status">
+        <select id="capture_select" style="width:100%"></select>
+        <img id="capture_preview" alt="Selected calibration capture" style="display:none;width:100%;max-height:300px;object-fit:contain;background:#000;border-radius:8px">
+        <div class="small">Newest captures appear first.</div>
+      </div>
+    </details>
 
     <div class="status">
       <div>Detection: <span id="detection" class="warn">waiting</span></div>
       <div>Detector: <span id="detector" class="small">-</span></div>
       <div>Capture: <span id="capture_eligible" class="warn">-</span></div>
+      <div>Auto-captured: <span id="auto_captured">0</span></div>
       <div>Captured: <span id="captured">0</span></div>
       <div>Camera: <span id="camera">-</span></div>
       <div>Requested FPS: <span id="requested_fps">-</span></div>
@@ -96,6 +160,7 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
     </div>
 
     <button class="primary" id="calibrate">Run calibration</button>
+    <button class="ghost" id="preview_model" disabled>Run with calibration model</button>
     <div class="small">
       Output: <code>assets/camera_calibration.npz</code>
     </div>
@@ -118,11 +183,34 @@ function applyBoardState(s){
     (s.board_squares[1] * Number(s.square_size)).toFixed(1) + ' mm';
 }
 
+let detectionSettingsLoaded=false;
+let qualitySettingsLoaded=false;
+let lastKnownCaptureCount=-1;
+
 async function getStatus(){
   try{
     const r=await fetch('/api/status');
     const s=await r.json();
     document.getElementById('captured').textContent=s.captured_images;
+    document.getElementById('auto_captured').textContent=s.auto_captured_images;
+
+    if(!detectionSettingsLoaded){
+      document.getElementById('detector_mode').value=s.detector_mode;
+      document.getElementById('auto_capture_enabled').checked=s.auto_capture_enabled;
+      document.getElementById('auto_capture_interval').value=Number(s.auto_capture_interval).toFixed(1);
+      detectionSettingsLoaded=true;
+    }
+    if(!qualitySettingsLoaded){
+      document.getElementById('min_coverage').value=Number(s.min_coverage).toFixed(3);
+      document.getElementById('min_sharpness').value=Number(s.min_sharpness).toFixed(1);
+      document.getElementById('min_edge_margin').value=Number(s.min_edge_margin).toFixed(3);
+      document.getElementById('duplicate_distance').value=Number(s.duplicate_distance).toFixed(3);
+      qualitySettingsLoaded=true;
+    }
+    if(lastKnownCaptureCount !== s.captured_images){
+      lastKnownCaptureCount=s.captured_images;
+      refreshCaptures(false);
+    }
 
     if(!boardSettingsLoaded){
       applyBoardState(s);
@@ -146,6 +234,13 @@ async function getStatus(){
       s.actual_fps === null ? '-' : Number(s.actual_fps).toFixed(1);
 
     const detection=document.getElementById('detection');
+    document.getElementById('preview_model').disabled =
+      s.calibration_state !== 'calibrated';
+    document.getElementById('preview_model').textContent =
+      s.calibration_preview_enabled
+        ? 'Show raw camera'
+        : 'Run with calibration model';
+
     document.getElementById('detector').textContent =
       s.detector === 'sb'
         ? 'SB (robust)'
@@ -211,15 +306,88 @@ document.getElementById('apply_board').onclick=async()=>{
   );
 };
 
+document.getElementById('apply_detection').onclick=async()=>{
+  const result=await post('/api/settings',{
+    detector_mode:document.getElementById('detector_mode').value,
+    auto_capture_enabled:document.getElementById('auto_capture_enabled').checked,
+    auto_capture_interval:Number(document.getElementById('auto_capture_interval').value)
+  });
+  if(!result.success){
+    alert(result.message || 'Failed to update detection options');
+    return;
+  }
+  detectionSettingsLoaded=true;
+  alert('Detection options applied.');
+};
+
+document.getElementById('apply_quality').onclick=async()=>{
+  const result=await post('/api/settings',{
+    min_coverage:Number(document.getElementById('min_coverage').value),
+    min_sharpness:Number(document.getElementById('min_sharpness').value),
+    min_edge_margin:Number(document.getElementById('min_edge_margin').value),
+    duplicate_distance:Number(document.getElementById('duplicate_distance').value)
+  });
+  if(!result.success){
+    alert(result.message || 'Failed to update quality thresholds');
+    return;
+  }
+  qualitySettingsLoaded=true;
+  alert('Quality thresholds applied.');
+};
+
+async function refreshCaptures(selectNewest=true){
+  try{
+    const response=await fetch('/api/captures');
+    const data=await response.json();
+    const select=document.getElementById('capture_select');
+    const previous=select.value;
+    select.innerHTML='';
+    for(const item of data.captures){
+      const option=document.createElement('option');
+      option.value=item.url;
+      option.textContent=item.filename;
+      select.appendChild(option);
+    }
+    if(data.captures.length){
+      select.value=selectNewest ? data.captures[0].url : previous;
+      if(!select.value) select.value=data.captures[0].url;
+      const preview=document.getElementById('capture_preview');
+      preview.src=select.value;
+      preview.style.display='block';
+    }else{
+      document.getElementById('capture_preview').style.display='none';
+    }
+  }catch(_){}
+}
+
+document.getElementById('capture_select').onchange=()=>{
+  const value=document.getElementById('capture_select').value;
+  const preview=document.getElementById('capture_preview');
+  if(value){
+    preview.src=value;
+    preview.style.display='block';
+  }
+};
+
+document.getElementById('preview_model').onclick=async()=>{
+  const enabled=document.getElementById('preview_model').textContent.includes('Run with');
+  const result=await post('/api/preview',{enabled});
+  if(!result.success){
+    alert(result.message || 'Failed to toggle calibration preview');
+  }
+};
+
 document.getElementById('capture').onclick=async()=>{
   const result=await post('/api/capture');
   alert(result.message || (result.saved ? 'Captured' : 'Not captured'));
+  if(result.saved) await refreshCaptures(true);
 };
 
 document.getElementById('clear').onclick=async()=>{
   if(!confirm('Delete captured calibration images?')) return;
   const result=await post('/api/clear');
   alert(result.message || 'Done');
+  await refreshCaptures(true);
 };
 
 document.getElementById('calibrate').onclick=async()=>{
@@ -244,6 +412,7 @@ function updateBoardPreview(){
 });
 updateBoardPreview();
 
+refreshCaptures(true);
 getStatus();
 setInterval(getStatus,500);
 </script>
