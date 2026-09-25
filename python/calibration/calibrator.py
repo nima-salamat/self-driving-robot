@@ -29,8 +29,8 @@ class CameraCalibrator:
         min_sharpness=10.0,
         min_edge_margin=0.01,
         duplicate_distance=0.05,
-        max_mean_reprojection_error=1.0,
-        max_view_reprojection_error=2.5,
+        max_mean_reprojection_error=2.5,
+        max_view_reprojection_error=5.0,
         detector_mode="auto",
     ):
         if len(checkerboard) == 2:
