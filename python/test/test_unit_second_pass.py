@@ -426,7 +426,7 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("calibration.stream.Camera", FakeCamera):
+            with patch("calibration.stream.Camera"):
                 server = CalibrationStreamServer(
                     config,
                     image_dir=Path(tmp) / "images",
