@@ -163,6 +163,39 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                     [6, 8],
                 )
 
+
+    def test_web_settings_response_preserves_board_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                client = server.create_app().test_client()
+                response = client.post(
+                    "/api/settings",
+                    json={
+                        "board_cols": 7,
+                        "board_rows": 9,
+                        "square_size": 20,
+                        "min_valid_images": 12,
+                    },
+                )
+                payload = response.get_json()
+                self.assertTrue(payload["success"])
+                self.assertEqual(payload["board_squares"], [7, 9])
+                self.assertEqual(payload["checkerboard_inner_corners"], [6, 8])
+                self.assertEqual(payload["square_size"], 20.0)
+                self.assertEqual(payload["min_valid_images"], 12)
+
     def test_web_rejects_board_changes_when_captures_exist(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = types.SimpleNamespace(

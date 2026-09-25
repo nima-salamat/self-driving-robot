@@ -103,26 +103,31 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
 </div>
 
 <script>
+let boardSettingsLoaded=false;
+
+function applyBoardState(s){
+  document.getElementById('board_cols').value=s.board_squares[0];
+  document.getElementById('board_rows').value=s.board_squares[1];
+  document.getElementById('square_size').value=Number(s.square_size).toFixed(2);
+  document.getElementById('min_valid_images').value=s.min_valid_images;
+  document.getElementById('inner_corners').textContent=
+    s.checkerboard_inner_corners[0] + ' × ' +
+    s.checkerboard_inner_corners[1];
+  document.getElementById('board_physical_size').textContent=
+    (s.board_squares[0] * Number(s.square_size)).toFixed(1) + ' × ' +
+    (s.board_squares[1] * Number(s.square_size)).toFixed(1) + ' mm';
+}
+
 async function getStatus(){
   try{
     const r=await fetch('/api/status');
     const s=await r.json();
     document.getElementById('captured').textContent=s.captured_images;
 
-    const settingIds=['board_cols','board_rows','square_size','min_valid_images'];
-    const editingSettings=settingIds.includes(document.activeElement.id);
-    if(!editingSettings){
-      document.getElementById('board_cols').value=s.board_squares[0];
-      document.getElementById('board_rows').value=s.board_squares[1];
-      document.getElementById('square_size').value=Number(s.square_size).toFixed(2);
-      document.getElementById('min_valid_images').value=s.min_valid_images;
+    if(!boardSettingsLoaded){
+      applyBoardState(s);
+      boardSettingsLoaded=true;
     }
-    document.getElementById('inner_corners').textContent=
-      s.checkerboard_inner_corners[0] + ' × ' +
-      s.checkerboard_inner_corners[1];
-    document.getElementById('board_physical_size').textContent=
-      (s.board_squares[0] * Number(s.square_size)).toFixed(1) + ' × ' +
-      (s.board_squares[1] * Number(s.square_size)).toFixed(1) + ' mm';
     document.getElementById('capture_eligible').textContent =
       s.capture_eligible ? 'ready' : 'not ready';
     document.getElementById('capture_eligible').className =
@@ -179,18 +184,31 @@ document.getElementById('apply_fps').onclick=async()=>{
 };
 
 document.getElementById('apply_board').onclick=async()=>{
+  const button=document.getElementById('apply_board');
   const payload={
     board_cols:Number(document.getElementById('board_cols').value),
     board_rows:Number(document.getElementById('board_rows').value),
     square_size:Number(document.getElementById('square_size').value),
     min_valid_images:Number(document.getElementById('min_valid_images').value)
   };
+
+  button.disabled=true;
   const result=await post('/api/settings',payload);
+  button.disabled=false;
+
   if(!result.success){
     alert(result.message || 'Failed to update board settings');
     return;
   }
-  alert('Board settings applied. Capture new images using this board configuration.');
+
+  applyBoardState(result);
+  boardSettingsLoaded=true;
+  alert(
+    'Board settings applied: ' +
+    result.board_squares[0] + ' × ' +
+    result.board_squares[1] + ' squares, ' +
+    Number(result.square_size).toFixed(2) + ' mm.'
+  );
 };
 
 document.getElementById('capture').onclick=async()=>{
