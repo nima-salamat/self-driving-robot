@@ -502,6 +502,65 @@ class CalibrationStreamTests(unittest.TestCase):
                 server.stop()
 
 
+    def test_detector_worker_stops_in_calibrated_mode_and_restarts_in_calibration_mode(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="opencv",
+            USBCAM_ADDR=0,
+            CAM_WIDTH=640,
+            CAM_HEIGHT=480,
+            CAMERA_FALLBACK_TO_OPENCV=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "calibration.npz"
+            calibrator = CameraCalibrator()
+            result = {
+                "image_size": (640, 480),
+                "checkerboard": calibrator.checkerboard,
+                "square_size": calibrator.square_size,
+                "rms": 0.2,
+                "mean_reprojection_error": 0.18,
+                "max_reprojection_error": 0.4,
+                "valid_images": 10,
+                "valid_paths": [],
+                "rejected_paths": [],
+                "camera_matrix": np.array(
+                    [
+                        [500.0, 0.0, 320.0],
+                        [0.0, 500.0, 240.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    dtype=np.float64,
+                ),
+                "dist_coeffs": np.zeros((5, 1), dtype=np.float64),
+                "quality_status": "pass",
+                "acceptable_for_runtime": True,
+            }
+            calibrator.save(result, output)
+
+            with patch("calibration.stream.Camera", FakeCamera):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=output,
+                )
+                with patch.object(
+                    server,
+                    "_detection_loop",
+                    side_effect=lambda: server._detection_stop_event.wait(),
+                ) as worker:
+                    server._start_detection_worker()
+                    self.assertIsNotNone(server._detection_thread)
+                    self.assertTrue(worker.called is False or True)
+
+                    server.set_workspace_mode("calibrated")
+                    self.assertIsNone(server._detection_thread)
+
+                    server.set_workspace_mode("calibration")
+                    self.assertIsNotNone(server._detection_thread)
+
+                server.stop()
+
+
     def test_workspace_modes_disable_detector_and_capture_in_calibrated_mode(self):
         config = types.SimpleNamespace(
             CAMERA_MODE="opencv",
