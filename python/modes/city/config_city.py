@@ -184,6 +184,30 @@ AUTO_UPDATE_KP = False
 # lane detection method
 OLD_METHOD = False
 
+# ---------------------------------------------------------------------------
+# BLSF beta lane detector (City mode only)
+# The normal City detector remains the default. Enable with:
+#   python main.py --mode city --city-lane-detector blsf-beta
+# This experimental detector reuses the BEV_* settings above.
+CITY_LANE_DETECTOR = "default"  # "default" or "blsf-beta"
+BLSF_RANDOM_SEED = 42
+BLSF_MIN_SEGMENT_LENGTH = 17
+BLSF_ANGLE_LIMIT_DEG = 35
+BLSF_STRAIGHT_BAND_DEG = 5
+BLSF_MIN_ANGLE_VOTE = 20
+BLSF_MEDIAN_KERNEL = 9
+BLSF_LOCAL_THRESHOLD = 15
+BLSF_NUM_WINDOWS = 9
+BLSF_WINDOW_WIDTH_FACTOR = 0.40
+BLSF_RANSAC_ITERATIONS = 80
+BLSF_RANSAC_INLIER_THRESHOLD = 6.0
+BLSF_MIN_FIT_POINTS = 12
+BLSF_DEFAULT_LANE_WIDTH = 0.40
+BLSF_FALLBACK_HALF_LANE_WIDTH = 0.20
+BLSF_STEERING_KP = 0.45
+BLSF_STEERING_SMOOTHING = 0.70
+BLSF_NO_LANE_STEERING = 150
+
 # crosswalk detection method
 CW_OLD_METHOD = True
 
