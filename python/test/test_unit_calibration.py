@@ -550,7 +550,6 @@ class CalibrationStreamTests(unittest.TestCase):
                 ) as worker:
                     server._start_detection_worker()
                     self.assertIsNotNone(server._detection_thread)
-                    self.assertTrue(worker.called is False or True)
 
                     server.set_workspace_mode("calibrated")
                     self.assertIsNone(server._detection_thread)
