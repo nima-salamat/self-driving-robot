@@ -150,16 +150,58 @@ class CameraCalibrator:
 
     def _detection_views(self, gray):
         """
-        Yield full-resolution recovery views for physical chessboard frames.
+        Yield bounded recovery views for physical chessboard frames.
 
-        Detection runs in its own worker, so robustness is preferred here over
-        doing a cheap detector pass inside the live camera producer.
+        The first pass always uses the original full-resolution grayscale frame.
+        Recovery transforms are deliberately finite so a difficult frame cannot
+        turn the live detector into an unbounded sequence of OpenCV searches.
         """
-        # Keep the cascade deliberately short.  A failed chessboard search is
-        # expensive, but the threshold recovery views must be real detector
-        # inputs rather than diagnostics only: a well-separated Otsu board is
-        # often the only usable image under uneven camera exposure.
         yield gray, (0, 0), "direct"
+
+        try:
+            clahe = cv2.createCLAHE(
+                clipLimit=2.0,
+                tileGridSize=(8, 8),
+            ).apply(gray)
+            yield clahe, (0, 0), "clahe"
+        except cv2.error:
+            pass
+
+        yield cv2.bitwise_not(gray), (0, 0), "invert"
+
+        try:
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            yield blurred, (0, 0), "blur"
+        except cv2.error:
+            pass
+
+        padding = max(
+            16,
+            int(round(min(gray.shape[:2]) * 0.05)),
+        )
+        padded = cv2.copyMakeBorder(
+            gray,
+            padding,
+            padding,
+            padding,
+            padding,
+            cv2.BORDER_CONSTANT,
+            value=255,
+        )
+        yield padded, (padding, padding), "padded"
+
+        try:
+            padded_clahe = cv2.createCLAHE(
+                clipLimit=2.0,
+                tileGridSize=(8, 8),
+            ).apply(padded)
+            yield padded_clahe, (padding, padding), "padded_clahe"
+        except cv2.error:
+            pass
+
+        yield cv2.bitwise_not(
+            padded
+        ), (padding, padding), "padded_invert"
 
         try:
             _, otsu = cv2.threshold(
@@ -182,37 +224,6 @@ class CameraCalibrator:
                 5,
             )
             yield adaptive, (0, 0), "adaptive"
-        except cv2.error:
-            pass
-
-        try:
-            clahe = cv2.createCLAHE(
-                clipLimit=2.0,
-                tileGridSize=(8, 8),
-            ).apply(gray)
-            yield clahe, (0, 0), "clahe"
-        except cv2.error:
-            pass
-
-        padding = max(
-            16,
-            int(round(min(gray.shape[:2]) * 0.05)),
-        )
-        padded = cv2.copyMakeBorder(
-            gray,
-            padding,
-            padding,
-            padding,
-            padding,
-            cv2.BORDER_CONSTANT,
-            value=255,
-        )
-        try:
-            padded_clahe = cv2.createCLAHE(
-                clipLimit=2.0,
-                tileGridSize=(8, 8),
-            ).apply(padded)
-            yield padded_clahe, (padding, padding), "padded_clahe"
         except cv2.error:
             pass
 
@@ -299,23 +310,37 @@ class CameraCalibrator:
         )
 
     def _try_classic_detector(self, gray, pattern, robust=False):
-        # This is OpenCV's conventional, broadly compatible fallback.  Do not
-        # try progressively weaker flags: each failed invocation performs a
-        # complete search and can make the live UI fall badly behind.
-        flags = (
-            cv2.CALIB_CB_ADAPTIVE_THRESH
-            | cv2.CALIB_CB_NORMALIZE_IMAGE
-        )
-        try:
-            found, corners = cv2.findChessboardCorners(
-                gray,
-                pattern,
-                flags,
-            )
-            if found and corners is not None:
-                return True, corners
-        except cv2.error:
-            pass
+        """
+        Try OpenCV's conventional detector with a small compatibility cascade.
+
+        Older OpenCV builds vary in how strictly they interpret detector flags,
+        so the detector gets one configured pass and, on recovery views, one
+        plain pass without flags.
+        """
+        adaptive = getattr(cv2, "CALIB_CB_ADAPTIVE_THRESH", 0)
+        normalize = getattr(cv2, "CALIB_CB_NORMALIZE_IMAGE", 0)
+        flag_sets = [
+            adaptive | normalize,
+        ]
+        if robust:
+            flag_sets.append(adaptive)
+            flag_sets.append(0)
+
+        seen = set()
+        for flags in flag_sets:
+            if flags in seen:
+                continue
+            seen.add(flags)
+            try:
+                found, corners = cv2.findChessboardCorners(
+                    gray,
+                    pattern,
+                    flags,
+                )
+                if found and corners is not None:
+                    return True, corners
+            except (cv2.error, TypeError):
+                continue
         return False, None
 
     def _try_sb_detector(self, gray, pattern, robust=False):
@@ -327,29 +352,41 @@ class CameraCalibrator:
         if detector is None:
             return False, None
 
-        # The sector-based detector is substantially more robust under lens
-        # distortion and perspective.  Use its high-quality single pass first
-        # rather than repeatedly running it with weaker flag sets.
-        flags = (
-            cv2.CALIB_CB_NORMALIZE_IMAGE
-            | cv2.CALIB_CB_EXHAUSTIVE
-            | cv2.CALIB_CB_ACCURACY
-        )
-        try:
-            found, corners = detector(
-                gray,
-                pattern,
-                flags,
-            )
-            if found and corners is not None:
-                return True, corners
-        except (cv2.error, TypeError):
+        normalize = getattr(cv2, "CALIB_CB_NORMALIZE_IMAGE", 0)
+        exhaustive = getattr(cv2, "CALIB_CB_EXHAUSTIVE", 0)
+        accuracy = getattr(cv2, "CALIB_CB_ACCURACY", 0)
+
+        # Do not assume every installed OpenCV build exposes every SB flag.
+        # The plain two-argument call remains the compatibility fallback.
+        flag_sets = [
+            normalize | exhaustive | accuracy,
+            normalize,
+            0,
+        ]
+
+        seen = set()
+        for flags in flag_sets:
+            if flags in seen:
+                continue
+            seen.add(flags)
             try:
-                found, corners = detector(gray, pattern)
+                if flags:
+                    found, corners = detector(
+                        gray,
+                        pattern,
+                        flags,
+                    )
+                else:
+                    found, corners = detector(
+                        gray,
+                        pattern,
+                    )
                 if found and corners is not None:
                     return True, corners
-            except (cv2.error, TypeError):
-                pass
+            except (cv2.error, TypeError, AttributeError):
+                continue
+            # A false result is not an error, but trying the plain call can
+            # recover boards rejected by a stricter flag combination.
         return False, None
 
     def _detect_on_view(
@@ -373,9 +410,9 @@ class CameraCalibrator:
                 ("sb", self._try_sb_detector),
                 ("classic", self._try_classic_detector),
             ]
-            # The classic detector is especially reliable on the explicit
-            # black/white recovery views, and avoiding an unnecessary SB
-            # exhaustive search keeps these fallback passes bounded.
+            # Binary recovery inputs are already preprocessed; prefer Classic
+            # there, while keeping SB first on the original/continuous-tone
+            # image where its robust sector search is most useful.
             if binary_recovery:
                 detectors.reverse()
 
