@@ -8,6 +8,9 @@ class CalibrationImageStore:
         self.image_dir = Path(image_dir)
         self.image_dir.mkdir(parents=True, exist_ok=True)
 
+    def count(self):
+        return len(list(self.image_dir.glob("calib_*.jpg")))
+
     def next_path(self):
         indices = []
         for path in self.image_dir.glob("calib_*.jpg"):

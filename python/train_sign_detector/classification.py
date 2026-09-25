@@ -24,10 +24,62 @@ blockSize = (16, 16)
 blockStride = (8, 8)
 cellSize = (8, 8)
 nbins = 9
-hog = cv2.HOGDescriptor(
-    winSize, blockSize, blockStride, cellSize, nbins,
-    1, 4.0, 0, 0.2, 0, 64
-)
+
+
+def _numpy_hog(gray):
+    gray = np.asarray(gray, dtype=np.float32)
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=1)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=1)
+    magnitude, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
+    angle = np.mod(angle, 180.0)
+
+    hist = np.zeros((4, 4, nbins), dtype=np.float32)
+    bin_width = 180.0 / nbins
+    for cy in range(4):
+        for cx in range(4):
+            cell_mag = magnitude[cy * 8:(cy + 1) * 8, cx * 8:(cx + 1) * 8]
+            cell_ang = angle[cy * 8:(cy + 1) * 8, cx * 8:(cx + 1) * 8]
+            position = cell_ang / bin_width
+            lower = np.floor(position).astype(np.int32) % nbins
+            upper = (lower + 1) % nbins
+            upper_weight = position - np.floor(position)
+            lower_weight = 1.0 - upper_weight
+            hist[cy, cx] += np.bincount(
+                lower.ravel(),
+                weights=(cell_mag * lower_weight).ravel(),
+                minlength=nbins,
+            )
+            hist[cy, cx] += np.bincount(
+                upper.ravel(),
+                weights=(cell_mag * upper_weight).ravel(),
+                minlength=nbins,
+            )
+
+    blocks = []
+    eps = 1e-5
+    for by in range(3):
+        for bx in range(3):
+            block = hist[by:by + 2, bx:bx + 2].reshape(-1)
+            block = block / np.sqrt(np.sum(block * block) + eps * eps)
+            block = np.minimum(block, 0.2)
+            block = block / np.sqrt(np.sum(block * block) + eps * eps)
+            blocks.append(block)
+    return np.concatenate(blocks).astype(np.float32)
+
+
+if hasattr(cv2, "HOGDescriptor"):
+    hog = cv2.HOGDescriptor(
+        winSize, blockSize, blockStride, cellSize, nbins,
+        1, 4.0, 0, 0.2, 0, 64
+    )
+
+    def _compute_hog(gray):
+        return hog.compute(gray).flatten()
+else:
+    hog = None
+
+    def _compute_hog(gray):
+        return _numpy_hog(gray)
 
 
 def extract_features(image):
@@ -39,7 +91,7 @@ def extract_features(image):
     cv2.normalize(hist, hist)
     color_features = hist.flatten()
     gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
-    hog_features = hog.compute(gray).flatten()
+    hog_features = _compute_hog(gray)
     return np.concatenate((color_features, hog_features)).astype(np.float32)
 
 
@@ -132,7 +184,10 @@ def train_and_evaluate(
     svm.save(str(model_file))
     metadata = {
         "model_type": "svm",
-        "feature_contract": "HSV-16x16-histogram + HOG(32x32)",
+        "feature_contract": (
+            "HSV-16x16-histogram + HOG(32x32,L2-Hys); "
+            "uses OpenCV HOGDescriptor when available and a numpy fallback otherwise"
+        ),
         "class_mapping": {str(k): v for k, v in SIGN_LABELS.items()},
     }
     model_file.with_suffix(

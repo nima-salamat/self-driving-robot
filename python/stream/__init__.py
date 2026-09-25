@@ -175,22 +175,44 @@ class WebStreamer:
         if not self._control_allowed():
             return self._control_denied()
         try:
-            data = request.get_json() or request.form.to_dict()
+            data = request.get_json(silent=True)
+            if data is None:
+                data = request.form.to_dict()
+            if not isinstance(data, dict):
+                return jsonify(
+                    success=False,
+                    message="request body must be an object",
+                ), 400
             updated = {}
             for var in VARIABLES:
-                if var in data:
-                    try:
-                        val = float(data[var])
-                        val = max(0.0, min(1.0, val))
-                        setattr(self.config, var, val)
-                        updated[var] = val
-                    except:
-                        pass
+                if var not in data:
+                    continue
+                try:
+                    val = float(data[var])
+                except (TypeError, ValueError):
+                    return jsonify(
+                        success=False,
+                        message=f"{var} must be numeric",
+                    ), 400
+                if not 0.0 <= val <= 1.0:
+                    return jsonify(
+                        success=False,
+                        message=f"{var} must be between 0 and 1",
+                    ), 400
+                setattr(self.config, var, val)
+                updated[var] = val
             if updated:
                 self.save_conf_to_json()
-            return jsonify(success=True, values={var: self.get_base_var(var) for var in VARIABLES})
-        except:
-            return jsonify(success=False)
+            return jsonify(
+                success=True,
+                values={var: self.get_base_var(var) for var in VARIABLES},
+            )
+        except Exception:
+            logger.exception("Failed to update stream configuration")
+            return jsonify(
+                success=False,
+                message="Failed to update stream configuration",
+            ), 500
 
     def get_values(self):
         return jsonify(values={var: self.get_base_var(var) for var in VARIABLES})
@@ -316,7 +338,11 @@ class WebStreamer:
             else:
                 frames_list = getattr(self.config, "debug_frames_list", [])
                 frame = (
-                    frames_list[-1].copy()
+                    (
+                        frames_list[-1].copy()
+                        if hasattr(frames_list[-1], "copy")
+                        else frames_list[-1]
+                    )
                     if frames_list and frames_list[-1] is not None
                     else None
                 )
@@ -348,7 +374,10 @@ class WebStreamer:
             features={
                 "lane_detector": capabilities.get("lane_detector", "default"),
                 "ml_lane_detector": capabilities.get("ml_lane_detector", False),
-                "bev": capabilities.get("bev", False),
+                "bev": bool(
+                    capabilities.get("supports_bev", False)
+                    and capabilities.get("bev", False)
+                ),
                 "stream": capabilities.get("stream_enabled", False),
                 "recording": capabilities.get("recording_enabled", False),
                 "sign": capabilities.get("sign_enabled", False),
@@ -387,7 +416,11 @@ class WebStreamer:
                             [],
                         )
                         frame = (
-                            frames_list[-1].copy()
+                            (
+                                frames_list[-1].copy()
+                                if hasattr(frames_list[-1], "copy")
+                                else frames_list[-1]
+                            )
                             if frames_list and frames_list[-1] is not None
                             else None
                         )
@@ -539,6 +572,9 @@ def start_stream(config):
     except Exception as exc:
         config.stream_start_error = f"{type(exc).__name__}: {exc}"
         config.stream_ready_event.set()
+        shutdown_event = getattr(config, "SHUTDOWN_EVENT", None)
+        if shutdown_event is not None:
+            shutdown_event.set()
         logger.exception("Failed to start stream server")
         return
     config.streamer = streamer

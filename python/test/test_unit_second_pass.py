@@ -101,6 +101,14 @@ class SecondPassStreamTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_invalid_base_roi_payload_is_rejected(self):
+        config = self.config()
+        response = WebStreamer(config).app.test_client().post(
+            "/update_conf",
+            json={"RL_TOP_ROI": "not-a-number"},
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_marker_control_updates_legacy_alias(self):
         config = self.config()
         config.apply_marker_mode = lambda mode: (

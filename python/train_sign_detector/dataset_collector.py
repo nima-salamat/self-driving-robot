@@ -169,9 +169,16 @@ def main(argv=None) -> int:
             key_text = chr(key)
             if key_text in KEY_TO_LABEL:
                 current_label = KEY_TO_LABEL[key_text]
+                try:
+                    saved = save_sample(frame, current_label, base)
+                except Exception as exc:
+                    print(f"save failed: {exc}")
+                    continue
+                saved_count[current_label] += 1
                 print(
-                    f"Selected {current_label}: "
-                    f"{label_name(current_label)}"
+                    f"Saved {saved.name} -> {current_label} "
+                    f"({label_name(current_label)}) "
+                    f"count={saved_count[current_label]}"
                 )
             elif key == ord(" "):
                 if current_label is None:
