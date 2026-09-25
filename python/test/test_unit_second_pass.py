@@ -357,6 +357,62 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                     path.name,
                 )
 
+    def test_calibration_preview_toggle_applies_to_live_frame_only(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="webcam",
+            CAM_WIDTH=160,
+            CAM_HEIGHT=120,
+            resize_width=160,
+            resize_height=120,
+            CAMERA_FALLBACK_TO_OPENCV=False,
+            APPLY_CAMERA_CALIBRATION=False,
+            CALIBRATION_TARGET_FPS=30.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("calibration.stream.Camera", FakeCamera):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                    host="127.0.0.1",
+                    port=0,
+                    target_fps=30,
+                )
+
+                raw = np.zeros((120, 160, 3), dtype=np.uint8)
+                calibrated = np.full(
+                    (120, 160, 3),
+                    77,
+                    dtype=np.uint8,
+                )
+                preview = types.SimpleNamespace(
+                    enabled=True,
+                    undistort=lambda frame: calibrated,
+                    undistort_points=lambda points, image_size: points,
+                )
+                server._calibration_preview = preview
+
+                server.calibration_preview_enabled = False
+                np.testing.assert_array_equal(
+                    server._display_frame(raw),
+                    raw,
+                )
+
+                server.calibration_preview_enabled = True
+                np.testing.assert_array_equal(
+                    server._display_frame(raw),
+                    calibrated,
+                )
+
+                server.calibration_preview_enabled = False
+                np.testing.assert_array_equal(
+                    server._display_frame(raw),
+                    raw,
+                )
+
+                server.stop()
+
     def test_calibration_preview_requires_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = types.SimpleNamespace(
