@@ -43,6 +43,73 @@ class CalibrationCoreTests(unittest.TestCase):
         self.assertEqual(config.CALIBRATION_TARGET_FPS, 24)
         self.assertFalse(config.APPLY_CAMERA_CALIBRATION)
 
+    def test_synthetic_calibration_runs_and_reports_low_error(self):
+        calibrator = CameraCalibrator(
+            checkerboard=(11, 7),
+            square_size=25.0,
+            min_valid_images=10,
+        )
+
+        camera_matrix = np.array(
+            [
+                [520.0, 0.0, 320.0],
+                [0.0, 515.0, 240.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+        dist_coeffs = np.array(
+            [0.01, -0.005, 0.0005, -0.0002, 0.001],
+            dtype=np.float64,
+        )
+
+        object_points = []
+        image_points = []
+
+        for index in range(12):
+            angle_x = np.deg2rad(-12.0 + index * 2.0)
+            angle_y = np.deg2rad(-8.0 + (index % 4) * 5.0)
+            angle_z = np.deg2rad(-4.0 + (index % 3) * 4.0)
+
+            rotation, _ = cv2.Rodrigues(
+                np.array([angle_x, angle_y, angle_z], dtype=np.float64)
+            )
+
+            rvec, _ = cv2.Rodrigues(rotation)
+            tvec = np.array(
+                [
+                    [(-30.0 + index * 5.0)],
+                    [(index % 3 - 1) * 20.0],
+                    [750.0 + (index % 4) * 35.0],
+                ],
+                dtype=np.float64,
+            )
+
+            projected, _ = cv2.projectPoints(
+                calibrator.object_template,
+                rvec,
+                tvec,
+                camera_matrix,
+                dist_coeffs,
+            )
+
+            object_points.append(calibrator.object_template.copy())
+            image_points.append(projected.astype(np.float32))
+
+        result = calibrator.calibrate(
+            object_points,
+            image_points,
+            (640, 480),
+        )
+
+        self.assertEqual(result["valid_images"], 12)
+        self.assertEqual(result["image_size"], (640, 480))
+        self.assertLess(result["rms"], 0.05)
+        self.assertLess(
+            result["mean_reprojection_error"],
+            0.05,
+        )
+
     def test_calibration_save_and_resolution_aware_load(self):
         calibrator = CameraCalibrator()
         result = {
