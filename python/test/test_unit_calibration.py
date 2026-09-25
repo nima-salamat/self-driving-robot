@@ -126,6 +126,34 @@ class CalibrationCoreTests(unittest.TestCase):
 
         self.assertIn("otsu", names)
         self.assertIn("adaptive", names)
+        self.assertIn("invert", names)
+        self.assertIn("padded", names)
+        self.assertIn("padded_invert", names)
+
+    def test_sb_detector_falls_back_to_plain_call(self):
+        calibrator = CameraCalibrator(
+            checkerboard=(6, 8),
+        )
+        gray = np.zeros((120, 160), dtype=np.uint8)
+        expected = np.zeros((48, 1, 2), dtype=np.float32)
+
+        def fake_sb(image, pattern, *flags):
+            if flags:
+                raise TypeError("legacy SB build accepts only two arguments")
+            return True, expected
+
+        with patch(
+            "calibration.calibrator.cv2.findChessboardCornersSB",
+            side_effect=fake_sb,
+        ):
+            found, corners = calibrator._try_sb_detector(
+                gray,
+                (6, 8),
+            )
+
+        self.assertTrue(found)
+        np.testing.assert_array_equal(corners, expected)
+
 
     def test_create_camera_config_disables_existing_calibration(self):
         config = create_camera_config(
