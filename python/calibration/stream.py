@@ -445,7 +445,7 @@ class CalibrationStreamServer:
         ):
             self._camera_thread.join(timeout=2.0)
 
-        def _validate_detection_interval(self, value):
+    def _validate_detection_interval(self, value):
         try:
             interval = float(value)
         except (TypeError, ValueError):
