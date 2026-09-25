@@ -202,6 +202,56 @@ class CameraCalibrator:
             padded
         ), (padding, padding), "padded_invert"
 
+    def _canonicalize_corners(self, corners, detected_pattern, offset):
+        """
+        Normalize detector output to the configured inner-corner ordering.
+
+        OpenCV accepts a transposed pattern when width/height are swapped, but
+        calibration object points always use self.checkerboard ordering. Padded
+        detector views also operate in a translated coordinate system, so their
+        offset must be removed before the corners are returned.
+        """
+        points = np.asarray(
+            corners,
+            dtype=np.float32,
+        ).reshape(-1, 1, 2)
+
+        expected_count = (
+            self.checkerboard[0]
+            * self.checkerboard[1]
+        )
+        if points.shape[0] != expected_count:
+            return None
+
+        if tuple(detected_pattern) != tuple(self.checkerboard):
+            detected_cols, detected_rows = (
+                int(detected_pattern[0]),
+                int(detected_pattern[1]),
+            )
+            if (
+                detected_cols * detected_rows
+                != expected_count
+            ):
+                return None
+
+            grid = points.reshape(
+                detected_rows,
+                detected_cols,
+                2,
+            )
+            points = (
+                grid.transpose(1, 0, 2)
+                .reshape(-1, 1, 2)
+            )
+
+        if offset != (0, 0):
+            points = points - np.asarray(
+                offset,
+                dtype=np.float32,
+            ).reshape(1, 1, 2)
+
+        return points
+
     def _detection_debug_views(self, gray):
         yield "detector", gray
         try:
@@ -317,17 +367,18 @@ class CameraCalibrator:
         robust=False,
         view_name="direct",
     ):
-        if self.detector_mode in {"auto", "sb"}:
+        if self.detector_mode == "classic":
+            detectors = [
+                ("classic", self._try_classic_detector),
+            ]
+        elif self.detector_mode == "sb":
             detectors = [
                 ("sb", self._try_sb_detector),
             ]
-            if self.detector_mode == "auto":
-                detectors.append(
-                    ("classic", self._try_classic_detector)
-                )
         else:
             detectors = [
                 ("classic", self._try_classic_detector),
+                ("sb", self._try_sb_detector),
             ]
 
         for detector_name, detector in detectors:

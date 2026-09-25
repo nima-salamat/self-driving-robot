@@ -358,6 +358,50 @@ class CalibrationDetectionTests(unittest.TestCase):
         self.assertEqual(gray.ndim, 2)
         self.assertEqual(detector, "none")
 
+    def test_detection_canonicalizes_transposed_pattern(self):
+        calibrator = CameraCalibrator(checkerboard=(6, 8))
+        detected = np.arange(
+            48 * 2,
+            dtype=np.float32,
+        ).reshape(48, 1, 2)
+
+        canonical = calibrator._canonicalize_corners(
+            detected,
+            (8, 6),
+            (0, 0),
+        )
+
+        expected = (
+            detected
+            .reshape(6, 8, 2)
+            .transpose(1, 0, 2)
+            .reshape(48, 1, 2)
+        )
+        np.testing.assert_array_equal(canonical, expected)
+
+    def test_detection_removes_padding_offset(self):
+        calibrator = CameraCalibrator(checkerboard=(6, 8))
+        corners = np.zeros(
+            (48, 1, 2),
+            dtype=np.float32,
+        )
+        corners[:, 0, 0] = np.arange(48, dtype=np.float32) + 24
+        corners[:, 0, 1] = np.arange(48, dtype=np.float32) + 24
+
+        canonical = calibrator._canonicalize_corners(
+            corners,
+            (6, 8),
+            (24, 24),
+        )
+
+        np.testing.assert_array_equal(
+            canonical,
+            corners - np.array(
+                [[[24.0, 24.0]]],
+                dtype=np.float32,
+            ),
+        )
+
     def test_synthetic_board_is_detectable(self):
         calibrator = CameraCalibrator(checkerboard=(6, 8))
         square = 40
