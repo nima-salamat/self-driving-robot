@@ -529,6 +529,28 @@ For issues or questions:
 3. Enable debug mode for detailed diagnostics
 
 
+
+## Classical BLSF Lane Detector — City Beta
+
+The project also includes an experimental classical lane detector based on the 2026 BLSF-style pipeline: BEV/IPM, weighted grayscale, median-local thresholding, LSD, binary line-segment filtering, column projection, sliding windows, and quadratic RANSAC fitting.
+
+It is **City-mode only** and **opt-in**. The existing City lane detector remains the default. The existing Race-mode detector and ML lane detector are unchanged.
+
+Enable the beta implementation explicitly:
+
+```bash
+python main.py --mode city --city-lane-detector blsf-beta
+```
+
+The BLSF beta reuses the existing City BEV settings (`USE_BEV` and `BEV_SRC_*`) rather than introducing a second calibration system. Its tunable values are grouped under the `BLSF_*` settings in `python/modes/city/config_city.py`.
+
+Available City lane-detector choices:
+
+- `default`: existing City vision pipeline
+- `blsf-beta`: experimental classical BLSF pipeline
+
+Do not use `--city-lane-detector` with Race mode; the argument is intentionally restricted to City mode.
+
 ## ML Lane Model Benchmarks
 
 The default lane detector is unchanged. ML lane detection is opt-in and disabled unless `--ml-lane-model` is supplied.
