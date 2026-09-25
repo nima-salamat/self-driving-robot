@@ -430,9 +430,10 @@ class CalibrationStreamServer:
                     self.last_rejection_reason = quality_reason
 
                 self._maybe_auto_capture(
-                raw,
-                evaluated,
-                calibrator=calibrator,
+                    raw,
+                    evaluated,
+                    calibrator=calibrator,
+                )
             )
             except Exception as exc:
                 finished = time.monotonic()
