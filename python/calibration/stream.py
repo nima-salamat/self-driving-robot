@@ -1745,6 +1745,7 @@ class CalibrationStreamServer:
                     "duplicate_distance",
                     "max_mean_reprojection_error",
                     "max_view_reprojection_error",
+                    "replace_captures",
                     "auto_capture_enabled",
                     "auto_capture_interval",
                 }
@@ -1770,6 +1771,14 @@ class CalibrationStreamServer:
                     "min_valid_images",
                 }
                 if board_keys.intersection(data):
+                    replace_captures = data.get(
+                        "replace_captures",
+                        False,
+                    )
+                    if not isinstance(replace_captures, bool):
+                        raise ValueError(
+                            "replace_captures must be boolean"
+                        )
                     self.set_board_configuration(
                         board_cols=data.get("board_cols", self.board_squares[0]),
                         board_rows=data.get("board_rows", self.board_squares[1]),
@@ -1781,6 +1790,7 @@ class CalibrationStreamServer:
                             "min_valid_images",
                             self.min_valid_images,
                         ),
+                        replace_captures=replace_captures,
                     )
 
                 if "detector_mode" in data:
@@ -1877,6 +1887,52 @@ class CalibrationStreamServer:
                     message="Failed to update calibration stream settings",
                 ), 500
 
+        @app.post("/api/mode")
+        def api_mode():
+            try:
+                data = request.get_json(silent=True) or {}
+                self.set_workspace_mode(data.get("mode"))
+                return jsonify(
+                    success=True,
+                    mode=self.workspace_mode,
+                    calibration_preview_enabled=self.calibration_preview_enabled,
+                )
+            except (TypeError, ValueError) as exc:
+                return jsonify(success=False, message=str(exc)), 409
+
+        @app.post("/api/calibrate/cancel")
+        def api_cancel_calibration():
+            cancelled, message = self.cancel_calibration()
+            return jsonify(
+                success=cancelled,
+                message=message,
+            ), (202 if cancelled else 409)
+
+        @app.get("/api/calibration/export")
+        def api_export_calibration():
+            if not self.output_file.exists():
+                return jsonify(
+                    success=False,
+                    message="No calibration model exists yet.",
+                ), 404
+            preview = CameraCalibration(
+                self.output_file,
+                enabled=True,
+            )
+            if not preview.enabled:
+                return jsonify(
+                    success=False,
+                    message=preview.last_error
+                    or "Calibration model is not usable.",
+                ), 409
+            return send_file(
+                self.output_file,
+                as_attachment=True,
+                download_name="camera_calibration.npz",
+                mimetype="application/octet-stream",
+                max_age=0,
+            )
+
         @app.get("/api/captures")
         def api_captures():
             files = self.image_store.paths()
@@ -1897,6 +1953,64 @@ class CalibrationStreamServer:
                 filename,
             )
 
+        @app.delete("/api/captures/<path:filename>")
+        def api_delete_capture(filename):
+            if self.workspace_mode != "calibration":
+                return jsonify(
+                    success=False,
+                    message=(
+                        "Switch to calibration mode before deleting captures."
+                    ),
+                ), 409
+            if (
+                self._calibration_thread is not None
+                and self._calibration_thread.is_alive()
+            ):
+                return jsonify(
+                    success=False,
+                    message=(
+                        "Calibration is running; delete is temporarily disabled."
+                    ),
+                ), 409
+
+            candidate = (self.image_dir / filename).resolve()
+            root = self.image_dir.resolve()
+            allowed = {
+                ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"
+            }
+            if candidate.parent != root or candidate.suffix.lower() not in allowed:
+                return jsonify(
+                    success=False,
+                    message="Invalid capture path.",
+                ), 400
+
+            with self._operation_lock:
+                if not candidate.exists():
+                    return jsonify(
+                        success=False,
+                        message="Capture not found.",
+                    ), 404
+                try:
+                    candidate.unlink()
+                    metadata = self.image_store.metadata_path(candidate)
+                    if metadata.exists():
+                        metadata.unlink()
+                except OSError as exc:
+                    logger.exception(
+                        "Failed to delete calibration capture"
+                    )
+                    return jsonify(
+                        success=False,
+                        message=str(exc),
+                    ), 500
+
+                self._restore_persisted_capture_state()
+                return jsonify(
+                    success=True,
+                    message=f"Deleted {candidate.name}.",
+                    captured_images=self.image_store.count(),
+                )
+
         @app.post("/api/preview")
         def api_preview():
             try:
@@ -1911,6 +2025,7 @@ class CalibrationStreamServer:
                 return jsonify(
                     success=True,
                     enabled=self.calibration_preview_enabled,
+                    mode=self.workspace_mode,
                 )
             except (TypeError, ValueError) as exc:
                 return jsonify(
@@ -1955,6 +2070,7 @@ class CalibrationStreamServer:
                 self._last_calibration = None
                 self._last_calibration_message = None
                 self._calibration_state = "not calibrated"
+                self._enter_calibration_mode()
 
             return jsonify(
                 success=True,
