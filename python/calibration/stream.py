@@ -402,7 +402,7 @@ class CalibrationStreamServer:
             finally:
                 next_detection = time.monotonic() + self.detection_interval
 
-        def start(self):
+    def start(self):
         if (
             self._detection_thread is None
             or not self._detection_thread.is_alive()
