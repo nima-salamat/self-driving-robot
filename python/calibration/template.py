@@ -392,7 +392,7 @@ let statusTimer = null;
 let statusInFlight = false;
 let statusFailures = 0;
 let bannerTimer = null;
-let currentMode = "calibration";
+let currentMode = null;
 let debugInterval = null;
 
 function showBanner(message, kind="error"){
@@ -683,7 +683,7 @@ document.addEventListener("visibilitychange",()=>{
   if(!document.hidden){
     getStatus();
     scheduleDebugRefresh(0);
-    startDebugStream();
+    if(currentMode === "calibration") startDebugStream();
   }else{
     clearTimeout(statusTimer);
     stopDebugStream();
@@ -869,7 +869,7 @@ document.addEventListener("keydown",(event)=>{
   if(event.key==="Escape") closeCaptureModal();
 });
 
-updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();
+updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);getStatus();
 </script></body>
 </html>
 """
