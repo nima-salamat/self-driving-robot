@@ -1886,7 +1886,10 @@ class CalibrationStreamServer:
                 status = (
                     409
                     if (
-                        "Clear captured calibration images" in str(exc)
+                        (
+                            "Captured calibration images exist" in str(exc)
+                            or "Clear captured calibration images" in str(exc)
+                        )
                         or "Calibration is running" in str(exc)
                     )
                     else 400
@@ -1897,7 +1900,10 @@ class CalibrationStreamServer:
                         "CALIBRATION_RUNNING"
                         if "Calibration is running" in str(exc)
                         else "CAPTURES_EXIST"
-                        if "Clear captured calibration images" in str(exc)
+                        if (
+                            "Captured calibration images exist" in str(exc)
+                            or "Clear captured calibration images" in str(exc)
+                        )
                         else "INVALID_SETTINGS"
                     ),
                     message=str(exc),
