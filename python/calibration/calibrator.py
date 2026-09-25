@@ -870,7 +870,12 @@ class CameraCalibrator:
             "valid_images": len(object_points),
         }
 
-    def calibrate_directory(self, image_paths, metadata_loader=None):
+    def calibrate_directory(
+        self,
+        image_paths,
+        metadata_loader=None,
+        cancel_event=None,
+    ):
         paths = [Path(path) for path in image_paths]
         if not paths:
             raise ValueError("No calibration images found")
@@ -883,6 +888,8 @@ class CameraCalibrator:
         accepted_features = []
 
         for path in sorted(paths):
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Calibration cancelled")
             image = cv2.imread(
                 str(path),
                 cv2.IMREAD_COLOR,
@@ -968,6 +975,9 @@ class CameraCalibrator:
             )
             valid_paths.append(str(path))
 
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("Calibration cancelled")
+
         calibration = self.calibrate(
             object_points,
             image_points,
@@ -995,6 +1005,8 @@ class CameraCalibrator:
             })
             object_points.pop(worst)
             image_points.pop(worst)
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("Calibration cancelled")
             calibration = self.calibrate(
                 object_points,
                 image_points,
@@ -1087,6 +1099,7 @@ class CameraCalibrator:
         image_dir,
         output_path,
         metadata_loader=None,
+        cancel_event=None,
     ):
         image_dir = Path(image_dir)
         if not image_dir.is_dir():
@@ -1103,6 +1116,7 @@ class CameraCalibrator:
         result = self.calibrate_directory(
             image_paths,
             metadata_loader=metadata_loader,
+            cancel_event=cancel_event,
         )
         self.save(result, output_path)
         return result
