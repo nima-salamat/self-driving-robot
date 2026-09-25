@@ -111,6 +111,18 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
 .metric{padding:9px;border-radius:9px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05)}
 .metric span{display:block;font-size:10px;color:var(--muted)}.metric strong{display:block;margin-top:3px;font-size:12px}
 .note{font-size:11px;color:var(--muted);line-height:1.5}code{font-size:.9em;color:#cceffd}
+.mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mode-button.active{border-color:rgba(34,211,238,.5);background:rgba(34,211,238,.1);box-shadow:0 0 0 1px rgba(34,211,238,.12) inset}
+.capture-actions{display:flex;gap:8px;flex-wrap:wrap}
+.capture-actions button{flex:1 1 140px}
+.capture-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.82);z-index:50}
+.capture-modal.show{display:flex}
+.capture-modal-card{width:min(1100px,96vw);max-height:92vh;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:12px;display:grid;gap:10px}
+.capture-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px}
+.capture-modal img{display:block;width:100%;max-height:78vh;object-fit:contain;background:#000;border-radius:10px}
+.mode-lock{opacity:.72}
+@media(max-width:640px){.mode-switch{grid-template-columns:1fr}.capture-actions{display:grid}.capture-actions button{width:100%}}
+
 @media(max-width:1050px){.layout{grid-template-columns:1fr}.header-meta{justify-content:flex-start}}
 @media(max-width:640px){.container{width:min(100% - 14px,1450px);padding-top:10px}header{display:block}.header-meta{margin-top:10px}.grid-2{grid-template-columns:1fr}.gallery{grid-template-columns:1fr}.gallery img{height:220px}.form-row{display:grid;grid-template-columns:1fr}}
 </style>
@@ -125,6 +137,8 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
     <div class="header-meta">
       <div class="pill"><span id="camera_dot" class="dot"></span><span id="camera_meta">Camera waiting</span></div>
       <div class="pill"><span class="dot live"></span><span id="fps_meta">Camera · detection</span></div>
+      <div class="pill"><span id="mode_dot" class="dot warn"></span><span id="mode_meta">Calibration mode</span></div>
+
     </div>
   </header>
 
@@ -181,7 +195,13 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 </div>
               </div>
               <div class="note">The direct detector input is full-resolution grayscale. Otsu and adaptive thresholding are also tried automatically as fallback detector inputs; these previews refresh only when their settings change.</div>
-              <img id="debug_preview" alt="Detector diagnostic preview" style="width:100%;max-height:260px;object-fit:contain;background:#000;border-radius:10px;border:1px solid var(--line)">
+
+              <div class="status-line">
+                <span class="status-label">Diagnostic stream</span>
+                <span id="debug_meta" class="status-value">Live</span>
+              </div>
+                            <img id="debug_preview" alt="Detector diagnostic preview" style="width:100%;max-height:260px;object-fit:contain;background:#000;border-radius:10px;border:1px solid var(--line)">
+
             </div>
           </details>
         </div>
@@ -193,6 +213,10 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
               <div class="gallery">
                 <select id="capture_select" size="7"></select>
                 <img id="capture_preview" alt="Selected calibration capture" style="display:none">
+              </div>
+              <div class="capture-actions">
+                <button id="open_capture" type="button">Open large</button>
+                <button id="delete_capture" class="danger" type="button">Delete selected</button>
               </div>
               <div class="note">Each accepted capture stores its detector corners and quality metadata next to the JPEG, so calibration does not need to detect those frames again.</div>
             </div>
@@ -235,6 +259,19 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
 
         <div class="section">
           <details open>
+            <summary>Workspace mode</summary>
+            <div class="section-body">
+              <div class="mode-switch">
+                <button id="mode_calibration" class="mode-button active" type="button">Calibration mode</button>
+                <button id="mode_calibrated" class="mode-button" type="button">Calibrated live mode</button>
+              </div>
+              <div id="mode_message" class="note">Calibration mode runs detection and allows dataset capture.</div>
+            </div>
+          </details>
+        </div>
+
+        <div class="section">
+          <details open>
             <summary>Board configuration</summary>
             <div class="section-body">
               <div class="grid-2">
@@ -244,7 +281,7 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <div class="field"><label for="square_size">Square size</label><input id="square_size" type="number" min="0.001" step="0.1" value="20"><small>Any consistent unit; stored as metadata.</small></div>
                 <div class="field"><label for="min_valid_images">Minimum captures</label><input id="min_valid_images" type="number" min="3" max="500" step="1" value="10"></div>
               </div>
-              <div class="note">Inner corners: <strong id="inner_corners">7 × 9</strong> · Physical board: <strong id="board_physical_size">8 × 10</strong>. If your board is sold as “7 × 9 corners”, choose <em>Inner corners</em> and enter 7 × 9 (the actual printed board is 8 × 10 squares). Board configuration is locked while captures exist or calibration is running; clear captures before changing the board geometry.</div>
+              <div class="note">Inner corners: <strong id="inner_corners">7 × 9</strong> · Physical board: <strong id="board_physical_size">8 × 10</strong>. Changing board geometry invalidates the current dataset and saved model; the UI will ask before clearing captures.</div>
               <button id="apply_board">Apply board settings</button>
             </div>
           </details>
@@ -308,8 +345,13 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
                 <button id="capture" class="primary">Capture accepted view</button>
                 <button id="clear" class="danger">Clear captures</button>
               </div>
-              <button id="calibrate" class="primary">Run calibration</button>
-              <button id="preview_model" disabled>Show calibration preview</button>
+              <div class="actions">
+                <button id="calibrate" class="primary">Run calibration</button>
+                <button id="cancel_calibration" class="danger" type="button" style="display:none">Cancel calibration</button>
+              </div>
+              <div class="actions">
+                <button id="export_model" type="button">Export calibrated model</button>
+              </div>
               <div class="result">
                 <h3>Calibration result</h3>
                 <div class="status-line"><span class="status-label">State</span><span id="calibration_state" class="badge muted">NOT CALIBRATED</span></div>
@@ -341,6 +383,8 @@ let statusTimer = null;
 let statusInFlight = false;
 let statusFailures = 0;
 let bannerTimer = null;
+let currentMode = "calibration";
+let debugInterval = null;
 
 function showBanner(message, kind="error"){
   const el = $("banner");
@@ -415,6 +459,7 @@ function badgeForState(state){
   if(state === "READY_FOR_CAPTURE") return ["READY FOR CAPTURE","ok"];
   if(state === "DETECTED_BUT_REJECTED") return ["DETECTED · QUALITY REJECTED","warn"];
   if(state === "NOT_DETECTED") return ["NOT DETECTED","muted"];
+  if(state === "DETECTOR_DISABLED") return ["DETECTOR DISABLED","muted"];
   return [String(state || "WAITING").replace(/_/g," "),"muted"];
 }
 function applyBoardState(s){
@@ -454,6 +499,44 @@ function setCalibrationState(state){
   $("calibration_state").textContent=String(state||"NOT CALIBRATED").replace(/_/g," ").toUpperCase();
   $("calibration_state").className="badge "+cls;
 }
+function renderMode(mode, modelAvailable){
+  currentMode = mode || "calibration";
+  const calibrated = currentMode === "calibrated";
+  $("mode_calibration").className = "mode-button" + (!calibrated ? " active" : "");
+  $("mode_calibrated").className = "mode-button" + (calibrated ? " active" : "");
+  $("mode_meta").textContent = calibrated ? "Calibrated live mode" : "Calibration mode";
+  $("mode_dot").className = "dot " + (calibrated ? "ok" : "warn");
+  $("mode_message").textContent = calibrated
+    ? "Saved calibration is active. Detection and dataset capture are disabled."
+    : "Detection and dataset capture are active.";
+  $("mode_calibrated").disabled = !modelAvailable || !calibrated && false;
+}
+
+function applyModeLocks(s){
+  const calibrated = s.workspace_mode === "calibrated";
+  const calibrationIds = [
+    "board_dimension_kind","board_cols","board_rows","square_size","min_valid_images",
+    "apply_board","detector_mode","auto_capture_interval","auto_capture_enabled",
+    "apply_detection","min_coverage","min_sharpness","min_edge_margin",
+    "duplicate_distance","max_mean_reprojection_error","max_view_reprojection_error",
+    "apply_quality","capture","clear"
+  ];
+  calibrationIds.forEach((id)=>{
+    const el=$(id);
+    if(el) el.disabled = calibrated || s.calibration_state === "calibrating";
+  });
+  $("mode_calibration").disabled = s.calibration_state === "calibrating";
+  $("mode_calibrated").disabled = !s.calibration_model_available || s.calibration_state === "calibrating";
+  $("calibrate").disabled = calibrated || s.calibration_state === "calibrating"
+    || Number(s.captured_images)<Number(s.min_valid_images);
+  $("cancel_calibration").style.display = s.calibration_state === "calibrating" ? "block" : "none";
+  $("calibrate").textContent = calibrated ? "Calibration active" : "Run calibration";
+  $("export_model").disabled = !s.calibration_model_available;
+  if($("open_capture")) $("open_capture").disabled = !s.captured_images;
+  if($("delete_capture")) $("delete_capture").disabled = calibrated || !s.captured_images;
+  if($("capture_select")) $("capture_select").disabled = !s.captured_images;
+}
+
 function renderStatus(s){
   const b=badgeForState(s.detection_state);
   $("board_state").textContent=b[0];
@@ -467,14 +550,9 @@ function renderStatus(s){
   $("fps_meta").textContent=Number(s.actual_fps || s.requested_fps || 0).toFixed(1)+" FPS camera · "+Number(s.detection_fps || 0).toFixed(1)+" FPS detection";
   $("detector_meta").textContent="Detector: "+(s.detector || "not found")+(s.detection_view ? " · "+s.detection_view : "");
   $("detection_age").textContent=s.detection_age_ms==null ? "Detection: waiting" : "Detection: "+Number(s.detection_age_ms).toFixed(0)+" ms old";
-  $("capture").disabled=s.detection_state!=="READY_FOR_CAPTURE" || s.calibration_state==="calibrating";
-  $("calibrate").disabled=s.calibration_state==="calibrating" || Number(s.captured_images)<Number(s.min_valid_images);
-  $("apply_board").disabled=(
-    s.calibration_state==="calibrating"
-    || Number(s.captured_images)>0
-  );
-  $("preview_model").disabled=s.calibration_state!=="calibrated";
-  $("preview_model").textContent=s.calibration_preview_enabled ? "Show raw camera" : "Show calibration preview";
+  renderMode(s.workspace_mode, !!s.calibration_model_available);
+  $("capture").disabled=s.workspace_mode!=="calibration" || s.detection_state!=="READY_FOR_CAPTURE" || s.calibration_state==="calibrating";
+  applyModeLocks(s);
   $("rms").textContent=s.rms==null ? "—" : Number(s.rms).toFixed(4)+" px";
   $("mean_error").textContent=s.mean_reprojection_error==null ? "—" : Number(s.mean_reprojection_error).toFixed(4)+" px";
   $("max_error").textContent=s.max_reprojection_error==null ? "—" : Number(s.max_reprojection_error).toFixed(4)+" px";
@@ -544,6 +622,9 @@ async function refreshCaptures(selectNewest=true){
       $("capture_preview").src=select.value;
       $("capture_preview").style.display="block";
     }else $("capture_preview").style.display="none";
+    const hasCaptures=!!(data.captures && data.captures.length);
+    if($("open_capture")) $("open_capture").disabled=!hasCaptures;
+    if($("delete_capture")) $("delete_capture").disabled=currentMode==="calibrated" || !hasCaptures;
   }catch(_){}
 }
 function refreshDebugFrame(){
@@ -568,32 +649,55 @@ $("debug_view").addEventListener("change",()=>scheduleDebugRefresh(0));
 $("debug_threshold").addEventListener("input",()=>{if($("debug_view").value==="fixed")scheduleDebugRefresh();});
 $("debug_adaptive_block").addEventListener("input",()=>{if($("debug_view").value==="adaptive")scheduleDebugRefresh();});
 $("debug_adaptive_c").addEventListener("input",()=>{if($("debug_view").value==="adaptive")scheduleDebugRefresh();});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden){getStatus();scheduleDebugRefresh(0);}else{clearTimeout(statusTimer);}});
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden){
+    getStatus();
+    scheduleDebugRefresh(0);
+    startDebugStream();
+  }else{
+    clearTimeout(statusTimer);
+    stopDebugStream();
+  }
+});
+function startDebugStream(){
+  stopDebugStream();
+  debugInterval=setInterval(()=>{
+    if(!document.hidden) refreshDebugFrame();
+  },350);
+}
+function stopDebugStream(){
+  if(debugInterval!==null){clearInterval(debugInterval);debugInterval=null;}
+}
+
 ["board_dimension_kind","board_cols","board_rows","square_size"].forEach((id)=>$(id).addEventListener("input",updateBoardPreview));
 $("apply_fps").onclick=async()=>{try{await post("/api/settings",{fps:Number($("fps").value)});hideBanner();}catch(_){}};
 $("apply_board").onclick=async()=>{
-  const button=$("apply_board");button.disabled=true;
+  const button=$("apply_board");
+  button.disabled=true;
   try{
     const useInnerCorners=$("board_dimension_kind").value==="inner_corners";
+    const replacing=Number(lastCaptureCount)>0;
+    if(replacing){
+      const ok=confirm("Changing the board geometry will delete the current captured dataset and invalidate the saved calibration model. Continue?");
+      if(!ok){ button.disabled=false; return; }
+    }
     const result=await post("/api/settings",{
       board_cols:Number($("board_cols").value)+(useInnerCorners ? 1 : 0),
       board_rows:Number($("board_rows").value)+(useInnerCorners ? 1 : 0),
       square_size:Number($("square_size").value),
-      min_valid_images:Number($("min_valid_images").value)
+      min_valid_images:Number($("min_valid_images").value),
+      replace_captures:replacing
     });
-    applyBoardState(result);boardLoaded=true;settingsLoaded=true;qualityLoaded=true;hideBanner();
+    applyBoardState(result);
+    boardLoaded=true;settingsLoaded=true;qualityLoaded=true;lastCaptureCount=Number(result.captured_images||0);
+    showTransient(result.message || "Board settings applied.");
+    await refreshCaptures(true);
+    await getStatus();
   }catch(error){
-    showBanner(
-      (error && error.message)
-      || "Board configuration could not be applied.",
-      "error"
-    );
+    showBanner((error && error.message)||"Board configuration could not be applied.","error");
     try{ await getStatus(); }catch(_){}
   }finally{
-    // Keep the server-driven lock state from renderStatus().
-    const hasCaptures=Number(lastCaptureCount)>0;
-    const calibrationBusy=$("calibration_state").textContent==="CALIBRATING";
-    button.disabled=hasCaptures || calibrationBusy;
+    button.disabled=$("calibration_state").textContent==="CALIBRATING" || currentMode!=="calibration";
   }
 };
 $("apply_detection").onclick=async()=>{
@@ -648,18 +752,98 @@ $("clear").onclick=async()=>{
   }catch(_){}
 };
 $("calibrate").onclick=async()=>{
+  if(currentMode !== "calibration") return;
   try{
     const result=await post("/api/calibrate");
     showTransient(result.message || "Calibration started.");
-    await getStatus();setTimeout(hideBanner,1500);
+    await getStatus();
   }catch(_){}
 };
-$("preview_model").onclick=async()=>{
-  const enabled=$("preview_model").textContent.includes("Show calibration preview");
-  try{await post("/api/preview",{enabled});await getStatus();}catch(_){}
+$("cancel_calibration").onclick=async()=>{
+  try{
+    const result=await post("/api/calibrate/cancel");
+    showTransient(result.message || "Cancellation requested.");
+    await getStatus();
+  }catch(_){}
 };
-updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();
+$("mode_calibration").onclick=async()=>{
+  try{
+    const result=await post("/api/mode",{mode:"calibration"});
+    renderMode(result.mode,true);
+    await getStatus();
+    startDebugStream();
+  }catch(_){}
+};
+$("mode_calibrated").onclick=async()=>{
+  try{
+    const result=await post("/api/mode",{mode:"calibrated"});
+    renderMode(result.mode,true);
+    await getStatus();
+    stopDebugStream();
+  }catch(_){}
+};
+$("export_model").onclick=()=>{
+  window.location.href="/api/calibration/export";
+};
+$("preview_model") && ($("preview_model").style.display="none");
+$("capture_select").onchange=()=>{
+  const value=$("capture_select").value;
+  if(value){
+    $("capture_preview").src=value;
+    $("capture_preview").style.display="block";
+  }
+};
+function openSelectedCapture(){
+  const value=$("capture_select").value;
+  if(!value) return;
+  $("capture_modal_image").src=value;
+  const option=$("capture_select").selectedOptions[0];
+  $("capture_modal_name").textContent=option ? option.textContent : "Calibration capture";
+  $("capture_modal").classList.add("show");
+}
+function closeCaptureModal(){
+  $("capture_modal").classList.remove("show");
+  $("capture_modal_image").removeAttribute("src");
+}
+$("open_capture").onclick=openSelectedCapture;
+$("capture_preview").onclick=openSelectedCapture;
+$("close_capture").onclick=closeCaptureModal;
+$("capture_modal").onclick=(event)=>{
+  if(event.target === $("capture_modal")) closeCaptureModal();
+};
+document.addEventListener("keydown",(event)=>{
+  if(event.key==="Escape") closeCaptureModal();
+});
+$("delete_capture").onclick=async()=>{
+  const filename=$("capture_select").value;
+  if(!filename) return;
+  const path=filename.split("?")[0];
+  const selected=$("capture_select").selectedOptions[0];
+  const displayName=selected ? selected.textContent : "selected capture";
+  if(!confirm("Delete "+displayName+"?")) return;
+  try{
+    await api(path,{
+      method:"DELETE",
+      cache:"no-store"
+    });
+    showTransient(displayName+" deleted.");
+    await refreshCaptures(true);
+    lastCaptureCount=-1;
+    await getStatus();
+  }catch(_){}
+};
+
+updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();startDebugStream();
 </script>
+<div id="capture_modal" class="capture-modal" role="dialog" aria-modal="true" aria-label="Calibration capture viewer">
+  <div class="capture-modal-card">
+    <div class="capture-modal-head">
+      <span id="capture_modal_name">Capture</span>
+      <button id="close_capture" type="button">Close</button>
+    </div>
+    <img id="capture_modal_image" alt="Large calibration capture">
+  </div>
+</div>
 </body>
 </html>
 """
