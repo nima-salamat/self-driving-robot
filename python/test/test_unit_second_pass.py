@@ -338,9 +338,11 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(response.status_code, 409)
+                payload = response.get_json()
+                self.assertEqual(payload["code"], "CAPTURES_EXIST")
                 self.assertIn(
                     "Clear captured calibration images",
-                    response.get_json()["message"],
+                    payload["message"],
                 )
 
 
