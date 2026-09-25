@@ -352,22 +352,17 @@ function showTransient(message){
   showBanner(message,"info");
   bannerTimer = setTimeout(hideBanner,2200);
 }
-function noteStatusFailure(error){
+function noteStatusFailure(_error){
   statusFailures += 1;
-  // Do not flash an error for a single dropped poll. Show it only when
-  // the backend has been unreachable for several consecutive polls.
+  // Status polling is background work. Never turn a missed poll into a
+  // flashing error banner; reflect a persistent outage in the header only.
   if(statusFailures >= 3){
-    const message = error && error.name === "AbortError"
-      ? "Calibration backend is not responding."
-      : "Cannot reach calibration backend.";
-    showBanner(message,"error");
+    $("camera_dot").className="dot err";
+    $("camera_meta").textContent="Calibration backend unavailable";
   }
 }
 function noteStatusSuccess(){
   statusFailures = 0;
-  if($("banner").classList.contains("show")){
-    hideBanner();
-  }
 }
 async function api(url, options={}, meta={}){
   const controller = new AbortController();
