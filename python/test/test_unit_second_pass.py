@@ -2,6 +2,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import cv2
@@ -12,6 +13,7 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 from calibration.calibrator import CameraCalibrator, CameraCalibration
+from calibration.stream import CalibrationStreamServer
 from stream import WebStreamer, publish_debug_frame
 from stream.capabilities import mode_capabilities
 from train_sign_detector import classification
@@ -124,6 +126,72 @@ class SecondPassStreamTests(unittest.TestCase):
         self.assertFalse(config.WITH_SIGN)
         self.assertTrue(config.WITH_APRILTAG)
         self.assertFalse(config.USE_SIGN)
+
+
+class CalibrationStreamBoardSettingsTests(unittest.TestCase):
+    def test_web_board_configuration_uses_square_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                response = server.create_app().test_client().post(
+                    "/api/settings",
+                    json={
+                        "board_cols": 7,
+                        "board_rows": 9,
+                        "square_size": 20,
+                        "min_valid_images": 12,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(server.board_squares, (7, 9))
+                self.assertEqual(server.calibrator.checkerboard, (6, 8))
+                self.assertEqual(server.calibrator.square_size, 20.0)
+                self.assertEqual(server.min_valid_images, 12)
+                self.assertEqual(
+                    response.get_json()["checkerboard_inner_corners"],
+                    [6, 8],
+                )
+
+    def test_web_rejects_board_changes_when_captures_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                CAMERA_MODE="opencv",
+                USBCAM_ADDR=0,
+                CAM_WIDTH=640,
+                CAM_HEIGHT=480,
+                CAMERA_FALLBACK_TO_OPENCV=True,
+            )
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                server.image_store.next_path().write_bytes(b"placeholder")
+                response = server.create_app().test_client().post(
+                    "/api/settings",
+                    json={
+                        "board_cols": 7,
+                        "board_rows": 9,
+                        "square_size": 20,
+                    },
+                )
+                self.assertEqual(response.status_code, 409)
+                self.assertIn(
+                    "Clear captured calibration images",
+                    response.get_json()["message"],
+                )
 
 
 class CalibrationQualityTests(unittest.TestCase):

@@ -46,6 +46,31 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
     </div>
 
     <div class="status">
+      <div><strong>Board configuration</strong></div>
+      <div class="row">
+        <label for="board_cols">Squares across</label>
+        <input id="board_cols" type="number" min="2" max="100" step="1" value="12">
+      </div>
+      <div class="row">
+        <label for="board_rows">Squares down</label>
+        <input id="board_rows" type="number" min="2" max="100" step="1" value="8">
+      </div>
+      <div class="row">
+        <label for="square_size">Square size (mm)</label>
+        <input id="square_size" type="number" min="0.001" step="0.1" value="1">
+      </div>
+      <div class="row">
+        <label for="min_valid_images">Minimum valid images</label>
+        <input id="min_valid_images" type="number" min="3" max="500" step="1" value="10">
+      </div>
+      <div class="small">
+        Inner corners: <span id="inner_corners">11 × 7</span>
+        · Physical board: <span id="board_physical_size">12 × 8 mm</span>
+      </div>
+      <button class="ghost" id="apply_board">Apply board settings</button>
+    </div>
+
+    <div class="status">
       <div>Detection: <span id="detection" class="warn">waiting</span></div>
       <div>Capture: <span id="capture_eligible" class="warn">-</span></div>
       <div>Captured: <span id="captured">0</span></div>
@@ -82,6 +107,21 @@ async function getStatus(){
     const r=await fetch('/api/status');
     const s=await r.json();
     document.getElementById('captured').textContent=s.captured_images;
+
+    const settingIds=['board_cols','board_rows','square_size','min_valid_images'];
+    const editingSettings=settingIds.includes(document.activeElement.id);
+    if(!editingSettings){
+      document.getElementById('board_cols').value=s.board_squares[0];
+      document.getElementById('board_rows').value=s.board_squares[1];
+      document.getElementById('square_size').value=Number(s.square_size).toFixed(2);
+      document.getElementById('min_valid_images').value=s.min_valid_images;
+    }
+    document.getElementById('inner_corners').textContent=
+      s.checkerboard_inner_corners[0] + ' × ' +
+      s.checkerboard_inner_corners[1];
+    document.getElementById('board_physical_size').textContent=
+      (s.board_squares[0] * Number(s.square_size)).toFixed(1) + ' × ' +
+      (s.board_squares[1] * Number(s.square_size)).toFixed(1) + ' mm';
     document.getElementById('capture_eligible').textContent =
       s.capture_eligible ? 'ready' : 'not ready';
     document.getElementById('capture_eligible').className =
@@ -131,6 +171,21 @@ document.getElementById('apply_fps').onclick=async()=>{
   if(!result.success) alert(result.message || 'Failed to update FPS');
 };
 
+document.getElementById('apply_board').onclick=async()=>{
+  const payload={
+    board_cols:Number(document.getElementById('board_cols').value),
+    board_rows:Number(document.getElementById('board_rows').value),
+    square_size:Number(document.getElementById('square_size').value),
+    min_valid_images:Number(document.getElementById('min_valid_images').value)
+  };
+  const result=await post('/api/settings',payload);
+  if(!result.success){
+    alert(result.message || 'Failed to update board settings');
+    return;
+  }
+  alert('Board settings applied. Capture new images using this board configuration.');
+};
+
 document.getElementById('capture').onclick=async()=>{
   const result=await post('/api/capture');
   alert(result.message || (result.saved ? 'Captured' : 'Not captured'));
@@ -146,6 +201,23 @@ document.getElementById('calibrate').onclick=async()=>{
   const result=await post('/api/calibrate');
   alert(result.message || 'Calibration started');
 };
+
+function updateBoardPreview(){
+  const cols=Number(document.getElementById('board_cols').value);
+  const rows=Number(document.getElementById('board_rows').value);
+  const size=Number(document.getElementById('square_size').value);
+  if(cols >= 2 && rows >= 2){
+    document.getElementById('inner_corners').textContent=(cols-1)+' × '+(rows-1);
+  }
+  if(cols >= 2 && rows >= 2 && size > 0){
+    document.getElementById('board_physical_size').textContent=
+      (cols*size).toFixed(1)+' × '+(rows*size).toFixed(1)+' mm';
+  }
+}
+['board_cols','board_rows','square_size'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',updateBoardPreview);
+});
+updateBoardPreview();
 
 getStatus();
 setInterval(getStatus,500);

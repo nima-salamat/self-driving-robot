@@ -1,8 +1,15 @@
 import argparse
 import logging
+import socket
+import struct
 import threading
 import time
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Linux exposes fcntl.
+    fcntl = None
 
 import cv2
 from flask import Flask, Response, jsonify, render_template_string, request
@@ -16,6 +23,97 @@ from vision.camera import Camera
 
 
 logger = logging.getLogger(__name__)
+
+
+def _default_route_interfaces():
+    """Return Linux interfaces carrying a default IPv4 route."""
+    route_file = Path("/proc/net/route")
+    if not route_file.exists():
+        return []
+
+    routes = []
+    try:
+        for line in route_file.read_text().splitlines()[1:]:
+            fields = line.split()
+            if len(fields) < 11 or fields[1] != "00000000":
+                continue
+            try:
+                metric = int(fields[6])
+            except ValueError:
+                metric = 0
+            routes.append((metric, fields[0]))
+    except OSError:
+        return []
+
+    return [name for _, name in sorted(routes)]
+
+
+def _interface_ipv4(interface):
+    """Resolve the first IPv4 address assigned to a Linux interface."""
+    if fcntl is None:
+        return None
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            request = struct.pack("256s", interface.encode("utf-8")[:15])
+            packed = fcntl.ioctl(sock.fileno(), 0x8915, request)
+            return socket.inet_ntoa(packed[20:24])
+        finally:
+            sock.close()
+    except (OSError, struct.error):
+        return None
+
+
+def discover_network_addresses():
+    """
+    Discover usable local IPv4 addresses without making network requests.
+
+    The default-route interface is preferred, followed by other interfaces
+    visible under /sys/class/net.
+    """
+    interfaces = []
+    for interface in _default_route_interfaces():
+        if interface not in interfaces:
+            interfaces.append(interface)
+
+    net_dir = Path("/sys/class/net")
+    if net_dir.exists():
+        try:
+            for entry in sorted(net_dir.iterdir()):
+                if entry.name not in interfaces:
+                    interfaces.append(entry.name)
+        except OSError:
+            pass
+
+    addresses = []
+    for interface in interfaces:
+        address = _interface_ipv4(interface)
+        if not address or address.startswith("127.") or address.startswith("169.254."):
+            continue
+        addresses.append({"interface": interface, "ip": address})
+
+    if addresses:
+        return addresses
+
+    try:
+        hostname = socket.gethostname()
+        resolved = {
+            info[4][0]
+            for info in socket.getaddrinfo(
+                hostname,
+                None,
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+            )
+        }
+        return [
+            {"interface": "host", "ip": ip}
+            for ip in sorted(resolved)
+            if not ip.startswith("127.") and ip != "0.0.0.0"
+        ]
+    except OSError:
+        return []
 
 
 DEFAULT_IMAGE_DIR = (
@@ -61,6 +159,11 @@ class CalibrationStreamServer:
             square_size=square_size,
             min_valid_images=min_valid_images,
         )
+        self.board_squares = (
+            self.calibrator.checkerboard[0] + 1,
+            self.calibrator.checkerboard[1] + 1,
+        )
+        self.min_valid_images = int(min_valid_images)
 
         self.host = host
         self.port = int(port)
@@ -214,12 +317,76 @@ class CalibrationStreamServer:
         ):
             self._camera_thread.join(timeout=2.0)
 
-    def set_fps(self, fps):
+    def set_board_configuration(
+        self,
+        board_cols,
+        board_rows,
+        square_size,
+        min_valid_images=None,
+    ):
+        board_cols = int(board_cols)
+        board_rows = int(board_rows)
+        square_size = float(square_size)
+        min_valid_images = (
+            self.min_valid_images
+            if min_valid_images is None
+            else int(min_valid_images)
+        )
+
+        if board_cols < 2 or board_rows < 2:
+            raise ValueError("board dimensions must be at least 2 x 2 squares")
+        if board_cols > 100 or board_rows > 100:
+            raise ValueError("board dimensions must not exceed 100 x 100 squares")
+        if square_size <= 0:
+            raise ValueError("square_size must be greater than zero")
+        if min_valid_images < 3 or min_valid_images > 500:
+            raise ValueError("min_valid_images must be between 3 and 500")
+
+        new_board_squares = (board_cols, board_rows)
+        new_inner_corners = (board_cols - 1, board_rows - 1)
+
+        if (
+            new_board_squares == self.board_squares
+            and abs(self.calibrator.square_size - square_size) < 1e-12
+            and min_valid_images == self.min_valid_images
+        ):
+            return
+
+        if (
+            self._calibration_thread is not None
+            and self._calibration_thread.is_alive()
+        ):
+            raise ValueError(
+                "Calibration is running; board configuration cannot be changed."
+            )
+
+        if self.image_store.count() > 0:
+            raise ValueError(
+                "Clear captured calibration images before changing the board configuration."
+            )
+
+        self.calibrator = CameraCalibrator(
+            checkerboard=new_inner_corners,
+            square_size=square_size,
+            min_valid_images=min_valid_images,
+        )
+        self.board_squares = new_board_squares
+        self.min_valid_images = min_valid_images
+        self._accepted_features.clear()
+        self._last_detection = None
+        self.last_rejection_reason = None
+        self.chessboard_detected = False
+        self._last_calibration = None
+        self._calibration_state = "not calibrated"
+
+    def _validate_fps(self, fps):
         fps = float(fps)
         if not 1.0 <= fps <= 120.0:
-            raise ValueError(
-                "fps must be between 1 and 120"
-            )
+            raise ValueError("fps must be between 1 and 120")
+        return fps
+
+    def set_fps(self, fps):
+        fps = self._validate_fps(fps)
 
         with self._camera_lock:
             self.camera.set_frame_rate(fps)
@@ -391,7 +558,12 @@ class CalibrationStreamServer:
                 int(getattr(self.config, "CAM_HEIGHT", 0)),
             ],
             "checkerboard": list(self.calibrator.checkerboard),
+            "checkerboard_inner_corners": list(self.calibrator.checkerboard),
+            "board_squares": list(self.board_squares),
+            "square_size": self.calibrator.square_size,
+            "min_valid_images": self.min_valid_images,
             "captured_images": self.image_store.count(),
+            "network_addresses": discover_network_addresses(),
             "calibration_state": self._calibration_state,
             "last_calibration_error": result.get("rms"),
             "mean_reprojection_error": result.get(
@@ -441,29 +613,80 @@ class CalibrationStreamServer:
         def api_settings():
             try:
                 data = request.get_json(silent=True) or {}
-                if "fps" not in data:
+                supported = {
+                    "fps",
+                    "board_cols",
+                    "board_rows",
+                    "square_size",
+                    "min_valid_images",
+                }
+                unknown = sorted(set(data) - supported)
+                if unknown:
                     return jsonify(
                         success=False,
-                        message="fps is required",
+                        message=f"Unsupported settings: {', '.join(unknown)}",
                     ), 400
 
-                self.set_fps(float(data["fps"]))
+                if not data:
+                    return jsonify(
+                        success=False,
+                        message="At least one setting is required",
+                    ), 400
+
+                if "fps" in data:
+                    self._validate_fps(data["fps"])
+
+                board_keys = {
+                    "board_cols",
+                    "board_rows",
+                    "square_size",
+                    "min_valid_images",
+                }
+                if board_keys.intersection(data):
+                    self.set_board_configuration(
+                        board_cols=data.get("board_cols", self.board_squares[0]),
+                        board_rows=data.get("board_rows", self.board_squares[1]),
+                        square_size=data.get(
+                            "square_size",
+                            self.calibrator.square_size,
+                        ),
+                        min_valid_images=data.get(
+                            "min_valid_images",
+                            self.min_valid_images,
+                        ),
+                    )
+
+                if "fps" in data:
+                    self.set_fps(float(data["fps"]))
+
                 return jsonify(
                     success=True,
                     requested_fps=self.requested_fps,
+                    board_squares=list(self.board_squares),
+                    checkerboard_inner_corners=list(self.calibrator.checkerboard),
+                    square_size=self.calibrator.square_size,
+                    min_valid_images=self.min_valid_images,
                 )
             except (TypeError, ValueError) as exc:
+                status = (
+                    409
+                    if (
+                        "Clear captured calibration images" in str(exc)
+                        or "Calibration is running" in str(exc)
+                    )
+                    else 400
+                )
                 return jsonify(
                     success=False,
                     message=str(exc),
-                ), 400
+                ), status
             except Exception:
                 logger.exception(
                     "Failed to update calibration stream settings"
                 )
                 return jsonify(
                     success=False,
-                    message="Failed to update camera FPS",
+                    message="Failed to update calibration stream settings",
                 ), 500
 
         @app.post("/api/capture")
@@ -527,11 +750,42 @@ class CalibrationStreamServer:
         self.start()
 
         try:
-            logger.info(
-                "Calibration stream listening on http://%s:%d",
-                self.host,
-                self.port,
-            )
+            if self.host in {"0.0.0.0", "::"}:
+                logger.info(
+                    "Calibration stream bound to %s:%d (all network interfaces)",
+                    self.host,
+                    self.port,
+                )
+                addresses = discover_network_addresses()
+                if addresses:
+                    logger.info("Open the calibration UI from another device:")
+                    for address in addresses:
+                        logger.info(
+                            "  %s -> http://%s:%d",
+                            address["interface"],
+                            address["ip"],
+                            self.port,
+                        )
+                else:
+                    logger.warning(
+                        "No non-loopback IPv4 address was detected; "
+                        "use 'ip addr' to find the robot's LAN address."
+                    )
+            elif self.host in {"127.0.0.1", "localhost"}:
+                logger.info(
+                    "Calibration stream listening on http://127.0.0.1:%d (local machine only)",
+                    self.port,
+                )
+                logger.info(
+                    "For access from a phone/PC on the same LAN, restart with "
+                    "--host 0.0.0.0"
+                )
+            else:
+                logger.info(
+                    "Calibration stream listening on http://%s:%d",
+                    self.host,
+                    self.port,
+                )
             server.serve_forever()
         finally:
             server.server_close()
