@@ -81,6 +81,9 @@ def _validate(name, value):
     if name == "CAMERA_MODE" and value not in ("picam", "webcam", "opencv"):
         raise ValueError("CAMERA_MODE must be one of: picam, webcam, opencv")
 
+    if name == "CITY_LANE_DETECTOR" and value not in ("default", "blsf-beta"):
+        raise ValueError("CITY_LANE_DETECTOR must be one of: default, blsf-beta")
+
     return value
 
 
