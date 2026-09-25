@@ -283,6 +283,14 @@ class Camera:
                     self.consecutive_failures += 1
                     return finish(frame, frame_resized, False)
 
+                # Picamera2 is configured as RGB888; normalize to the BGR
+                # convention used by the rest of the OpenCV pipeline once,
+                # centrally, at the camera boundary.
+                frame = cv2.cvtColor(
+                    frame,
+                    cv2.COLOR_RGB2BGR,
+                )
+
             else:
                 ret, frame = self.cap.read()
 

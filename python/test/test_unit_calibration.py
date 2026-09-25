@@ -95,7 +95,7 @@ class CalibrationCoreTests(unittest.TestCase):
                     detector_mode="classic"
                 ).detect_corners_detailed(frame)
                 self.assertFalse(result[0])
-                classic.assert_called_once()
+                self.assertGreaterEqual(classic.call_count, 1)
 
         sb = getattr(cv2, "findChessboardCornersSB", None)
         if sb is not None:
@@ -111,7 +111,10 @@ class CalibrationCoreTests(unittest.TestCase):
                         detector_mode="sb"
                     ).detect_corners_detailed(frame)
                     self.assertFalse(result[0])
-                    sb_detector.assert_called_once()
+                    self.assertGreaterEqual(
+                        sb_detector.call_count,
+                        1,
+                    )
 
     def test_create_camera_config_disables_existing_calibration(self):
         config = create_camera_config(
@@ -232,6 +235,35 @@ class CalibrationCoreTests(unittest.TestCase):
             self.assertAlmostEqual(matrix[1, 2], 480.0)
 
 
+    def test_detector_mode_fast_path_uses_bounded_calls(self):
+        frame = np.zeros(
+            (480, 640, 3),
+            dtype=np.uint8,
+        )
+        with patch(
+            "calibration.calibrator.cv2.findChessboardCorners",
+            return_value=(False, None),
+        ) as classic:
+            with patch(
+                "calibration.calibrator.cv2.findChessboardCornersSB",
+                return_value=(False, None),
+            ) as sb:
+                CameraCalibrator(
+                    detector_mode="auto"
+                ).detect_corners_detailed(frame)
+
+        # Two orientations in fast mode, with no per-frame 4-flag cascade.
+        self.assertLessEqual(classic.call_count, 2)
+        self.assertLessEqual(sb.call_count, 2)
+
+    def test_non_finite_quality_setting_is_rejected(self):
+        with self.assertRaises(ValueError):
+            CameraCalibrator(
+                min_sharpness=float("nan")
+            )
+
+
+
 class FakeCamera:
     def __init__(self, config):
         self.config = config
@@ -332,6 +364,117 @@ class CalibrationStreamTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
 
                 server.stop()
+
+
+    def test_board_configuration_preserves_detector_and_quality_settings(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="opencv",
+            USBCAM_ADDR=0,
+            CAM_WIDTH=640,
+            CAM_HEIGHT=480,
+            CAMERA_FALLBACK_TO_OPENCV=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                server.set_detector_mode("sb")
+                server.set_quality_settings(
+                    min_coverage=0.12,
+                    min_sharpness=33,
+                    min_edge_margin=0.04,
+                    duplicate_distance=0.11,
+                )
+                server.set_board_configuration(
+                    board_cols=8,
+                    board_rows=10,
+                    square_size=25,
+                )
+                self.assertEqual(
+                    server.calibrator.detector_mode,
+                    "sb",
+                )
+                self.assertEqual(
+                    server.calibrator.min_coverage,
+                    0.12,
+                )
+                self.assertEqual(
+                    server.calibrator.min_sharpness,
+                    33.0,
+                )
+                self.assertEqual(
+                    server.calibrator.min_edge_margin,
+                    0.04,
+                )
+                self.assertEqual(
+                    server.calibrator.duplicate_distance,
+                    0.11,
+                )
+                server.stop()
+
+    def test_persisted_capture_features_are_restored(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="opencv",
+            USBCAM_ADDR=0,
+            CAM_WIDTH=640,
+            CAM_HEIGHT=480,
+            CAMERA_FALLBACK_TO_OPENCV=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            image_dir = Path(tmp) / "images"
+            store_module = __import__(
+                "calibration.capture",
+                fromlist=["CalibrationImageStore"],
+            )
+            store = store_module.CalibrationImageStore(
+                image_dir
+            )
+            image = np.zeros(
+                (48, 64, 3),
+                dtype=np.uint8,
+            )
+            feature = np.asarray(
+                [0.2, 0.7, 0.4, 0.5, 0.2, 0.1, -0.1],
+                dtype=np.float32,
+            )
+            path = store.save(
+                image,
+                {
+                    "format_version": 1,
+                    "image_size": [64, 48],
+                    "checkerboard": [11, 7],
+                    "feature": feature.tolist(),
+                    "corners": np.zeros(
+                        (77, 2),
+                        dtype=float,
+                    ).tolist(),
+                    "sharpness": 100.0,
+                    "detector": "classic",
+                },
+            )
+            self.assertTrue(store.metadata_path(path).exists())
+
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=image_dir,
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                self.assertEqual(
+                    len(server._accepted_features),
+                    1,
+                )
+                self.assertTrue(
+                    np.allclose(
+                        server._accepted_features[0],
+                        feature,
+                    )
+                )
+                server.stop()
+
 
 
 if __name__ == "__main__":

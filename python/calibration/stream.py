@@ -1,5 +1,6 @@
 import argparse
 import logging
+import math
 import socket
 import struct
 import threading
@@ -12,6 +13,7 @@ except ImportError:  # pragma: no cover - Linux exposes fcntl.
     fcntl = None
 
 import cv2
+import numpy as np
 from flask import (
     Flask,
     Response,
@@ -201,6 +203,19 @@ class CalibrationStreamServer:
         self._last_detection = None
         self._last_calibration = None
         self._calibration_state = "not calibrated"
+        self._last_calibration_message = None
+        self._last_camera_error = None
+        self._last_detection_at = 0.0
+        self._detection_count = 0
+        self.detection_interval = self._validate_detection_interval(
+            getattr(
+                self.config,
+                "CALIBRATION_DETECTION_INTERVAL",
+                0.20,
+            )
+        )
+
+        self._restore_persisted_capture_state()
 
         self.camera = Camera(config=self.config)
         self.camera.set_frame_rate(self.requested_fps)
@@ -215,86 +230,125 @@ class CalibrationStreamServer:
     def _camera_loop(self):
         timestamps = []
         next_tick = time.monotonic()
+        next_detection = 0.0
 
         while not self._stop_event.is_set():
-            started = time.monotonic()
-
             try:
                 with self._camera_lock:
                     frame, _ = self.camera.capture_frame(
                         with_resize=False
                     )
 
-                if frame is not None and self.camera.last_capture_valid:
-                    with self._calibrator_lock:
-                        evaluated = self.calibrator.evaluate_frame(frame)
-                        quality_reason = self.calibrator.quality_reason(evaluated)
-                        evaluated["quality_valid"] = quality_reason is None
-                        evaluated["quality_reason"] = quality_reason
-
-                    self.chessboard_detected = bool(evaluated["valid"])
-                    self.last_rejection_reason = quality_reason
-                    self._last_detection = evaluated
-
-                    self._maybe_auto_capture(frame, evaluated)
-
+                if frame is None or not self.camera.last_capture_valid:
+                    self._last_camera_error = "Camera capture failed."
+                    self.chessboard_detected = False
+                else:
+                    now = time.monotonic()
                     if (
-                        self.calibration_preview_enabled
-                        and self._calibration_preview is not None
+                        self._last_detection is None
+                        or now >= next_detection
                     ):
-                        display = self._calibration_preview.undistort(frame)
-                    else:
-                        display = evaluated.get("preview", frame).copy()
-                    cv2.putText(
-                        display,
-                        (
-                            "CHESSBOARD: "
-                            + (
-                                "READY"
-                                if evaluated.get("quality_valid")
-                                else (
-                                    "DETECTED / REJECTED"
-                                    if evaluated.get("valid")
-                                    else "NOT DETECTED"
+                        with self._calibrator_lock:
+                            evaluated = self.calibrator.evaluate_frame(
+                                frame
+                            )
+                            quality_reason = (
+                                self.calibrator.quality_reason(
+                                    evaluated
                                 )
                             )
-                        ),
+                            evaluated["quality_valid"] = (
+                                quality_reason is None
+                            )
+                            evaluated["quality_reason"] = quality_reason
+
+                        self._last_detection = evaluated
+                        self._last_detection_at = now
+                        self._detection_count += 1
+                        self.chessboard_detected = bool(
+                            evaluated.get("valid")
+                        )
+                        self.last_rejection_reason = (
+                            quality_reason
+                        )
+                        self._last_camera_error = None
+                        self._maybe_auto_capture(
+                            frame,
+                            evaluated,
+                        )
+                        next_detection = (
+                            now + self.detection_interval
+                        )
+
+                    evaluation = self._last_detection
+                    display = frame.copy()
+
+                    with self._calibrator_lock:
+                        checkerboard = tuple(
+                            self.calibrator.checkerboard
+                        )
+
+                    if (
+                        evaluation
+                        and evaluation.get("corners") is not None
+                        and now - self._last_detection_at
+                        <= max(
+                            0.5,
+                            self.detection_interval * 1.5,
+                        )
+                    ):
+                        cv2.drawChessboardCorners(
+                            display,
+                            checkerboard,
+                            evaluation["corners"],
+                            True,
+                        )
+
+                    state = self._detection_state(
+                        evaluation
+                    )
+                    cv2.putText(
+                        display,
+                        f"CHESSBOARD: {state.replace('_', ' ')}",
                         (10, 24),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.65,
+                        0.60,
                         (
                             (0, 255, 0)
-                            if evaluated["valid"]
-                            else (0, 255, 255)
+                            if state == "READY_FOR_CAPTURE"
+                            else (0, 220, 255)
+                            if state == "DETECTED_BUT_REJECTED"
+                            else (0, 160, 255)
                         ),
                         2,
                         cv2.LINE_AA,
                     )
 
-                    self._publish(frame, display)
+                    self._publish(
+                        frame,
+                        display,
+                    )
 
-                    now = time.monotonic()
                     timestamps.append(now)
                     cutoff = now - 2.0
                     timestamps = [
                         t for t in timestamps
                         if t >= cutoff
                     ]
-
                     if len(timestamps) >= 2:
                         self.actual_fps = (
                             (len(timestamps) - 1)
                             / max(
                                 1e-6,
-                                timestamps[-1]
-                                - timestamps[0],
+                                timestamps[-1] - timestamps[0],
                             )
                         )
-                else:
-                    self.chessboard_detected = False
 
-            except Exception:
-                logger.exception("Calibration camera loop failed")
+            except Exception as exc:
+                self._last_camera_error = str(exc)
+                logger.exception(
+                    "Calibration camera loop failed"
+                )
 
             period = 1.0 / max(
                 1.0,
@@ -336,6 +390,119 @@ class CalibrationStreamServer:
         ):
             self._camera_thread.join(timeout=2.0)
 
+    def _validate_detection_interval(self, value):
+        try:
+            interval = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "detection_interval must be a number"
+            )
+        if not math.isfinite(interval):
+            raise ValueError(
+                "detection_interval must be finite"
+            )
+        if not 0.05 <= interval <= 2.0:
+            raise ValueError(
+                "detection_interval must be between 0.05 and 2 seconds"
+            )
+        return interval
+
+    @staticmethod
+    def _detection_state(evaluation):
+        if not evaluation or not evaluation.get("valid"):
+            return "NOT_DETECTED"
+        if evaluation.get("quality_valid"):
+            return "READY_FOR_CAPTURE"
+        return "DETECTED_BUT_REJECTED"
+
+    @staticmethod
+    def _feature_cell(feature):
+        if feature is None or len(feature) < 2:
+            return None
+        x = min(
+            2,
+            max(
+                0,
+                int(float(feature[0]) * 3.0),
+            ),
+        )
+        y = min(
+            2,
+            max(
+                0,
+                int(float(feature[1]) * 3.0),
+            ),
+        )
+        return y * 3 + x
+
+    def _diversity_summary(self):
+        cells = [0] * 9
+        for feature in self._accepted_features:
+            cell = self._feature_cell(feature)
+            if cell is not None:
+                cells[cell] += 1
+        return {
+            "grid": cells,
+            "occupied_cells": sum(
+                1 for value in cells if value
+            ),
+            "total_cells": 9,
+        }
+
+    def _restore_persisted_capture_state(self):
+        restored = []
+        for path in self.image_store.paths():
+            metadata = self.image_store.load_metadata(path)
+            if not metadata:
+                continue
+            try:
+                feature = np.asarray(
+                    metadata.get("feature"),
+                    dtype=np.float32,
+                ).reshape(-1)
+            except (TypeError, ValueError):
+                continue
+            if (
+                feature.shape != (7,)
+                or not np.isfinite(feature).all()
+            ):
+                continue
+            restored.append(feature)
+        self._accepted_features = restored
+
+    def _auto_capture_is_diverse(self, evaluation):
+        feature = evaluation.get("feature")
+        if feature is None:
+            return False
+
+        if not self._accepted_features:
+            return True
+
+        cell = self._feature_cell(feature)
+        occupied = {
+            self._feature_cell(existing)
+            for existing in self._accepted_features
+        }
+        if cell is not None and cell not in occupied:
+            return True
+
+        distances = [
+            float(
+                np.linalg.norm(
+                    feature - existing
+                )
+            )
+            for existing in self._accepted_features
+        ]
+        nearest = min(
+            distances,
+            default=float("inf"),
+        )
+        return nearest >= max(
+            self.calibrator.duplicate_distance * 1.5,
+            0.08,
+        )
+
     def set_board_configuration(
         self,
         board_cols,
@@ -343,9 +510,21 @@ class CalibrationStreamServer:
         square_size,
         min_valid_images=None,
     ):
-        board_cols = int(board_cols)
-        board_rows = int(board_rows)
-        square_size = float(square_size)
+        try:
+            board_cols = int(board_cols)
+            board_rows = int(board_rows)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "board dimensions must be integers"
+            )
+
+        try:
+            square_size = float(square_size)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "square_size must be a number"
+            )
+
         min_valid_images = (
             self.min_valid_images
             if min_valid_images is None
@@ -353,50 +532,88 @@ class CalibrationStreamServer:
         )
 
         if board_cols < 2 or board_rows < 2:
-            raise ValueError("board dimensions must be at least 2 x 2 squares")
+            raise ValueError(
+                "board dimensions must be at least 2 x 2 squares"
+            )
         if board_cols > 100 or board_rows > 100:
-            raise ValueError("board dimensions must not exceed 100 x 100 squares")
-        if square_size <= 0:
-            raise ValueError("square_size must be greater than zero")
+            raise ValueError(
+                "board dimensions must not exceed 100 x 100 squares"
+            )
+        if (
+            not math.isfinite(square_size)
+            or square_size <= 0
+        ):
+            raise ValueError(
+                "square_size must be finite and greater than zero"
+            )
         if min_valid_images < 3 or min_valid_images > 500:
-            raise ValueError("min_valid_images must be between 3 and 500")
-
-        new_board_squares = (board_cols, board_rows)
-        new_inner_corners = (board_cols - 1, board_rows - 1)
-
-        if (
-            new_board_squares == self.board_squares
-            and abs(self.calibrator.square_size - square_size) < 1e-12
-            and min_valid_images == self.min_valid_images
-        ):
-            return
-
-        if (
-            self._calibration_thread is not None
-            and self._calibration_thread.is_alive()
-        ):
             raise ValueError(
-                "Calibration is running; board configuration cannot be changed."
+                "min_valid_images must be between 3 and 500"
             )
 
-        if self.image_store.count() > 0:
-            raise ValueError(
-                "Clear captured calibration images before changing the board configuration."
-            )
-
-        self.calibrator = CameraCalibrator(
-            checkerboard=new_inner_corners,
-            square_size=square_size,
-            min_valid_images=min_valid_images,
+        new_board_squares = (
+            board_cols,
+            board_rows,
         )
-        self.board_squares = new_board_squares
-        self.min_valid_images = min_valid_images
-        self._accepted_features.clear()
-        self._last_detection = None
-        self.last_rejection_reason = None
-        self.chessboard_detected = False
-        self._last_calibration = None
-        self._calibration_state = "not calibrated"
+        new_inner_corners = (
+            board_cols - 1,
+            board_rows - 1,
+        )
+
+        with self._operation_lock:
+            with self._calibrator_lock:
+                current = self.calibrator
+                if (
+                    new_board_squares == self.board_squares
+                    and abs(
+                        current.square_size - square_size
+                    ) < 1e-12
+                    and min_valid_images == self.min_valid_images
+                ):
+                    return
+
+                if (
+                    self._calibration_thread is not None
+                    and self._calibration_thread.is_alive()
+                ):
+                    raise ValueError(
+                        "Calibration is running; board configuration "
+                        "cannot be changed."
+                    )
+
+                if self.image_store.count() > 0:
+                    raise ValueError(
+                        "Clear captured calibration images before "
+                        "changing the board configuration."
+                    )
+
+                self.calibrator = CameraCalibrator(
+                    checkerboard=new_inner_corners,
+                    square_size=square_size,
+                    min_valid_images=min_valid_images,
+                    min_coverage=current.min_coverage,
+                    min_sharpness=current.min_sharpness,
+                    min_edge_margin=current.min_edge_margin,
+                    duplicate_distance=current.duplicate_distance,
+                    max_mean_reprojection_error=(
+                        current.max_mean_reprojection_error
+                    ),
+                    max_view_reprojection_error=(
+                        current.max_view_reprojection_error
+                    ),
+                    detector_mode=current.detector_mode,
+                )
+
+                self.board_squares = new_board_squares
+                self.min_valid_images = min_valid_images
+                self._accepted_features.clear()
+                self._last_detection = None
+                self._last_detection_at = 0.0
+                self.last_rejection_reason = None
+                self.chessboard_detected = False
+                self._last_calibration = None
+                self._last_calibration_message = None
+                self._calibration_state = "not calibrated"
 
     def _validate_fps(self, fps):
         fps = float(fps)
@@ -423,32 +640,38 @@ class CalibrationStreamServer:
                 return None
             return self._raw_frame.copy()
 
-    def debug_frame(self, view="gray", threshold=128, adaptive_block=21, adaptive_c=5):
-        """
-        Build a diagnostic view from the current raw camera frame.
-
-        The chessboard detector consumes grayscale directly. Fixed/Otsu/adaptive
-        binary images are diagnostic aids only and do not replace the detector
-        input.
-        """
+    def debug_frame(
+        self,
+        view="detector",
+        threshold=128,
+        adaptive_block=21,
+        adaptive_c=5,
+    ):
         raw = self.current_raw_frame()
         if raw is None:
             return None
 
-        gray = cv2.cvtColor(raw, cv2.COLOR_BGR2GRAY)
-        view = str(view or "gray").strip().lower()
+        view = str(
+            view or "detector"
+        ).strip().lower()
 
         try:
-            threshold = max(0, min(255, int(threshold)))
+            threshold = int(threshold)
         except (TypeError, ValueError):
             threshold = 128
+        threshold = max(
+            0,
+            min(255, threshold),
+        )
 
         try:
             adaptive_block = int(adaptive_block)
         except (TypeError, ValueError):
             adaptive_block = 21
-        if adaptive_block < 3:
-            adaptive_block = 3
+        adaptive_block = max(
+            3,
+            adaptive_block,
+        )
         if adaptive_block % 2 == 0:
             adaptive_block += 1
 
@@ -457,88 +680,62 @@ class CalibrationStreamServer:
         except (TypeError, ValueError):
             adaptive_c = 5
 
-        if view == "gray":
-            debug = gray
-        elif view == "fixed":
-            _, debug = cv2.threshold(
-                gray,
-                threshold,
-                255,
-                cv2.THRESH_BINARY,
-            )
-        elif view == "otsu":
-            _, debug = cv2.threshold(
-                gray,
-                0,
-                255,
-                cv2.THRESH_BINARY + cv2.THRESH_OTSU,
-            )
-        elif view == "adaptive":
-            debug = cv2.adaptiveThreshold(
-                gray,
-                255,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY,
-                adaptive_block,
-                adaptive_c,
-            )
-        elif view == "normalized":
-            debug = cv2.normalize(
-                gray,
-                None,
-                0,
-                255,
-                cv2.NORM_MINMAX,
-            )
+        if view in {
+            "detector",
+            "clahe",
+            "invert",
+        }:
+            with self._calibrator_lock:
+                display = self.calibrator.debug_preprocessed(
+                    raw,
+                    view=view,
+                )
         else:
-            raise ValueError(
-                "view must be one of: gray, normalized, fixed, otsu, adaptive"
+            gray = cv2.cvtColor(
+                raw,
+                cv2.COLOR_BGR2GRAY,
             )
-
-        display = cv2.cvtColor(debug, cv2.COLOR_GRAY2BGR)
-
-        evaluation = self._last_detection
-        if evaluation is not None and evaluation.get("corners") is not None:
-            cv2.drawChessboardCorners(
-                display,
-                self.calibrator.checkerboard,
-                evaluation["corners"],
-                bool(evaluation.get("valid")),
-            )
-
-        status = (
-            "READY"
-            if evaluation and evaluation.get("quality_valid")
-            else "DETECTED / REJECTED"
-            if evaluation and evaluation.get("valid")
-            else "NOT DETECTED"
-        )
-        detector = (
-            evaluation.get("detector", "none")
-            if evaluation
-            else "none"
-        )
-        cv2.putText(
-            display,
-            f"{view.upper()} | CHESSBOARD: {status} | DETECTOR: {detector}",
-            (10, 24),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (0, 255, 0) if evaluation and evaluation.get("valid") else (0, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
-
-        if view == "fixed":
-            cv2.putText(
-                display,
-                f"threshold={threshold}",
-                (10, 48),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA,
+            if view == "gray":
+                debug = gray
+            elif view == "fixed":
+                _, debug = cv2.threshold(
+                    gray,
+                    threshold,
+                    255,
+                    cv2.THRESH_BINARY,
+                )
+            elif view == "otsu":
+                _, debug = cv2.threshold(
+                    gray,
+                    0,
+                    255,
+                    cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+                )
+            elif view == "adaptive":
+                debug = cv2.adaptiveThreshold(
+                    gray,
+                    255,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY,
+                    adaptive_block,
+                    adaptive_c,
+                )
+            elif view == "normalized":
+                debug = cv2.normalize(
+                    gray,
+                    None,
+                    0,
+                    255,
+                    cv2.NORM_MINMAX,
+                )
+            else:
+                raise ValueError(
+                    "view must be one of: detector, clahe, invert, "
+                    "gray, normalized, fixed, otsu, adaptive"
+                )
+            display = cv2.cvtColor(
+                debug,
+                cv2.COLOR_GRAY2BGR,
             )
 
         return display
@@ -584,11 +781,19 @@ class CalibrationStreamServer:
                 + b"\r\n"
             )
 
-    def _save_evaluated_frame(self, raw_frame, evaluation, auto=False):
+    def _save_evaluated_frame(
+        self,
+        raw_frame,
+        evaluation,
+        auto=False,
+    ):
         if not evaluation.get("quality_valid"):
-            return False, evaluation.get(
-                "quality_reason",
-                "frame rejected",
+            return (
+                False,
+                evaluation.get(
+                    "quality_reason",
+                    "frame rejected",
+                ),
             )
 
         with self._calibrator_lock:
@@ -596,24 +801,118 @@ class CalibrationStreamServer:
                 evaluation,
                 self._accepted_features,
             ):
-                reason = "too similar to another accepted view"
+                reason = (
+                    "This view is too similar to an accepted capture."
+                )
                 if not auto:
                     self.last_rejection_reason = reason
                 return False, reason
 
-            path = self.image_store.next_path()
-            if not cv2.imwrite(str(path), raw_frame):
-                return False, "Failed to save calibration image."
+            if (
+                auto
+                and not self._auto_capture_is_diverse(
+                    evaluation
+                )
+            ):
+                return (
+                    False,
+                    "Auto-capture skipped: move or tilt the board "
+                    "to create a more diverse view.",
+                )
 
-            self._accepted_features.append(evaluation["feature"])
+            try:
+                path = self.image_store.save(
+                    raw_frame,
+                    {
+                        "format_version": 1,
+                        "captured_at": time.time(),
+                        "image_size": [
+                            int(raw_frame.shape[1]),
+                            int(raw_frame.shape[0]),
+                        ],
+                        "checkerboard": list(
+                            self.calibrator.checkerboard
+                        ),
+                        "square_size": float(
+                            self.calibrator.square_size
+                        ),
+                        "corners": (
+                            evaluation["corners"]
+                            .reshape(-1, 2)
+                            .tolist()
+                        ),
+                        "coverage": float(
+                            evaluation.get("coverage", 0.0)
+                        ),
+                        "center": list(
+                            evaluation.get(
+                                "center",
+                                (0.0, 0.0),
+                            )
+                        ),
+                        "sharpness": float(
+                            evaluation.get("sharpness", 0.0)
+                        ),
+                        "edge_margin": float(
+                            evaluation.get("edge_margin", 0.0)
+                        ),
+                        "feature": evaluation[
+                            "feature"
+                        ].tolist(),
+                        "detector": str(
+                            evaluation.get(
+                                "detector",
+                                "unknown",
+                            )
+                        ),
+                        "detection_view": str(
+                            evaluation.get(
+                                "detection_view",
+                                "detector",
+                            )
+                        ),
+                        "detection_scale": float(
+                            evaluation.get(
+                                "detection_scale",
+                                1.0,
+                            )
+                        ),
+                    },
+                )
+            except (
+                OSError,
+                IOError,
+                ValueError,
+                TypeError,
+            ) as exc:
+                logger.exception(
+                    "Failed to save calibration capture"
+                )
+                self.last_rejection_reason = str(exc)
+                return (
+                    False,
+                    f"Failed to save calibration capture: {exc}",
+                )
+
+            self._accepted_features.append(
+                np.asarray(
+                    evaluation["feature"],
+                    dtype=np.float32,
+                )
+            )
 
         self.last_rejection_reason = None
         if auto:
             self.last_auto_capture_at = time.monotonic()
             self.auto_captured_images += 1
+        self._last_calibration_message = None
         return True, f"Saved {path.name}"
 
-    def _maybe_auto_capture(self, raw_frame, evaluation):
+    def _maybe_auto_capture(
+        self,
+        raw_frame,
+        evaluation,
+    ):
         if not self.auto_capture_enabled:
             return
         if (
@@ -625,11 +924,14 @@ class CalibrationStreamServer:
             return
 
         now = time.monotonic()
-        if now - self.last_auto_capture_at < self.auto_capture_interval:
+        if (
+            now - self.last_auto_capture_at
+            < self.auto_capture_interval
+        ):
             return
 
         with self._operation_lock:
-            saved, _ = self._save_evaluated_frame(
+            saved, reason = self._save_evaluated_frame(
                 raw_frame,
                 evaluation,
                 auto=True,
@@ -639,25 +941,44 @@ class CalibrationStreamServer:
                 "Auto-captured calibration image #%d",
                 self.image_store.count(),
             )
+        elif reason:
+            logger.debug(reason)
 
-    def set_auto_capture(self, enabled, interval=None):
-        self.auto_capture_enabled = bool(enabled)
+    def set_auto_capture(
+        self,
+        enabled,
+        interval=None,
+    ):
+        if not isinstance(enabled, bool):
+            raise ValueError(
+                "auto_capture_enabled must be boolean"
+            )
+        self.auto_capture_enabled = enabled
+
         if interval is not None:
-            interval = float(interval)
+            try:
+                interval = float(interval)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "auto_capture_interval must be a number"
+                )
+            if not math.isfinite(interval):
+                raise ValueError(
+                    "auto_capture_interval must be finite"
+                )
             if not 0.2 <= interval <= 30.0:
                 raise ValueError(
-                    "auto_capture_interval must be between 0.2 and 30 seconds"
+                    "auto_capture_interval must be between "
+                    "0.2 and 30 seconds"
                 )
             self.auto_capture_interval = interval
+
         if not self.auto_capture_enabled:
             self.last_auto_capture_at = 0.0
 
     def set_detector_mode(self, mode):
-        mode = str(mode).lower().strip()
-        if mode not in {"auto", "classic", "sb"}:
-            raise ValueError("detector_mode must be one of: auto, classic, sb")
         with self._calibrator_lock:
-            self.calibrator.detector_mode = mode
+            self.calibrator.set_detector_mode(mode)
 
     def set_quality_settings(
         self,
@@ -676,31 +997,69 @@ class CalibrationStreamServer:
             for name, value in values.items():
                 if value is None:
                     continue
-                value = float(value)
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"{name} must be a number"
+                    )
+                if not math.isfinite(value):
+                    raise ValueError(
+                        f"{name} must be finite"
+                    )
                 if value <= 0:
-                    raise ValueError(f"{name} must be greater than zero")
-                if name == "min_coverage" and value > 1:
-                    raise ValueError("min_coverage must be at most 1")
-                if name == "min_edge_margin" and value > 0.5:
-                    raise ValueError("min_edge_margin must be at most 0.5")
-                if name == "duplicate_distance" and value > 5:
-                    raise ValueError("duplicate_distance must be at most 5")
-                setattr(self.calibrator, name, value)
+                    raise ValueError(
+                        f"{name} must be greater than zero"
+                    )
+                if (
+                    name == "min_coverage"
+                    and value > 1
+                ):
+                    raise ValueError(
+                        "min_coverage must be at most 1"
+                    )
+                if (
+                    name == "min_edge_margin"
+                    and value > 0.5
+                ):
+                    raise ValueError(
+                        "min_edge_margin must be at most 0.5"
+                    )
+                if (
+                    name == "duplicate_distance"
+                    and value > 5
+                ):
+                    raise ValueError(
+                        "duplicate_distance must be at most 5"
+                    )
+                setattr(
+                    self.calibrator,
+                    name,
+                    value,
+                )
 
     def set_calibration_preview(self, enabled):
-        enabled = bool(enabled)
+        if not isinstance(enabled, bool):
+            raise ValueError(
+                "enabled must be boolean"
+            )
+
         if enabled:
             if not self.output_file.exists():
-                raise ValueError("No calibration model exists yet.")
+                raise ValueError(
+                    "No calibration model exists yet."
+                )
             preview = CameraCalibration(
                 self.output_file,
                 enabled=True,
             )
             if not preview.enabled:
                 raise ValueError(
-                    preview.last_error or "Calibration model is not usable."
+                    preview.last_error
+                    or "Calibration model is not usable."
                 )
             self._calibration_preview = preview
+
         self.calibration_preview_enabled = enabled
 
     def capture(self):
@@ -712,62 +1071,151 @@ class CalibrationStreamServer:
                 False,
                 "Calibration is running; capture is temporarily disabled.",
             )
+
         with self._operation_lock:
             raw = self.current_raw_frame()
             if raw is None:
-                return False, "No raw camera frame is available."
+                return (
+                    False,
+                    "No raw camera frame is available.",
+                )
+
             with self._calibrator_lock:
-                fresh = self.calibrator.evaluate_frame(raw)
-                reason = self.calibrator.quality_reason(fresh)
-            fresh["quality_valid"] = reason is None
-            fresh["quality_reason"] = reason
-            return self._save_evaluated_frame(raw, fresh)
+                fresh = self.calibrator.evaluate_frame(
+                    raw
+                )
+                reason = self.calibrator.quality_reason(
+                    fresh
+                )
+                fresh["quality_valid"] = reason is None
+                fresh["quality_reason"] = reason
+                return self._save_evaluated_frame(
+                    raw,
+                    fresh,
+                )
 
     def _run_calibration(self):
         with self._operation_lock:
             self._calibration_state = "calibrating"
+            self._last_calibration_message = (
+                "Calibration is running against the accepted captures."
+            )
             try:
-                result = self.calibrator.calibrate_from_directory(
-                    self.image_dir,
-                    self.output_file,
-                )
+                with self._calibrator_lock:
+                    result = self.calibrator.calibrate_from_directory(
+                        self.image_dir,
+                        self.output_file,
+                        metadata_loader=(
+                            self.image_store.load_metadata
+                        ),
+                    )
+
                 self._last_calibration = result
                 self._calibration_preview = None
                 self.calibration_preview_enabled = False
-                self._calibration_state = (
-                    "calibrated"
-                    if result.get("acceptable_for_runtime", True)
-                    else "quality_failed"
-                )
+
+                if result.get(
+                    "acceptable_for_runtime",
+                    True,
+                ):
+                    self._calibration_state = "calibrated"
+                    self._last_calibration_message = (
+                        f"Calibration completed with "
+                        f"{result['valid_images']} accepted views. "
+                        f"RMS {result['rms']:.4f}px; mean "
+                        f"reprojection "
+                        f"{result['mean_reprojection_error']:.4f}px."
+                    )
+                else:
+                    self._calibration_state = "quality_failed"
+                    reasons = result.get(
+                        "quality_reasons"
+                    ) or [
+                        "Calibration failed its quality gate."
+                    ]
+                    self._last_calibration_message = " ".join(
+                        reasons
+                    )
+
                 logger.info(
                     "Calibration complete: valid=%d rms=%.6f "
                     "reprojection=%.6f quality=%s",
                     result["valid_images"],
                     result["rms"],
                     result["mean_reprojection_error"],
-                    result.get("quality_status", "unknown"),
+                    result.get(
+                        "quality_status",
+                        "unknown",
+                    ),
                 )
-            except Exception:
-                logger.exception("Camera calibration failed")
+            except Exception as exc:
+                logger.exception(
+                    "Camera calibration failed"
+                )
                 self._calibration_state = "failed"
+                self._last_calibration_message = str(exc)
 
     def start_calibration(self):
-        if (
-            self._calibration_thread is not None
-            and self._calibration_thread.is_alive()
-        ):
-            return False, "Calibration is already running."
+        with self._operation_lock:
+            if (
+                self._calibration_thread is not None
+                and self._calibration_thread.is_alive()
+            ):
+                return (
+                    False,
+                    "Calibration is already running.",
+                )
 
-        self._calibration_thread = threading.Thread(
-            target=self._run_calibration,
-            daemon=True,
-            name="camera-calibration",
-        )
-        self._calibration_thread.start()
-        return True, "Calibration started."
+            self._calibration_thread = threading.Thread(
+                target=self._run_calibration,
+                daemon=True,
+                name="camera-calibration",
+            )
+            self._calibration_thread.start()
+            return True, "Calibration started."
 
     def status(self):
         result = self._last_calibration or {}
+
+        with self._calibrator_lock:
+            calibrator = self.calibrator
+            checkerboard = list(
+                calibrator.checkerboard
+            )
+            square_size = calibrator.square_size
+            detector_mode = calibrator.detector_mode
+            min_coverage = calibrator.min_coverage
+            min_sharpness = calibrator.min_sharpness
+            min_edge_margin = calibrator.min_edge_margin
+            duplicate_distance = (
+                calibrator.duplicate_distance
+            )
+
+        evaluation = self._last_detection
+        detection_state = self._detection_state(
+            evaluation
+        )
+
+        if evaluation:
+            if detection_state == "READY_FOR_CAPTURE":
+                detection_message = (
+                    "Board detected and quality checks passed."
+                )
+            elif detection_state == "DETECTED_BUT_REJECTED":
+                detection_message = (
+                    evaluation.get("quality_reason")
+                    or "Detected, but quality checks rejected this frame."
+                )
+            else:
+                detection_message = (
+                    "Chessboard was not detected."
+                )
+        elif self._last_camera_error:
+            detection_message = self._last_camera_error
+        else:
+            detection_message = (
+                "Waiting for the first camera frame."
+            )
 
         return {
             "camera_mode": getattr(
@@ -791,49 +1239,102 @@ class CalibrationStreamServer:
             ),
             "requested_fps": self.requested_fps,
             "actual_fps": self.actual_fps,
+            "detection_fps": (
+                1.0 / self.detection_interval
+                if self.detection_interval > 0
+                else None
+            ),
+            "detection_interval": self.detection_interval,
+            "detection_count": self._detection_count,
+            "detection_age_ms": (
+                round(
+                    max(
+                        0.0,
+                        time.monotonic()
+                        - self._last_detection_at,
+                    )
+                    * 1000.0,
+                    1,
+                )
+                if self._last_detection_at
+                else None
+            ),
+            "detection_state": detection_state,
+            "detection_message": detection_message,
             "chessboard_detected": self.chessboard_detected,
-            "capture_eligible": bool(
-                self._last_detection
-                and self._last_detection.get("quality_valid")
+            "capture_eligible": (
+                detection_state
+                == "READY_FOR_CAPTURE"
             ),
             "last_rejection_reason": self.last_rejection_reason,
+            "last_camera_error": self._last_camera_error,
             "camera_fps_limits": (
                 self.camera.get_frame_rate_limits()
-                if hasattr(self.camera, "get_frame_rate_limits")
+                if hasattr(
+                    self.camera,
+                    "get_frame_rate_limits",
+                )
                 else None
             ),
             "image_size": [
-                int(getattr(self.config, "CAM_WIDTH", 0)),
-                int(getattr(self.config, "CAM_HEIGHT", 0)),
+                int(
+                    getattr(
+                        self.config,
+                        "CAM_WIDTH",
+                        0,
+                    )
+                ),
+                int(
+                    getattr(
+                        self.config,
+                        "CAM_HEIGHT",
+                        0,
+                    )
+                ),
             ],
-            "checkerboard": list(self.calibrator.checkerboard),
-            "checkerboard_inner_corners": list(self.calibrator.checkerboard),
-            "board_squares": list(self.board_squares),
-            "square_size": self.calibrator.square_size,
+            "checkerboard": checkerboard,
+            "checkerboard_inner_corners": checkerboard,
+            "board_squares": list(
+                self.board_squares
+            ),
+            "square_size": square_size,
             "min_valid_images": self.min_valid_images,
-            "detector_mode": self.calibrator.detector_mode,
+            "detector_mode": detector_mode,
             "detector": (
-                self._last_detection.get("detector")
-                if self._last_detection
+                evaluation.get("detector")
+                if evaluation
                 else None
             ),
-            "min_coverage": self.calibrator.min_coverage,
-            "min_sharpness": self.calibrator.min_sharpness,
-            "min_edge_margin": self.calibrator.min_edge_margin,
-            "duplicate_distance": self.calibrator.duplicate_distance,
-            "auto_capture_enabled": self.auto_capture_enabled,
-            "auto_capture_interval": self.auto_capture_interval,
-            "auto_captured_images": self.auto_captured_images,
-            "calibration_preview_enabled": self.calibration_preview_enabled,
+            "detection_view": (
+                evaluation.get("detection_view")
+                if evaluation
+                else None
+            ),
+            "min_coverage": min_coverage,
+            "min_sharpness": min_sharpness,
+            "min_edge_margin": min_edge_margin,
+            "duplicate_distance": duplicate_distance,
+            "auto_capture_enabled": (
+                self.auto_capture_enabled
+            ),
+            "auto_capture_interval": (
+                self.auto_capture_interval
+            ),
+            "auto_captured_images": (
+                self.auto_captured_images
+            ),
+            "calibration_preview_enabled": (
+                self.calibration_preview_enabled
+            ),
             "captured_images": self.image_store.count(),
+            "diversity": self._diversity_summary(),
             "network_addresses": discover_network_addresses(),
-            "detector": (
-                self._last_detection.get("detector")
-                if self._last_detection
-                else None
-            ),
             "calibration_state": self._calibration_state,
+            "last_calibration_message": (
+                self._last_calibration_message
+            ),
             "last_calibration_error": result.get("rms"),
+            "rms": result.get("rms"),
             "mean_reprojection_error": result.get(
                 "mean_reprojection_error"
             ),
@@ -850,6 +1351,10 @@ class CalibrationStreamServer:
             "quality_status": result.get(
                 "quality_status",
                 "not evaluated",
+            ),
+            "quality_reasons": result.get(
+                "quality_reasons",
+                [],
             ),
             "acceptable_for_runtime": result.get(
                 "acceptable_for_runtime"
@@ -875,7 +1380,10 @@ class CalibrationStreamServer:
 
         @app.get("/api/debug_frame")
         def api_debug_frame():
-            view = request.args.get("view", "gray")
+            view = request.args.get(
+                "view",
+                "detector",
+            )
             threshold = request.args.get("threshold", "128")
             adaptive_block = request.args.get("adaptive_block", "21")
             adaptive_c = request.args.get("adaptive_c", "5")
@@ -1019,6 +1527,7 @@ class CalibrationStreamServer:
                     duplicate_distance=self.calibrator.duplicate_distance,
                     auto_capture_enabled=self.auto_capture_enabled,
                     auto_capture_interval=self.auto_capture_interval,
+                    diversity=self._diversity_summary(),
                 )
             except (TypeError, ValueError) as exc:
                 status = (
@@ -1117,6 +1626,9 @@ class CalibrationStreamServer:
                 self.last_rejection_reason = None
                 self.last_auto_capture_at = 0.0
                 self.auto_captured_images = 0
+                self._last_calibration = None
+                self._last_calibration_message = None
+                self._calibration_state = "not calibrated"
 
             return jsonify(
                 success=True,

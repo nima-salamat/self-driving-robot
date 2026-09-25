@@ -41,17 +41,42 @@ class CameraCalibrator:
         else:
             self.checkerboard = (11, 7)
 
-        self.square_size = float(square_size)
-        if self.square_size <= 0:
-            raise ValueError("square_size must be greater than zero")
-
+        self.square_size = self._finite_float(
+            "square_size",
+            square_size,
+            minimum=0.0,
+        )
         self.min_valid_images = max(3, int(min_valid_images))
-        self.min_coverage = float(min_coverage)
-        self.min_sharpness = float(min_sharpness)
-        self.min_edge_margin = float(min_edge_margin)
-        self.duplicate_distance = float(duplicate_distance)
-        self.max_mean_reprojection_error = float(max_mean_reprojection_error)
-        self.max_view_reprojection_error = float(max_view_reprojection_error)
+        self.min_coverage = self._finite_float(
+            "min_coverage",
+            min_coverage,
+            minimum=0.0,
+        )
+        self.min_sharpness = self._finite_float(
+            "min_sharpness",
+            min_sharpness,
+            minimum=0.0,
+        )
+        self.min_edge_margin = self._finite_float(
+            "min_edge_margin",
+            min_edge_margin,
+            minimum=0.0,
+        )
+        self.duplicate_distance = self._finite_float(
+            "duplicate_distance",
+            duplicate_distance,
+            minimum=0.0,
+        )
+        self.max_mean_reprojection_error = self._finite_float(
+            "max_mean_reprojection_error",
+            max_mean_reprojection_error,
+            minimum=0.0,
+        )
+        self.max_view_reprojection_error = self._finite_float(
+            "max_view_reprojection_error",
+            max_view_reprojection_error,
+            minimum=0.0,
+        )
 
         detector_mode = str(detector_mode).lower().strip()
         if detector_mode not in {"auto", "classic", "sb"}:
@@ -66,6 +91,11 @@ class CameraCalibrator:
             30,
             0.0001,
         )
+        self.last_detection_info = {
+            "detector": "none",
+            "view": "none",
+            "scale": 1.0,
+        }
 
         self.object_template = np.zeros(
             (
@@ -87,6 +117,18 @@ class CameraCalibrator:
 
         self.object_template *= self.square_size
 
+    @staticmethod
+    def _finite_float(name, value, minimum=None):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a number")
+        if not math.isfinite(number):
+            raise ValueError(f"{name} must be finite")
+        if minimum is not None and number <= minimum:
+            raise ValueError(f"{name} must be greater than {minimum}")
+        return number
+
     def set_detector_mode(self, mode):
         mode = str(mode).lower().strip()
         if mode not in {"auto", "classic", "sb"}:
@@ -99,6 +141,8 @@ class CameraCalibrator:
         found, corners, gray, _ = self.detect_corners_detailed(image)
         return found, corners, gray
 
+    DETECTION_MAX_DIMENSION = 480
+
     def _detection_patterns(self):
         patterns = [self.checkerboard]
         cols, rows = self.checkerboard
@@ -106,43 +150,136 @@ class CameraCalibrator:
             patterns.append((rows, cols))
         return patterns
 
-    def _detection_views(self, gray):
-        """
-        Yield candidate grayscale views for chessboard detection.
+    @staticmethod
+    def _scale_gray(gray, max_dimension=DETECTION_MAX_DIMENSION):
+        height, width = gray.shape[:2]
+        largest = max(height, width)
+        if largest <= max_dimension:
+            return gray, 1.0
 
-        Order is intentional: cheap/common views first, recovery views last.
-        - direct / blur / invert / clahe: same geometry, offset (0, 0)
-        - padded variants: white border when board touches the frame edge
+        scale = float(max_dimension) / float(largest)
+        resized = cv2.resize(
+            gray,
+            (
+                max(2, int(round(width * scale))),
+                max(2, int(round(height * scale))),
+            ),
+            interpolation=cv2.INTER_AREA,
+        )
+        return resized, scale
 
-        Coordinates from padded views are offset so callers stay in original
-        image space.
-        """
-        yield gray, (0, 0), "direct"
+    def _try_classic_detector(self, gray, pattern, robust=False):
+        flags = (
+            cv2.CALIB_CB_ADAPTIVE_THRESH
+            | cv2.CALIB_CB_NORMALIZE_IMAGE
+        )
+        if robust:
+            flags |= cv2.CALIB_CB_FILTER_QUADS
 
-        # Light blur reduces sensor noise that breaks classic finder on Pi cams.
         try:
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            yield blurred, (0, 0), "blur"
+            found, corners = cv2.findChessboardCorners(
+                gray,
+                pattern,
+                flags,
+            )
+        except cv2.error:
+            return False, None
+
+        return bool(found and corners is not None), corners
+
+    def _try_sb_detector(self, gray, pattern, robust=False):
+        detector = getattr(cv2, "findChessboardCornersSB", None)
+        if detector is None:
+            return False, None
+
+        flags = cv2.CALIB_CB_NORMALIZE_IMAGE
+        if robust:
+            flags |= (
+                cv2.CALIB_CB_EXHAUSTIVE
+                | cv2.CALIB_CB_ACCURACY
+            )
+
+        try:
+            found, corners = detector(
+                gray,
+                pattern,
+                flags,
+            )
+        except (cv2.error, TypeError):
+            try:
+                found, corners = detector(gray, pattern)
+            except (cv2.error, TypeError):
+                return False, None
+
+        return bool(found and corners is not None), corners
+
+    def _detect_on_view(
+        self,
+        gray,
+        scale,
+        offset=(0, 0),
+        robust=False,
+        view_name="detector",
+    ):
+        if self.detector_mode == "classic":
+            detectors = [("classic", self._try_classic_detector)]
+        elif self.detector_mode == "sb":
+            detectors = [("sb", self._try_sb_detector)]
+        else:
+            # Auto is intentionally cheap-first: Classic → SB.
+            detectors = [
+                ("classic", self._try_classic_detector),
+                ("sb", self._try_sb_detector),
+            ]
+
+        for detector_name, detector in detectors:
+            for pattern in self._detection_patterns():
+                found, corners = detector(
+                    gray,
+                    pattern,
+                    robust=robust,
+                )
+                if not found or corners is None:
+                    continue
+
+                canonical = self._canonicalize_corners(
+                    corners,
+                    pattern,
+                    offset,
+                )
+                if canonical is None:
+                    continue
+
+                if scale != 1.0:
+                    canonical = canonical / float(scale)
+
+                return {
+                    "corners": canonical.astype(np.float32),
+                    "detector": detector_name,
+                    "view": view_name,
+                    "scale": float(scale),
+                }
+
+        return None
+
+    def _recovery_views(self, scaled_gray, scale):
+        try:
+            clahe = cv2.createCLAHE(
+                clipLimit=2.0,
+                tileGridSize=(8, 8),
+            ).apply(scaled_gray)
+            yield clahe, (0, 0), "clahe"
         except cv2.error:
             pass
 
-        # Inverted polarity helps when the printed board reads as white-on-black
-        # under strong exposure / auto-gain.
-        yield cv2.bitwise_not(gray), (0, 0), "invert"
-
-        try:
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            yield enhanced, (0, 0), "clahe"
-        except cv2.error:
-            pass
+        yield cv2.bitwise_not(scaled_gray), (0, 0), "invert"
 
         padding = max(
-            16,
-            int(round(min(gray.shape[:2]) * 0.05)),
+            12,
+            int(round(min(scaled_gray.shape[:2]) * 0.05)),
         )
         padded = cv2.copyMakeBorder(
-            gray,
+            scaled_gray,
             padding,
             padding,
             padding,
@@ -152,100 +289,44 @@ class CameraCalibrator:
         )
         yield padded, (padding, padding), "padded"
 
+    def _detection_debug_views(self, gray):
+        scaled, _scale = self._scale_gray(gray)
+        yield "detector", scaled
+
         try:
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            padded_clahe = clahe.apply(padded)
-            yield padded_clahe, (padding, padding), "padded_clahe"
+            yield "clahe", cv2.createCLAHE(
+                clipLimit=2.0,
+                tileGridSize=(8, 8),
+            ).apply(scaled)
         except cv2.error:
             pass
 
-        yield cv2.bitwise_not(padded), (padding, padding), "padded_invert"
+        yield "invert", cv2.bitwise_not(scaled)
 
-    def _canonicalize_corners(self, corners, detected_pattern, offset):
-        points = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
+    def debug_preprocessed(self, image, view="detector"):
+        if image is None or image.size == 0:
+            return None
 
-        if tuple(detected_pattern) != tuple(self.checkerboard):
-            detected_cols, detected_rows = detected_pattern
-            expected_count = self.checkerboard[0] * self.checkerboard[1]
-            if points.shape[0] != expected_count:
-                return None
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY,
+        )
+        requested = str(view or "detector").strip().lower()
 
-            grid = points.reshape(
-                detected_rows,
-                detected_cols,
-                2,
-            )
-            points = (
-                grid.transpose(1, 0, 2)
-                .reshape(-1, 1, 2)
-            )
-
-        if offset != (0, 0):
-            points = points - np.asarray(
-                offset,
-                dtype=np.float32,
-            ).reshape(1, 1, 2)
-
-        return points
-
-    def _try_classic_detector(self, gray, pattern):
-        flag_sets = [
-            (
-                cv2.CALIB_CB_ADAPTIVE_THRESH
-                | cv2.CALIB_CB_NORMALIZE_IMAGE
-            ),
-            (
-                cv2.CALIB_CB_ADAPTIVE_THRESH
-                | cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_FILTER_QUADS
-            ),
-            cv2.CALIB_CB_ADAPTIVE_THRESH,
-            0,
-        ]
-        for flags in flag_sets:
-            try:
-                found, corners = cv2.findChessboardCorners(
-                    gray,
-                    pattern,
-                    flags,
+        for name, prepared in self._detection_debug_views(gray):
+            if name == requested:
+                return cv2.cvtColor(
+                    prepared,
+                    cv2.COLOR_GRAY2BGR,
                 )
-                if found and corners is not None:
-                    return True, corners
-            except cv2.error:
-                continue
-        return False, None
 
-    def _try_sb_detector(self, gray, pattern):
-        detector = getattr(cv2, "findChessboardCornersSB", None)
-        if detector is None:
-            return False, None
+        raise ValueError(
+            "view must be one of: detector, clahe, invert"
+        )
 
-        flag_sets = [
-            (
-                cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_EXHAUSTIVE
-                | cv2.CALIB_CB_ACCURACY
-            ),
-            (
-                cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_EXHAUSTIVE
-            ),
-            cv2.CALIB_CB_NORMALIZE_IMAGE,
-            0,
-        ]
-        for flags in flag_sets:
-            try:
-                found, corners = detector(gray, pattern, flags)
-                if found and corners is not None:
-                    return True, corners
-            except (cv2.error, TypeError):
-                try:
-                    found, corners = detector(gray, pattern)
-                    if found and corners is not None:
-                        return True, corners
-                except (cv2.error, TypeError):
-                    continue
-        return False, None
+    def detect_corners(self, image):
+        found, corners, gray, _ = self.detect_corners_detailed(image)
+        return found, corners, gray
 
     def detect_corners_detailed(self, image):
         if image is None or image.size == 0:
@@ -255,49 +336,59 @@ class CameraCalibrator:
             image,
             cv2.COLOR_BGR2GRAY,
         )
+        scaled_gray, scale = self._scale_gray(gray)
 
-        detectors = []
-        # SB first in auto: more robust on physical boards / uneven lighting.
-        # Classic remains as a fast/compatible fallback.
-        if self.detector_mode in {"auto", "sb"}:
-            detectors.append(("sb", self._try_sb_detector))
-        if self.detector_mode in {"auto", "classic"}:
-            detectors.append(("classic", self._try_classic_detector))
+        # Fast path: one inexpensive detector invocation per pattern.
+        detection = self._detect_on_view(
+            scaled_gray,
+            scale,
+            robust=False,
+            view_name="detector",
+        )
 
-        if not detectors:
+        # Recovery is bounded and only runs after the fast path fails.
+        if detection is None:
+            for view, offset, view_name in self._recovery_views(
+                scaled_gray,
+                scale,
+            ):
+                detection = self._detect_on_view(
+                    view,
+                    scale,
+                    offset=offset,
+                    robust=True,
+                    view_name=view_name,
+                )
+                if detection is not None:
+                    break
+
+        if detection is None:
             return False, None, gray, "none"
 
-        patterns = self._detection_patterns()
-        views = list(self._detection_views(gray))
+        canonical = detection["corners"]
+        try:
+            refined = cv2.cornerSubPix(
+                gray,
+                canonical,
+                (11, 11),
+                (-1, -1),
+                self.criteria,
+            )
+        except cv2.error:
+            refined = canonical
 
-        for view, offset, _view_name in views:
-            for detector_name, detector in detectors:
-                for pattern in patterns:
-                    found, corners = detector(view, pattern)
-                    if not found or corners is None:
-                        continue
+        self.last_detection_info = {
+            "detector": detection["detector"],
+            "view": detection["view"],
+            "scale": detection["scale"],
+        }
 
-                    canonical = self._canonicalize_corners(
-                        corners,
-                        pattern,
-                        offset,
-                    )
-                    if canonical is None:
-                        continue
-
-                    try:
-                        refined = cv2.cornerSubPix(
-                            gray,
-                            canonical,
-                            (11, 11),
-                            (-1, -1),
-                            self.criteria,
-                        )
-                    except cv2.error:
-                        refined = canonical
-                    return True, refined, gray, detector_name
-
-        return False, None, gray, "none"
+        return (
+            True,
+            refined.astype(np.float32),
+            gray,
+            detection["detector"],
+        )
 
     @staticmethod
     def _coverage(corners, image_shape):
@@ -325,9 +416,74 @@ class CameraCalibrator:
 
         return float(area_ratio), center
 
+    @staticmethod
+    def _feature_from_corners(corners, image_shape, checkerboard):
+        coverage, center = CameraCalibrator._coverage(
+            corners,
+            image_shape,
+        )
+        points = corners.reshape(-1, 2)
+        height, width = image_shape[:2]
+        min_xy = points.min(axis=0)
+        max_xy = points.max(axis=0)
+
+        edge_margin = min(
+            float(min_xy[0]),
+            float(min_xy[1]),
+            float(width - max_xy[0]),
+            float(height - max_xy[1]),
+        ) / max(1.0, float(min(width, height)))
+
+        span_x = max(
+            0.0,
+            float(max_xy[0] - min_xy[0]),
+        ) / max(1.0, width)
+        span_y = max(
+            0.0,
+            float(max_xy[1] - min_xy[1]),
+        ) / max(1.0, height)
+
+        cols, rows = checkerboard
+        horizontal = points[cols - 1] - points[0]
+        vertical = points[(rows - 1) * cols] - points[0]
+
+        feature = np.asarray(
+            [
+                center[0],
+                center[1],
+                span_x,
+                span_y,
+                coverage,
+                math.degrees(
+                    math.atan2(
+                        float(horizontal[1]),
+                        float(horizontal[0]),
+                    )
+                ) / 180.0,
+                math.degrees(
+                    math.atan2(
+                        float(vertical[1]),
+                        float(vertical[0]),
+                    )
+                ) / 180.0,
+            ],
+            dtype=np.float32,
+        )
+        return coverage, center, edge_margin, feature
+
     def evaluate_frame(self, image):
         found, corners, gray, detector = self.detect_corners_detailed(image)
-        sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var()) if gray is not None else 0.0
+        sharpness = (
+            float(
+                cv2.Laplacian(
+                    gray,
+                    cv2.CV_64F,
+                ).var()
+            )
+            if gray is not None
+            else 0.0
+        )
+
         if not found:
             return {
                 "valid": False,
@@ -340,35 +496,29 @@ class CameraCalibrator:
                 "edge_margin": 0.0,
                 "feature": None,
                 "detector": detector,
+                "detection_view": "none",
+                "detection_scale": 1.0,
                 "quality_reason": "board not detected",
                 "gray": gray,
                 "preview": image.copy(),
             }
 
-        coverage, center = self._coverage(corners, image.shape)
-        points = corners.reshape(-1, 2)
-        height, width = image.shape[:2]
-        min_xy = points.min(axis=0)
-        max_xy = points.max(axis=0)
-        edge_margin = min(
-            float(min_xy[0]), float(min_xy[1]),
-            float(width - max_xy[0]), float(height - max_xy[1]),
-        ) / max(1.0, float(min(width, height)))
-        span_x = max(0.0, float(max_xy[0] - min_xy[0])) / max(1.0, width)
-        span_y = max(0.0, float(max_xy[1] - min_xy[1])) / max(1.0, height)
-        cols, rows = self.checkerboard
-        horizontal = points[cols - 1] - points[0]
-        vertical = points[(rows - 1) * cols] - points[0]
-        feature = np.asarray(
-            [
-                center[0], center[1], span_x, span_y, coverage,
-                math.degrees(math.atan2(float(horizontal[1]), float(horizontal[0]))) / 180.0,
-                math.degrees(math.atan2(float(vertical[1]), float(vertical[0]))) / 180.0,
-            ],
-            dtype=np.float32,
+        coverage, center, edge_margin, feature = (
+            self._feature_from_corners(
+                corners,
+                image.shape,
+                self.checkerboard,
+            )
         )
+        info = dict(self.last_detection_info)
+
         preview = image.copy()
-        cv2.drawChessboardCorners(preview, self.checkerboard, corners, True)
+        cv2.drawChessboardCorners(
+            preview,
+            self.checkerboard,
+            corners,
+            True,
+        )
         result = {
             "valid": True,
             "detected": True,
@@ -378,6 +528,8 @@ class CameraCalibrator:
             "sharpness": sharpness,
             "edge_margin": edge_margin,
             "detector": detector,
+            "detection_view": info.get("view", "detector"),
+            "detection_scale": float(info.get("scale", 1.0)),
             "feature": feature,
             "gray": gray,
             "preview": preview,
@@ -385,6 +537,99 @@ class CameraCalibrator:
         result["quality_reason"] = self.quality_reason(result)
         result["quality_valid"] = result["quality_reason"] is None
         return result
+
+    def evaluation_from_metadata(self, metadata, image_shape):
+        if not isinstance(metadata, dict):
+            return None
+        try:
+            if int(metadata.get("format_version", 0)) < 1:
+                return None
+            checkerboard = tuple(
+                int(value)
+                for value in metadata.get("checkerboard", ())
+            )
+        except (TypeError, ValueError):
+            return None
+
+        if checkerboard != self.checkerboard:
+            return None
+
+        image_size = metadata.get("image_size")
+        if (
+            not isinstance(image_size, (list, tuple))
+            or len(image_size) != 2
+        ):
+            return None
+        try:
+            expected_size = tuple(map(int, image_size))
+        except (TypeError, ValueError):
+            return None
+
+        if expected_size != (
+            int(image_shape[1]),
+            int(image_shape[0]),
+        ):
+            return None
+
+        try:
+            corners = np.asarray(
+                metadata["corners"],
+                dtype=np.float32,
+            ).reshape(-1, 1, 2)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+        expected_count = (
+            self.checkerboard[0] * self.checkerboard[1]
+        )
+        if corners.shape[0] != expected_count:
+            return None
+        if not np.isfinite(corners).all():
+            return None
+
+        coverage, center, edge_margin, feature = (
+            self._feature_from_corners(
+                corners,
+                image_shape,
+                self.checkerboard,
+            )
+        )
+        try:
+            sharpness = float(
+                metadata.get("sharpness", 0.0)
+            )
+            detection_scale = float(
+                metadata.get("detection_scale", 1.0)
+            )
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(sharpness):
+            return None
+        if not math.isfinite(detection_scale) or detection_scale <= 0:
+            return None
+
+        return {
+            "valid": True,
+            "detected": True,
+            "quality_valid": True,
+            "corners": corners,
+            "coverage": coverage,
+            "center": center,
+            "sharpness": sharpness,
+            "edge_margin": edge_margin,
+            "feature": feature,
+            "detector": str(
+                metadata.get("detector", "stored")
+            ),
+            "detection_view": str(
+                metadata.get("detection_view", "stored")
+            ),
+            "detection_scale": detection_scale,
+            "quality_reason": None,
+            "gray": None,
+            "preview": None,
+            "metadata_source": "capture",
+        }
 
     def quality_reason(self, evaluation):
         if not evaluation.get("valid"):
@@ -502,12 +747,8 @@ class CameraCalibrator:
             "valid_images": len(object_points),
         }
 
-    def calibrate_directory(self, image_paths):
-        paths = [
-            Path(path)
-            for path in image_paths
-        ]
-
+    def calibrate_directory(self, image_paths, metadata_loader=None):
+        paths = [Path(path) for path in image_paths]
         if not paths:
             raise ValueError("No calibration images found")
 
@@ -523,48 +764,79 @@ class CameraCalibrator:
                 str(path),
                 cv2.IMREAD_COLOR,
             )
-
             if image is None:
-                rejected_paths.append(
-                    {
-                        "path": str(path),
-                        "reason": "image_read_failed",
-                    }
-                )
+                rejected_paths.append({
+                    "path": str(path),
+                    "reason": "image_read_failed",
+                })
                 continue
 
             current_size = (
                 image.shape[1],
                 image.shape[0],
             )
-
             if image_size is None:
                 image_size = current_size
             elif current_size != image_size:
-                rejected_paths.append(
-                    {
-                        "path": str(path),
-                        "reason": (
-                            "image_size_mismatch:"
-                            f"{current_size}!={image_size}"
-                        ),
-                    }
-                )
-                continue
-
-            result = self.evaluate_frame(image)
-            reason = self.quality_reason(result)
-            if reason is not None:
-                rejected_paths.append({"path": str(path), "reason": reason})
-                continue
-            if self.is_duplicate(result, accepted_features):
                 rejected_paths.append({
                     "path": str(path),
-                    "reason": "too similar to another accepted view",
+                    "reason": (
+                        "image_size_mismatch:"
+                        f"{current_size}!={image_size}"
+                    ),
                 })
                 continue
-            accepted_features.append(result["feature"])
 
+            result = None
+            if callable(metadata_loader):
+                try:
+                    metadata = metadata_loader(path)
+                except Exception:
+                    metadata = None
+                    logger.exception(
+                        "Failed to load calibration metadata: %s",
+                        path,
+                    )
+                if metadata is not None:
+                    result = self.evaluation_from_metadata(
+                        metadata,
+                        image.shape,
+                    )
+                    if result is None:
+                        rejected_paths.append({
+                            "path": str(path),
+                            "reason": "capture_metadata_incompatible",
+                        })
+                        continue
+
+            if result is None:
+                result = self.evaluate_frame(image)
+                reason = self.quality_reason(result)
+                if reason is not None:
+                    rejected_paths.append({
+                        "path": str(path),
+                        "reason": reason,
+                    })
+                    continue
+
+            if self.is_duplicate(
+                result,
+                accepted_features,
+            ):
+                rejected_paths.append({
+                    "path": str(path),
+                    "reason": (
+                        "too similar to another accepted view"
+                    ),
+                })
+                continue
+
+            accepted_features.append(
+                np.asarray(
+                    result["feature"],
+                    dtype=np.float32,
+                )
+            )
             object_points.append(
                 self.object_template.copy()
             )
@@ -573,8 +845,18 @@ class CameraCalibrator:
             )
             valid_paths.append(str(path))
 
-        calibration = self.calibrate(object_points, image_points, image_size)
-        errors = list(calibration.get("per_view_errors", calibration.get("per_view_error", [])))
+        calibration = self.calibrate(
+            object_points,
+            image_points,
+            image_size,
+        )
+        errors = list(
+            calibration.get(
+                "per_view_errors",
+                calibration.get("per_view_error", []),
+            )
+        )
+
         if (
             errors
             and len(valid_paths) > self.min_valid_images
@@ -583,26 +865,45 @@ class CameraCalibrator:
             worst = int(np.argmax(errors))
             rejected_paths.append({
                 "path": valid_paths.pop(worst),
-                "reason": f"reprojection outlier ({errors[worst]:.3f}px)",
+                "reason": (
+                    f"reprojection outlier "
+                    f"({errors[worst]:.3f}px)"
+                ),
             })
             object_points.pop(worst)
             image_points.pop(worst)
-            calibration = self.calibrate(object_points, image_points, image_size)
+            calibration = self.calibrate(
+                object_points,
+                image_points,
+                image_size,
+            )
 
         reasons = []
-        mean_error = float(calibration["mean_reprojection_error"])
-        max_error = calibration.get("max_reprojection_error")
+        mean_error = float(
+            calibration["mean_reprojection_error"]
+        )
+        max_error = calibration.get(
+            "max_reprojection_error"
+        )
         if mean_error > self.max_mean_reprojection_error:
             reasons.append(
-                f"mean reprojection error {mean_error:.3f}px exceeds "
-                f"configured {self.max_mean_reprojection_error:.3f}px threshold"
+                f"mean reprojection error "
+                f"{mean_error:.3f}px exceeds configured "
+                f"{self.max_mean_reprojection_error:.3f}px threshold"
             )
-        if max_error is not None and float(max_error) > self.max_view_reprojection_error:
+        if (
+            max_error is not None
+            and float(max_error) > self.max_view_reprojection_error
+        ):
             reasons.append(
-                f"max per-view reprojection error {float(max_error):.3f}px exceeds "
-                f"configured {self.max_view_reprojection_error:.3f}px threshold"
+                f"max per-view reprojection error "
+                f"{float(max_error):.3f}px exceeds configured "
+                f"{self.max_view_reprojection_error:.3f}px threshold"
             )
-        calibration["quality_status"] = "pass" if not reasons else "fail"
+
+        calibration["quality_status"] = (
+            "pass" if not reasons else "fail"
+        )
         calibration["acceptable_for_runtime"] = not reasons
         calibration["quality_reasons"] = reasons
         calibration["valid_paths"] = valid_paths
@@ -658,7 +959,12 @@ class CameraCalibrator:
 
         return output_path
 
-    def calibrate_from_directory(self, image_dir, output_path):
+    def calibrate_from_directory(
+        self,
+        image_dir,
+        output_path,
+        metadata_loader=None,
+    ):
         image_dir = Path(image_dir)
         if not image_dir.is_dir():
             raise ValueError(f"Not a directory: {image_dir}")
@@ -671,7 +977,10 @@ class CameraCalibrator:
         if not image_paths:
             raise ValueError(f"No images found in {image_dir}")
 
-        result = self.calibrate_directory(image_paths)
+        result = self.calibrate_directory(
+            image_paths,
+            metadata_loader=metadata_loader,
+        )
         self.save(result, output_path)
         return result
 
@@ -758,6 +1067,10 @@ class CameraCalibration:
             if self.camera_matrix.shape != (3, 3):
                 raise ValueError(
                     "cameraMatrix must have shape (3, 3)"
+                )
+            if not np.isfinite(self.camera_matrix).all():
+                raise ValueError(
+                    "cameraMatrix contains non-finite values"
                 )
 
             if self.image_size is None:

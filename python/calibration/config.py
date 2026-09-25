@@ -48,6 +48,7 @@ def create_camera_config(
     config.APPLY_CAMERA_CALIBRATION = False
     config.CALIBRATION_AUTO_EXPOSURE = True
     config.CALIBRATION_AUTO_WB = True
+    config.CALIBRATION_DETECTION_INTERVAL = 0.20
     config.runtime_metrics = None
     config.MODE = "calibration"
     config.CALIBRATION_TARGET_FPS = (
