@@ -141,8 +141,6 @@ class CameraCalibrator:
         found, corners, gray, _ = self.detect_corners_detailed(image)
         return found, corners, gray
 
-    DETECTION_MAX_DIMENSION = 480
-
     def _detection_patterns(self):
         patterns = [self.checkerboard]
         cols, rows = self.checkerboard
@@ -150,181 +148,38 @@ class CameraCalibrator:
             patterns.append((rows, cols))
         return patterns
 
-    @staticmethod
-    def _scale_gray(gray, max_dimension=DETECTION_MAX_DIMENSION):
-        height, width = gray.shape[:2]
-        largest = max(height, width)
-        if largest <= max_dimension:
-            return gray, 1.0
+    def _detection_views(self, gray):
+        """
+        Yield full-resolution recovery views for physical chessboard frames.
 
-        scale = float(max_dimension) / float(largest)
-        resized = cv2.resize(
-            gray,
-            (
-                max(2, int(round(width * scale))),
-                max(2, int(round(height * scale))),
-            ),
-            interpolation=cv2.INTER_AREA,
-        )
-        return resized, scale
-
-    def _canonicalize_corners(
-        self,
-        corners,
-        detected_pattern,
-        offset,
-    ):
-        points = np.asarray(
-            corners,
-            dtype=np.float32,
-        ).reshape(-1, 1, 2)
-
-        if tuple(detected_pattern) != tuple(
-            self.checkerboard
-        ):
-            detected_cols, detected_rows = (
-                detected_pattern
-            )
-            expected_count = (
-                self.checkerboard[0]
-                * self.checkerboard[1]
-            )
-            if points.shape[0] != expected_count:
-                return None
-
-            grid = points.reshape(
-                detected_rows,
-                detected_cols,
-                2,
-            )
-            points = (
-                grid.transpose(
-                    1,
-                    0,
-                    2,
-                ).reshape(-1, 1, 2)
-            )
-
-        if offset != (0, 0):
-            points = points - np.asarray(
-                offset,
-                dtype=np.float32,
-            ).reshape(1, 1, 2)
-
-        return points
-
-    def _try_classic_detector(self, gray, pattern, robust=False):
-        flags = (
-            cv2.CALIB_CB_ADAPTIVE_THRESH
-            | cv2.CALIB_CB_NORMALIZE_IMAGE
-        )
-        if robust:
-            flags |= cv2.CALIB_CB_FILTER_QUADS
+        Detection runs in its own worker, so robustness is preferred here over
+        doing a cheap detector pass inside the live camera producer.
+        """
+        yield gray, (0, 0), "direct"
 
         try:
-            found, corners = cv2.findChessboardCorners(
-                gray,
-                pattern,
-                flags,
-            )
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            yield blurred, (0, 0), "blur"
         except cv2.error:
-            return False, None
+            pass
 
-        return bool(found and corners is not None), corners
+        yield cv2.bitwise_not(gray), (0, 0), "invert"
 
-    def _try_sb_detector(self, gray, pattern, robust=False):
-        detector = getattr(cv2, "findChessboardCornersSB", None)
-        if detector is None:
-            return False, None
-
-        flags = cv2.CALIB_CB_NORMALIZE_IMAGE
-        if robust:
-            flags |= (
-                cv2.CALIB_CB_EXHAUSTIVE
-                | cv2.CALIB_CB_ACCURACY
-            )
-
-        try:
-            found, corners = detector(
-                gray,
-                pattern,
-                flags,
-            )
-        except (cv2.error, TypeError):
-            try:
-                found, corners = detector(gray, pattern)
-            except (cv2.error, TypeError):
-                return False, None
-
-        return bool(found and corners is not None), corners
-
-    def _detect_on_view(
-        self,
-        gray,
-        scale,
-        offset=(0, 0),
-        robust=False,
-        view_name="detector",
-    ):
-        if self.detector_mode == "classic":
-            detectors = [("classic", self._try_classic_detector)]
-        elif self.detector_mode == "sb":
-            detectors = [("sb", self._try_sb_detector)]
-        else:
-            # Auto is intentionally cheap-first: Classic → SB.
-            detectors = [
-                ("classic", self._try_classic_detector),
-                ("sb", self._try_sb_detector),
-            ]
-
-        for detector_name, detector in detectors:
-            for pattern in self._detection_patterns():
-                found, corners = detector(
-                    gray,
-                    pattern,
-                    robust=robust,
-                )
-                if not found or corners is None:
-                    continue
-
-                canonical = self._canonicalize_corners(
-                    corners,
-                    pattern,
-                    offset,
-                )
-                if canonical is None:
-                    continue
-
-                if scale != 1.0:
-                    canonical = canonical / float(scale)
-
-                return {
-                    "corners": canonical.astype(np.float32),
-                    "detector": detector_name,
-                    "view": view_name,
-                    "scale": float(scale),
-                }
-
-        return None
-
-    def _recovery_views(self, scaled_gray, scale):
         try:
             clahe = cv2.createCLAHE(
                 clipLimit=2.0,
                 tileGridSize=(8, 8),
-            ).apply(scaled_gray)
+            ).apply(gray)
             yield clahe, (0, 0), "clahe"
         except cv2.error:
             pass
 
-        yield cv2.bitwise_not(scaled_gray), (0, 0), "invert"
-
         padding = max(
-            12,
-            int(round(min(scaled_gray.shape[:2]) * 0.05)),
+            16,
+            int(round(min(gray.shape[:2]) * 0.05)),
         )
         padded = cv2.copyMakeBorder(
-            scaled_gray,
+            gray,
             padding,
             padding,
             padding,
@@ -334,19 +189,29 @@ class CameraCalibrator:
         )
         yield padded, (padding, padding), "padded"
 
-    def _detection_debug_views(self, gray):
-        scaled, _scale = self._scale_gray(gray)
-        yield "detector", scaled
+        try:
+            padded_clahe = cv2.createCLAHE(
+                clipLimit=2.0,
+                tileGridSize=(8, 8),
+            ).apply(padded)
+            yield padded_clahe, (padding, padding), "padded_clahe"
+        except cv2.error:
+            pass
 
+        yield cv2.bitwise_not(
+            padded
+        ), (padding, padding), "padded_invert"
+
+    def _detection_debug_views(self, gray):
+        yield "detector", gray
         try:
             yield "clahe", cv2.createCLAHE(
                 clipLimit=2.0,
                 tileGridSize=(8, 8),
-            ).apply(scaled)
+            ).apply(gray)
         except cv2.error:
             pass
-
-        yield "invert", cv2.bitwise_not(scaled)
+        yield "invert", cv2.bitwise_not(gray)
 
     def debug_preprocessed(self, image, view="detector"):
         if image is None or image.size == 0:
@@ -369,9 +234,128 @@ class CameraCalibrator:
             "view must be one of: detector, clahe, invert"
         )
 
-    def detect_corners(self, image):
-        found, corners, gray, _ = self.detect_corners_detailed(image)
-        return found, corners, gray
+    def _try_classic_detector(self, gray, pattern, robust=False):
+        flag_sets = [
+            (
+                cv2.CALIB_CB_ADAPTIVE_THRESH
+                | cv2.CALIB_CB_NORMALIZE_IMAGE
+            ),
+            (
+                cv2.CALIB_CB_ADAPTIVE_THRESH
+                | cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_FILTER_QUADS
+            ),
+            cv2.CALIB_CB_ADAPTIVE_THRESH,
+            0,
+        ]
+        if robust:
+            flag_sets = flag_sets[1:2]
+
+        for flags in flag_sets:
+            try:
+                found, corners = cv2.findChessboardCorners(
+                    gray,
+                    pattern,
+                    flags,
+                )
+                if found and corners is not None:
+                    return True, corners
+            except cv2.error:
+                continue
+        return False, None
+
+    def _try_sb_detector(self, gray, pattern, robust=False):
+        detector = getattr(
+            cv2,
+            "findChessboardCornersSB",
+            None,
+        )
+        if detector is None:
+            return False, None
+
+        flag_sets = [
+            (
+                cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_EXHAUSTIVE
+                | cv2.CALIB_CB_ACCURACY
+            ),
+            (
+                cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_EXHAUSTIVE
+            ),
+            cv2.CALIB_CB_NORMALIZE_IMAGE,
+            0,
+        ]
+        if robust:
+            flag_sets = flag_sets[:2]
+
+        for flags in flag_sets:
+            try:
+                found, corners = detector(
+                    gray,
+                    pattern,
+                    flags,
+                )
+                if found and corners is not None:
+                    return True, corners
+            except (cv2.error, TypeError):
+                try:
+                    found, corners = detector(
+                        gray,
+                        pattern,
+                    )
+                    if found and corners is not None:
+                        return True, corners
+                except (cv2.error, TypeError):
+                    continue
+        return False, None
+
+    def _detect_on_view(
+        self,
+        gray,
+        offset=(0, 0),
+        robust=False,
+        view_name="direct",
+    ):
+        if self.detector_mode in {"auto", "sb"}:
+            detectors = [
+                ("sb", self._try_sb_detector),
+            ]
+            if self.detector_mode == "auto":
+                detectors.append(
+                    ("classic", self._try_classic_detector)
+                )
+        else:
+            detectors = [
+                ("classic", self._try_classic_detector),
+            ]
+
+        for detector_name, detector in detectors:
+            for pattern in self._detection_patterns():
+                found, corners = detector(
+                    gray,
+                    pattern,
+                    robust=robust,
+                )
+                if not found or corners is None:
+                    continue
+
+                canonical = self._canonicalize_corners(
+                    corners,
+                    pattern,
+                    offset,
+                )
+                if canonical is None:
+                    continue
+
+                return {
+                    "corners": canonical.astype(np.float32),
+                    "detector": detector_name,
+                    "view": view_name,
+                    "scale": 1.0,
+                }
+
+        return None
 
     def detect_corners_detailed(self, image):
         if image is None or image.size == 0:
@@ -381,31 +365,17 @@ class CameraCalibrator:
             image,
             cv2.COLOR_BGR2GRAY,
         )
-        scaled_gray, scale = self._scale_gray(gray)
 
-        # Fast path: one inexpensive detector invocation per pattern.
-        detection = self._detect_on_view(
-            scaled_gray,
-            scale,
-            robust=False,
-            view_name="detector",
-        )
-
-        # Recovery is bounded and only runs after the fast path fails.
-        if detection is None:
-            for view, offset, view_name in self._recovery_views(
-                scaled_gray,
-                scale,
-            ):
-                detection = self._detect_on_view(
-                    view,
-                    scale,
-                    offset=offset,
-                    robust=True,
-                    view_name=view_name,
-                )
-                if detection is not None:
-                    break
+        detection = None
+        for view, offset, view_name in self._detection_views(gray):
+            detection = self._detect_on_view(
+                view,
+                offset=offset,
+                robust=view_name not in {"direct", "blur"},
+                view_name=view_name,
+            )
+            if detection is not None:
+                break
 
         if detection is None:
             return False, None, gray, "none"
