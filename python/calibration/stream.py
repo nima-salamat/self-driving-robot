@@ -434,7 +434,6 @@ class CalibrationStreamServer:
                     evaluated,
                     calibrator=calibrator,
                 )
-            )
             except Exception as exc:
                 finished = time.monotonic()
                 message = f"Detector error: {exc}"
