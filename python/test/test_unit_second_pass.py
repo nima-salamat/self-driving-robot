@@ -448,6 +448,7 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                     undistort_points=lambda points, image_size: points,
                 )
                 server._calibration_preview = preview
+                server.workspace_mode = "calibrated"
 
                 server.calibration_preview_enabled = False
                 np.testing.assert_array_equal(
@@ -519,9 +520,22 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                 payload = response.get_json()
                 self.assertEqual(payload["code"], "CAPTURES_EXIST")
                 self.assertIn(
-                    "Clear captured calibration images",
+                    "Captured calibration images exist",
                     payload["message"],
                 )
+
+                response = server.create_app().test_client().post(
+                    "/api/settings",
+                    json={
+                        "board_cols": 7,
+                        "board_rows": 9,
+                        "square_size": 20,
+                        "replace_captures": True,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(server.image_store.count(), 0)
+
 
 
 class CalibrationDetectionTests(unittest.TestCase):
