@@ -25,12 +25,13 @@ class CameraCalibrator:
         square_size=1.0,
         min_valid_images=10,
     ):
-        self.checkerboard = (
-            int(checkerboard[0]),
-            int(checkerboard[1]),
-        )
-        if len(checkerboard) == 2
-        else (11, 7)
+        if len(checkerboard) == 2:
+            self.checkerboard = (
+                int(checkerboard[0]),
+                int(checkerboard[1]),
+            )
+        else:
+            self.checkerboard = (11, 7)
 
         self.square_size = float(square_size)
         if self.square_size <= 0:
