@@ -249,6 +249,14 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                     "quality_valid": True,
                     "quality_reason": None,
                     "feature": np.zeros(7, dtype=np.float32),
+                    "corners": np.zeros((77, 1, 2), dtype=np.float32),
+                    "coverage": 0.1,
+                    "center": [0.5, 0.5],
+                    "sharpness": 100.0,
+                    "edge_margin": 0.1,
+                    "detector": "test",
+                    "detection_view": "detector",
+                    "detection_scale": 1.0,
                 }
                 server._maybe_auto_capture(
                     np.zeros((24, 32, 3), dtype=np.uint8),
