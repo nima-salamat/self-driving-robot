@@ -502,6 +502,104 @@ class CalibrationStreamTests(unittest.TestCase):
                 server.stop()
 
 
+    def test_workspace_modes_disable_detector_and_capture_in_calibrated_mode(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="opencv",
+            USBCAM_ADDR=0,
+            CAM_WIDTH=640,
+            CAM_HEIGHT=480,
+            CAMERA_FALLBACK_TO_OPENCV=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "calibration.npz"
+            calibrator = CameraCalibrator()
+            result = {
+                "image_size": (640, 480),
+                "checkerboard": calibrator.checkerboard,
+                "square_size": calibrator.square_size,
+                "rms": 0.2,
+                "mean_reprojection_error": 0.18,
+                "max_reprojection_error": 0.4,
+                "valid_images": 10,
+                "valid_paths": [],
+                "rejected_paths": [],
+                "camera_matrix": np.array(
+                    [
+                        [500.0, 0.0, 320.0],
+                        [0.0, 500.0, 240.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    dtype=np.float64,
+                ),
+                "dist_coeffs": np.zeros((5, 1), dtype=np.float64),
+                "quality_status": "pass",
+                "acceptable_for_runtime": True,
+            }
+            calibrator.save(result, output)
+
+            with patch("calibration.stream.Camera", FakeCamera):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=output,
+                )
+                self.assertEqual(server.workspace_mode, "calibration")
+                server.set_workspace_mode("calibrated")
+                self.assertEqual(server.workspace_mode, "calibrated")
+                self.assertFalse(server.auto_capture_enabled)
+                saved, message = server.capture()
+                self.assertFalse(saved)
+                self.assertIn("Switch to calibration mode", message)
+                self.assertEqual(server.status()["detection_state"], "DETECTOR_DISABLED")
+
+                server.set_workspace_mode("calibration")
+                self.assertEqual(server.workspace_mode, "calibration")
+                server.stop()
+
+
+    def test_single_capture_delete_removes_metadata_and_updates_dataset(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="webcam",
+            CAM_WIDTH=160,
+            CAM_HEIGHT=120,
+            resize_width=160,
+            resize_height=120,
+            CAMERA_FALLBACK_TO_OPENCV=False,
+            APPLY_CAMERA_CALIBRATION=False,
+            CALIBRATION_TARGET_FPS=30.0,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            image_dir = Path(tmp) / "images"
+            with patch("calibration.stream.Camera", FakeCamera):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=image_dir,
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                image = np.zeros((120, 160, 3), dtype=np.uint8)
+                path = server.image_store.save(
+                    image,
+                    {
+                        "format_version": 1,
+                        "image_size": [160, 120],
+                        "checkerboard": [7, 9],
+                        "feature": [0.2, 0.7, 0.4, 0.5, 0.2, 0.1, -0.1],
+                        "corners": np.zeros((63, 2), dtype=float).tolist(),
+                    },
+                )
+                server._restore_persisted_capture_state()
+                client = server.create_app().test_client()
+
+                response = client.delete(
+                    "/api/captures/" + path.name
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(server.image_store.count(), 0)
+                self.assertFalse(path.exists())
+                self.assertFalse(server.image_store.metadata_path(path).exists())
+                server.stop()
+
+
     def test_debug_frame_endpoint_returns_image(self):
         config = types.SimpleNamespace(
             CAMERA_MODE="webcam",
