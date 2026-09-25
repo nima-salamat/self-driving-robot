@@ -66,6 +66,7 @@ class CalibrationStreamServer:
         self.port = int(port)
 
         self._lock = threading.Condition()
+        self._camera_lock = threading.Lock()
         self._frame = None
         self._raw_frame = None
         self._frame_seq = 0
@@ -98,9 +99,10 @@ class CalibrationStreamServer:
             started = time.monotonic()
 
             try:
-                frame, _ = self.camera.capture_frame(
-                    with_resize=False
-                )
+                with self._camera_lock:
+                    frame, _ = self.camera.capture_frame(
+                        with_resize=False
+                    )
 
                 if frame is not None and self.camera.last_capture_valid:
                     evaluated = self.calibrator.evaluate_frame(frame)
@@ -173,7 +175,8 @@ class CalibrationStreamServer:
             else:
                 next_tick = time.monotonic()
 
-        self.camera.release()
+        with self._camera_lock:
+            self.camera.release()
 
     def start(self):
         if (
@@ -207,7 +210,8 @@ class CalibrationStreamServer:
                 "fps must be between 1 and 120"
             )
 
-        self.camera.set_frame_rate(fps)
+        with self._camera_lock:
+            self.camera.set_frame_rate(fps)
         self.requested_fps = fps
 
     def current_frame(self):
@@ -358,11 +362,7 @@ class CalibrationStreamServer:
             "requested_fps": self.requested_fps,
             "actual_fps": self.actual_fps,
             "chessboard_detected": self.chessboard_detected,
-            "captured_images": len(
-                list(
-                    self.image_dir.glob("calib_*.jpg")
-                )
-            ),
+            "captured_images": self.image_store.count(),
             "calibration_state": self._calibration_state,
             "last_calibration_error": result.get("rms"),
             "mean_reprojection_error": result.get(
