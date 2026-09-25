@@ -357,6 +357,62 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                     path.name,
                 )
 
+    def test_calibration_preview_accepts_valid_saved_model(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="webcam",
+            CAM_WIDTH=160,
+            CAM_HEIGHT=120,
+            CAMERA_FALLBACK_TO_OPENCV=False,
+            APPLY_CAMERA_CALIBRATION=False,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "calibration.npz"
+            CameraCalibrator.save(
+                {
+                    "image_size": (160, 120),
+                    "checkerboard": (7, 9),
+                    "square_size": 20.0,
+                    "rms": 0.2,
+                    "mean_reprojection_error": 0.2,
+                    "max_reprojection_error": 0.3,
+                    "valid_images": 10,
+                    "valid_paths": [],
+                    "rejected_paths": [],
+                    "quality_status": "pass",
+                    "acceptable_for_runtime": True,
+                    "camera_matrix": np.array(
+                        [[100.0, 0.0, 80.0],
+                         [0.0, 100.0, 60.0],
+                         [0.0, 0.0, 1.0]],
+                        dtype=np.float64,
+                    ),
+                    "dist_coeffs": np.zeros((5, 1), dtype=np.float64),
+                },
+                output,
+            )
+
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    camera_config=config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=output,
+                )
+                self.assertEqual(
+                    server._calibration_state,
+                    "not calibrated",
+                )
+                server.set_calibration_preview(True)
+                self.assertTrue(
+                    server.calibration_preview_enabled,
+                )
+                self.assertIsNotNone(server._calibration_preview)
+
+                server.set_calibration_preview(False)
+                self.assertFalse(
+                    server.calibration_preview_enabled,
+                )
+                self.assertIsNone(server._calibration_preview)
+
     def test_calibration_preview_toggle_applies_to_live_frame_only(self):
         config = types.SimpleNamespace(
             CAMERA_MODE="webcam",
