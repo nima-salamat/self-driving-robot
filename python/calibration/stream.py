@@ -189,6 +189,7 @@ class CalibrationStreamServer:
         self._camera_thread = None
         self._detection_thread = None
         self._detection_wakeup = threading.Event()
+        self._detection_stop_event = threading.Event()
         self._calibration_thread = None
         self._operation_lock = threading.Lock()
         self._calibrator_lock = threading.RLock()
@@ -327,6 +328,33 @@ class CalibrationStreamServer:
         )
         return display
 
+    def _start_detection_worker(self):
+        if self._stop_event.is_set():
+            return
+        thread = self._detection_thread
+        if thread is not None and thread.is_alive():
+            return
+
+        self._detection_stop_event.clear()
+        self._detection_wakeup.clear()
+        self._detection_thread = threading.Thread(
+            target=self._detection_loop,
+            daemon=True,
+            name="calibration-detection",
+        )
+        self._detection_thread.start()
+
+    def _stop_detection_worker(self):
+        self._detection_stop_event.set()
+        self._detection_wakeup.set()
+
+        thread = self._detection_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+
+        if thread is self._detection_thread:
+            self._detection_thread = None
+
     def _camera_loop(self):
         timestamps = []
         next_tick = time.monotonic()
@@ -395,26 +423,23 @@ class CalibrationStreamServer:
     def _detection_loop(self):
         next_detection = time.monotonic()
 
-        while not self._stop_event.is_set():
+        while not self._stop_event.is_set() and not self._detection_stop_event.is_set():
             now = time.monotonic()
             wait_for = max(
                 0.0,
                 next_detection - now,
             )
 
-            # Detection is intentionally timer-driven. The camera publishes
-            # frames continuously, so waking this worker for every camera
-            # frame can keep a slow detector in a tight catch-up loop.
-            if self._stop_event.wait(wait_for):
+            # Detection is timer-driven and has its own lifecycle. The worker
+            # is fully stopped in calibrated mode instead of waking periodically.
+            if self._detection_stop_event.wait(wait_for):
+                return
+            if self._stop_event.is_set():
                 return
 
             now = time.monotonic()
             if self.workspace_mode != "calibration":
-                self._clear_detection_state()
-                if self._stop_event.wait(0.25):
-                    return
-                next_detection = time.monotonic()
-                continue
+                return
 
             raw = self.current_raw_frame()
             if raw is None:
@@ -445,6 +470,12 @@ class CalibrationStreamServer:
                 quality_reason = worker_calibrator.quality_reason(
                     evaluated
                 )
+
+                if (
+                    self.workspace_mode != "calibration"
+                    or self._detection_stop_event.is_set()
+                ):
+                    return
                 evaluated["quality_valid"] = (
                     quality_reason is None
                 )
@@ -518,17 +549,10 @@ class CalibrationStreamServer:
                 next_detection = time.monotonic() + self.detection_interval
 
     def start(self):
-        if (
-            self._detection_thread is None
-            or not self._detection_thread.is_alive()
-        ):
-            self._stop_event.clear()
-            self._detection_thread = threading.Thread(
-                target=self._detection_loop,
-                daemon=True,
-                name="calibration-detection",
-            )
-            self._detection_thread.start()
+        self._stop_event.clear()
+
+        if self.workspace_mode == "calibration":
+            self._start_detection_worker()
 
         if (
             self._camera_thread is None
@@ -543,16 +567,10 @@ class CalibrationStreamServer:
 
     def stop(self):
         self._stop_event.set()
-        self._detection_wakeup.set()
+        self._stop_detection_worker()
 
         with self._lock:
             self._lock.notify_all()
-
-        if (
-            self._detection_thread is not None
-            and self._detection_thread.is_alive()
-        ):
-            self._detection_thread.join(timeout=2.0)
 
         if (
             self._camera_thread is not None
@@ -1261,6 +1279,7 @@ class CalibrationStreamServer:
                 getattr(preview, "last_error", None)
                 or "Calibration model is not usable."
             )
+        self._stop_detection_worker()
         self._auto_capture_before_calibrated = self.auto_capture_enabled
         self.auto_capture_enabled = False
         self.last_auto_capture_at = 0.0
@@ -1269,12 +1288,14 @@ class CalibrationStreamServer:
         self.workspace_mode = "calibrated"
         self._clear_detection_state()
 
-    def _enter_calibration_mode(self):
+    def _enter_calibration_mode(self, start_detection=True):
         self.workspace_mode = "calibration"
         self.calibration_preview_enabled = False
         self._calibration_preview = None
         self.auto_capture_enabled = self._auto_capture_before_calibrated
         self._clear_detection_state()
+        if start_detection:
+            self._start_detection_worker()
 
     def set_workspace_mode(self, mode):
         mode = str(mode or "").strip().lower()
@@ -1288,6 +1309,8 @@ class CalibrationStreamServer:
                 "Calibration is running; stop calibration before changing mode."
             )
         if mode == self.workspace_mode:
+            if mode == "calibration":
+                self._start_detection_worker()
             return
         if mode == "calibrated":
             if not self.output_file.exists():
@@ -1352,7 +1375,8 @@ class CalibrationStreamServer:
     def _run_calibration(self):
         with self._operation_lock:
             self._calibration_cancel.clear()
-            self._enter_calibration_mode()
+            self._enter_calibration_mode(start_detection=False)
+            self._stop_detection_worker()
             self._calibration_state = "calibrating"
             self._last_calibration_message = (
                 "Calibration is running against the accepted captures."
