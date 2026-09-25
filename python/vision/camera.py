@@ -98,12 +98,21 @@ class Camera:
                 )
                 self.picam.configure(config_pi)
                 
-                self.picam.set_controls({
-                    "AeEnable": False,
-                    "AwbEnable": False,
-                    "ExposureTime": 16600,
-                    "AnalogueGain": 6.0,
-                })
+                if getattr(self.config, "MODE", "") == "calibration":
+                    # Calibration needs a well-exposed, high-contrast board across
+                    # different positions. Keep runtime's fixed exposure policy
+                    # unchanged and use the camera's automatic controls only here.
+                    self.picam.set_controls({
+                        "AeEnable": True,
+                        "AwbEnable": True,
+                    })
+                else:
+                    self.picam.set_controls({
+                        "AeEnable": False,
+                        "AwbEnable": False,
+                        "ExposureTime": 16600,
+                        "AnalogueGain": 6.0,
+                    })
                 
                 self.picam.start()
                 sleep(2)
