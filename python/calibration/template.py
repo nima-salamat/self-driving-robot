@@ -372,6 +372,15 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
   </div>
 </div>
 
+<div id="capture_modal" class="capture-modal" role="dialog" aria-modal="true" aria-label="Calibration capture viewer">
+  <div class="capture-modal-card">
+    <div class="capture-modal-head">
+      <span id="capture_modal_name">Capture</span>
+      <button id="close_capture" type="button">Close</button>
+    </div>
+    <img id="capture_modal_image" alt="Large calibration capture">
+  </div>
+</div>
 <script>
 const $ = (id) => document.getElementById(id);
 let settingsLoaded = false;
@@ -509,7 +518,6 @@ function renderMode(mode, modelAvailable){
   $("mode_message").textContent = calibrated
     ? "Saved calibration is active. Detection and dataset capture are disabled."
     : "Detection and dataset capture are active.";
-  $("mode_calibrated").disabled = !modelAvailable || !calibrated && false;
 }
 
 function applyModeLocks(s){
@@ -548,9 +556,17 @@ function renderStatus(s){
   $("camera_meta").textContent=s.camera_mode+" · "+s.width+"×"+s.height;
   $("camera_dot").className="dot "+(s.last_camera_error ? "err":"ok");
   $("fps_meta").textContent=Number(s.actual_fps || s.requested_fps || 0).toFixed(1)+" FPS camera · "+Number(s.detection_fps || 0).toFixed(1)+" FPS detection";
-  $("detector_meta").textContent="Detector: "+(s.detector || "not found")+(s.detection_view ? " · "+s.detection_view : "");
+  $("detector_meta").textContent = s.workspace_mode === "calibrated"
+    ? "Detector: disabled"
+    : "Detector: "+(s.detector || "not found")+(s.detection_view ? " · "+s.detection_view : "");
+  $("debug_meta").textContent = s.workspace_mode === "calibrated" ? "Disabled in calibrated mode" : "Live";
   $("detection_age").textContent=s.detection_age_ms==null ? "Detection: waiting" : "Detection: "+Number(s.detection_age_ms).toFixed(0)+" ms old";
+  const previousMode=currentMode;
   renderMode(s.workspace_mode, !!s.calibration_model_available);
+  if(previousMode !== s.workspace_mode){
+    if(s.workspace_mode === "calibrated") stopDebugStream();
+    else startDebugStream();
+  }
   $("capture").disabled=s.workspace_mode!=="calibration" || s.detection_state!=="READY_FOR_CAPTURE" || s.calibration_state==="calibrating";
   applyModeLocks(s);
   $("rms").textContent=s.rms==null ? "—" : Number(s.rms).toFixed(4)+" px";
@@ -785,7 +801,6 @@ $("mode_calibrated").onclick=async()=>{
 $("export_model").onclick=()=>{
   window.location.href="/api/calibration/export";
 };
-$("preview_model") && ($("preview_model").style.display="none");
 $("capture_select").onchange=()=>{
   const value=$("capture_select").value;
   if(value){
@@ -834,16 +849,6 @@ $("delete_capture").onclick=async()=>{
 };
 
 updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();startDebugStream();
-</script>
-<div id="capture_modal" class="capture-modal" role="dialog" aria-modal="true" aria-label="Calibration capture viewer">
-  <div class="capture-modal-card">
-    <div class="capture-modal-head">
-      <span id="capture_modal_name">Capture</span>
-      <button id="close_capture" type="button">Close</button>
-    </div>
-    <img id="capture_modal_image" alt="Large calibration capture">
-  </div>
-</div>
-</body>
+</script></body>
 </html>
 """
