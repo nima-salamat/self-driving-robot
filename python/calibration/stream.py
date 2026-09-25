@@ -352,7 +352,11 @@ class CalibrationStreamServer:
         if thread is not None and thread.is_alive():
             thread.join(timeout=2.0)
 
-        if thread is self._detection_thread:
+        if (
+            thread is self._detection_thread
+            and thread is not None
+            and not thread.is_alive()
+        ):
             self._detection_thread = None
 
     def _camera_loop(self):
