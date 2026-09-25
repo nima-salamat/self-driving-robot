@@ -585,10 +585,10 @@ $("apply_board").onclick=async()=>{
     );
     try{ await getStatus(); }catch(_){}
   }finally{
-    // renderStatus() owns the disabled state when captures/calibration lock
-    // the board configuration; otherwise restore the button for editing.
+    // Keep the server-driven lock state from renderStatus().
     const hasCaptures=Number(lastCaptureCount)>0;
-    button.disabled=hasCaptures;
+    const calibrationBusy=$("calibration_state").textContent==="CALIBRATING";
+    button.disabled=hasCaptures || calibrationBusy;
   }
 };
 $("apply_detection").onclick=async()=>{
