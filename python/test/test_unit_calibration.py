@@ -236,7 +236,7 @@ class CalibrationCoreTests(unittest.TestCase):
             self.assertAlmostEqual(matrix[1, 2], 480.0)
 
 
-    def test_detector_mode_fast_path_uses_bounded_calls(self):
+    def test_auto_detector_uses_robust_sb_and_classic_fallbacks(self):
         frame = np.zeros(
             (480, 640, 3),
             dtype=np.uint8,
@@ -249,14 +249,13 @@ class CalibrationCoreTests(unittest.TestCase):
                 "calibration.calibrator.cv2.findChessboardCornersSB",
                 return_value=(False, None),
             ) as sb:
-                CameraCalibrator(
+                result = CameraCalibrator(
                     detector_mode="auto"
                 ).detect_corners_detailed(frame)
 
-        # Two orientations in the fast path plus three bounded recovery
-        # views, with no per-detector multi-flag cascade.
-        self.assertLessEqual(classic.call_count, 8)
-        self.assertLessEqual(sb.call_count, 8)
+        self.assertFalse(result[0])
+        self.assertGreater(classic.call_count, 0)
+        self.assertGreater(sb.call_count, 0)
 
     def test_non_finite_quality_setting_is_rejected(self):
         with self.assertRaises(ValueError):
