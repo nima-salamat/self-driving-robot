@@ -24,6 +24,8 @@ class CalibrationCoreTests(unittest.TestCase):
         self.assertEqual(calibrator.checkerboard, (7, 9))
         self.assertEqual(calibrator.square_size, 20.0)
         self.assertEqual(calibrator.min_valid_images, 10)
+        self.assertEqual(calibrator.max_mean_reprojection_error, 2.5)
+        self.assertEqual(calibrator.max_view_reprojection_error, 5.0)
 
     def test_evaluate_frame_forwards_recovery_option(self):
         calibrator = CameraCalibrator(checkerboard=(6, 8))
@@ -463,6 +465,42 @@ class CalibrationStreamTests(unittest.TestCase):
                 self.assertEqual(server.camera.rate, 24.0)
 
                 server.stop()
+
+    def test_reprojection_quality_settings_are_configurable(self):
+        config = types.SimpleNamespace(
+            CAMERA_MODE="opencv",
+            USBCAM_ADDR=0,
+            CAM_WIDTH=640,
+            CAM_HEIGHT=480,
+            CAMERA_FALLBACK_TO_OPENCV=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("calibration.stream.Camera"):
+                server = CalibrationStreamServer(
+                    config,
+                    image_dir=Path(tmp) / "images",
+                    output_file=Path(tmp) / "calibration.npz",
+                )
+                client = server.create_app().test_client()
+
+                response = client.post(
+                    "/api/settings",
+                    json={
+                        "max_mean_reprojection_error": 2.5,
+                        "max_view_reprojection_error": 5.0,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.get_json()["max_mean_reprojection_error"],
+                    2.5,
+                )
+                self.assertEqual(
+                    response.get_json()["max_view_reprojection_error"],
+                    5.0,
+                )
+                server.stop()
+
 
     def test_debug_frame_endpoint_returns_image(self):
         config = types.SimpleNamespace(
