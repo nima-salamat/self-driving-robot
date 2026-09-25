@@ -202,6 +202,30 @@ The strict contract cannot be combined with \`--without-arduino\`.
 python main.py --mode city
 ~~~
 
+### City with BLSF beta lane detection
+
+~~~bash
+python main.py --mode city --city-lane-detector blsf-beta
+~~~
+
+### Camera calibration web stream
+
+Start the raw camera calibration interface instead of the legacy local camera window:
+
+~~~bash
+python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
+~~~
+
+Open the Raspberry Pi address in a browser. The page exposes live chessboard detection, raw-frame capture, calibration execution, measured FPS, and a configurable requested camera FPS.
+
+Run the offline calibration step directly when images are already captured:
+
+~~~bash
+python -m calibration.calibrate --image-dir assets/images --square-size 1.0
+~~~
+
+The `--square-size` value is the physical side length of one chessboard square in any consistent unit. Intrinsic calibration does not depend on that unit, but storing it keeps the calibration metadata physically meaningful.
+
 ### Race
 
 ~~~bash
