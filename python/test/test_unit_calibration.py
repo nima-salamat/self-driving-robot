@@ -15,6 +15,7 @@ if str(PYTHON_ROOT) not in sys.path:
 from calibration.calibrator import CameraCalibration, CameraCalibrator
 from calibration.config import create_camera_config
 from calibration.stream import CalibrationStreamServer
+from vision.camera import Camera
 
 
 class CalibrationCoreTests(unittest.TestCase):
@@ -261,6 +262,50 @@ class CalibrationCoreTests(unittest.TestCase):
             CameraCalibrator(
                 min_sharpness=float("nan")
             )
+
+
+
+class CameraChannelOrderTests(unittest.TestCase):
+    def test_picamera_rgb888_capture_is_not_channel_swapped(self):
+        class FakePicam:
+            def capture_array(self):
+                return np.array(
+                    [[[10, 20, 30]]],
+                    dtype=np.uint8,
+                )
+
+        camera = Camera.__new__(Camera)
+        camera.pi_mode = True
+        camera.camera_initialized = True
+        camera.picam = FakePicam()
+        camera.camera_calibration = types.SimpleNamespace(
+            undistort=lambda frame: frame
+        )
+        camera.config = types.SimpleNamespace(
+            runtime_metrics=None,
+        )
+        camera.consecutive_failures = 0
+        camera.last_capture_valid = False
+        camera.last_capture_at = None
+        camera.requested_frame_rate = None
+        camera.measured_frame_rate = None
+        camera._capture_timestamps = __import__(
+            "collections"
+        ).deque(maxlen=120)
+
+        frame, _ = camera.capture_frame(
+            with_resize=False
+        )
+
+        self.assertTrue(
+            np.array_equal(
+                frame,
+                np.array(
+                    [[[10, 20, 30]]],
+                    dtype=np.uint8,
+                ),
+            )
+        )
 
 
 
