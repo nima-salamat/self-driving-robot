@@ -80,15 +80,19 @@ class CameraCalibrator:
         self.object_template *= self.square_size
 
     def detect_corners(self, image):
+        found, corners, gray, _ = self.detect_corners_detailed(image)
+        return found, corners, gray
+
+    def detect_corners_detailed(self, image):
         if image is None or image.size == 0:
-            return False, None, None
+            return False, None, None, "none"
 
         gray = cv2.cvtColor(
             image,
             cv2.COLOR_BGR2GRAY,
         )
 
-        flags = (
+        classic_flags = (
             cv2.CALIB_CB_ADAPTIVE_THRESH
             | cv2.CALIB_CB_NORMALIZE_IMAGE
         )
@@ -96,21 +100,39 @@ class CameraCalibrator:
         found, corners = cv2.findChessboardCorners(
             gray,
             self.checkerboard,
-            flags,
+            classic_flags,
         )
 
-        if not found:
-            return False, None, gray
+        if found:
+            refined = cv2.cornerSubPix(
+                gray,
+                corners,
+                (11, 11),
+                (-1, -1),
+                self.criteria,
+            )
+            return True, refined, gray, "classic"
 
-        refined = cv2.cornerSubPix(
-            gray,
-            corners,
-            (11, 11),
-            (-1, -1),
-            self.criteria,
-        )
+        sb_detector = getattr(cv2, "findChessboardCornersSB", None)
+        if sb_detector is not None:
+            sb_flags = (
+                cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_EXHAUSTIVE
+                | cv2.CALIB_CB_ACCURACY
+            )
+            try:
+                found_sb, corners_sb = sb_detector(
+                    gray,
+                    self.checkerboard,
+                    sb_flags,
+                )
+            except cv2.error:
+                found_sb, corners_sb = False, None
 
-        return True, refined, gray
+            if found_sb:
+                return True, corners_sb, gray, "sb"
+
+        return False, None, gray, "none"
 
     @staticmethod
     def _coverage(corners, image_shape):
@@ -139,7 +161,7 @@ class CameraCalibrator:
         return float(area_ratio), center
 
     def evaluate_frame(self, image):
-        found, corners, gray = self.detect_corners(image)
+        found, corners, gray, detector = self.detect_corners_detailed(image)
         sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var()) if gray is not None else 0.0
         if not found:
             return {
@@ -152,6 +174,7 @@ class CameraCalibrator:
                 "sharpness": sharpness,
                 "edge_margin": 0.0,
                 "feature": None,
+                "detector": detector,
                 "quality_reason": "board not detected",
                 "gray": gray,
                 "preview": image.copy(),
@@ -189,6 +212,7 @@ class CameraCalibrator:
             "center": center,
             "sharpness": sharpness,
             "edge_margin": edge_margin,
+            "detector": detector,
             "feature": feature,
             "gray": gray,
             "preview": preview,

@@ -564,6 +564,11 @@ class CalibrationStreamServer:
             "min_valid_images": self.min_valid_images,
             "captured_images": self.image_store.count(),
             "network_addresses": discover_network_addresses(),
+            "detector": (
+                self._last_detection.get("detector")
+                if self._last_detection
+                else None
+            ),
             "calibration_state": self._calibration_state,
             "last_calibration_error": result.get("rms"),
             "mean_reprojection_error": result.get(
