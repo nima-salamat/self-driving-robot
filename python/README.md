@@ -256,6 +256,22 @@ python main.py --mode race --performance
 python main.py --mode race --read-arduino-output
 ~~~
 
+## Classical BLSF lane detection — City beta
+
+The repository includes an experimental classical lane detector following the BLSF-style pipeline: existing City BEV/IPM, weighted grayscale, median-local thresholding, LSD line segments, binary line-segment filtering, column projection, sliding windows, and quadratic RANSAC fitting.
+
+City keeps the current vision detector by default. The beta detector is opt-in:
+
+~~~bash
+python main.py --mode city --city-lane-detector blsf-beta
+~~~
+
+`--city-lane-detector default` keeps the existing City detector. `blsf-beta` selects the experimental detector. The option is restricted to City mode and does not change Race mode or the existing ML lane detector.
+
+The BLSF implementation reuses the existing `USE_BEV` and `BEV_SRC_*` configuration values from `modes/city/config_city.py`. BLSF-specific tuning values are grouped under the `BLSF_*` names in that same file.
+
+**Beta note:** this implementation is for controlled evaluation and comparison first; it should not be treated as the production City detector until it has been validated on the robot's recorded runs.
+
 ## ML lane detection
 
 ML lane detection is opt-in:
