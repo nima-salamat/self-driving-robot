@@ -105,8 +105,13 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
 .diversity{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:8px;border-radius:10px;background:#050b15;border:1px solid rgba(255,255,255,.05)}
 .cell{height:31px;border-radius:6px;background:#0a1526;position:relative;display:flex;align-items:center;justify-content:center;color:#5d718c;font-size:10px}
 .cell.active{background:rgba(34,211,238,.12);color:#baf8ff;border:1px solid rgba(34,211,238,.22)}
-.gallery{display:grid;grid-template-columns:145px 1fr;gap:10px;align-items:start}
-.gallery select{min-height:38px}.gallery img{width:100%;height:180px;object-fit:contain;background:#000;border:1px solid var(--line);border-radius:10px}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:10px}
+.capture-card{display:grid;gap:7px;padding:7px;border:1px solid var(--line);border-radius:11px;background:#071122}
+.capture-card img{display:block;width:100%;height:130px;object-fit:cover;background:#000;border-radius:8px;cursor:zoom-in}
+.capture-card .capture-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--muted)}
+.capture-card-actions{display:flex;gap:6px}
+.capture-card-actions button{min-height:34px;padding:7px 9px;font-size:11px;flex:1}
+.capture-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px;border:1px dashed var(--line);border-radius:10px}
 .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .metric{padding:9px;border-radius:9px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05)}
 .metric span{display:block;font-size:10px;color:var(--muted)}.metric strong{display:block;margin-top:3px;font-size:12px}
@@ -210,13 +215,9 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
           <details>
             <summary>Captured images</summary>
             <div class="section-body">
-              <div class="gallery">
-                <select id="capture_select" size="7"></select>
-                <img id="capture_preview" alt="Selected calibration capture" style="display:none">
-              </div>
+              <div id="capture_gallery" class="gallery"></div>
               <div class="capture-actions">
-                <button id="open_capture" type="button">Open large</button>
-                <button id="delete_capture" class="danger" type="button">Delete selected</button>
+                <button id="clear" class="danger" type="button">Clear all captures</button>
               </div>
               <div class="note">Each accepted capture stores its detector corners and quality metadata next to the JPEG, so calibration does not need to detect those frames again.</div>
             </div>
@@ -343,7 +344,6 @@ h1{margin:0;font-size:22px;letter-spacing:-.02em}
               </div>
               <div class="actions">
                 <button id="capture" class="primary">Capture accepted view</button>
-                <button id="clear" class="danger">Clear captures</button>
               </div>
               <div class="actions">
                 <button id="calibrate" class="primary">Run calibration</button>
@@ -540,9 +540,6 @@ function applyModeLocks(s){
   $("cancel_calibration").style.display = s.calibration_state === "calibrating" ? "block" : "none";
   $("calibrate").textContent = calibrated ? "Calibration active" : "Run calibration";
   $("export_model").disabled = !s.calibration_model_available;
-  if($("open_capture")) $("open_capture").disabled = !s.captured_images;
-  if($("delete_capture")) $("delete_capture").disabled = calibrated || !s.captured_images;
-  if($("capture_select")) $("capture_select").disabled = !s.captured_images;
 }
 
 function renderStatus(s){
@@ -624,23 +621,40 @@ async function getStatus(){
 async function refreshCaptures(selectNewest=true){
   try{
     const data=await api("/api/captures",{}, {silent:true});
-    const select=$("capture_select"), previous=select.value;
-    select.innerHTML="";
-    for(const item of data.captures || []){
-      const option=document.createElement("option");
-      option.value=item.url;
-      option.textContent=item.filename;
-      select.appendChild(option);
+    const gallery=$("capture_gallery");
+    gallery.innerHTML="";
+    const captures=data.captures || [];
+    if(!captures.length){
+      gallery.innerHTML='<div class="capture-empty">No calibration captures yet.</div>';
+      return;
     }
-    if(data.captures && data.captures.length){
-      select.value=selectNewest ? data.captures[0].url : previous;
-      if(!select.value) select.value=data.captures[0].url;
-      $("capture_preview").src=select.value;
-      $("capture_preview").style.display="block";
-    }else $("capture_preview").style.display="none";
-    const hasCaptures=!!(data.captures && data.captures.length);
-    if($("open_capture")) $("open_capture").disabled=!hasCaptures;
-    if($("delete_capture")) $("delete_capture").disabled=currentMode==="calibrated" || !hasCaptures;
+    captures.forEach((item)=>{
+      const card=document.createElement("div");
+      card.className="capture-card";
+      const image=document.createElement("img");
+      image.src=item.url+"?t="+Date.now();
+      image.alt=item.filename;
+      image.loading="lazy";
+      image.onclick=()=>openCapture(item.url,item.filename);
+      const name=document.createElement("div");
+      name.className="capture-name";
+      name.textContent=item.filename;
+      const actions=document.createElement("div");
+      actions.className="capture-card-actions";
+      const open=document.createElement("button");
+      open.type="button";
+      open.textContent="Open";
+      open.onclick=()=>openCapture(item.url,item.filename);
+      const del=document.createElement("button");
+      del.type="button";
+      del.className="danger";
+      del.textContent="Delete";
+      del.disabled=currentMode==="calibrated";
+      del.onclick=()=>deleteCapture(item.url,item.filename);
+      actions.append(open,del);
+      card.append(image,name,actions);
+      gallery.appendChild(card);
+    });
   }catch(_){}
 }
 function refreshDebugFrame(){
@@ -748,80 +762,37 @@ $("apply_quality").onclick=async()=>{
     qualityLoaded=true;hideBanner();
   }catch(_){}
 };
-$("capture_select").onchange=()=>{
-  const value=$("capture_select").value;
-  if(value){$("capture_preview").src=value;$("capture_preview").style.display="block";}
-};
-$("capture").onclick=async()=>{
-  try{
-    const result=await post("/api/capture");
-    showTransient(result.message || "Capture complete.");
-    await refreshCaptures(true);await getStatus();setTimeout(hideBanner,1800);
-  }catch(_){}
-};
-$("clear").onclick=async()=>{
-  if(!confirm("Delete all captured calibration images and their metadata?"))return;
-  try{
-    const result=await post("/api/clear");
-    showTransient(result.message || "Captures cleared.");
-    await refreshCaptures(true);await getStatus();setTimeout(hideBanner,1600);
-  }catch(_){}
-};
-$("calibrate").onclick=async()=>{
-  if(currentMode !== "calibration") return;
-  try{
-    const result=await post("/api/calibrate");
-    showTransient(result.message || "Calibration started.");
-    await getStatus();
-  }catch(_){}
-};
-$("cancel_calibration").onclick=async()=>{
-  try{
-    const result=await post("/api/calibrate/cancel");
-    showTransient(result.message || "Cancellation requested.");
-    await getStatus();
-  }catch(_){}
-};
-$("mode_calibration").onclick=async()=>{
-  try{
-    const result=await post("/api/mode",{mode:"calibration"});
-    renderMode(result.mode,true);
-    await getStatus();
-    startDebugStream();
-  }catch(_){}
-};
-$("mode_calibrated").onclick=async()=>{
-  try{
-    const result=await post("/api/mode",{mode:"calibrated"});
-    renderMode(result.mode,true);
-    await getStatus();
-    stopDebugStream();
-  }catch(_){}
-};
-$("export_model").onclick=()=>{
-  window.location.href="/api/calibration/export";
-};
-$("capture_select").onchange=()=>{
-  const value=$("capture_select").value;
-  if(value){
-    $("capture_preview").src=value;
-    $("capture_preview").style.display="block";
-  }
-};
-function openSelectedCapture(){
-  const value=$("capture_select").value;
-  if(!value) return;
-  $("capture_modal_image").src=value;
-  const option=$("capture_select").selectedOptions[0];
-  $("capture_modal_name").textContent=option ? option.textContent : "Calibration capture";
+function openCapture(url, filename){
+  if(!url) return;
+  $("capture_modal_image").src=url+"?t="+Date.now();
+  $("capture_modal_name").textContent=filename || "Calibration capture";
   $("capture_modal").classList.add("show");
 }
 function closeCaptureModal(){
   $("capture_modal").classList.remove("show");
   $("capture_modal_image").removeAttribute("src");
 }
-$("open_capture").onclick=openSelectedCapture;
-$("capture_preview").onclick=openSelectedCapture;
+async function deleteCapture(url, filename){
+  if(currentMode==="calibrated" || !url) return;
+  if(!confirm("Delete "+(filename || "selected capture")+"?")) return;
+  try{
+    await api(url,{method:"DELETE",cache:"no-store"});
+    showTransient((filename || "Capture")+" deleted.");
+    lastCaptureCount=-1;
+    await refreshCaptures(true);
+    await getStatus();
+  }catch(_){}
+}
+$("clear").onclick=async()=>{
+  if(!confirm("Delete all captured calibration images and their metadata?")) return;
+  try{
+    const result=await post("/api/clear");
+    showTransient(result.message || "Captures cleared.");
+    lastCaptureCount=-1;
+    await refreshCaptures(true);
+    await getStatus();
+  }catch(_){}
+};
 $("close_capture").onclick=closeCaptureModal;
 $("capture_modal").onclick=(event)=>{
   if(event.target === $("capture_modal")) closeCaptureModal();
@@ -829,26 +800,8 @@ $("capture_modal").onclick=(event)=>{
 document.addEventListener("keydown",(event)=>{
   if(event.key==="Escape") closeCaptureModal();
 });
-$("delete_capture").onclick=async()=>{
-  const filename=$("capture_select").value;
-  if(!filename) return;
-  const path=filename.split("?")[0];
-  const selected=$("capture_select").selectedOptions[0];
-  const displayName=selected ? selected.textContent : "selected capture";
-  if(!confirm("Delete "+displayName+"?")) return;
-  try{
-    await api(path,{
-      method:"DELETE",
-      cache:"no-store"
-    });
-    showTransient(displayName+" deleted.");
-    await refreshCaptures(true);
-    lastCaptureCount=-1;
-    await getStatus();
-  }catch(_){}
-};
 
-updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();startDebugStream();
+updateBoardPreview();renderDiversity({occupied_cells:0,grid:new Array(9).fill(0)});refreshCaptures(true);refreshDebugFrame();getStatus();
 </script></body>
 </html>
 """
