@@ -194,6 +194,44 @@ class CalibrationStreamBoardSettingsTests(unittest.TestCase):
                 )
 
 
+class CalibrationDetectionTests(unittest.TestCase):
+    def test_detector_falls_back_to_sb_when_classic_fails(self):
+        calibrator = CameraCalibrator(checkerboard=(6, 8))
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        with patch("calibration.calibrator.cv2.findChessboardCorners") as classic:
+            classic.return_value = (False, None)
+            found, corners, gray, detector = calibrator.detect_corners_detailed(frame)
+
+        self.assertFalse(found)
+        self.assertIsNone(corners)
+        self.assertEqual(gray.ndim, 2)
+        self.assertEqual(detector, "none")
+
+    def test_synthetic_board_is_detectable(self):
+        calibrator = CameraCalibrator(checkerboard=(6, 8))
+        square = 40
+        margin = square
+        image = np.full(
+            (9 * square + 2 * margin, 7 * square + 2 * margin),
+            255,
+            dtype=np.uint8,
+        )
+        for row in range(9):
+            for col in range(7):
+                if (row + col) % 2 == 0:
+                    image[
+                        margin + row * square:margin + (row + 1) * square,
+                        margin + col * square:margin + (col + 1) * square,
+                    ] = 0
+        frame = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+        found, corners, _, detector = calibrator.detect_corners_detailed(frame)
+        self.assertTrue(found)
+        self.assertEqual(corners.shape[0], 48)
+        self.assertIn(detector, {"classic", "sb"})
+
+
 class CalibrationQualityTests(unittest.TestCase):
     def test_blank_frame_is_rejected_with_reason(self):
         calibrator = CameraCalibrator()

@@ -72,6 +72,7 @@ input{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,.1);
 
     <div class="status">
       <div>Detection: <span id="detection" class="warn">waiting</span></div>
+      <div>Detector: <span id="detector" class="small">-</span></div>
       <div>Capture: <span id="capture_eligible" class="warn">-</span></div>
       <div>Captured: <span id="captured">0</span></div>
       <div>Camera: <span id="camera">-</span></div>
@@ -140,6 +141,12 @@ async function getStatus(){
       s.actual_fps === null ? '-' : Number(s.actual_fps).toFixed(1);
 
     const detection=document.getElementById('detection');
+    document.getElementById('detector').textContent =
+      s.detector === 'sb'
+        ? 'SB (robust)'
+        : s.detector === 'classic'
+          ? 'classic'
+          : 'not found';
     detection.textContent=s.chessboard_detected
       ? 'detected'
       : 'not detected';
