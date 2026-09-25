@@ -168,6 +168,51 @@ class CameraCalibrator:
         )
         return resized, scale
 
+    def _canonicalize_corners(
+        self,
+        corners,
+        detected_pattern,
+        offset,
+    ):
+        points = np.asarray(
+            corners,
+            dtype=np.float32,
+        ).reshape(-1, 1, 2)
+
+        if tuple(detected_pattern) != tuple(
+            self.checkerboard
+        ):
+            detected_cols, detected_rows = (
+                detected_pattern
+            )
+            expected_count = (
+                self.checkerboard[0]
+                * self.checkerboard[1]
+            )
+            if points.shape[0] != expected_count:
+                return None
+
+            grid = points.reshape(
+                detected_rows,
+                detected_cols,
+                2,
+            )
+            points = (
+                grid.transpose(
+                    1,
+                    0,
+                    2,
+                ).reshape(-1, 1, 2)
+            )
+
+        if offset != (0, 0):
+            points = points - np.asarray(
+                offset,
+                dtype=np.float32,
+            ).reshape(1, 1, 2)
+
+        return points
+
     def _try_classic_detector(self, gray, pattern, robust=False):
         flags = (
             cv2.CALIB_CB_ADAPTIVE_THRESH
