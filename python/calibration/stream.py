@@ -1212,11 +1212,6 @@ class CalibrationStreamServer:
             )
 
         if enabled:
-            if self._calibration_state != "calibrated":
-                raise ValueError(
-                    "A successful calibration is required before "
-                    "calibration preview can be enabled."
-                )
             if not self.output_file.exists():
                 raise ValueError(
                     "No calibration model exists yet."
