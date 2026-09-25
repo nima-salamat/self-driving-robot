@@ -99,6 +99,99 @@ class CameraCalibrator:
         found, corners, gray, _ = self.detect_corners_detailed(image)
         return found, corners, gray
 
+    def _detection_patterns(self):
+        patterns = [self.checkerboard]
+        cols, rows = self.checkerboard
+        if cols != rows:
+            patterns.append((rows, cols))
+        return patterns
+
+    def _detection_views(self, gray):
+        """
+        Return the normal frame plus a padded fallback.
+
+        A small synthetic white border helps the chessboard detectors when the
+        physical board reaches or nearly reaches the camera frame boundary.
+        Coordinates are returned with the padding offset so callers continue
+        to work in the original image space.
+        """
+        yield gray, (0, 0), "direct"
+
+        padding = max(
+            16,
+            int(round(min(gray.shape[:2]) * 0.05)),
+        )
+        padded = cv2.copyMakeBorder(
+            gray,
+            padding,
+            padding,
+            padding,
+            padding,
+            cv2.BORDER_CONSTANT,
+            value=255,
+        )
+        yield padded, (padding, padding), "padded"
+
+    def _canonicalize_corners(self, corners, detected_pattern, offset):
+        points = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
+
+        if tuple(detected_pattern) != tuple(self.checkerboard):
+            detected_cols, detected_rows = detected_pattern
+            expected_count = self.checkerboard[0] * self.checkerboard[1]
+            if points.shape[0] != expected_count:
+                return None
+
+            grid = points.reshape(
+                detected_rows,
+                detected_cols,
+                2,
+            )
+            points = (
+                grid.transpose(1, 0, 2)
+                .reshape(-1, 1, 2)
+            )
+
+        if offset != (0, 0):
+            points = points - np.asarray(
+                offset,
+                dtype=np.float32,
+            ).reshape(1, 1, 2)
+
+        return points
+
+    def _try_classic_detector(self, gray, pattern):
+        flags = (
+            cv2.CALIB_CB_ADAPTIVE_THRESH
+            | cv2.CALIB_CB_NORMALIZE_IMAGE
+        )
+        try:
+            return cv2.findChessboardCorners(
+                gray,
+                pattern,
+                flags,
+            )
+        except cv2.error:
+            return False, None
+
+    def _try_sb_detector(self, gray, pattern):
+        detector = getattr(cv2, "findChessboardCornersSB", None)
+        if detector is None:
+            return False, None
+
+        flags = (
+            cv2.CALIB_CB_NORMALIZE_IMAGE
+            | cv2.CALIB_CB_EXHAUSTIVE
+            | cv2.CALIB_CB_ACCURACY
+        )
+        try:
+            return detector(
+                gray,
+                pattern,
+                flags,
+            )
+        except cv2.error:
+            return False, None
+
     def detect_corners_detailed(self, image):
         if image is None or image.size == 0:
             return False, None, None, "none"
@@ -108,50 +201,46 @@ class CameraCalibrator:
             cv2.COLOR_BGR2GRAY,
         )
 
-        # Respect the detector mode exposed by the calibration UI.
-        # "auto" tries the classic detector first and then the more robust SB
-        # detector. "classic" and "sb" are now strict selections.
+        # Keep the configured detector semantics, but make detection resilient
+        # to tight framing and transposed board orientation. Only the padded
+        # fallback is used after direct-frame attempts fail.
+        detectors = []
         if self.detector_mode in {"auto", "classic"}:
-            classic_flags = (
-                cv2.CALIB_CB_ADAPTIVE_THRESH
-                | cv2.CALIB_CB_NORMALIZE_IMAGE
-            )
-
-            found, corners = cv2.findChessboardCorners(
-                gray,
-                self.checkerboard,
-                classic_flags,
-            )
-
-            if found:
-                refined = cv2.cornerSubPix(
-                    gray,
-                    corners,
-                    (11, 11),
-                    (-1, -1),
-                    self.criteria,
-                )
-                return True, refined, gray, "classic"
-
+            detectors.append(("classic", self._try_classic_detector))
         if self.detector_mode in {"auto", "sb"}:
-            sb_detector = getattr(cv2, "findChessboardCornersSB", None)
-            if sb_detector is not None:
-                sb_flags = (
-                    cv2.CALIB_CB_NORMALIZE_IMAGE
-                    | cv2.CALIB_CB_EXHAUSTIVE
-                    | cv2.CALIB_CB_ACCURACY
-                )
-                try:
-                    found_sb, corners_sb = sb_detector(
-                        gray,
-                        self.checkerboard,
-                        sb_flags,
-                    )
-                except cv2.error:
-                    found_sb, corners_sb = False, None
+            detectors.append(("sb", self._try_sb_detector))
 
-                if found_sb:
-                    return True, corners_sb, gray, "sb"
+        patterns = self._detection_patterns()
+        views = list(self._detection_views(gray))
+
+        for view_index, (view, offset, _) in enumerate(views):
+            # Direct view is the normal fast path. The padded view is a
+            # recovery path and should not change the detector's configured mode.
+            if view_index == 1 and len(views) > 1 and not detectors:
+                break
+
+            for detector_name, detector in detectors:
+                for pattern in patterns:
+                    found, corners = detector(view, pattern)
+                    if not found or corners is None:
+                        continue
+
+                    canonical = self._canonicalize_corners(
+                        corners,
+                        pattern,
+                        offset,
+                    )
+                    if canonical is None:
+                        continue
+
+                    refined = cv2.cornerSubPix(
+                        gray,
+                        canonical,
+                        (11, 11),
+                        (-1, -1),
+                        self.criteria,
+                    )
+                    return True, refined, gray, detector_name
 
         return False, None, gray, "none"
 
