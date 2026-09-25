@@ -257,13 +257,19 @@ pip install -r ../requirements.txt
 
 ### Step 3: Camera Calibration (Recommended)
 
-```bash
-# Capture calibration images
-python capture_calibration_images.py
+Start the live Flask calibration stream:
 
-# Run calibration
-python calibrate_camera.py
-```
+~~~bash
+python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
+~~~
+
+Capture valid chessboard frames from the web UI, then run calibration:
+
+~~~bash
+python -m calibration.calibrate --image-dir assets/images --square-size 1.0
+~~~
+
+The legacy `capture_calibration_images.py` and misspelled `callibrate_camera.py` entrypoints remain compatibility wrappers.
 
 ---
 
