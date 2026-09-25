@@ -117,6 +117,16 @@ class CalibrationCoreTests(unittest.TestCase):
                         1,
                     )
 
+    def test_detection_recovery_includes_binary_views(self):
+        calibrator = CameraCalibrator()
+        gray = np.full((120, 160), 127, dtype=np.uint8)
+
+        views = list(calibrator._detection_views(gray))
+        names = [name for _view, _offset, name in views]
+
+        self.assertIn("otsu", names)
+        self.assertIn("adaptive", names)
+
     def test_create_camera_config_disables_existing_calibration(self):
         config = create_camera_config(
             camera_mode="webcam",

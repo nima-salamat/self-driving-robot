@@ -155,15 +155,35 @@ class CameraCalibrator:
         Detection runs in its own worker, so robustness is preferred here over
         doing a cheap detector pass inside the live camera producer.
         """
+        # Keep the cascade deliberately short.  A failed chessboard search is
+        # expensive, but the threshold recovery views must be real detector
+        # inputs rather than diagnostics only: a well-separated Otsu board is
+        # often the only usable image under uneven camera exposure.
         yield gray, (0, 0), "direct"
 
         try:
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            yield blurred, (0, 0), "blur"
+            _, otsu = cv2.threshold(
+                gray,
+                0,
+                255,
+                cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+            )
+            yield otsu, (0, 0), "otsu"
         except cv2.error:
             pass
 
-        yield cv2.bitwise_not(gray), (0, 0), "invert"
+        try:
+            adaptive = cv2.adaptiveThreshold(
+                gray,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,
+                21,
+                5,
+            )
+            yield adaptive, (0, 0), "adaptive"
+        except cv2.error:
+            pass
 
         try:
             clahe = cv2.createCLAHE(
@@ -187,8 +207,6 @@ class CameraCalibrator:
             cv2.BORDER_CONSTANT,
             value=255,
         )
-        yield padded, (padding, padding), "padded"
-
         try:
             padded_clahe = cv2.createCLAHE(
                 clipLimit=2.0,
@@ -197,10 +215,6 @@ class CameraCalibrator:
             yield padded_clahe, (padding, padding), "padded_clahe"
         except cv2.error:
             pass
-
-        yield cv2.bitwise_not(
-            padded
-        ), (padding, padding), "padded_invert"
 
     def _canonicalize_corners(self, corners, detected_pattern, offset):
         """
@@ -285,33 +299,23 @@ class CameraCalibrator:
         )
 
     def _try_classic_detector(self, gray, pattern, robust=False):
-        flag_sets = [
-            (
-                cv2.CALIB_CB_ADAPTIVE_THRESH
-                | cv2.CALIB_CB_NORMALIZE_IMAGE
-            ),
-            (
-                cv2.CALIB_CB_ADAPTIVE_THRESH
-                | cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_FILTER_QUADS
-            ),
-            cv2.CALIB_CB_ADAPTIVE_THRESH,
-            0,
-        ]
-        if robust:
-            flag_sets = flag_sets[1:2]
-
-        for flags in flag_sets:
-            try:
-                found, corners = cv2.findChessboardCorners(
-                    gray,
-                    pattern,
-                    flags,
-                )
-                if found and corners is not None:
-                    return True, corners
-            except cv2.error:
-                continue
+        # This is OpenCV's conventional, broadly compatible fallback.  Do not
+        # try progressively weaker flags: each failed invocation performs a
+        # complete search and can make the live UI fall badly behind.
+        flags = (
+            cv2.CALIB_CB_ADAPTIVE_THRESH
+            | cv2.CALIB_CB_NORMALIZE_IMAGE
+        )
+        try:
+            found, corners = cv2.findChessboardCorners(
+                gray,
+                pattern,
+                flags,
+            )
+            if found and corners is not None:
+                return True, corners
+        except cv2.error:
+            pass
         return False, None
 
     def _try_sb_detector(self, gray, pattern, robust=False):
@@ -323,41 +327,29 @@ class CameraCalibrator:
         if detector is None:
             return False, None
 
-        flag_sets = [
-            (
-                cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_EXHAUSTIVE
-                | cv2.CALIB_CB_ACCURACY
-            ),
-            (
-                cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_EXHAUSTIVE
-            ),
-            cv2.CALIB_CB_NORMALIZE_IMAGE,
-            0,
-        ]
-        if robust:
-            flag_sets = flag_sets[:2]
-
-        for flags in flag_sets:
+        # The sector-based detector is substantially more robust under lens
+        # distortion and perspective.  Use its high-quality single pass first
+        # rather than repeatedly running it with weaker flag sets.
+        flags = (
+            cv2.CALIB_CB_NORMALIZE_IMAGE
+            | cv2.CALIB_CB_EXHAUSTIVE
+            | cv2.CALIB_CB_ACCURACY
+        )
+        try:
+            found, corners = detector(
+                gray,
+                pattern,
+                flags,
+            )
+            if found and corners is not None:
+                return True, corners
+        except (cv2.error, TypeError):
             try:
-                found, corners = detector(
-                    gray,
-                    pattern,
-                    flags,
-                )
+                found, corners = detector(gray, pattern)
                 if found and corners is not None:
                     return True, corners
             except (cv2.error, TypeError):
-                try:
-                    found, corners = detector(
-                        gray,
-                        pattern,
-                    )
-                    if found and corners is not None:
-                        return True, corners
-                except (cv2.error, TypeError):
-                    continue
+                pass
         return False, None
 
     def _detect_on_view(
@@ -366,6 +358,7 @@ class CameraCalibrator:
         offset=(0, 0),
         robust=False,
         view_name="direct",
+        binary_recovery=False,
     ):
         if self.detector_mode == "classic":
             detectors = [
@@ -377,9 +370,14 @@ class CameraCalibrator:
             ]
         else:
             detectors = [
-                ("classic", self._try_classic_detector),
                 ("sb", self._try_sb_detector),
+                ("classic", self._try_classic_detector),
             ]
+            # The classic detector is especially reliable on the explicit
+            # black/white recovery views, and avoiding an unnecessary SB
+            # exhaustive search keeps these fallback passes bounded.
+            if binary_recovery:
+                detectors.reverse()
 
         for detector_name, detector in detectors:
             for pattern in self._detection_patterns():
@@ -422,8 +420,9 @@ class CameraCalibrator:
             detection = self._detect_on_view(
                 view,
                 offset=offset,
-                robust=view_name not in {"direct", "blur"},
+                robust=view_name != "direct",
                 view_name=view_name,
+                binary_recovery=view_name in {"otsu", "adaptive"},
             )
             if detection is not None:
                 break
