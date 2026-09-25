@@ -223,8 +223,8 @@ class CalibrationStreamServer:
         # Recovery preprocessing is intentionally slower than the direct
         # detector. Keep it out of the normal live-frame cadence.
         self.detection_recovery_interval = max(
-            0.8,
-            self.detection_interval * 4.0,
+            2.0,
+            self.detection_interval * 8.0,
         )
         self._last_detection_recovery_at = 0.0
 
@@ -381,7 +381,7 @@ class CalibrationStreamServer:
             self.camera.release()
 
     def _detection_loop(self):
-        next_detection = 0.0
+        next_detection = time.monotonic()
 
         while not self._stop_event.is_set():
             now = time.monotonic()
@@ -390,18 +390,13 @@ class CalibrationStreamServer:
                 next_detection - now,
             )
 
-            # A camera frame can wake this worker early, but only one
-            # detection is allowed per configured interval.
-            self._detection_wakeup.wait(wait_for)
-
-            if self._stop_event.is_set():
+            # Detection is intentionally timer-driven. The camera publishes
+            # frames continuously, so waking this worker for every camera
+            # frame can keep a slow detector in a tight catch-up loop.
+            if self._stop_event.wait(wait_for):
                 return
 
-            self._detection_wakeup.clear()
             now = time.monotonic()
-            if now < next_detection:
-                continue
-
             raw = self.current_raw_frame()
             if raw is None:
                 next_detection = now + self.detection_interval
@@ -498,6 +493,9 @@ class CalibrationStreamServer:
                     self.chessboard_detected = False
                     self.last_rejection_reason = message
             finally:
+                # Start the next cadence from completion, not from the
+                # previous scheduled deadline. A slow OpenCV pass therefore
+                # cannot cause immediate back-to-back detections.
                 next_detection = time.monotonic() + self.detection_interval
 
     def start(self):
