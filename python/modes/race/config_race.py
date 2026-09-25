@@ -12,6 +12,8 @@ USBCAM_ADDR = 0
 # Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
 CAMERA_MODE = "picam"
 CAMERA_FALLBACK_TO_OPENCV = False
+# Apply saved intrinsic/distortion calibration to runtime camera frames.
+APPLY_CAMERA_CALIBRATION = True
 
 
 # --- ROI Shape Features ---
