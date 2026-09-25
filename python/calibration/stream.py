@@ -151,8 +151,8 @@ class CalibrationStreamServer:
         camera_config,
         image_dir=DEFAULT_IMAGE_DIR,
         output_file=DEFAULT_OUTPUT_FILE,
-        checkerboard=(11, 7),
-        square_size=1.0,
+        checkerboard=(7, 9),
+        square_size=20.0,
         min_valid_images=10,
         host="127.0.0.1",
         port=5050,
@@ -194,7 +194,7 @@ class CalibrationStreamServer:
         self._accepted_features = []
         self.last_rejection_reason = None
 
-        self.auto_capture_enabled = False
+        self.auto_capture_enabled = True
         self.auto_capture_interval = 1.0
         self.last_auto_capture_at = 0.0
         self.auto_captured_images = 0
@@ -1858,18 +1858,18 @@ def build_parser():
     parser.add_argument(
         "--square-size",
         type=float,
-        default=1.0,
+        default=20.0,
         help="Physical chessboard square size.",
     )
     parser.add_argument(
         "--checkerboard-cols",
         type=int,
-        default=11,
+        default=7,
     )
     parser.add_argument(
         "--checkerboard-rows",
         type=int,
-        default=7,
+        default=9,
     )
     parser.add_argument(
         "--min-valid-images",
