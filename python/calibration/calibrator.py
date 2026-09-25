@@ -1247,6 +1247,54 @@ class CameraCalibration:
 
         return matrix
 
+    def undistort_points(self, points, image_size):
+        if (
+            not self.enabled
+            or points is None
+            or image_size is None
+        ):
+            return points
+
+        width, height = map(int, image_size)
+        if width <= 0 or height <= 0:
+            return points
+
+        key = (width, height)
+        try:
+            with self._cache_lock:
+                cached = self._new_camera_matrix_cache.get(key)
+                if cached is None:
+                    matrix = self._scaled_camera_matrix(
+                        width,
+                        height,
+                    )
+                    new_matrix, _ = cv2.getOptimalNewCameraMatrix(
+                        matrix,
+                        self.dist_coeffs,
+                        (width, height),
+                        1,
+                        (width, height),
+                    )
+                    cached = (matrix, new_matrix)
+                    self._new_camera_matrix_cache[key] = cached
+                matrix, new_matrix = cached
+
+            reshaped = np.asarray(
+                points,
+                dtype=np.float32,
+            ).reshape(-1, 1, 2)
+            return cv2.undistortPoints(
+                reshaped,
+                matrix,
+                self.dist_coeffs,
+                P=new_matrix,
+            ).astype(np.float32)
+        except Exception:
+            logger.exception(
+                "Failed to transform calibration preview points"
+            )
+            return points
+
     def undistort(self, frame):
         if (
             not self.enabled
