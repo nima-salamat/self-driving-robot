@@ -1,4 +1,5 @@
 import argparse
+import copy
 import logging
 import math
 import socket
@@ -219,6 +220,13 @@ class CalibrationStreamServer:
                 0.20,
             )
         )
+        # Recovery preprocessing is intentionally slower than the direct
+        # detector. Keep it out of the normal live-frame cadence.
+        self.detection_recovery_interval = max(
+            0.8,
+            self.detection_interval * 4.0,
+        )
+        self._last_detection_recovery_at = 0.0
 
         self._restore_persisted_capture_state()
 
@@ -370,15 +378,42 @@ class CalibrationStreamServer:
 
             started = time.monotonic()
             try:
+                # Snapshot the calibrator object while holding the lock, then
+                # release it before running OpenCV. Board/detection/quality
+                # settings replace the calibrator atomically, so the expensive
+                # detector never blocks /api/status or the live camera thread.
                 with self._calibrator_lock:
-                    evaluated = self.calibrator.evaluate_frame(raw)
-                    quality_reason = self.calibrator.quality_reason(
-                        evaluated
-                    )
-                    evaluated["quality_valid"] = (
-                        quality_reason is None
-                    )
-                    evaluated["quality_reason"] = quality_reason
+                    calibrator = self.calibrator
+
+                allow_recovery = (
+                    now - self._last_detection_recovery_at
+                    >= self.detection_recovery_interval
+                )
+                if allow_recovery:
+                    self._last_detection_recovery_at = now
+
+                worker_calibrator = copy.copy(calibrator)
+                evaluated = worker_calibrator.evaluate_frame(
+                    raw,
+                    allow_recovery=allow_recovery,
+                )
+                quality_reason = worker_calibrator.quality_reason(
+                    evaluated
+                )
+                evaluated["quality_valid"] = (
+                    quality_reason is None
+                )
+                evaluated["quality_reason"] = quality_reason
+
+                # A settings update may have replaced the calibrator while
+                # OpenCV was working. Do not publish or auto-capture a result
+                # computed with obsolete board/quality settings.
+                with self._calibrator_lock:
+                    current_calibrator = self.calibrator
+
+                if current_calibrator is not calibrator:
+                    next_detection = time.monotonic() + self.detection_interval
+                    continue
 
                 finished = time.monotonic()
                 with self._detection_state_lock:
@@ -394,7 +429,11 @@ class CalibrationStreamServer:
                     )
                     self.last_rejection_reason = quality_reason
 
-                self._maybe_auto_capture(raw, evaluated)
+                self._maybe_auto_capture(
+                raw,
+                evaluated,
+                calibrator=calibrator,
+            )
             except Exception as exc:
                 finished = time.monotonic()
                 message = f"Detector error: {exc}"
@@ -999,6 +1038,7 @@ class CalibrationStreamServer:
         self,
         raw_frame,
         evaluation,
+        calibrator=None,
     ):
         if not self.auto_capture_enabled:
             return
@@ -1009,6 +1049,11 @@ class CalibrationStreamServer:
             return
         if not evaluation.get("quality_valid"):
             return
+
+        if calibrator is not None:
+            with self._calibrator_lock:
+                if self.calibrator is not calibrator:
+                    return
 
         now = time.monotonic()
         if (
@@ -1065,7 +1110,9 @@ class CalibrationStreamServer:
 
     def set_detector_mode(self, mode):
         with self._calibrator_lock:
-            self.calibrator.set_detector_mode(mode)
+            updated = copy.copy(self.calibrator)
+            updated.set_detector_mode(mode)
+            self.calibrator = updated
 
     def set_quality_settings(
         self,
@@ -1081,6 +1128,7 @@ class CalibrationStreamServer:
             "duplicate_distance": duplicate_distance,
         }
         with self._calibrator_lock:
+            updated = copy.copy(self.calibrator)
             for name, value in values.items():
                 if value is None:
                     continue
@@ -1120,7 +1168,7 @@ class CalibrationStreamServer:
                         "duplicate_distance must be at most 5"
                     )
                 setattr(
-                    self.calibrator,
+                    updated,
                     name,
                     value,
                 )
