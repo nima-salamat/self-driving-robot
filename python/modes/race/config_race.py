@@ -217,6 +217,7 @@ PERFORMANCE = False
 
 SIGN_RESULT_MAX_AGE = 0.75
 
+# City-only lane detector note: BLSF beta is intentionally not available in Race mode.
 # Optional ML lane detector; disabled by default.
 USE_ML_LANE_DETECTOR = False
 ML_LANE_MODEL = "unet_depthwise_nano"
