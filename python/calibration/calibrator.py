@@ -22,8 +22,8 @@ class CameraCalibrator:
 
     def __init__(
         self,
-        checkerboard=(11, 7),
-        square_size=1.0,
+        checkerboard=(7, 9),
+        square_size=20.0,
         min_valid_images=10,
         min_coverage=0.03,
         min_sharpness=10.0,
@@ -39,7 +39,7 @@ class CameraCalibrator:
                 int(checkerboard[1]),
             )
         else:
-            self.checkerboard = (11, 7)
+            self.checkerboard = (7, 9)
 
         self.square_size = self._finite_float(
             "square_size",
