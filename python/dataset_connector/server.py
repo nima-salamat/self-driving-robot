@@ -128,16 +128,19 @@ class DatasetConnectorServer:
                 "error": error,
             }
 
+        available = bool(calibration.enabled)
         return {
-            "available": True,
-            "active": self.preview_mode == "calibrated",
-            "filename": "camera_calibration.npz",
-            "image_size": list(calibration.image_size)
-            if calibration.image_size
-            else None,
-            "calibration_model": calibration.calibration_model,
-            "quality_status": calibration.quality_status,
-            "error": calibration.last_error,
+            "available": available,
+            "active": available and self.preview_mode == "calibrated",
+            "filename": "camera_calibration.npz" if available else None,
+            "image_size": (
+                list(calibration.image_size)
+                if calibration.image_size
+                else None
+            ) if available else None,
+            "calibration_model": calibration.calibration_model if available else None,
+            "quality_status": calibration.quality_status if available else None,
+            "error": calibration.last_error or error,
         }
 
     def _apply_preview(self, frame):
@@ -309,10 +312,16 @@ class DatasetConnectorServer:
 
         with self._frame_condition:
             self.preview_mode = mode
-            if self._raw_frame is not None:
-                self._display_frame = self._apply_preview(
-                    self._raw_frame
-                ).copy()
+            raw = (
+                None
+                if self._raw_frame is None
+                else self._raw_frame.copy()
+            )
+
+        if raw is not None:
+            display = self._apply_preview(raw)
+            with self._frame_condition:
+                self._display_frame = display.copy()
                 self._frame_seq += 1
                 self._frame_condition.notify_all()
 
