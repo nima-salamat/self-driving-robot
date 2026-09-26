@@ -392,6 +392,26 @@ python python/train_sign_detector/main.py --train --dataset python/train_sign_de
 
 The existing `dataset/` is not overwritten by the collector. The old root `python/dataset_collector.py` wrapper has been removed; use `python/train_sign_detector/dataset_collector.py` directly.
 
+### Dataset Connector Web UI
+
+The repository also includes a standalone web workspace for collecting camera images without modifying the canonical training dataset:
+
+~~~bash
+cd python
+python -m dataset_connector --host 0.0.0.0 --port 5051 --camera-mode picam --fps 30
+~~~
+
+The connector:
+
+- keeps captured source images under `python/assets/dataset_connector/`;
+- provides a live camera view and responsive image gallery;
+- captures, previews, deletes, clears, and downloads the captured images as `dataset.zip`;
+- optionally accepts a validated `camera_calibration.npz` file for Raw/Calibrated preview;
+- never overwrites captured source images when applying calibration;
+- keeps connector storage separate from `train_sign_detector/dataset` and `train_sign_detector/collected_dataset`.
+
+The default connector storage is runtime data and is ignored by Git.
+
 ### Camera FPS semantics
 
 The runtime distinguishes requested camera FPS from measured camera delivery FPS. The control/vision loop FPS remains a separate runtime metric, and the HTTP stream consumes the newest published frame instead of acting as the camera producer. For Picamera2, requested frame rate is expressed through `FrameDurationLimits` for the configured camera mode; unsupported ranges are rejected rather than reported as achieved.
