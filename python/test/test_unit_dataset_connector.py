@@ -1,4 +1,5 @@
 import io
+import json
 import sys
 import tempfile
 import types
@@ -39,27 +40,6 @@ class FakeCamera:
         self.camera_initialized = False
 
 
-class FakeCalibration:
-    def __init__(self, path, enabled=True):
-        path = Path(path)
-        self.enabled = (
-            enabled
-            and path.exists()
-            and path.stat().st_size > 0
-        )
-        self.last_error = None if self.enabled else "invalid calibration"
-        self.image_size = (64, 48)
-        self.calibration_model = "pinhole"
-        self.quality_status = "pass"
-
-    def undistort(self, frame):
-        return np.clip(
-            frame.astype(np.int16) + 10,
-            0,
-            255,
-        ).astype(np.uint8)
-
-
 class DatasetConnectorTests(unittest.TestCase):
     def make_server(self, tmp):
         config = types.SimpleNamespace(
@@ -82,6 +62,30 @@ class DatasetConnectorTests(unittest.TestCase):
             target_fps=30,
         )
 
+    @staticmethod
+    def valid_calibration_bytes(path):
+        np.savez(
+            path,
+            cameraMatrix=np.array(
+                [
+                    [100.0, 0.0, 32.0],
+                    [0.0, 100.0, 24.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=np.float64,
+            ),
+            distCoeffs=np.zeros((5, 1), dtype=np.float64),
+            imageSize=np.array([64, 48], dtype=np.int32),
+            metadata=json.dumps(
+                {
+                    "format_version": 3,
+                    "calibration_model": "pinhole",
+                    "quality_status": "pass",
+                    "acceptable_for_runtime": True,
+                }
+            ),
+        )
+
     def test_capture_gallery_delete_clear(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("dataset_connector.server.Camera", FakeCamera):
@@ -89,7 +93,6 @@ class DatasetConnectorTests(unittest.TestCase):
                 server.start()
                 try:
                     client = server.create_app().test_client()
-
                     response = client.post("/api/capture")
                     self.assertEqual(response.status_code, 201)
                     self.assertEqual(
@@ -130,20 +133,24 @@ class DatasetConnectorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("dataset_connector.server.Camera", FakeCamera):
                 server = self.make_server(tmp)
-                server.capture()
-                server.capture()
-                archive = server.build_zip()
+                server.start()
                 try:
-                    with zipfile.ZipFile(archive) as zf:
-                        self.assertEqual(
-                            zf.namelist(),
-                            [
-                                "frame_000001.jpg",
-                                "frame_000002.jpg",
-                            ],
-                        )
+                    server.capture()
+                    server.capture()
+                    archive = server.build_zip()
+                    try:
+                        with zipfile.ZipFile(archive) as zf:
+                            self.assertEqual(
+                                zf.namelist(),
+                                [
+                                    "frame_000001.jpg",
+                                    "frame_000002.jpg",
+                                ],
+                            )
+                    finally:
+                        archive.close()
                 finally:
-                    archive.close()
+                    server.stop()
 
     def test_calibrated_preview_requires_calibration(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -158,27 +165,64 @@ class DatasetConnectorTests(unittest.TestCase):
     def test_valid_calibration_can_activate_preview(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("dataset_connector.server.Camera", FakeCamera):
-                with patch(
-                    "dataset_connector.server.CameraCalibration",
-                    FakeCalibration,
-                ):
-                    server = self.make_server(tmp)
-                    server.calibration_file.write_bytes(b"valid")
-                    client = server.create_app().test_client()
-                    status = client.get("/api/status").get_json()
-                    self.assertTrue(
-                        status["calibration"]["available"]
+                server = self.make_server(tmp)
+                self.valid_calibration_bytes(
+                    server.calibration_file
+                )
+                server._load_existing_calibration()
+                client = server.create_app().test_client()
+                status = client.get("/api/status").get_json()
+                self.assertTrue(status["calibration"]["available"])
+
+                response = client.post(
+                    "/api/preview",
+                    json={"mode": "calibrated"},
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.get_json()["preview_mode"],
+                    "calibrated",
+                )
+
+    def test_valid_calibration_upload_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("dataset_connector.server.Camera", FakeCamera):
+                server = self.make_server(tmp)
+                source = Path(tmp) / "camera_calibration.npz"
+                self.valid_calibration_bytes(source)
+
+                with source.open("rb") as handle:
+                    response = server.create_app().test_client().post(
+                        "/api/calibration/upload",
+                        data={
+                            "file": (
+                                handle,
+                                "camera_calibration.npz",
+                            )
+                        },
+                        content_type="multipart/form-data",
                     )
 
-                    response = client.post(
-                        "/api/preview",
-                        json={"mode": "calibrated"},
-                    )
-                    self.assertEqual(response.status_code, 200)
-                    self.assertEqual(
-                        response.get_json()["preview_mode"],
-                        "calibrated",
-                    )
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(
+                    response.get_json()["calibration"]["available"]
+                )
+
+    def test_invalid_npz_upload_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("dataset_connector.server.Camera", FakeCamera):
+                server = self.make_server(tmp)
+                response = server.create_app().test_client().post(
+                    "/api/calibration/upload",
+                    data={
+                        "file": (
+                            io.BytesIO(b"not a valid npz"),
+                            "camera_calibration.npz",
+                        )
+                    },
+                    content_type="multipart/form-data",
+                )
+                self.assertEqual(response.status_code, 422)
 
     def test_upload_rejects_non_npz(self):
         with tempfile.TemporaryDirectory() as tmp:
