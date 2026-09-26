@@ -91,6 +91,7 @@ class DatasetConnectorTests(unittest.TestCase):
             with patch("dataset_connector.server.Camera", FakeCamera):
                 server = self.make_server(tmp)
                 server.start()
+                server._publish(server.camera.frame)
                 try:
                     client = server.create_app().test_client()
                     response = client.post("/api/capture")
@@ -134,6 +135,7 @@ class DatasetConnectorTests(unittest.TestCase):
             with patch("dataset_connector.server.Camera", FakeCamera):
                 server = self.make_server(tmp)
                 server.start()
+                server._publish(server.camera.frame)
                 try:
                     server.capture()
                     server.capture()
@@ -245,6 +247,7 @@ class DatasetConnectorTests(unittest.TestCase):
             with patch("dataset_connector.server.Camera", FakeCamera):
                 server = self.make_server(tmp)
                 server.start()
+                server._publish(server.camera.frame)
                 try:
                     server.capture()
                     response = server.create_app().test_client().get(
