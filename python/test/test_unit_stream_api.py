@@ -162,6 +162,20 @@ class StreamApiTests(unittest.TestCase):
             html,
         )
 
+    def test_dashboard_polling_uses_backoff_when_server_is_unreachable(self):
+        response = WebStreamer(self.make_config()).app.test_client().get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+
+        self.assertIn("async function fetchDashboardJson", html)
+        self.assertIn("dashboardApiRetryAt", html)
+        self.assertIn("Math.min(30000", html)
+        self.assertIn("fetchDashboardJson('/api/health')", html)
+        self.assertIn("fetchDashboardJson('/api/arduino-output')", html)
+        self.assertIn("fetchDashboardJson('/get_values')", html)
+        self.assertIn("let frameRetryAt = 0;", html)
+        self.assertIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", html)
+
     def test_rendered_inline_javascript_passes_node_syntax_check(self):
         import re
         import shutil
