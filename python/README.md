@@ -32,7 +32,7 @@ The exact line wrapping can vary by Python/terminal width. The command exposes t
 
 ~~~text
 usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
-               [--stream-host STREAM_HOST] [--stream-control]
+               [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
                [--without-arduino] [--fps] [--performance] [--preflight]
                [--read-arduino-output] [--arduino-config PATH]
                [--arduino-contract-timeout SECONDS]
