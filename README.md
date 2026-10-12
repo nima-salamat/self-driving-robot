@@ -676,7 +676,7 @@ python python/main.py --mode race --performance
 
 When streaming is enabled, the dashboard exposes runtime health and performance information, including loop timing, camera/perception/serial timing, hardware state, asynchronous sign-worker status, and recording queue statistics.
 
-The stream binds to `127.0.0.1:5000` by default. Dashboard controls that modify runtime settings are disabled unless `--stream-control` is explicitly supplied.
+The stream binds to `0.0.0.0:5000` by default and prints the local/LAN dashboard URLs at startup (for example, `http://192.168.x.x:5000`). Dashboard controls are enabled by default; pass `--stream-read-only` to disable mutation endpoints, or `--stream-host 127.0.0.1` to restrict access to the local machine. **Security:** the dashboard does not provide authentication, so only expose it on a trusted LAN; anyone who can reach the port may change runtime settings when controls are enabled.
 
 ### Hardware-free tests
 
