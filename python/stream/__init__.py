@@ -3,6 +3,8 @@ import cv2
 import json
 import os
 import socket
+import ipaddress
+from urllib.parse import urlsplit
 import threading
 import time
 from collections import deque
@@ -648,7 +650,7 @@ def start_stream(config):
         ready_event.clear()
 
     streamer = WebStreamer(config)
-    bind_host = str(getattr(config, "STREAM_HOST", "127.0.0.1"))
+    bind_host = str(getattr(config, "STREAM_HOST", "0.0.0.0"))
     requested_port = int(getattr(config, "STREAM_PORT", 5000))
     try:
         server = make_server(
@@ -679,11 +681,42 @@ def start_stream(config):
     actual_port = int(getattr(server, "server_port", server_address[1]))
     urls = _stream_access_urls(bind_host, actual_port)
     print(f"[Stream] Listening on {bind_host}:{actual_port}", flush=True)
+
+    wildcard_bind = bind_host in {"0.0.0.0", ""}
+    controls_enabled = bool(
+        getattr(config, "STREAM_ALLOW_CONTROL", False)
+    )
+    if wildcard_bind and controls_enabled:
+        logger.warning(
+            "Dashboard controls are enabled on all network interfaces without "
+            "authentication. Use only on a trusted LAN; pass --stream-read-only "
+            "or bind to 127.0.0.1 on untrusted networks."
+        )
+
     for url in urls:
-        print(f"[Stream] Dashboard: {url}", flush=True)
-    if bind_host in {"127.0.0.1", "localhost", "::1"}:
+        host = urlsplit(url).hostname or ""
+        label = "Dashboard"
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+
+        if host in {"localhost", "::1"} or (
+            address is not None and address.is_loopback
+        ):
+            label = "Dashboard (local)"
+        elif (
+            isinstance(address, ipaddress.IPv4Address)
+            and address.is_private
+            and not address.is_link_local
+        ):
+            label = "Dashboard (LAN)"
+
+        print(f"[Stream] {label}: {url}", flush=True)
+
+    if not wildcard_bind:
         print(
-            "[Stream] Local-only binding. Use --stream-host 0.0.0.0 "
+            "[Stream] Local/custom binding only. Use --stream-host 0.0.0.0 "
             "to allow access from other devices on your LAN.",
             flush=True,
         )
