@@ -95,6 +95,36 @@ class ArduinoConnectionTests(unittest.TestCase):
             base_config.CONFIG_MODULE = original_config
 
 
+class CityCrosswalkMarkerTests(unittest.TestCase):
+    def test_sign_mode_uses_async_sign_handling_path(self):
+        from unittest.mock import Mock, patch
+        from modes.city import city as city_module
+
+        robot = city_module.Robot.__new__(city_module.Robot)
+        frame = object()
+        debug_frame = object()
+        annotated_frame = object()
+        robot.handle_read_sign_or_tag = Mock(
+            return_value=(5, True, annotated_frame, ((1, 2), (3, 4)))
+        )
+
+        with (
+            patch.object(city_module.config_city, "WITH_APRILTAG", False),
+            patch.object(city_module.config_city, "WITH_SIGN", True),
+        ):
+            sign_text, result_frame = robot._process_crosswalk_marker(
+                frame,
+                debug_frame,
+            )
+
+        robot.handle_read_sign_or_tag.assert_called_once_with(
+            frame,
+            debug_frame,
+        )
+        self.assertEqual(sign_text, 5)
+        self.assertIs(result_frame, annotated_frame)
+
+
 class AsyncSignDetectorTests(unittest.TestCase):
     def test_worker_survives_detector_exception(self):
         processed = threading.Event()
