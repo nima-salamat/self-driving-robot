@@ -482,9 +482,20 @@ class Robot:
             
             debug = result.get("debug") or {}
             display_frame = debug["combined"].copy()
+            angle_text = (
+                f"{angle:.1f}"
+                if isinstance(angle, (int, float, np.number))
+                else "N/A"
+            )
+            real_angle = self.control.last_angle
+            real_angle_text = (
+                f"{real_angle:.1f}"
+                if isinstance(real_angle, (int, float, np.number))
+                else "N/A"
+            )
             texts = [
                 f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, Crosswalk:{crosswalk}, {status}",
-                f"Angle:{angle:.1f}, RealAngle:{self.control.last_angle:.1f}, Sign:{sign_text}, LastTag:{self.last_tag}",
+                f"Angle:{angle_text}, RealAngle:{real_angle_text}, Sign:{sign_text}, LastTag:{self.last_tag}",
             ]
 
             font = cv2.FONT_HERSHEY_SIMPLEX
