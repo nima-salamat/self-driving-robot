@@ -464,6 +464,34 @@ class RecordingFailureAdversarialTests(unittest.TestCase):
 
 
 class StreamLifecycleAdversarialTests(unittest.TestCase):
+    def test_stream_bind_failure_does_not_request_robot_shutdown(self):
+        import io
+        import types
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+
+        from stream import start_stream
+
+        shutdown_event = threading.Event()
+        config = types.SimpleNamespace(
+            MODE="test",
+            STREAM_HOST="0.0.0.0",
+            STREAM_PORT=5000,
+            STREAM_ALLOW_CONTROL=False,
+            SHUTDOWN_EVENT=shutdown_event,
+        )
+        output = io.StringIO()
+        with patch(
+            "stream.make_server",
+            side_effect=OSError("simulated address-in-use"),
+        ), redirect_stdout(output):
+            start_stream(config)
+
+        self.assertFalse(shutdown_event.is_set())
+        self.assertIn("could not bind to 0.0.0.0:5000", output.getvalue())
+        self.assertIn("simulated address-in-use", config.stream_start_error)
+
+
     def test_stream_server_can_be_shutdown_and_restarted(self):
         import io
         import types
