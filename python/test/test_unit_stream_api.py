@@ -10,7 +10,7 @@ PYTHON_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from stream import WebStreamer
+from stream import WebStreamer, publish_debug_frame
 
 
 class StreamApiTests(unittest.TestCase):
@@ -55,6 +55,42 @@ class StreamApiTests(unittest.TestCase):
             response.content_type,
         )
         response.close()
+
+    def test_video_frame_endpoint_does_not_cache_live_frames(self):
+        config = self.make_config()
+        config.debug_frames_list = []
+        config.stream_frame_seq = 0
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        publish_debug_frame(
+            config,
+            np.zeros((32, 48, 3), dtype=np.uint8),
+        )
+        first = client.get("/video_feed_frame")
+
+        publish_debug_frame(
+            config,
+            np.full((32, 48, 3), 255, dtype=np.uint8),
+        )
+        second = client.get("/video_feed_frame")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertNotEqual(first.data, second.data)
+        self.assertEqual(second.headers["X-Stream-Frame-Sequence"], "2")
+        self.assertIn("no-store", second.headers["Cache-Control"])
+
+    def test_missing_video_frame_is_retryable_and_not_cacheable(self):
+        config = self.make_config()
+        config.debug_frames_list = []
+        config.stream_frame_seq = 0
+        response = WebStreamer(config).app.test_client().get(
+            "/video_feed_frame"
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertIn("no-store", response.headers["Cache-Control"])
 
 
 if __name__ == "__main__":
