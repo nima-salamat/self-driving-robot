@@ -49,8 +49,9 @@ options:
   --debug              Enable debug output
   --stream             Enable the web stream
   --stream-host STREAM_HOST
-                        Stream bind address
-  --stream-control     Allow the web dashboard to change runtime settings
+                        Stream bind address (default: 0.0.0.0; all interfaces)
+  --stream-control     Enable dashboard controls (enabled by default)
+  --stream-read-only   Disable dashboard mutation endpoints
   --without-arduino    Run without opening the Arduino serial connection
   --fps                Show the runtime FPS counter
   --performance        Enable runtime performance diagnostics
