@@ -662,9 +662,9 @@ def start_stream(config):
     except Exception as exc:
         config.stream_start_error = f"{type(exc).__name__}: {exc}"
         ready_event.set()
-        shutdown_event = getattr(config, "SHUTDOWN_EVENT", None)
-        if shutdown_event is not None:
-            shutdown_event.set()
+        # The web dashboard is an optional diagnostics/control surface.
+        # A bind failure must not signal a robot shutdown; report it clearly
+        # while leaving the robot's main loop under its own safety controls.
         print(
             f"[Stream] ERROR: could not bind to {bind_host}:{requested_port}: "
             f"{config.stream_start_error}",
