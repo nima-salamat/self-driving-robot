@@ -47,6 +47,7 @@ class Robot:
         config_city.arduino_connection = self.control.connection
         config_city.robot_controller = self.control
         self.flask_thread = None
+        self.runtime_exception = None
         self._next_control_time = time.monotonic()
 
         # hardcode the left and right lane change
@@ -413,9 +414,20 @@ class Robot:
             logger.error("error KeyboardInterrupt")
             
         except Exception as e:
+            self.runtime_exception = e
+            if self.health is not None:
+                from utils.health import FaultSeverity
+                self.health.set_fault(
+                    "robot_loop",
+                    True,
+                    severity=FaultSeverity.CRITICAL,
+                    message=f"{type(e).__name__}: {e}",
+                )
             logger.exception("Unhandled robot loop exception")
         finally:
-            self.close()
+            # A fatal loop error must stop hardware control but keep the
+            # dashboard alive so the health endpoint can report the fault.
+            self.close(keep_dashboard=self.runtime_exception is not None)
             logger.info("exited")
 
     def handle_detect_object(self, frame):
@@ -584,8 +596,8 @@ class Robot:
                     except Exception as e:
                         logger.error(f"stop_recording failed: {e}")
 
-    def close(self):
-        if self.health is not None:
+    def close(self, keep_dashboard=False):
+        if self.health is not None and not keep_dashboard:
             from utils.health import HealthState
             self.health.set_lifecycle(HealthState.SHUTTING_DOWN)
 
@@ -618,7 +630,7 @@ class Robot:
             except Exception:
                 logger.exception("Cleanup failed: OpenCV windows")
 
-        if self.flask_thread and self.flask_thread.is_alive():
+        if not keep_dashboard and self.flask_thread and self.flask_thread.is_alive():
             try:
                 stop_stream(config_city)
             except Exception:
@@ -646,3 +658,30 @@ def start():
         robot.flask_thread.start()
 
     robot.run()
+
+    # Fatal runtime exceptions stop the actuators and release camera/serial
+    # resources, but keep the HTTP dashboard available for diagnosis. Do not
+    # restart the motion loop automatically; the operator must review the fault.
+    if (
+        robot.runtime_exception is not None
+        and robot.flask_thread is not None
+        and robot.flask_thread.is_alive()
+    ):
+        logger.error(
+            "Robot loop failed; actuators are stopped. Dashboard remains available "
+            "for diagnosis. Press Ctrl+C to exit."
+        )
+        shutdown_event = getattr(config_city, "SHUTDOWN_EVENT", None)
+        try:
+            while robot.flask_thread.is_alive():
+                if shutdown_event is not None and shutdown_event.wait(0.5):
+                    break
+                if shutdown_event is None:
+                    time.sleep(0.5)
+        finally:
+            if robot.flask_thread.is_alive():
+                try:
+                    stop_stream(config_city)
+                except Exception:
+                    logger.exception("Failed to stop diagnostic dashboard")
+                robot.flask_thread.join(timeout=1.0)
