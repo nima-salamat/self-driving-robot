@@ -262,11 +262,23 @@ function updateFrameModeText(){
 function sendAdvanced(payload) {
     if(!syncActive) return showToast('Requests are stopped!');
     fetch('/set_advanced',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-        .then(r=>r.json()).then(j=>{
+        .then(async r => {
+            const data = await r.json().catch(() => ({}));
+            if(!r.ok) throw new Error(data.message || 'HTTP ' + r.status);
+            return data;
+        })
+        .then(j=>{
             if(j && j.success){
                 advanced = j.advanced;
                 updateShapeUIFromData();
+                showToast('Advanced settings saved');
+            } else {
+                showToast((j && j.message) || 'Could not save advanced settings');
             }
+        })
+        .catch(err => {
+            console.error('Failed to save advanced settings:', err);
+            showToast('Advanced settings failed: ' + err.message);
         });
 }
 
@@ -889,12 +901,23 @@ document.getElementById('apply_all').addEventListener('click', ()=>{
 function sendUpdate(data){
     if(!syncActive) return;
     fetch('/update_conf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-        .then(r=>r.json()).then(j=>{
+        .then(async r => {
+            const result = await r.json().catch(() => ({}));
+            if(!r.ok) throw new Error(result.message || 'HTTP ' + r.status);
+            return result;
+        })
+        .then(j=>{
             if(j && j.values){
                 values = j.values;
                 updateInputsFromValues(); drawOverlays();
                 showToast('Base Updated');
+            } else {
+                showToast((j && j.message) || 'Could not update base settings');
             }
+        })
+        .catch(err => {
+            console.error('Failed to update base settings:', err);
+            showToast('Settings update failed: ' + err.message);
         });
 }
 
