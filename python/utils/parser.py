@@ -30,15 +30,24 @@ def parse_args():
     parser.add_argument(
         "--stream-host",
         default=None,
-        help=("Stream bind address; defaults to local-only access. "
-              "Use 0.0.0.0 to allow LAN access."),
+        help=("Address to bind the dashboard to (default: 0.0.0.0, all interfaces). "
+              "Use 127.0.0.1 for local-only access."),
     )
 
-    parser.add_argument(
+    stream_control_group = parser.add_mutually_exclusive_group()
+    stream_control_group.add_argument(
         "--stream-control",
+        dest="stream_control",
         action="store_true",
         default=None,
-        help="Allow the web dashboard to change runtime settings; overrides the mode configuration.",
+        help="Enable dashboard controls (enabled by default).",
+    )
+    stream_control_group.add_argument(
+        "--stream-read-only",
+        dest="stream_control",
+        action="store_false",
+        default=None,
+        help="Disable dashboard mutation endpoints and make the stream read-only.",
     )
 
     parser.add_argument(
