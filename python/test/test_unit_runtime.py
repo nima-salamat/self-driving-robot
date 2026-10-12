@@ -130,6 +130,28 @@ class CityCrosswalkMarkerTests(unittest.TestCase):
         self.assertIs(result_frame, annotated_frame)
 
 
+    def test_city_marker_handler_is_safe_when_all_markers_are_disabled(self):
+        from unittest.mock import patch
+        from modes.city import city as city_module
+
+        robot = city_module.Robot.__new__(city_module.Robot)
+        frame = object()
+        debug_frame = object()
+
+        with patch.object(
+            city_module.config_city,
+            "WITH_SIGN",
+            False,
+        ), patch.object(
+            city_module.config_city,
+            "WITH_APRILTAG",
+            False,
+        ):
+            result = robot.handle_read_sign_or_tag(frame, debug_frame)
+
+        self.assertEqual(result, (None, False, debug_frame, None))
+
+
 class AsyncSignDetectorTests(unittest.TestCase):
     def test_worker_survives_detector_exception(self):
         processed = threading.Event()
