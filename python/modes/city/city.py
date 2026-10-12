@@ -429,18 +429,10 @@ class Robot:
         logger.debug("Object detector result: %s", detected)
 
     def _process_crosswalk_marker(self, frame, debug_frame):
-        """Process crosswalk markers through the same APIs used by the main loop."""
-        if config_city.WITH_APRILTAG:
-            _, debug_frame, _ = self.apriltag_detector.detect(
-                frame,
-                debug_frame,
-            )
-            return "", debug_frame
-
-        if config_city.WITH_SIGN:
-            # Sign detection is deliberately asynchronous. Reuse the normal
-            # ROI/cadence/result handling rather than calling process_frame on
-            # the AsyncSignDetector wrapper (which exposes submit/latest).
+        """Use the normal marker pipeline while the robot is in crosswalk mode."""
+        if config_city.WITH_APRILTAG or config_city.WITH_SIGN:
+            # Keep ROI handling, async sign inference, and the detector's
+            # four-item AprilTag result contract in one shared code path.
             sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
                 frame,
                 debug_frame,
