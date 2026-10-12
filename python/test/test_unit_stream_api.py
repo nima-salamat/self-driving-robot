@@ -28,6 +28,54 @@ class StreamApiTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def test_wildcard_bind_discovers_private_lan_address(self):
+        from unittest.mock import patch
+        import socket
+        from stream import _stream_access_urls
+
+        class RouteProbe:
+            def connect(self, _target):
+                pass
+
+            def getsockname(self):
+                return ("192.168.1.42", 49152)
+
+            def close(self):
+                pass
+
+        with patch(
+            "stream.socket.getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.42", 0))
+            ],
+        ), patch("stream.socket.gethostname", return_value="robot"), patch(
+            "stream.socket.socket", return_value=RouteProbe()
+        ):
+            urls = _stream_access_urls("0.0.0.0", 5000)
+
+        self.assertIn("http://127.0.0.1:5000", urls)
+        self.assertIn("http://192.168.1.42:5000", urls)
+
+    def test_read_only_cli_flag_disables_dashboard_controls(self):
+        from unittest.mock import patch
+        from utils.parser import parse_args
+
+        with patch.object(sys, "argv", ["main.py", "--stream-read-only"]):
+            args = parse_args()
+
+        self.assertIs(args.stream_control, False)
+
+    def test_stream_control_cli_flags_are_mutually_exclusive(self):
+        from unittest.mock import patch
+        from utils.parser import parse_args
+
+        with patch.object(
+            sys,
+            "argv",
+            ["main.py", "--stream-control", "--stream-read-only"],
+        ), self.assertRaises(SystemExit):
+            parse_args()
+
     def test_controls_are_enabled_when_config_allows_updates(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
