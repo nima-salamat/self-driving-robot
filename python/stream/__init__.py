@@ -602,7 +602,7 @@ class WebStreamer:
 
 def _stream_access_urls(bind_host, port):
     """Return browser URLs for the configured bind address."""
-    bind_host = str(bind_host or "127.0.0.1")
+    bind_host = str(bind_host or "0.0.0.0")
     port = int(port)
 
     def format_host(host):
