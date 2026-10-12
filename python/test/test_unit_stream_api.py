@@ -169,7 +169,7 @@ class StreamApiTests(unittest.TestCase):
 
         self.assertIn("async function fetchDashboardJson", html)
         self.assertIn("dashboardApiRetryAt", html)
-        self.assertIn("Math.min(30000", html)
+        self.assertRegex(html, r"Math\.min\(\s*30000")
         self.assertIn("fetchDashboardJson('/api/health')", html)
         self.assertIn("fetchDashboardJson('/api/arduino-output')", html)
         self.assertIn("fetchDashboardJson('/get_values')", html)
