@@ -493,11 +493,13 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
             MODE="test",
             STREAM_HOST="0.0.0.0",
             STREAM_PORT=5000,
-            STREAM_ALLOW_CONTROL=False,
+            STREAM_ALLOW_CONTROL=True,
         )
         server = FakeServer()
         output = io.StringIO()
-        with patch("stream.make_server", return_value=server), patch(
+        with self.assertLogs("stream", level="WARNING") as warning_logs, patch(
+            "stream.make_server", return_value=server
+        ), patch(
             "stream._stream_access_urls",
             return_value=[
                 "http://127.0.0.1:5000",
@@ -517,6 +519,9 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
         self.assertIn("[Stream] Listening on 0.0.0.0:5000", output.getvalue())
         self.assertIn("[Stream] Dashboard (local): http://127.0.0.1:5000", output.getvalue())
         self.assertIn("[Stream] Dashboard (LAN): http://192.168.1.42:5000", output.getvalue())
+        self.assertTrue(
+            any("without authentication" in message for message in warning_logs.output)
+        )
 
 
 class PIDNumericalStabilityTests(unittest.TestCase):
