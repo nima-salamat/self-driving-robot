@@ -28,6 +28,45 @@ class StreamApiTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def test_controls_are_enabled_when_config_allows_updates(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with patch.object(streamer, "save_conf_to_json"):
+            response = client.post(
+                "/update_conf",
+                json={"RL_TOP_ROI": 0.25},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        self.assertEqual(config.RL_TOP_ROI, 0.25)
+
+    def test_read_only_mode_returns_clear_forbidden_message(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = False
+        response = WebStreamer(config).app.test_client().post(
+            "/update_conf",
+            json={"RL_TOP_ROI": 0.25},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.get_json()["message"],
+            "stream control is disabled",
+        )
+
+    def test_city_and_race_defaults_allow_lan_dashboard_controls(self):
+        from modes.city import config_city
+        from modes.race import config_race
+
+        for config in (config_city, config_race):
+            with self.subTest(mode=config.MODE):
+                self.assertEqual(config.STREAM_HOST, "0.0.0.0")
+                self.assertTrue(config.STREAM_ALLOW_CONTROL)
+
     def test_mode_endpoint_reports_active_city_detector(self):
         streamer = WebStreamer(self.make_config())
         client = streamer.app.test_client()
