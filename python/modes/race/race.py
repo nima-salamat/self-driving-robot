@@ -245,6 +245,14 @@ class Robot:
                     )
                 if not result.get("perception_valid", False):
                     self.control.stop()
+                    if config_race.STREAM or config_race.DEBUG:
+                        self.handle_debug_stream(
+                            result,
+                            frame,
+                            result.get("steering_angle", SERVO_CENTER),
+                            "perception unavailable",
+                            "",
+                        )
                     self._pace_control_loop()
                     continue
 
@@ -391,7 +399,12 @@ class Robot:
         if config_race.STREAM:
             
             debug = result.get("debug") or {}
-            display_frame = debug["combined"].copy()
+            source_frame = debug.get("combined")
+            if source_frame is None:
+                source_frame = frame
+            if source_frame is None:
+                return
+            display_frame = source_frame.copy()
             angle_text = (
                 f"{angle:.1f}"
                 if isinstance(angle, (int, float, np.number))

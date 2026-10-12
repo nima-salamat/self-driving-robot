@@ -1,3 +1,4 @@
+import os
 import signal
 import sys
 import threading
@@ -19,6 +20,14 @@ def _install_shutdown_handlers(shutdown_event):
 
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
+
+
+def _apply_platform_defaults(config, platform_name=None):
+    """Apply operating-system defaults before per-run CLI overrides."""
+    platform_name = os.name if platform_name is None else platform_name
+    if platform_name == "nt":
+        # The Arduino serial transport is intentionally disabled on Windows.
+        config.WITHOUT_ARDUINO = True
 
 
 def _apply_cli_overrides(config, args):
@@ -62,6 +71,7 @@ if __name__ == "__main__":
         set_race_mode()
 
     json_config.load()
+    _apply_platform_defaults(config)
     _apply_cli_overrides(config, args)
 
     if args.ml_lane_model is not None and args.mode != "race":
@@ -72,6 +82,11 @@ if __name__ == "__main__":
 
     if args.arduino_config and args.without_arduino:
         raise SystemExit("--arduino-config cannot be used together with --without-arduino")
+    if os.name == "nt" and args.arduino_config:
+        raise SystemExit(
+            "--arduino-config is not supported on Windows because the Arduino "
+            "serial transport is disabled on this platform."
+        )
 
     if args.camera_index is not None and args.camera_index < 0:
         raise SystemExit("--camera-index must be a non-negative integer")
@@ -83,6 +98,8 @@ if __name__ == "__main__":
         debug=getattr(config, "DEBUG", False),
         log_dir=getattr(config, "OUTPUT_DIR", "output"),
     )
+    if os.name == "nt":
+        print("[Runtime] Windows detected; Arduino is disabled by default.", flush=True)
 
     if args.preflight:
         report = run_preflight(config)

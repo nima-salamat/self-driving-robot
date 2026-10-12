@@ -30,7 +30,8 @@ def parse_args():
     parser.add_argument(
         "--stream-host",
         default=None,
-        help="Stream bind address; overrides the mode configuration.",
+        help=("Stream bind address; defaults to local-only access. "
+              "Use 0.0.0.0 to allow LAN access."),
     )
 
     parser.add_argument(

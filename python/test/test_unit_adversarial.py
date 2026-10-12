@@ -465,7 +465,9 @@ class RecordingFailureAdversarialTests(unittest.TestCase):
 
 class StreamLifecycleAdversarialTests(unittest.TestCase):
     def test_stream_server_can_be_shutdown_and_restarted(self):
+        import io
         import types
+        from contextlib import redirect_stdout
         from unittest.mock import patch
 
         from stream import start_stream, stop_stream
@@ -475,6 +477,7 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
                 self.started = threading.Event()
                 self.stopped = threading.Event()
                 self.closed = False
+                self.server_address = ("127.0.0.1", 5000)
 
             def serve_forever(self):
                 self.started.set()
@@ -492,7 +495,8 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
             STREAM_PORT=5000,
         )
         server = FakeServer()
-        with patch("stream.make_server", return_value=server):
+        output = io.StringIO()
+        with patch("stream.make_server", return_value=server), redirect_stdout(output):
             thread = threading.Thread(target=start_stream, args=(config,))
             thread.start()
             self.assertTrue(server.started.wait(2.0))
@@ -502,6 +506,9 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
             self.assertTrue(server.closed)
             self.assertIsNone(getattr(config, "stream_server", None))
             self.assertFalse(stop_stream(config))
+
+        self.assertIn("[Stream] Listening on 127.0.0.1:5000", output.getvalue())
+        self.assertIn("[Stream] Dashboard: http://127.0.0.1:5000", output.getvalue())
 
 
 class PIDNumericalStabilityTests(unittest.TestCase):

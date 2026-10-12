@@ -293,6 +293,15 @@ class Robot:
                         )
                     if not result.get("perception_valid", False):
                         self.control.stop()
+                        if config_city.STREAM or config_city.DEBUG:
+                            self.handle_debug_stream(
+                                result,
+                                frame,
+                                result.get("steering_angle", SERVO_CENTER),
+                                result.get("crosswalk", False),
+                                "perception unavailable",
+                                "",
+                            )
                         self._pace_control_loop()
                         continue
 
@@ -481,7 +490,12 @@ class Robot:
         if config_city.STREAM:
             
             debug = result.get("debug") or {}
-            display_frame = debug["combined"].copy()
+            source_frame = debug.get("combined")
+            if source_frame is None:
+                source_frame = frame
+            if source_frame is None:
+                return
+            display_frame = source_frame.copy()
             angle_text = (
                 f"{angle:.1f}"
                 if isinstance(angle, (int, float, np.number))
@@ -521,7 +535,6 @@ class Robot:
 
                 cv2.putText(display_frame, text, (org_x, y_pos), font, scale, (0, 0, 0), thickness)
 
-            config_city.debug_frames_list = []
             self.update_debug_frames(display_frame)
 
             if getattr(config_city, "TAKE_PICTURE", False):

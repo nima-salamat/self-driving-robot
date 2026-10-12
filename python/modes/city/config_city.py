@@ -1,3 +1,5 @@
+import os
+
 MODE = "city"
 
 # --- Camera Defaults ---
@@ -143,7 +145,7 @@ STRAIGHT = 4
 STOP = 5
 
 # without arduino
-WITHOUT_ARDUINO = False
+WITHOUT_ARDUINO = os.name == "nt"
 
 # Serial recovery / telemetry
 SERIAL_MAX_RETRIES = 3

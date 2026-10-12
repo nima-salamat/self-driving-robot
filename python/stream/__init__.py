@@ -2,6 +2,7 @@ import logging
 import cv2
 import json
 import os
+import socket
 import threading
 import time
 from collections import deque
@@ -430,6 +431,10 @@ class WebStreamer:
                             id(frame) if frame is not None else None,
                         )
 
+                if frame is None:
+                    time.sleep(0.05)
+                    continue
+
                 try:
                     ret, buffer = cv2.imencode(
                         ".jpg",
@@ -558,28 +563,97 @@ class WebStreamer:
             delattr(self.config, "frozen_debug_frame")
         return jsonify(success=True)
 
+def _stream_access_urls(bind_host, port):
+    """Return browser URLs for the configured bind address."""
+    bind_host = str(bind_host or "127.0.0.1")
+    port = int(port)
+
+    def format_host(host):
+        return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+    if bind_host not in {"0.0.0.0", ""}:
+        return [f"http://{format_host(bind_host)}:{port}"]
+
+    addresses = {"127.0.0.1"}
+    try:
+        for info in socket.getaddrinfo(
+            socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM
+        ):
+            address = info[4][0]
+            if not address.startswith(("127.", "169.254.")):
+                addresses.add(address)
+    except OSError:
+        logger.debug("Could not enumerate local IPv4 addresses", exc_info=True)
+
+    # A UDP connect selects the outbound interface without sending a packet.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 80))
+        address = probe.getsockname()[0]
+        if not address.startswith(("127.", "169.254.")):
+            addresses.add(address)
+    except OSError:
+        logger.debug("Could not determine the active LAN address", exc_info=True)
+    finally:
+        probe.close()
+
+    return [
+        f"http://{address}:{port}"
+        for address in sorted(addresses, key=lambda item: (item != "127.0.0.1", item))
+    ]
+
+
 def start_stream(config):
     config.stream_start_error = None
-    config.stream_ready_event = threading.Event()
+    ready_event = getattr(config, "stream_ready_event", None)
+    if ready_event is None:
+        ready_event = threading.Event()
+        config.stream_ready_event = ready_event
+    else:
+        ready_event.clear()
+
     streamer = WebStreamer(config)
+    bind_host = str(getattr(config, "STREAM_HOST", "127.0.0.1"))
+    requested_port = int(getattr(config, "STREAM_PORT", 5000))
     try:
         server = make_server(
-            getattr(config, "STREAM_HOST", "127.0.0.1"),
-            int(getattr(config, "STREAM_PORT", 5000)),
+            bind_host,
+            requested_port,
             streamer.app,
             threaded=True,
         )
     except Exception as exc:
         config.stream_start_error = f"{type(exc).__name__}: {exc}"
-        config.stream_ready_event.set()
+        ready_event.set()
         shutdown_event = getattr(config, "SHUTDOWN_EVENT", None)
         if shutdown_event is not None:
             shutdown_event.set()
+        print(
+            f"[Stream] ERROR: could not bind to {bind_host}:{requested_port}: "
+            f"{config.stream_start_error}",
+            flush=True,
+        )
         logger.exception("Failed to start stream server")
         return
+
     config.streamer = streamer
     config.stream_server = server
-    config.stream_ready_event.set()
+    ready_event.set()
+
+    server_address = getattr(server, "server_address", (bind_host, requested_port))
+    actual_port = int(getattr(server, "server_port", server_address[1]))
+    urls = _stream_access_urls(bind_host, actual_port)
+    print(f"[Stream] Listening on {bind_host}:{actual_port}", flush=True)
+    for url in urls:
+        print(f"[Stream] Dashboard: {url}", flush=True)
+    if bind_host in {"127.0.0.1", "localhost", "::1"}:
+        print(
+            "[Stream] Local-only binding. Use --stream-host 0.0.0.0 "
+            "to allow access from other devices on your LAN.",
+            flush=True,
+        )
+    logger.info("Stream dashboard available at %s", ", ".join(urls))
+
     try:
         server.serve_forever()
     finally:

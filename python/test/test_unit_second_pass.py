@@ -73,6 +73,38 @@ class SecondPassStreamTests(unittest.TestCase):
         self.assertEqual(len(config.debug_frames_list), 1)
         self.assertEqual(config.stream_frame_seq, 100)
 
+    def test_video_feed_frame_serves_the_latest_published_jpeg(self):
+        config = self.config()
+        streamer = WebStreamer(config)
+        publish_debug_frame(
+            config,
+            np.full((16, 24, 3), 127, dtype=np.uint8),
+        )
+
+        response = streamer.app.test_client().get("/video_feed_frame")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/jpeg")
+        self.assertTrue(response.data)
+
+    def test_windows_platform_default_disables_arduino_after_config_load(self):
+        import types
+        from main import _apply_platform_defaults
+
+        config = types.SimpleNamespace(WITHOUT_ARDUINO=False)
+        _apply_platform_defaults(config, platform_name="nt")
+
+        self.assertTrue(config.WITHOUT_ARDUINO)
+
+    def test_non_windows_platform_default_preserves_arduino_config(self):
+        import types
+        from main import _apply_platform_defaults
+
+        config = types.SimpleNamespace(WITHOUT_ARDUINO=False)
+        _apply_platform_defaults(config, platform_name="posix")
+
+        self.assertFalse(config.WITHOUT_ARDUINO)
+
     def test_race_rejects_unsupported_crosswalk_control(self):
         config = self.config("race", ml=False)
         response = WebStreamer(config).app.test_client().post(
