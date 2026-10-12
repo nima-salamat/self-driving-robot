@@ -360,12 +360,19 @@ class Robot:
                         angle = result.get("steering_angle")
                         crosswalk = result.get("crosswalk", False)
 
-                        if config_city.WITH_APRILTAG:
-                            tags, debug_frame, largest_tag = self.apriltag_detector.detect(frame, debug_frame)
-                        elif config_city.WITH_SIGN:
-                            self.sign_detector.process_frame(frame, debug_frame=debug_frame)
+                        sign_text, debug_frame = self._process_crosswalk_marker(
+                            frame,
+                            debug_frame,
+                        )
 
-                    self.handle_debug_stream(result, frame, angle, crosswalk, "crosswalk", "")
+                    self.handle_debug_stream(
+                        result,
+                        frame,
+                        angle,
+                        crosswalk,
+                        "crosswalk",
+                        sign_text,
+                    )
                     self._pace_control_loop()
                     continue
                 
@@ -419,6 +426,27 @@ class Robot:
         )
         detected = self.object_detector.detect(object_frame)[1]
         logger.debug("Object detector result: %s", detected)
+
+    def _process_crosswalk_marker(self, frame, debug_frame):
+        """Process crosswalk markers through the same APIs used by the main loop."""
+        if config_city.WITH_APRILTAG:
+            _, debug_frame, _ = self.apriltag_detector.detect(
+                frame,
+                debug_frame,
+            )
+            return "", debug_frame
+
+        if config_city.WITH_SIGN:
+            # Sign detection is deliberately asynchronous. Reuse the normal
+            # ROI/cadence/result handling rather than calling process_frame on
+            # the AsyncSignDetector wrapper (which exposes submit/latest).
+            sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
+                frame,
+                debug_frame,
+            )
+            return sign_text, debug_frame
+
+        return "", debug_frame
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
         
