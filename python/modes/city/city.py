@@ -464,6 +464,7 @@ class Robot:
         
         stop_seen = False
         coordinate = None
+        tag_id = None
         if config_city.WITH_APRILTAG:
             tags, debug_frame, largest_tag, coordinate = self.apriltag_detector.detect(sign_tag_frame, debug_frame)
             if largest_tag is not None:
