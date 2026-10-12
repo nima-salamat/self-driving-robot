@@ -74,6 +74,34 @@ class StreamApiTests(unittest.TestCase):
             html,
         )
 
+    def test_rendered_inline_javascript_passes_node_syntax_check(self):
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is not installed; JavaScript syntax check skipped")
+
+        response = WebStreamer(self.make_config()).app.test_client().get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        script_match = re.search(r"<script>(.*?)</script>", html, re.DOTALL)
+        self.assertIsNotNone(script_match, "Rendered page has no inline script")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            script_path = Path(tmp_dir) / "stream-dashboard.js"
+            script_path.write_text(script_match.group(1), encoding="utf-8")
+            result = subprocess.run(
+                [node, "--check", str(script_path)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
     def test_video_frame_endpoint_does_not_cache_live_frames(self):
         config = self.make_config()
         config.debug_frames_list = []
