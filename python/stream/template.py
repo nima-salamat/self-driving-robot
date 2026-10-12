@@ -216,7 +216,7 @@ const controlNotice = document.getElementById('control_notice');
 if (controlNotice) {
     controlNotice.textContent = STREAM_CONTROL_ALLOWED
         ? 'Dashboard control is enabled.'
-        : 'Dashboard is read-only. Start with --stream-control to allow runtime changes.';
+        : 'Dashboard is read-only. Enable STREAM_ALLOW_CONTROL or restart without --stream-read-only to allow runtime changes.';
 }
 
 let selectedVar = 'NONE';
