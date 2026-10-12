@@ -160,11 +160,29 @@ class WebStreamer:
     def index(self):
         values = {var: self.get_base_var(var) for var in VARIABLES}
         advanced_current = self.get_all_advanced()
-        return render_template_string(HTML_TEMPLATE, variables=VARIABLES, values=values, 
-                                      ui=self.ui_settings, advanced=advanced_current, 
-                                      mode=getattr(self.config, "MODE", "mode"),
-                                      stream_control=bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False)),
-                                      capabilities=mode_capabilities(self.config))
+        response = Response(
+            render_template_string(
+                HTML_TEMPLATE,
+                variables=VARIABLES,
+                values=values,
+                ui=self.ui_settings,
+                advanced=advanced_current,
+                mode=getattr(self.config, "MODE", "mode"),
+                stream_control=bool(
+                    getattr(self.config, "STREAM_ALLOW_CONTROL", False)
+                ),
+                capabilities=mode_capabilities(self.config),
+            ),
+            mimetype="text/html",
+        )
+        # The dashboard contains inline JavaScript. Do not let a browser reuse
+        # an old broken script after the local robot runtime has been updated.
+        response.headers.update({
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        })
+        return response
 
     def _control_allowed(self):
         return bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False))
