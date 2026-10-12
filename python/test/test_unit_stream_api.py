@@ -56,6 +56,24 @@ class StreamApiTests(unittest.TestCase):
         )
         response.close()
 
+    def test_index_page_keeps_javascript_newline_escape_valid(self):
+        response = WebStreamer(self.make_config()).app.test_client().get("/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+
+        # HTML_TEMPLATE is a Python triple-quoted string. The rendered
+        # JavaScript must contain a backslash+n escape, not a literal newline
+        # inside a single-quoted JavaScript string.
+        self.assertIn(
+            "output.textContent = (j.lines || []).join('\\n');",
+            html,
+        )
+        self.assertNotIn(
+            "output.textContent = (j.lines || []).join('\n');",
+            html,
+        )
+
     def test_video_frame_endpoint_does_not_cache_live_frames(self):
         config = self.make_config()
         config.debug_frames_list = []
