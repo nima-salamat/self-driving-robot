@@ -223,6 +223,8 @@ let selectedVar = 'NONE';
 let markerHighlight = null;
 let fetchFrameTimer = null;
 let valUpdateTimer = null;
+let healthUpdateTimer = null;
+let arduinoUpdateTimer = null;
 let dragState = null;
 let debounceTimers = {};
 let isFrozen = false;
@@ -919,17 +921,25 @@ stopAllBtn.addEventListener('click', () => {
         stopAllBtn.textContent = 'Resume All Sync & Requests';
         stopAllBtn.style.background = '#22c55e'; // Green when resuming
         clearInterval(fetchFrameTimer);
+        fetchFrameTimer = null;
         clearInterval(valUpdateTimer);
+        valUpdateTimer = null;
+        clearInterval(healthUpdateTimer);
+        healthUpdateTimer = null;
+        clearInterval(arduinoUpdateTimer);
+        arduinoUpdateTimer = null;
         updateFrameModeText();
         showToast('All Sync Stopped');
     } else {
         stopAllBtn.textContent = 'Stop All Sync & Requests';
         stopAllBtn.style.background = '#ef4444'; // Red for stop
         startFrameLoop();
-        valUpdateTimer = setInterval(fetchValuesLoop, 4000);
-    setInterval(updateHealth, 1000);
-    setInterval(updateArduinoOutput, 1000);
-    updateArduinoOutput();
+        if(!valUpdateTimer) valUpdateTimer = setInterval(fetchValuesLoop, 4000);
+        if(!healthUpdateTimer) healthUpdateTimer = setInterval(updateHealth, 1000);
+        if(!arduinoUpdateTimer) arduinoUpdateTimer = setInterval(updateArduinoOutput, 1000);
+        fetchValuesLoop();
+        updateHealth();
+        updateArduinoOutput();
         updateFrameModeText();
         showToast('Sync Resumed');
     }
@@ -1148,7 +1158,15 @@ function initApp(){
     loadAdvanced();
     updateFrameModeText();
     startFrameLoop();
+
+    // Start each poller once at page load; immediate requests avoid stale
+    // "UNKNOWN"/"Waiting" status until the user toggles sync controls.
+    fetchValuesLoop();
+    updateHealth();
+    updateArduinoOutput();
     valUpdateTimer = setInterval(fetchValuesLoop, 4000);
+    healthUpdateTimer = setInterval(updateHealth, 1000);
+    arduinoUpdateTimer = setInterval(updateArduinoOutput, 1000);
 }
 initApp();
 
