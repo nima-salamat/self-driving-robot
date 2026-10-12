@@ -314,32 +314,75 @@ function computeRects(){
 function startFrameLoop(){
     if(fetchFrameTimer) clearInterval(fetchFrameTimer);
     fetchFrameTimer = setInterval(fetchFrameOnce, 120);
+    fetchFrameOnce();
+}
+
+let frameRequestInFlight = false;
+let hasRenderedFrame = false;
+let frameRequestFailures = 0;
+
+function showCameraConnectionState(message){
+    if(hasRenderedFrame) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '16px Segoe UI, Arial, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(message, 16, 16);
+    ctx.restore();
+    drawOverlays();
 }
 
 function fetchFrameOnce(){
-    if(!syncActive) return;
+    if(!syncActive || frameRequestInFlight) return;
+
+    frameRequestInFlight = true;
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    img.decoding = 'async';
     img.src = '/video_feed_frame?t=' + Date.now();
+
     img.onload = () => {
-        const rect = canvas.getBoundingClientRect();
-        const dispW = Math.floor(rect.width);
-        const dispH = Math.floor(rect.height);
-        if (canvas.width !== dispW || canvas.height !== dispH) {
-            canvas.width = dispW; canvas.height = dispH;
+        try {
+            if(!syncActive) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const dispW = Math.floor(rect.width);
+            const dispH = Math.floor(rect.height);
+            if(dispW <= 0 || dispH <= 0) return;
+
+            if(canvas.width !== dispW || canvas.height !== dispH) {
+                canvas.width = dispW;
+                canvas.height = dispH;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const b = getImgBounds();
+            ctx.drawImage(img, b.ix, b.iy, b.iw, b.ih);
+            drawOverlays();
+
+            hasRenderedFrame = true;
+            frameRequestFailures = 0;
+        } catch(err) {
+            console.error('Failed to render camera frame:', err);
+            showCameraConnectionState('Camera frame received, but display failed.');
+        } finally {
+            frameRequestInFlight = false;
         }
-        
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        
-        // Draw the image according to the Zoom level
-        const b = getImgBounds();
-        ctx.drawImage(img, b.ix, b.iy, b.iw, b.ih);
-        
-        drawOverlays();
     };
+
     img.onerror = () => {
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        drawOverlays();
+        frameRequestFailures += 1;
+
+        // Keep the last good image. A transient 204/no-frame response must not
+        // blank a working preview; keep retrying until a valid frame arrives.
+        if(!hasRenderedFrame) {
+            showCameraConnectionState(
+                frameRequestFailures > 3
+                    ? 'Waiting for camera frames...'
+                    : 'Connecting to camera...'
+            );
+        }
+        frameRequestInFlight = false;
     };
 }
 
