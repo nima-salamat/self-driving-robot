@@ -60,6 +60,7 @@ class StreamApiTests(unittest.TestCase):
         response = WebStreamer(self.make_config()).app.test_client().get("/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response.headers.get("Cache-Control", ""))
         html = response.get_data(as_text=True)
 
         # HTML_TEMPLATE is a Python triple-quoted string. The rendered
