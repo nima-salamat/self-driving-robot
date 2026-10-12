@@ -192,6 +192,52 @@ class AsyncSignDetectorTests(unittest.TestCase):
 
 
 
+class CityRaceAprilTagFallbackTests(unittest.TestCase):
+    def _assert_missing_apriltag_is_a_normal_result(self, mode):
+        from unittest.mock import Mock, patch
+
+        import numpy as np
+
+        if mode == "city":
+            from modes.city import city as mode_module
+
+            config = mode_module.config_city
+        elif mode == "race":
+            from modes.race import race as mode_module
+
+            config = mode_module.config_race
+        else:
+            self.fail(f"Unsupported test mode: {mode}")
+
+        robot = mode_module.Robot.__new__(mode_module.Robot)
+        robot.apriltag_detector = Mock()
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        debug_frame = frame.copy()
+        robot.apriltag_detector.detect.return_value = (
+            [],
+            debug_frame,
+            None,
+            None,
+        )
+
+        with patch.object(config, "WITH_APRILTAG", True), patch.object(
+            config, "WITH_SIGN", False
+        ):
+            result = robot.handle_read_sign_or_tag(frame, debug_frame)
+
+        self.assertIsNone(result[0], mode)
+        self.assertFalse(result[1], mode)
+        self.assertIs(result[2], debug_frame, mode)
+        self.assertIsNone(result[3], mode)
+        robot.apriltag_detector.detect.assert_called_once()
+
+    def test_city_mode_handles_frame_without_apriltag(self):
+        self._assert_missing_apriltag_is_a_normal_result("city")
+
+    def test_race_mode_handles_frame_without_apriltag(self):
+        self._assert_missing_apriltag_is_a_normal_result("race")
+
+
 class CityRaceStreamIntegrationTests(unittest.TestCase):
     def _assert_mode_publishes_jpeg(self, mode):
         from types import SimpleNamespace
