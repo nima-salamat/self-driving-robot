@@ -108,9 +108,14 @@ class CityCrosswalkMarkerTests(unittest.TestCase):
             return_value=(5, True, annotated_frame, ((1, 2), (3, 4)))
         )
 
-        with (
-            patch.object(city_module.config_city, "WITH_APRILTAG", False),
-            patch.object(city_module.config_city, "WITH_SIGN", True),
+        with patch.object(
+            city_module.config_city,
+            "WITH_APRILTAG",
+            False,
+        ), patch.object(
+            city_module.config_city,
+            "WITH_SIGN",
+            True,
         ):
             sign_text, result_frame = robot._process_crosswalk_marker(
                 frame,
