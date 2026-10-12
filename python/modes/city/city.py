@@ -347,6 +347,7 @@ class Robot:
                         "crosswalk": True,
                         "debug": {"combined": frame},
                     }
+                    sign_text = ""
 
                     if config_city.DEBUG or config_city.STREAM:
                         debug_frame = frame.copy()
