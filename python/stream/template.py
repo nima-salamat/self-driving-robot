@@ -339,7 +339,6 @@ function fetchFrameOnce(){
     frameRequestInFlight = true;
     const img = new Image();
     img.decoding = 'async';
-    img.src = '/video_feed_frame?t=' + Date.now();
 
     img.onload = () => {
         try {
@@ -373,17 +372,26 @@ function fetchFrameOnce(){
     img.onerror = () => {
         frameRequestFailures += 1;
 
-        // Keep the last good image. A transient 204/no-frame response must not
-        // blank a working preview; keep retrying until a valid frame arrives.
-        if(!hasRenderedFrame) {
-            showCameraConnectionState(
-                frameRequestFailures > 3
-                    ? 'Waiting for camera frames...'
-                    : 'Connecting to camera...'
-            );
+        try {
+            // Keep the last good image. A transient 204/no-frame response must not
+            // blank a working preview; keep retrying until a valid frame arrives.
+            if(!hasRenderedFrame) {
+                showCameraConnectionState(
+                    frameRequestFailures > 3
+                        ? 'Waiting for camera frames...'
+                        : 'Connecting to camera...'
+                );
+            }
+        } catch(err) {
+            console.error('Failed to update camera connection state:', err);
+        } finally {
+            frameRequestInFlight = false;
         }
-        frameRequestInFlight = false;
     };
+
+    // Register callbacks before setting src so fast local responses cannot
+    // complete before the browser has installed the handlers.
+    img.src = '/video_feed_frame?t=' + Date.now();
 }
 
 /* ---------- Overlays (Shapes & Rects) ---------- */
