@@ -130,6 +130,39 @@ class CityCrosswalkMarkerTests(unittest.TestCase):
         self.assertIs(result_frame, annotated_frame)
 
 
+    def test_crosswalk_apriltag_path_uses_shared_handler(self):
+        from unittest.mock import Mock, patch
+        from modes.city import city as city_module
+
+        robot = city_module.Robot.__new__(city_module.Robot)
+        frame = object()
+        debug_frame = object()
+        annotated_frame = object()
+        robot.handle_read_sign_or_tag = Mock(
+            return_value=(None, False, annotated_frame, None)
+        )
+
+        with patch.object(
+            city_module.config_city,
+            "WITH_APRILTAG",
+            True,
+        ), patch.object(
+            city_module.config_city,
+            "WITH_SIGN",
+            False,
+        ):
+            sign_text, result_frame = robot._process_crosswalk_marker(
+                frame,
+                debug_frame,
+            )
+
+        robot.handle_read_sign_or_tag.assert_called_once_with(
+            frame,
+            debug_frame,
+        )
+        self.assertIsNone(sign_text)
+        self.assertIs(result_frame, annotated_frame)
+
     def test_city_marker_handler_is_safe_when_all_markers_are_disabled(self):
         from unittest.mock import patch
         from modes.city import city as city_module
