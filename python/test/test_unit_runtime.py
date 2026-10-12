@@ -169,5 +169,75 @@ class AsyncSignDetectorTests(unittest.TestCase):
         return False
 
 
+
+class CityRaceStreamIntegrationTests(unittest.TestCase):
+    def _assert_mode_publishes_jpeg(self, mode):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        import cv2
+        import numpy as np
+        from stream import WebStreamer
+
+        if mode == "city":
+            from modes.city import city as mode_module
+
+            config = mode_module.config_city
+            stream_method = mode_module.Robot.handle_debug_stream
+            stream_args = (90.0, False, "running", "None")
+        elif mode == "race":
+            from modes.race import race as mode_module
+
+            config = mode_module.config_race
+            stream_method = mode_module.Robot.handle_debug_stream
+            stream_args = (90.0, "running", "None")
+        else:
+            self.fail(f"Unsupported test mode: {mode}")
+
+        robot = mode_module.Robot.__new__(mode_module.Robot)
+        robot.fps = SimpleNamespace(instant_fps=12.0, second_fps=11.0)
+        robot.control = SimpleNamespace(last_angle=90.0)
+        robot.output = SimpleNamespace(is_recording=lambda: False)
+        frame = np.full((240, 320, 3), 80, dtype=np.uint8)
+        result = {"debug": {"combined": frame.copy()}}
+
+        with patch.object(config, "STREAM", True), patch.object(
+            config, "DEBUG", False
+        ), patch.object(config, "TAKE_PICTURE", False), patch.object(
+            config, "RECORD_VIDEO", False
+        ), patch.object(config, "debug_frames_list", []), patch.object(
+            config, "stream_frame_seq", 0, create=True
+        ), patch.object(
+            config, "stream_frame_lock", threading.RLock(), create=True
+        ), patch.object(
+            config, "stream_frame_timestamps", None, create=True
+        ):
+            stream_method(robot, result, frame, *stream_args)
+
+            response = WebStreamer(config).app.test_client().get(
+                "/video_feed_frame"
+            )
+
+            self.assertEqual(response.status_code, 200, mode)
+            self.assertEqual(response.mimetype, "image/jpeg", mode)
+            self.assertEqual(
+                response.headers.get("X-Stream-Frame-Sequence"),
+                "1",
+                mode,
+            )
+            decoded = cv2.imdecode(
+                np.frombuffer(response.data, dtype=np.uint8),
+                cv2.IMREAD_COLOR,
+            )
+            self.assertIsNotNone(decoded, mode)
+            self.assertEqual(decoded.shape, frame.shape, mode)
+
+    def test_city_mode_publishes_new_debug_frame_to_http_stream(self):
+        self._assert_mode_publishes_jpeg("city")
+
+    def test_race_mode_publishes_new_debug_frame_to_http_stream(self):
+        self._assert_mode_publishes_jpeg("race")
+
+
 if __name__ == "__main__":
     unittest.main()
