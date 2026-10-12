@@ -1081,7 +1081,7 @@ function updateArduinoOutput(){
             const status = document.getElementById('arduino_status');
             const output = document.getElementById('arduino_output');
             status.textContent = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
-            output.textContent = (j.lines || []).join('\n');
+            output.textContent = (j.lines || []).join('\\n');
             output.scrollTop = output.scrollHeight;
         })
         .catch(()=>{});
