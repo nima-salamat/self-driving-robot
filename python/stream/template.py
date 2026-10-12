@@ -229,7 +229,75 @@ let dragState = null;
 let debounceTimers = {};
 let isFrozen = false;
 let isRecording = false;
-let syncActive = true; 
+let syncActive = true;
+
+// Poll API endpoints through a shared circuit breaker. When the Python process
+// disappears, stop flooding it with requests and probe again with backoff.
+let dashboardApiOnline = true;
+let dashboardApiFailureCount = 0;
+let dashboardApiRetryAt = 0;
+let dashboardApiProbeInFlight = false;
+
+function updateDashboardConnectionState(online) {
+    const state = document.getElementById('health_state');
+    const faults = document.getElementById('health_faults');
+    if(!online) {
+        if(state) state.textContent = 'State: SERVER UNREACHABLE — retrying';
+        if(faults) faults.textContent = 'Faults: waiting for the Python server to respond';
+    }
+}
+
+function noteDashboardApiFailure(err) {
+    const wasOnline = dashboardApiOnline;
+    dashboardApiOnline = false;
+    dashboardApiFailureCount += 1;
+    const delayMs = Math.min(
+        30000,
+        1000 * Math.pow(2, Math.min(dashboardApiFailureCount - 1, 5))
+    );
+    dashboardApiRetryAt = Date.now() + delayMs;
+    updateDashboardConnectionState(false);
+    if(wasOnline) {
+        console.warn('Robot server is unreachable; polling paused with retry backoff:', err && err.message ? err.message : err);
+    }
+}
+
+function noteDashboardApiSuccess() {
+    const wasOffline = !dashboardApiOnline;
+    dashboardApiOnline = true;
+    dashboardApiFailureCount = 0;
+    dashboardApiRetryAt = 0;
+    if(wasOffline) {
+        const state = document.getElementById('health_state');
+        if(state) state.textContent = 'State: Connected; refreshing runtime status...';
+        const faults = document.getElementById('health_faults');
+        if(faults) faults.textContent = 'Faults: refreshing...';
+        showToast('Connection to robot server restored');
+    }
+}
+
+async function fetchDashboardJson(url, options = {}) {
+    if(Date.now() < dashboardApiRetryAt) return null;
+
+    const isRecoveryProbe = !dashboardApiOnline;
+    if(isRecoveryProbe && dashboardApiProbeInFlight) return null;
+    if(isRecoveryProbe) dashboardApiProbeInFlight = true;
+
+    try {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok) {
+            throw new Error(data.message || ('HTTP ' + response.status));
+        }
+        noteDashboardApiSuccess();
+        return data;
+    } catch(err) {
+        noteDashboardApiFailure(err);
+        return null;
+    } finally {
+        if(isRecoveryProbe) dashboardApiProbeInFlight = false;
+    }
+}
 
 // Workspace Zoom Variable
 let workspaceZoom = 1.0;
@@ -334,6 +402,7 @@ function startFrameLoop(){
 let frameRequestInFlight = false;
 let hasRenderedFrame = false;
 let frameRequestFailures = 0;
+let frameRetryAt = 0;
 
 function showCameraConnectionState(message){
     if(hasRenderedFrame) return;
@@ -348,7 +417,8 @@ function showCameraConnectionState(message){
 }
 
 function fetchFrameOnce(){
-    if(!syncActive || frameRequestInFlight) return;
+    if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;
+    if(Date.now() < frameRetryAt) return;
 
     frameRequestInFlight = true;
     const img = new Image();
@@ -375,6 +445,7 @@ function fetchFrameOnce(){
 
             hasRenderedFrame = true;
             frameRequestFailures = 0;
+            frameRetryAt = 0;
         } catch(err) {
             console.error('Failed to render camera frame:', err);
             showCameraConnectionState('Camera frame received, but display failed.');
@@ -385,6 +456,10 @@ function fetchFrameOnce(){
 
     img.onerror = () => {
         frameRequestFailures += 1;
+        frameRetryAt = Date.now() + Math.min(
+            5000,
+            250 * Math.pow(2, Math.min(frameRequestFailures - 1, 5))
+        );
 
         try {
             // Keep the last good image. A transient 204/no-frame response must not
@@ -924,12 +999,13 @@ function sendUpdate(data){
 /* ---------- Stream API Actions ---------- */
 document.getElementById('refresh_vals').addEventListener('click', ()=>{
     if(!syncActive) return showToast('Requests are stopped!');
-    fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); drawOverlays(); }});
+    fetchDashboardJson('/get_values').then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); drawOverlays(); }});
     loadAdvanced();
 });
 document.getElementById('clear_selection').addEventListener('click', ()=>{ select.value='NONE'; selectedVar='NONE'; markerHighlight=null; drawOverlays(); });
 document.getElementById('download_json').addEventListener('click', ()=>{
-    fetch('/get_values').then(r=>r.json()).then(j=>{
+    fetchDashboardJson('/get_values').then(j=>{
+        if(!j || !j.values) return;
         const blob = new Blob([JSON.stringify(j.values, null, 2)], {type:'application/json'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href=url; a.download='config.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -986,7 +1062,7 @@ const advInputs = {
 
 function loadAdvanced(){
     if(!syncActive) return;
-    fetch('/get_advanced').then(r=>r.json()).then(j=>{
+    fetchDashboardJson('/get_advanced').then(j=>{
         if(j && j.advanced){
             advanced = j.advanced;
             advInputs.lane_threshold.value = advanced.LANE_THRESHOLD;
@@ -1079,9 +1155,9 @@ document.getElementById('toggle_record_btn').addEventListener('click', () => {
 /* ---------- Init ---------- */
 function updateHealth(){
     if(!syncActive) return;
-    fetch('/api/health')
-        .then(r=>r.json())
+    fetchDashboardJson('/api/health')
         .then(j=>{
+            if(!j) return;
             const h = j.health || {};
             const m = j.metrics || {};
             const t = m.timing || {};
@@ -1108,9 +1184,9 @@ function updateHealth(){
 
 function updateArduinoOutput(){
     if(!syncActive) return;
-    fetch('/api/arduino-output')
-        .then(r=>r.json())
+    fetchDashboardJson('/api/arduino-output')
         .then(j=>{
+            if(!j) return;
             const status = document.getElementById('arduino_status');
             const output = document.getElementById('arduino_output');
             status.textContent = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
@@ -1122,11 +1198,12 @@ function updateArduinoOutput(){
 
 function fetchValuesLoop() {
     if(!syncActive) return;
-    fetch('/get_values').then(r=>r.json()).then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }});
+    fetchDashboardJson('/get_values').then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }});
 }
 
 function loadModeFeatures(){
-    fetch('/api/mode').then(r=>r.json()).then(j=>{
+    fetchDashboardJson('/api/mode').then(j=>{
+        if(!j) return;
         const f=j.features || {};
         const c=j.capabilities || {};
         const lane = f.lane_detector || 'default';
