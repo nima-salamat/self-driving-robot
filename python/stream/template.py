@@ -1166,7 +1166,11 @@ function updateHealth(){
             const metrics = document.getElementById('health_metrics');
             state.textContent = 'State: ' + (h.state || 'UNKNOWN');
             const names = Object.keys(h.faults || {});
-            faults.textContent = 'Faults: ' + (names.length ? names.join(', ') : 'none');
+            const details = names.map(name => {
+                const fault = h.faults[name] || {};
+                return name + (fault.message ? ': ' + fault.message : '');
+            });
+            faults.textContent = 'Faults: ' + (details.length ? details.join(' | ') : 'none');
             const loop = t.loop || {};
             const camera = t.camera || {};
             const perception = t.perception || {};
