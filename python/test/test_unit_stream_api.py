@@ -171,6 +171,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("dashboardApiRetryAt", html)
         self.assertRegex(html, r"Math\.min\(\s*30000")
         self.assertIn("fetchDashboardJson('/api/health')", html)
+        self.assertIn("fault.message", html)
+        self.assertIn("details.join(' | ')", html)
         self.assertIn("fetchDashboardJson('/api/arduino-output')", html)
         self.assertIn("fetchDashboardJson('/get_values')", html)
         self.assertIn("let frameRetryAt = 0;", html)
