@@ -118,7 +118,7 @@ def _check_stream_port(report, config):
         report.add("stream port", True, "stream disabled", critical=False)
         return
 
-    host = str(getattr(config, "STREAM_HOST", "127.0.0.1"))
+    host = str(getattr(config, "STREAM_HOST", "0.0.0.0"))
     port = int(getattr(config, "STREAM_PORT", 5000))
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
