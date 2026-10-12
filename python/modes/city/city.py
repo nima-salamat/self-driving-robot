@@ -450,7 +450,11 @@ class Robot:
         return "", debug_frame
 
     def handle_read_sign_or_tag(self, frame, debug_frame):
-        
+        # Marker processing is optional. In "none" mode, return cleanly
+        # instead of reaching the return statement with tag_id undefined.
+        if not (config_city.WITH_SIGN or config_city.WITH_APRILTAG):
+            return None, False, debug_frame, None
+
         sign_tag_frame = crop_image(frame, 
                                     config_city.ST_TOP_ROI, 
                                     config_city.ST_BOTTOM_ROI, 
