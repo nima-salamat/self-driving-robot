@@ -348,23 +348,40 @@ class WebStreamer:
                     else None
                 )
         
-        if frame is None: 
-            return Response('', status=204)
+        cache_headers = {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+
+        if frame is None:
+            response = Response("", status=204)
+            response.headers.update(cache_headers)
+            return response
+
         frame_id = getattr(self.config, "stream_frame_seq", id(frame))
         with self._jpeg_cache_lock:
             if frame_id != self._jpeg_cache_frame_id or self._jpeg_cache is None:
                 try:
-                    ret, buffer = cv2.imencode('.jpg', frame)
+                    ret, buffer = cv2.imencode(".jpg", frame)
                     if not ret:
-                        return Response('', status=204)
+                        response = Response("", status=204)
+                        response.headers.update(cache_headers)
+                        return response
                     payload = buffer.tobytes()
                 except Exception:
                     logger.exception("Failed to encode stream frame")
-                    return Response('', status=503)
+                    response = Response("", status=503)
+                    response.headers.update(cache_headers)
+                    return response
                 self._jpeg_cache = payload
                 self._jpeg_cache_frame_id = frame_id
             payload = self._jpeg_cache
-        return Response(payload, mimetype='image/jpeg')
+
+        response = Response(payload, mimetype="image/jpeg")
+        response.headers.update(cache_headers)
+        response.headers["X-Stream-Frame-Sequence"] = str(frame_id)
+        return response
 
     def mode(self):
         mode = getattr(self.config, "MODE", "mode")
