@@ -477,7 +477,7 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
                 self.started = threading.Event()
                 self.stopped = threading.Event()
                 self.closed = False
-                self.server_address = ("127.0.0.1", 5000)
+                self.server_address = ("0.0.0.0", 5000)
 
             def serve_forever(self):
                 self.started.set()
@@ -491,12 +491,19 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
 
         config = types.SimpleNamespace(
             MODE="test",
-            STREAM_HOST="127.0.0.1",
+            STREAM_HOST="0.0.0.0",
             STREAM_PORT=5000,
+            STREAM_ALLOW_CONTROL=False,
         )
         server = FakeServer()
         output = io.StringIO()
-        with patch("stream.make_server", return_value=server), redirect_stdout(output):
+        with patch("stream.make_server", return_value=server), patch(
+            "stream._stream_access_urls",
+            return_value=[
+                "http://127.0.0.1:5000",
+                "http://192.168.1.42:5000",
+            ],
+        ), redirect_stdout(output):
             thread = threading.Thread(target=start_stream, args=(config,))
             thread.start()
             self.assertTrue(server.started.wait(2.0))
@@ -507,8 +514,9 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
             self.assertIsNone(getattr(config, "stream_server", None))
             self.assertFalse(stop_stream(config))
 
-        self.assertIn("[Stream] Listening on 127.0.0.1:5000", output.getvalue())
-        self.assertIn("[Stream] Dashboard: http://127.0.0.1:5000", output.getvalue())
+        self.assertIn("[Stream] Listening on 0.0.0.0:5000", output.getvalue())
+        self.assertIn("[Stream] Dashboard (local): http://127.0.0.1:5000", output.getvalue())
+        self.assertIn("[Stream] Dashboard (LAN): http://192.168.1.42:5000", output.getvalue())
 
 
 class PIDNumericalStabilityTests(unittest.TestCase):
