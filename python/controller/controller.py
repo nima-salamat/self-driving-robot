@@ -126,8 +126,8 @@ class RobotController:
         if not self.motion_inhibited:
             return True
 
-        # Never release in software alone: the MCU has its own STOP latch.
-        # If this serial command fails, keep all controller-side actuators locked.
+        # Send the existing explicit release command before clearing the Python
+        # gate. A successful serial write does not confirm MCU acceptance.
         if not self.without_arduino:
             if not self._send_command(
                 "motion enable",

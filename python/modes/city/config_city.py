@@ -128,6 +128,8 @@ CROSSWALK_THRESHOLD = 180
 
 # Run Level 
 RUN_LVL = "MOVE" # it can be MOVE or STOP
+STOP_MIN_HOLD_SECONDS = 3.0
+STOP_COMMAND_REFRESH_INTERVAL = 0.25
 
 
 # Change Configs based on json file

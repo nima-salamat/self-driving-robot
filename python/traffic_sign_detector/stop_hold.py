@@ -2,21 +2,32 @@
 
 Inference is polled continuously while this state is active. Missing, stale, or
 failed inference results never clear the stop state. Releasing motion requires
-several distinct, fresh observations that do not contain STOP.
+both a minimum hold duration and several distinct, fresh observations that do
+not contain STOP.
 """
+
+import math
+import time
 
 
 class StopSignHold:
-    """Latch STOP until fresh observations consistently show it is absent."""
+    """Latch STOP until its timer and fresh-clearance requirements are met."""
 
-    def __init__(self, clear_confirmations=3):
+    def __init__(self, clear_confirmations=3, minimum_duration_s=3.0):
         confirmations = int(clear_confirmations)
         if confirmations < 1:
             raise ValueError("clear_confirmations must be at least 1")
+
+        duration = float(minimum_duration_s)
+        if not math.isfinite(duration) or duration < 3.0:
+            raise ValueError("minimum_duration_s must be finite and at least 3 seconds")
+
         self.clear_confirmations = confirmations
+        self.minimum_duration_s = duration
         self.active = False
         self.started_at = None
         self.clear_observations = 0
+        self._last_observation_time = None
 
     def observe(
         self,
@@ -26,34 +37,71 @@ class StopSignHold:
         observation_time=None,
         now=None,
     ):
-        """Update the latch from one detector observation.
+        """Record a new detector observation without releasing the hold.
 
-        observation_time is the monotonic time at which the input frame was
-        submitted to inference. An old result from before STOP was latched must
-        not count as evidence that the sign has disappeared.
+        ``observation_time`` is the monotonic time at which the frame was
+        submitted to inference. ``started_at`` is instead set to ``now`` when
+        Python accepts the STOP result, so inference latency cannot shorten the
+        required hold duration.
         """
-        if stop_present:
-            if not self.active:
-                self.active = True
-                self.started_at = (
-                    observation_time if observation_time is not None else now
-                )
-            self.clear_observations = 0
-            return True
-
-        if not self.active:
-            return False
+        if now is None:
+            now = time.monotonic()
+        now = float(now)
 
         if not fresh or observation_time is None:
+            return self.active
+
+        observation_time = float(observation_time)
+        if not math.isfinite(observation_time):
+            return self.active
+
+        if not self.active:
+            if not stop_present:
+                return False
+            self.active = True
+            self.started_at = now
+            self.clear_observations = 0
+            self._last_observation_time = observation_time
             return True
 
-        if self.started_at is not None and observation_time < self.started_at:
+        # A frame captured before the hold began, an out-of-order result, or a
+        # duplicate timestamp cannot change the active safety state.
+        if (
+            self.started_at is None
+            or observation_time <= self.started_at
+            or (
+                self._last_observation_time is not None
+                and observation_time <= self._last_observation_time
+            )
+        ):
+            return True
+
+        self._last_observation_time = observation_time
+        if stop_present:
+            self.clear_observations = 0
             return True
 
         self.clear_observations += 1
-        if self.clear_observations >= self.clear_confirmations:
-            self.active = False
-            self.started_at = None
-            self.clear_observations = 0
+        return True
 
-        return self.active
+    def can_release(self, now=None):
+        """Return whether duration and distinct-clearance requirements pass."""
+        if not self.active or self.started_at is None:
+            return False
+        if now is None:
+            now = time.monotonic()
+        elapsed = float(now) - self.started_at
+        return (
+            elapsed >= self.minimum_duration_s
+            and self.clear_observations >= self.clear_confirmations
+        )
+
+    def release(self, now=None):
+        """Clear the state only after the caller has safely released control."""
+        if not self.can_release(now):
+            return False
+        self.active = False
+        self.started_at = None
+        self.clear_observations = 0
+        self._last_observation_time = None
+        return True

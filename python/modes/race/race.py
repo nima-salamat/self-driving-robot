@@ -111,12 +111,16 @@ class Robot:
         self.stop_last_seen = None
         self.read_sign_counter = 0
         self.last_sign_result_id = 0
-        self.stop_hold = StopSignHold(clear_confirmations=3)
+        self.stop_hold = StopSignHold(
+            clear_confirmations=3,
+            minimum_duration_s=getattr(config_race, "STOP_MIN_HOLD_SECONDS", 3.0),
+        )
         self.stop_hold_detector_kind = None
         self.last_sign_observation_fresh = False
         self.last_sign_observation_at = None
         self._last_stop_command_at = None
-        # Local mode-loop state. None means the MCU latch is unknown after reconnect.
+        self._last_stop_release_attempt_at = None
+        # This records Python's controller gate, not a confirmed MCU latch.
         self._mcu_stop_latched = False
         self._stop_connection_state = None
         
@@ -184,7 +188,12 @@ class Robot:
     def _observe_stop_result(self, stop_seen, detector_kind=None):
         """Update the mode-owned STOP state from a fresh detector observation."""
         if not hasattr(self, "stop_hold"):
-            self.stop_hold = StopSignHold(clear_confirmations=3)
+            self.stop_hold = StopSignHold(
+                clear_confirmations=3,
+                minimum_duration_s=getattr(
+                    config_race, "STOP_MIN_HOLD_SECONDS", 3.0
+                ),
+            )
 
         if stop_seen:
             self.stop_last_seen = time.time()
@@ -201,57 +210,121 @@ class Robot:
 
         if self.stop_hold.active and not was_active:
             self._last_stop_command_at = None
-            self._set_mcu_stop_latched(True)
-        elif was_active and not self.stop_hold.active:
-            # Release is handled at the top of the next mode-loop iteration,
-            # before any normal steering/speed calculation.
-            self.stop_hold_detector_kind = None
+            self._last_stop_release_attempt_at = None
+            self._set_mcu_stop_latched(True, force=True)
         return self.stop_hold.active
 
-    def _set_mcu_stop_latched(self, latched):
-        """Own the traffic STOP protocol in this mode loop, not the controller."""
+    def _set_mcu_stop_latched(self, latched, force=False):
+        """Gate Python motion and periodically transmit the ordinary STOP command."""
         latched = bool(latched)
         control = getattr(self, "control", None)
-        connection = getattr(control, "connection", None) if control is not None else None
-
-        if control is None or getattr(control, "without_arduino", False) is True:
+        if control is None:
             self._mcu_stop_latched = latched
             return True
 
-        if connection is None or not callable(getattr(connection, "send_command", None)):
-            logger.error("Cannot change MCU STOP latch: serial transport is unavailable")
-            return False
-
-        connected = bool(getattr(connection, "connected", False))
+        without_arduino = getattr(control, "without_arduino", False) is True
+        connection = getattr(control, "connection", None)
+        connected = without_arduino or bool(
+            getattr(connection, "connected", False)
+        )
         previous_connected = getattr(self, "_stop_connection_state", None)
-        if previous_connected is not None and connected != previous_connected:
-            # Opening USB can reset the MCU. Re-establish the requested safety state.
-            self._mcu_stop_latched = None
         self._stop_connection_state = connected
+        reconnected = connected and previous_connected is False
+        now = time.monotonic()
+        refresh_interval = max(
+            0.05,
+            float(
+                getattr(
+                    config_race, "STOP_COMMAND_REFRESH_INTERVAL", 0.25
+                )
+            ),
+        )
 
-        if not connected:
-            return False
+        inhibit = getattr(control, "set_motion_inhibited", None)
+        if latched:
+            if callable(inhibit):
+                try:
+                    if not inhibit(True, reason="traffic_stop"):
+                        return False
+                except Exception:
+                    logger.exception("Failed to enable the Python traffic STOP gate")
+                    return False
+            elif not without_arduino:
+                logger.error("Controller does not support motion inhibition")
+                return False
 
-        if getattr(self, "_mcu_stop_latched", False) is latched:
+            was_latched = bool(getattr(self, "_mcu_stop_latched", False))
+            self._mcu_stop_latched = True
+            if without_arduino:
+                return True
+
+            due = (
+                force
+                or not was_latched
+                or reconnected
+                or self._last_stop_command_at is None
+                or now - self._last_stop_command_at >= refresh_interval
+            )
+            if not due:
+                return True
+
+            # Throttle retries while disconnected, then force an immediate stop
+            # after the connection returns.
+            self._last_stop_command_at = now
+            if not connected or not callable(getattr(control, "stop", None)):
+                return False
+            try:
+                return bool(control.stop(reason="traffic_stop"))
+            except Exception:
+                logger.exception("Failed to transmit traffic STOP")
+                return False
+
+        if not getattr(self, "_mcu_stop_latched", False):
             return True
+        if not without_arduino:
+            if not connected:
+                return False
+            last_attempt = getattr(self, "_last_stop_release_attempt_at", None)
+            if (
+                not reconnected
+                and last_attempt is not None
+                and now - last_attempt < refresh_interval
+            ):
+                return False
+            self._last_stop_release_attempt_at = now
 
-        command = "safety stop" if latched else "motion enable"
-        try:
-            success = bool(connection.send_command(command + "\n"))
-        except Exception:
-            logger.exception("Failed to transmit MCU safety command %s", command)
-            success = False
+        if callable(inhibit):
+            try:
+                success = bool(
+                    inhibit(False, reason="traffic_sign_cleared")
+                )
+            except Exception:
+                logger.exception("Failed to release the Python traffic STOP gate")
+                success = False
+        else:
+            success = bool(without_arduino)
 
         if success:
-            self._mcu_stop_latched = latched
-            self._last_stop_command_at = time.monotonic() if latched else None
+            self._mcu_stop_latched = False
+            self._last_stop_command_at = None
+            self._last_stop_release_attempt_at = None
         return success
 
     def _keep_stop_hold(self):
-        """Keep the MCU in its latched STOP state without steering writes."""
+        """Keep Python motion inhibited and refresh the ordinary MCU stop."""
         success = self._set_mcu_stop_latched(True)
-        self._last_stop_command_at = time.monotonic() if success else None
         return bool(success)
+
+    def _release_stop_hold_if_ready(self):
+        """Release only after clearance/time pass and the controller unlock succeeds."""
+        if not self.stop_hold.can_release(time.monotonic()):
+            return False
+        if not self._set_mcu_stop_latched(False):
+            return False
+        if not self.stop_hold.release(time.monotonic()):
+            return False
+        self.stop_hold_detector_kind = None
+        return True
 
     def _run_stop_hold_cycle(self):
         """Check STOP on every camera frame while keeping Debug/Stream alive."""
@@ -267,6 +340,8 @@ class Robot:
             debug_frame,
             force_check=True,
         )
+        if self.stop_hold.active:
+            self._release_stop_hold_if_ready()
         still_holding = self.stop_hold.active
         if still_holding:
             self._keep_stop_hold()
@@ -351,8 +426,8 @@ class Robot:
                     self._pace_control_loop()
                     continue
 
-                # Do not enter normal steering/speed branches until the MCU
-                # explicitly confirms release from the prior STOP state.
+                # Do not enter normal steering/speed branches until the Python
+                # controller gate has released successfully.
                 latch_state = getattr(self, "_mcu_stop_latched", False)
                 if latch_state is True or latch_state is None:
                     if not self._set_mcu_stop_latched(False):
@@ -390,6 +465,25 @@ class Robot:
                         (time.monotonic() - perception_started) * 1000.0,
                         bool(result.get("perception_valid", False)),
                     )
+
+                sign_text = "None"
+                if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
+                    sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
+                        frame,
+                        debug_frame,
+                    )
+                if self.stop_hold.active:
+                    self.handle_debug_stream(
+                        result,
+                        frame,
+                        result.get("steering_angle", SERVO_CENTER),
+                        "STOP HOLD",
+                        "STOP",
+                    )
+                    self._keep_stop_hold()
+                    self._pace_control_loop()
+                    continue
+
                 # On a valid camera frame, temporarily missing lane markings
                 # must not stop Race mode. Keep the last applied steering angle
                 # and continue at race speed, just as City mode does.
@@ -410,25 +504,6 @@ class Robot:
                 angle = result.get("steering_angle")
                 
                 status = "running"
-                sign_text = "None"
-
-                if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
-                    sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
-                        frame,
-                        debug_frame,
-                    )
-
-                if self.stop_hold.active:
-                    self.handle_debug_stream(
-                        result,
-                        frame,
-                        angle,
-                        "STOP HOLD",
-                        "STOP",
-                    )
-                    self._keep_stop_hold()
-                    self._pace_control_loop()
-                    continue
 
                 if config_race.DETECT_OBJECT:
                     self.handle_detect_object(frame)
@@ -546,51 +621,53 @@ class Robot:
             if self.sign_detector is None:
                 self._ensure_sign_detector()
 
-            should_check = bool(force_check)
+            should_submit = bool(force_check)
             if force_check:
                 # No READ_SIGN_THRESHOLD gate in the latched STOP state.
                 self.read_sign_counter = 0
             else:
                 self.read_sign_counter += 1
-                should_check = (
+                should_submit = (
                     self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD
                 )
 
-            if should_check:
+            if should_submit:
                 self.read_sign_counter = 0
-                submitted_at = time.monotonic()
                 self.sign_detector.submit(
                     sign_tag_frame.copy(),
                     debug_frame.copy() if debug_frame is not None else None,
                 )
-                latest_sign = self.sign_detector.latest(
-                    max_age_s=getattr(config_race, "SIGN_RESULT_MAX_AGE", 0.75)
-                )
-                if (
-                    latest_sign is not None
-                    and latest_sign[0] > self.last_sign_result_id
-                ):
-                    self.last_sign_result_id = latest_sign[0]
-                    sign_result = latest_sign[1]
-                    coordinate = sign_result.get("coordinate")
-                    debug_frame = sign_result.get("debug_frame", debug_frame)
-                    self.last_sign_observation_fresh = True
-                    self.last_sign_observation_at = latest_sign[2] or submitted_at
 
-                    sign_label = sign_result.get("text", "")
-                    if sign_label == "TURN LEFT":
-                        tag_id = TURN_LEFT
-                    elif sign_label == "TURN RIGHT":
-                        tag_id = TURN_RIGHT
-                    elif sign_label == "STRAIGHT":
-                        tag_id = STRAIGHT
-                    elif sign_label == "STOP":
-                        tag_id = STOP
-                        stop_seen = True
-                        detector_kind = "sign"
+            # Submission is throttled, but a completed result is consumed on
+            # every loop iteration so READ_SIGN_THRESHOLD cannot delay STOP.
+            latest_sign = self.sign_detector.latest(
+                max_age_s=getattr(config_race, "SIGN_RESULT_MAX_AGE", 0.75)
+            )
+            if (
+                latest_sign is not None
+                and latest_sign[0] > self.last_sign_result_id
+            ):
+                self.last_sign_result_id = latest_sign[0]
+                sign_result = latest_sign[1]
+                coordinate = sign_result.get("coordinate")
+                debug_frame = sign_result.get("debug_frame", debug_frame)
+                self.last_sign_observation_fresh = True
+                self.last_sign_observation_at = latest_sign[2]
 
-                    if tag_id is not None:
-                        self.last_tag = tag_id
+                sign_label = sign_result.get("text", "")
+                if sign_label == "TURN LEFT":
+                    tag_id = TURN_LEFT
+                elif sign_label == "TURN RIGHT":
+                    tag_id = TURN_RIGHT
+                elif sign_label == "STRAIGHT":
+                    tag_id = STRAIGHT
+                elif sign_label == "STOP":
+                    tag_id = STOP
+                    stop_seen = True
+                    detector_kind = "sign"
+
+                if tag_id is not None:
+                    self.last_tag = tag_id
 
         self._observe_stop_result(stop_seen, detector_kind=detector_kind)
         return tag_id, stop_seen, debug_frame, coordinate
