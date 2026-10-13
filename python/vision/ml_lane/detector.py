@@ -18,17 +18,20 @@ class MLLaneDetector:
         self.model_name = model_name
         self.last_steering = 90.0
         self.model_root = Path(model_root) if model_root else Path(__file__).resolve().parents[2] / "models" / "lane"
-        self.param_path, self.bin_path = ensure_model_materialized(model_name)
-
         try:
             import ncnn
         except ImportError as exc:
             raise RuntimeError(
                 "NCNN Python runtime is required for ML lane detection. "
-                "Install it with: pip install ncnn"
+                "Install the project dependencies in this environment with: "
+                "python3 -m pip install -r requirements.txt"
             ) from exc
 
         self.ncnn = ncnn
+        # Check the runtime dependency before downloading model files. On
+        # systems without NCNN, fail quickly and leave the model directory
+        # untouched.
+        self.param_path, self.bin_path = ensure_model_materialized(model_name)
         self.net = ncnn.Net()
         self.net.opt.use_vulkan_compute = False
         self.net.opt.num_threads = max(1, int(cpu_threads))

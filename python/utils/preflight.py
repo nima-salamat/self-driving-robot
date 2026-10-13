@@ -213,9 +213,16 @@ def run_preflight(config):
         and str(getattr(config, "SIGN_DETECTOR_METHOD", "yolo")).lower() == "yolo"
     ):
         dependencies.append("onnxruntime")
+    if bool(getattr(config, "USE_ML_LANE_DETECTOR", False)):
+        dependencies.append("ncnn")
 
     for module_name in dependencies:
-        _check_import(report, module_name)
+        label = (
+            "NCNN ML lane runtime"
+            if module_name == "ncnn"
+            else module_name
+        )
+        _check_import(report, module_name, label=label)
 
     _check_output_storage(report, config)
     _check_models(report, config)

@@ -1,3 +1,4 @@
+import importlib
 import os
 import signal
 import sys
@@ -28,6 +29,23 @@ def _apply_platform_defaults(config, platform_name=None):
     if platform_name == "nt":
         # The Arduino serial transport is intentionally disabled on Windows.
         config.WITHOUT_ARDUINO = True
+
+
+def _validate_ml_lane_runtime(config):
+    """Fail before opening hardware when the explicitly selected ML runtime is missing."""
+    if not bool(getattr(config, "USE_ML_LANE_DETECTOR", False)):
+        return
+
+    try:
+        importlib.import_module("ncnn")
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"
+        raise SystemExit(
+            "ML lane detection is enabled, but the NCNN Python runtime could "
+            f"not be loaded ({detail}). Install the project dependencies in "
+            "the same Python environment used to run this command. From the "
+            "repository root run: python3 -m pip install -r requirements.txt"
+        ) from None
 
 
 def _apply_cli_overrides(config, args):
@@ -113,6 +131,8 @@ if __name__ == "__main__":
 
     config.runtime_metrics = RuntimeMetrics()
     config.health_monitor = HealthMonitor()
+
+    _validate_ml_lane_runtime(config)
 
     shutdown_event = threading.Event()
     config.SHUTDOWN_EVENT = shutdown_event

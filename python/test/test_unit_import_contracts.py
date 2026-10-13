@@ -50,6 +50,12 @@ class ImportContractTests(unittest.TestCase):
             "'Importing the lazy start entrypoint loaded the City runtime'"
         )
 
+    def test_importing_city_vision_does_not_create_city_camera_cycle(self):
+        self.run_fresh_interpreter(
+            "from vision.city_vision_processing import VisionProcessor; "
+            "assert callable(VisionProcessor)"
+        )
+
     def test_importing_race_config_does_not_eagerly_import_race_runtime(self):
         self.run_fresh_interpreter(
             "import sys; "
