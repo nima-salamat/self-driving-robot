@@ -37,6 +37,8 @@ RANGES = {
     "STREAM_PORT": (1, 65535),
     "USBCAM_ADDR": (0, 64),
     "CAMERA_FPS": (1.0, 120.0),
+    "TL_MIN_SATURATION": (0,255), "TL_MIN_VALUE": (0,255), "TL_MIN_CONTOUR_AREA": (0.0,1000000.0), "TL_MIN_ACTIVE_BRIGHTNESS": (0,255),
+    "TL_CONFIRMATION_WINDOW": (1,100), "TL_CONFIRMATION_GREEN_REQUIRED": (1,100),
 }
 
 BOOL_KEYS = {
@@ -44,7 +46,7 @@ BOOL_KEYS = {
     "USE_BEV", "DETECT_OBJECT", "STREAM", "DEBUG", "SHOW_FPS",
     "WITH_SIGN", "WITH_APRILTAG", "USE_SIGN", "RECORD_VIDEO", "TAKE_PICTURE",
     "STREAM_ALLOW_CONTROL", "PERFORMANCE", "CAMERA_FALLBACK_TO_OPENCV", "APPLY_CAMERA_CALIBRATION",
-    "SEND_TRAFFIC_STOP_COMMAND",
+    "SEND_TRAFFIC_STOP_COMMAND", "TRAFFIC_LIGHTS_ENABLED", "TRAFFIC_LIGHT_WAIT_BEFORE_CHECK",
 }
 
 
@@ -58,6 +60,14 @@ def _validate(name, value):
             raise ValueError(f"{name} must be numeric")
         if not low <= value <= high:
             raise ValueError(f"{name} must be between {low} and {high}")
+
+    if name in {"TL_TOP_ROI","TL_BOTTOM_ROI","TL_LEFT_ROI","TL_RIGHT_ROI"}:
+        if not isinstance(value,(int,float)) or isinstance(value,bool) or not 0<=value<=1: raise ValueError(f"{name} must be between 0 and 1")
+    if name in {"TL_CONFIRMATION_WINDOW","TL_CONFIRMATION_GREEN_REQUIRED"} and (not isinstance(value,int) or isinstance(value,bool)): raise ValueError(f"{name} must be an integer")
+    if name in {"TL_RED_HSV_RANGES","TL_GREEN_HSV_RANGES"}:
+        if not isinstance(value,(list,tuple)) or not value: raise ValueError(f"{name} must contain HSV ranges")
+        for pair in value:
+            if not isinstance(pair,(list,tuple)) or len(pair)!=2 or any(not isinstance(b,(list,tuple)) or len(b)!=3 or any(not isinstance(v,int) or isinstance(v,bool) or not 0<=v<=255 for v in b) for b in pair): raise ValueError(f"{name} entries must be lower/upper HSV integer triples")
 
     if name == "PID_MAX_DT" and value < 0.001:
         raise ValueError("PID_MAX_DT is too small")
@@ -131,6 +141,10 @@ def _load_into(config_module, filename):
             marker_name = "none"
         from stream.capabilities import set_marker_mode
         set_marker_mode(config_module, marker_name)
+
+    roi=tuple(getattr(config_module,n,d) for n,d in (("TL_TOP_ROI",0.),("TL_BOTTOM_ROI",1.),("TL_LEFT_ROI",0.),("TL_RIGHT_ROI",1.)))
+    if not (0<=roi[0]<roi[1]<=1 and 0<=roi[2]<roi[3]<=1): raise ValueError("Invalid traffic-light ROI ordering/bounds")
+    if getattr(config_module,"TL_CONFIRMATION_GREEN_REQUIRED",8)>getattr(config_module,"TL_CONFIRMATION_WINDOW",10): raise ValueError("TL_CONFIRMATION_GREEN_REQUIRED cannot exceed TL_CONFIRMATION_WINDOW")
 
     if getattr(config_module, "PID_MAX_DT", 0.0) < getattr(config_module, "PID_MIN_DT", 0.0):
         raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
