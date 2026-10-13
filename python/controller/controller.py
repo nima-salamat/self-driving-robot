@@ -71,6 +71,8 @@ class RobotController:
                 print("Arduino not connected during startup; recovery continues in background.")
         self.current_angle = 90
         self.current_speed = 0
+        # Refresh steady motor commands because firmware may discard input during pulse motion.
+        self._last_motor_command_at = None
         self.pid = PIDController(
             kp,
             ki,
@@ -145,6 +147,7 @@ class RobotController:
             self.last_angle = None
             self.current_angle = None
             self.current_speed = 0
+            self._last_motor_command_at = None
             self.pid.reset()
             self._last_connection_state = connected
 
@@ -184,19 +187,35 @@ class RobotController:
         if speed != 0 and not self.without_arduino and not self.connection.connected:
             self.connection.send_command("stop\n")
             self.current_speed = 0
+            self._last_motor_command_at = None
             return False
 
-        if self.current_speed == speed:
+        now = time.monotonic()
+        refresh_interval = max(
+            0.0,
+            float(getattr(self.config, "MOTOR_COMMAND_REFRESH_INTERVAL", 0.1)),
+        )
+        if (
+            self.current_speed == speed
+            and self._last_motor_command_at is not None
+            and now - self._last_motor_command_at < refresh_interval
+        ):
             return True
 
         success = self._send_command(f"motor {speed}")
-        self.current_speed = speed if success else 0
+        if success:
+            self.current_speed = speed
+            self._last_motor_command_at = time.monotonic()
+        else:
+            # Do not cache a command as applied when the serial transport failed.
+            self.current_speed = 0
+            self._last_motor_command_at = None
         return success
-
     def stop(self, reason=None):
         """Stop the robot and optionally record a semantic stop event."""
         self._sync_connection_state()
         self.current_speed = 0
+        self._last_motor_command_at = None
         self.pid.reset()
         if reason is not None:
             self.record_event(
