@@ -86,6 +86,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--send-traffic-stop-command",
+        action="store_true",
+        default=None,
+        help="Send the Arduino STOP command when a traffic STOP sign is detected.",
+    )
+
+    parser.add_argument(
         "--arduino-config",
         default=None,
         metavar="PATH",

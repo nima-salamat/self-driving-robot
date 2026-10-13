@@ -179,10 +179,16 @@ class Robot:
         if self.stop_hold.active and not was_active:
             self._last_stop_command_at = None
             self._last_stop_release_attempt_at = None
-            self._set_mcu_stop_latched(True, force=True)
+            self._set_mcu_stop_latched(
+                True,
+                force=True,
+                send_command=getattr(
+                    config_city, "SEND_TRAFFIC_STOP_COMMAND", False
+                ),
+            )
         return self.stop_hold.active
 
-    def _set_mcu_stop_latched(self, latched, force=False):
+    def _set_mcu_stop_latched(self, latched, force=False, send_command=True):
         """Gate Python motion and periodically transmit the ordinary STOP command."""
         latched = bool(latched)
         control = getattr(self, "control", None)
@@ -222,6 +228,8 @@ class Robot:
             was_latched = bool(getattr(self, "_mcu_stop_latched", False))
             self._mcu_stop_latched = True
             if without_arduino:
+                return True
+            if not send_command:
                 return True
 
             due = (
@@ -278,7 +286,12 @@ class Robot:
 
     def _keep_stop_hold(self):
         """Keep Python motion inhibited and refresh the ordinary MCU stop."""
-        success = self._set_mcu_stop_latched(True)
+        success = self._set_mcu_stop_latched(
+            True,
+            send_command=getattr(
+                config_city, "SEND_TRAFFIC_STOP_COMMAND", False
+            ),
+        )
         return bool(success)
 
     def _release_stop_hold_if_ready(self):

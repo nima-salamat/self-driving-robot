@@ -38,6 +38,7 @@ def _apply_cli_overrides(config, args):
         "PERFORMANCE": args.performance,
         "WITHOUT_ARDUINO": args.without_arduino,
         "READ_ARDUINO_OUTPUT": args.read_arduino_output,
+        "SEND_TRAFFIC_STOP_COMMAND": args.send_traffic_stop_command,
         "STREAM_ALLOW_CONTROL": args.stream_control,
         "CAMERA_MODE": args.camera_mode,
         "USBCAM_ADDR": args.camera_index,
