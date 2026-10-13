@@ -13,7 +13,7 @@ on:
       - ".github/workflows/arduino-configurable.yml"
 
 jobs:
-  compile-firmware:
+  compile-configurable:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,18 +28,36 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli lib install Servo
 
-      - name: Prepare standalone sketches
+      - name: Prepare standalone configurable sketch
         run: |
           mkdir -p /tmp/arduino-sketches/main_configurable_v1
-          mkdir -p /tmp/arduino-sketches/main_nonBlocking_v2
           cp arduino/main_configurable_v1.ino /tmp/arduino-sketches/main_configurable_v1/main_configurable_v1.ino
-          cp arduino/main_nonBlocking_v2.ino /tmp/arduino-sketches/main_nonBlocking_v2/main_nonBlocking_v2.ino
 
       - name: Compile Mega2560 configurable firmware
         run: |
           arduino-cli compile \
             --fqbn arduino:avr:mega:cpu=atmega2560 \
             /tmp/arduino-sketches/main_configurable_v1
+
+  compile-nonblocking-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install AVR core and Servo library
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install Servo
+
+      - name: Prepare standalone non-blocking v2 sketch
+        run: |
+          mkdir -p /tmp/arduino-sketches/main_nonBlocking_v2
+          cp arduino/main_nonBlocking_v2.ino /tmp/arduino-sketches/main_nonBlocking_v2/main_nonBlocking_v2.ino
 
       - name: Compile Mega2560 non-blocking v2 firmware
         run: |
