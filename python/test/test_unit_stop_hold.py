@@ -144,9 +144,11 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         with patch.object(config, "STREAM", True), patch.object(config, "DEBUG", False):
             robot._run_stop_hold_cycle()
 
-        robot.handle_read_sign_or_tag.assert_called_once_with(
-            frame, frame, force_check=True
-        )
+        self.assertEqual(robot.handle_read_sign_or_tag.call_count, 1)
+        call = robot.handle_read_sign_or_tag.call_args
+        self.assertIs(call.args[0], frame)
+        np.testing.assert_array_equal(call.args[1], frame)
+        self.assertTrue(call.kwargs["force_check"])
         robot.control.stop.assert_called_once_with(reason="traffic_sign_stop_hold")
         robot.handle_debug_stream.assert_called_once()
         self.assertIn("STOP HOLD", str(robot.handle_debug_stream.call_args))

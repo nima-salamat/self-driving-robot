@@ -1105,7 +1105,6 @@ void enterForceStop() {
 
 void exitForceStop() {
   emergencyStopActive = false;
-  hostStopRequested = false;
   clearSerialState();
   writeMotorHardware(0);
   centerServo();

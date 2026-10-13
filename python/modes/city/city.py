@@ -157,7 +157,7 @@ class Robot:
                 self.stop_hold_detector_kind = detector_kind
 
         was_active = self.stop_hold.active
-        self.stop_hold.update(
+        self.stop_hold.observe(
             stop_present=bool(stop_seen),
             fresh=bool(getattr(self, "last_sign_observation_fresh", False)),
             observation_time=getattr(self, "last_sign_observation_at", None),
