@@ -430,6 +430,40 @@ class Robot:
         event = getattr(config_city, "SHUTDOWN_EVENT", None)
         return bool(event is not None and event.is_set())
 
+    def _log_lane_detection_state(self, lane_missing, held_angle=None):
+        """Log lane loss/recovery without writing a message for every camera frame."""
+        lane_missing = bool(lane_missing)
+        now = time.monotonic()
+        previous = getattr(self, "_lane_missing_state", None)
+        last_log_at = getattr(self, "_last_lane_state_log_at", None)
+        elapsed = (
+            float("inf")
+            if last_log_at is None
+            else max(0.0, now - last_log_at)
+        )
+
+        # Report the first loss immediately, then rate-limit state changes and
+        # emit a low-frequency reminder only while lane detection stays lost.
+        if lane_missing:
+            should_log = (
+                last_log_at is None
+                or (previous is not True and elapsed >= 1.0)
+                or (previous is True and elapsed >= 5.0)
+            )
+            if should_log:
+                logger.debug(
+                    "City lane markings not detected; holding steering angle %s",
+                    held_angle,
+                )
+        else:
+            should_log = previous is True and elapsed >= 1.0
+            if should_log:
+                logger.debug("City lane markings detected again")
+
+        if should_log:
+            self._last_lane_state_log_at = now
+        self._lane_missing_state = lane_missing
+
     def run(self):
         logger.info("starting")
         self.fps.start()
@@ -551,10 +585,9 @@ class Robot:
                         if held_angle is None:
                             held_angle = SERVO_CENTER
                         result["steering_angle"] = int(held_angle)
-                        logger.debug(
-                            "City lane markings not detected; holding steering angle %s",
-                            held_angle,
-                        )
+                        self._log_lane_detection_state(True, held_angle)
+                    else:
+                        self._log_lane_detection_state(False)
 
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
