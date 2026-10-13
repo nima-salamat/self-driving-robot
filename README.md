@@ -738,7 +738,7 @@ The existing `dataset/` is not overwritten by the collector. The old root `pytho
 
 ### Camera FPS semantics
 
-The runtime distinguishes requested camera FPS from measured camera delivery FPS. The control/vision loop FPS remains a separate runtime metric, and the HTTP stream consumes the newest published frame instead of acting as the camera producer. For Picamera2, requested frame rate is expressed through `FrameDurationLimits` for the configured camera mode; unsupported ranges are rejected rather than reported as achieved.
+The runtime distinguishes requested camera FPS from measured camera delivery FPS. The control/vision loop FPS remains a separate runtime metric, and the HTTP stream consumes the newest published frame instead of acting as the camera producer. For Picamera2, requested frame rate is expressed through `FrameDurationLimits` for the configured camera mode. Requests above the mode's maximum are clamped to the supported maximum and logged as a warning; requests below the minimum are rejected. The reported requested rate reflects the rate actually applied, not an unsupported target.
 
 ### Calibration network exposure
 
