@@ -160,6 +160,50 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
     def test_race_stop_state_keeps_stream_frames_live(self):
         self._assert_stop_hold_frame_is_published("race")
 
+    def _assert_stop_clear_cycle_does_not_relock_hardware(self, mode):
+        if mode == "city":
+            from modes.city import city as mode_module
+            config = mode_module.config_city
+        else:
+            from modes.race import race as mode_module
+            config = mode_module.config_race
+
+        robot = mode_module.Robot.__new__(mode_module.Robot)
+        robot.stop_hold = StopSignHold()
+        robot.stop_hold.observe(
+            stop_present=True, fresh=True, observation_time=time.monotonic()
+        )
+        robot.stop_hold_detector_kind = "sign"
+        robot._last_stop_command_at = time.monotonic()
+        robot.camera = Mock()
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        robot.camera.capture_frame.return_value = (frame, frame.copy())
+        robot.camera.last_capture_valid = True
+        robot.control = Mock()
+        robot.handle_read_sign_or_tag = Mock(
+            side_effect=lambda *args, **kwargs: (
+                setattr(robot.stop_hold, "active", False) or None,
+                False,
+                args[1],
+                None,
+            )
+        )
+        robot.handle_debug_stream = Mock()
+        robot._pace_control_loop = Mock()
+
+        with patch.object(config, "STREAM", True), patch.object(config, "DEBUG", False):
+            robot._run_stop_hold_cycle()
+
+        robot.control.stop.assert_not_called()
+        robot.handle_debug_stream.assert_called_once()
+        self.assertIn("STOP CLEARED", str(robot.handle_debug_stream.call_args))
+
+    def test_city_stop_clear_cycle_does_not_send_stop_again(self):
+        self._assert_stop_clear_cycle_does_not_relock_hardware("city")
+
+    def test_race_stop_clear_cycle_does_not_send_stop_again(self):
+        self._assert_stop_clear_cycle_does_not_relock_hardware("race")
+
     def _assert_stop_command_is_sent_each_cycle(self, mode):
         if mode == "city":
             from modes.city.city import Robot

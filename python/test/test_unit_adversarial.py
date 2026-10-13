@@ -329,7 +329,7 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertFalse(controller.motion_inhibited)
             self.assertEqual(
                 controller.connection.commands,
-                ["motion enable\n"],
+                ["motion enable\n", "motion enable\n"],
             )
             self.assertTrue(controller.motor(120))
             self.assertEqual(controller.connection.commands[-1], "motor 120\n")

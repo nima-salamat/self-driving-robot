@@ -253,7 +253,8 @@ class Robot:
             force_check=True,
         )
         still_holding = self.stop_hold.active
-        self._keep_stop_hold()
+        if still_holding:
+            self._keep_stop_hold()
 
         if config_race.STREAM or config_race.DEBUG:
             status = "STOP HOLD" if still_holding else "STOP CLEARED - resuming next frame"
