@@ -237,6 +237,9 @@ class CalibrationStreamServer:
 
         self.camera = Camera(config=self.config)
         self.camera.set_frame_rate(self.requested_fps)
+        applied_fps = getattr(self.camera, "requested_frame_rate", None)
+        if applied_fps is not None:
+            self.requested_fps = float(applied_fps)
 
     def _publish(self, raw_frame, display_frame):
         with self._lock:
@@ -838,7 +841,8 @@ class CalibrationStreamServer:
 
         with self._camera_lock:
             self.camera.set_frame_rate(fps)
-        self.requested_fps = fps
+            applied_fps = getattr(self.camera, "requested_frame_rate", None)
+        self.requested_fps = float(applied_fps if applied_fps is not None else fps)
 
     def current_frame(self):
         with self._lock:
