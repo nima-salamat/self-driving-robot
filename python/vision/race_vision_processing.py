@@ -314,10 +314,11 @@ class VisionProcessor:
         steering_angle = int(max(MIN_SERVO_ANGLE, min(MAX_SERVO_ANGLE, steering_angle)))
         
         if lane_type == "none":
-               steering_angle = 150
+            # No new lane estimate: preserve the last visual steering estimate.
+            steering_angle = self.last_steering
         else:
-          steering_angle = self.last_steering * 0.3 + 0.7 * steering_angle
-          self.last_steering = steering_angle
+            steering_angle = self.last_steering * 0.3 + 0.7 * steering_angle
+            self.last_steering = steering_angle
 
         self.last_error = error
         
