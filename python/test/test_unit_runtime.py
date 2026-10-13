@@ -274,24 +274,34 @@ class CityRaceAprilTagFallbackTests(unittest.TestCase):
 class RaceLaneLossPolicyTests(unittest.TestCase):
     def test_race_lane_loss_uses_previous_servo_angle(self):
         from types import SimpleNamespace
-        from modes.race.race import SERVO_CENTER
+        from modes.race.race import Robot
 
-        control = SimpleNamespace(last_angle=116, current_angle=116)
+        robot = Robot.__new__(Robot)
+        robot.control = SimpleNamespace(last_angle=116, current_angle=116)
         result = {
             "lane_type": "none",
             "perception_valid": False,
             "steering_angle": 150,
         }
 
-        held_angle = control.last_angle
-        if held_angle is None:
-            held_angle = control.current_angle
-        if held_angle is None:
-            held_angle = SERVO_CENTER
-        result["steering_angle"] = int(held_angle)
-
+        self.assertTrue(robot._hold_last_steering_if_lane_missing(result))
         self.assertEqual(result["steering_angle"], 116)
         self.assertEqual(result["lane_type"], "none")
+
+    def test_lane_detection_available_does_not_override_new_angle(self):
+        from types import SimpleNamespace
+        from modes.race.race import Robot
+
+        robot = Robot.__new__(Robot)
+        robot.control = SimpleNamespace(last_angle=116, current_angle=116)
+        result = {
+            "lane_type": "both",
+            "perception_valid": True,
+            "steering_angle": 104,
+        }
+
+        self.assertFalse(robot._hold_last_steering_if_lane_missing(result))
+        self.assertEqual(result["steering_angle"], 104)
 
 
 class CityRaceStreamIntegrationTests(unittest.TestCase):
