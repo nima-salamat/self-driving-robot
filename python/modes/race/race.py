@@ -116,6 +116,9 @@ class Robot:
         self.last_sign_observation_fresh = False
         self.last_sign_observation_at = None
         self._last_stop_command_at = None
+        # Local mode-loop state. None means the MCU latch is unknown after reconnect.
+        self._mcu_stop_latched = False
+        self._stop_connection_state = None
         
         # Initialize sign detector strictly based on USE_SIGN variable
         self._marker_lock = threading.RLock()
@@ -179,7 +182,7 @@ class Robot:
         publish_debug_frame(config_race, frame)
 
     def _observe_stop_result(self, stop_seen, detector_kind=None):
-        """Update STOP latch state; non-fresh results cannot release it."""
+        """Update the mode-owned STOP state from a fresh detector observation."""
         if not hasattr(self, "stop_hold"):
             self.stop_hold = StopSignHold(clear_confirmations=3)
 
@@ -195,54 +198,58 @@ class Robot:
             observation_time=getattr(self, "last_sign_observation_at", None),
             now=time.monotonic(),
         )
+
         if self.stop_hold.active and not was_active:
             self._last_stop_command_at = None
-            self._set_controller_motion_inhibited(
-                True, reason="traffic_sign_stop_hold"
-            )
+            self._set_mcu_stop_latched(True)
         elif was_active and not self.stop_hold.active:
+            # Release is handled at the top of the next mode-loop iteration,
+            # before any normal steering/speed calculation.
             self.stop_hold_detector_kind = None
-            self._set_controller_motion_inhibited(
-                False, reason="traffic_sign_cleared"
-            )
-        elif (
-            not self.stop_hold.active
-            and getattr(
-                getattr(self, "control", None),
-                "motion_inhibited",
-                False,
-            ) is True
-        ):
-            # Retry release if the MCU did not accept the previous command.
-            self._set_controller_motion_inhibited(
-                False, reason="traffic_sign_cleared"
-            )
         return self.stop_hold.active
 
-    def _set_controller_motion_inhibited(self, inhibited, reason):
+    def _set_mcu_stop_latched(self, latched):
+        """Own the traffic STOP protocol in this mode loop, not the controller."""
+        latched = bool(latched)
         control = getattr(self, "control", None)
-        setter = getattr(control, "set_motion_inhibited", None)
-        if not callable(setter):
+        connection = getattr(control, "connection", None) if control is not None else None
+
+        if control is None or bool(getattr(control, "without_arduino", False)):
+            self._mcu_stop_latched = latched
             return True
-        released = setter(inhibited, reason=reason)
-        if not released and not inhibited:
-            logger.warning(
-                "Arduino did not accept the motion-unlock command; "
-                "controller remains inhibited"
-            )
-        return bool(released)
+
+        if connection is None or not callable(getattr(connection, "send_command", None)):
+            logger.error("Cannot change MCU STOP latch: serial transport is unavailable")
+            return False
+
+        connected = bool(getattr(connection, "connected", False))
+        previous_connected = getattr(self, "_stop_connection_state", None)
+        if previous_connected is not None and connected != previous_connected:
+            # Opening USB can reset the MCU. Re-establish the requested safety state.
+            self._mcu_stop_latched = None
+        self._stop_connection_state = connected
+
+        if not connected:
+            return False
+
+        if getattr(self, "_mcu_stop_latched", False) is latched:
+            return True
+
+        command = "safety stop" if latched else "motion enable"
+        try:
+            success = bool(connection.send_command(command + "\\n"))
+        except Exception:
+            logger.exception("Failed to transmit MCU safety command %s", command)
+            success = False
+
+        if success:
+            self._mcu_stop_latched = latched
+            self._last_stop_command_at = time.monotonic() if latched else None
+        return success
 
     def _keep_stop_hold(self):
-        """Maintain the STOP safety state without issuing steering commands."""
-        setter = getattr(self.control, "set_motion_inhibited", None)
-        if callable(setter):
-            # RobotController sends one latched safety-stop command on entry.
-            # Re-entering this method only retries if that write previously failed.
-            success = setter(True, reason="traffic_sign_stop_hold")
-        else:
-            # Compatibility path for old test doubles/controllers. Production
-            # RobotController always provides the shared safety-state API.
-            success = self.control.stop(reason="traffic_sign_stop_hold")
+        """Keep the MCU in its latched STOP state without steering writes."""
+        success = self._set_mcu_stop_latched(True)
         self._last_stop_command_at = time.monotonic() if success else None
         return bool(success)
 
@@ -323,17 +330,9 @@ class Robot:
                     self._run_stop_hold_cycle()
                     continue
 
-                if getattr(self.control, "motion_inhibited", False) is True:
-                    # Retry the explicit MCU unlock before normal control resumes.
-                    if not self._set_controller_motion_inhibited(
-                        False, reason="traffic_sign_cleared"
-                    ):
-                        self._pace_control_loop()
-                        continue
-
                 if config_race.RUN_LVL == "STOP":
-                    # Pause the motors while preserving the current steering angle.
-                    self.control.stop()
+                    # Operator-selected STOP uses the same mode-owned MCU latch.
+                    self._set_mcu_stop_latched(True)
 
                     if config_race.STREAM or config_race.DEBUG:
                         frame, _ = self.camera.capture_frame(with_resize=False)
@@ -351,6 +350,14 @@ class Robot:
                             )
                     self._pace_control_loop()
                     continue
+
+                # Do not enter normal steering/speed branches until the MCU
+                # explicitly confirms release from the prior STOP state.
+                latch_state = getattr(self, "_mcu_stop_latched", False)
+                if latch_state is True or latch_state is None:
+                    if not self._set_mcu_stop_latched(False):
+                        self._pace_control_loop()
+                        continue
 
                 if config_race.SHOW_FPS:
                     self.fps.print_every_second(
