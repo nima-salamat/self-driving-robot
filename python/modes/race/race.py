@@ -233,12 +233,16 @@ class Robot:
         return bool(released)
 
     def _keep_stop_hold(self):
-        """Send a STOP command on every control-loop cycle while STOP is latched."""
-        first_command = getattr(self, "_last_stop_command_at", None) is None
-        success = self.control.stop(
-            reason="traffic_sign_stop_hold" if first_command else None
-        )
-        # If serial transmission failed, retry on the very next loop iteration.
+        """Maintain the STOP safety state without issuing steering commands."""
+        setter = getattr(self.control, "set_motion_inhibited", None)
+        if callable(setter):
+            # RobotController sends one latched safety-stop command on entry.
+            # Re-entering this method only retries if that write previously failed.
+            success = setter(True, reason="traffic_sign_stop_hold")
+        else:
+            # Compatibility path for old test doubles/controllers. Production
+            # RobotController always provides the shared safety-state API.
+            success = self.control.stop(reason="traffic_sign_stop_hold")
         self._last_stop_command_at = time.monotonic() if success else None
         return bool(success)
 
@@ -328,8 +332,8 @@ class Robot:
                         continue
 
                 if config_race.RUN_LVL == "STOP":
+                    # Pause the motors while preserving the current steering angle.
                     self.control.stop()
-                    self.control.set_angle(SERVO_CENTER)
 
                     if config_race.STREAM or config_race.DEBUG:
                         frame, _ = self.camera.capture_frame(with_resize=False)
