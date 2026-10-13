@@ -207,7 +207,11 @@ class Robot:
             )
         elif (
             not self.stop_hold.active
-            and getattr(self.control, "motion_inhibited", False) is True
+            and getattr(
+                getattr(self, "control", None),
+                "motion_inhibited",
+                False,
+            ) is True
         ):
             # Retry release if the MCU did not accept the previous command.
             self._set_controller_motion_inhibited(
