@@ -198,14 +198,26 @@ class Camera:
             raise ValueError("fps must be greater than zero")
 
         if self.pi_mode:
-            frame_duration_us = int(round(1_000_000.0 / fps))
             limits = self.get_frame_rate_limits()
-            if limits is not None and not limits[0] <= fps <= limits[1]:
-                raise ValueError(
-                    f"requested Picamera2 FPS {fps:.2f} is outside the "
-                    f"configured camera-mode range "
-                    f"{limits[0]:.2f}-{limits[1]:.2f} FPS"
-                )
+            if limits is not None:
+                min_fps, max_fps = limits
+                if fps > max_fps:
+                    logger.warning(
+                        "Requested Picamera2 FPS %.2f exceeds the configured "
+                        "camera-mode maximum of %.2f FPS; clamping to %.2f FPS.",
+                        fps,
+                        max_fps,
+                        max_fps,
+                    )
+                    fps = max_fps
+                elif fps < min_fps:
+                    raise ValueError(
+                        f"requested Picamera2 FPS {fps:.2f} is below the "
+                        f"configured camera-mode minimum of {min_fps:.2f} FPS "
+                        f"(supported range: {min_fps:.2f}-{max_fps:.2f} FPS)"
+                    )
+
+            frame_duration_us = int(round(1_000_000.0 / fps))
             try:
                 self.picam.set_controls({
                     "FrameDurationLimits": (
