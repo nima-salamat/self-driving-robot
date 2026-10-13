@@ -298,6 +298,7 @@ class CityRaceStreamIntegrationTests(unittest.TestCase):
         robot = mode_module.Robot.__new__(mode_module.Robot)
         robot.fps = SimpleNamespace(instant_fps=12.0, second_fps=11.0)
         robot.control = SimpleNamespace(last_angle=90.0)
+        robot.last_tag = None
         robot.output = SimpleNamespace(is_recording=lambda: False)
         frame = np.full((240, 320, 3), 80, dtype=np.uint8)
         result = {"debug": {"combined": frame.copy()}}
