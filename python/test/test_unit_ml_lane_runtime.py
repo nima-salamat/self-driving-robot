@@ -48,13 +48,16 @@ class MLLaneRuntimeDependencyTests(unittest.TestCase):
                 raise ModuleNotFoundError("No module named 'ncnn'")
             return object()
 
+        # Resolve and patch the preflight helpers before monkeypatching
+        # importlib.import_module, because that function is global and also
+        # used internally by unittest.mock to resolve string patch targets.
         with (
-            patch("utils.preflight.importlib.import_module", side_effect=import_module),
             patch("utils.preflight._check_output_storage"),
             patch("utils.preflight._check_models"),
             patch("utils.preflight._check_camera"),
             patch("utils.preflight._check_arduino"),
             patch("utils.preflight._check_stream_port"),
+            patch("utils.preflight.importlib.import_module", side_effect=import_module),
         ):
             report = run_preflight(config)
 
