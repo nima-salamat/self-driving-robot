@@ -854,6 +854,8 @@ void sendStatus() {
   Serial.print(' ');
   Serial.print(ldist);
   Serial.print(' ');
+  Serial.print(ultraSide.getCm());
+  Serial.print(' ');
   Serial.print(loopHz);
   Serial.print(' ');
   Serial.println(movingByPulses ? 1 : 0);

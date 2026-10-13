@@ -408,16 +408,17 @@ class RobotController:
         if not command:
             return {}
 
-        commands = command.split(" ")
-        if len(commands) == 6:
+        commands = command.split()
+        if len(commands) == 7:
             try:
                 return {
                     "lane": commands[0], # R, L    status when robot is in the right or left line
                     "motor_status": commands[1], # motor status in when S as stoped F moving forward and B moving backward
                     "right_ultrasonic_dist": float(commands[2]), # cm in float like 6.5 cm
                     "left_ultrasonic_dist": float(commands[3]), # cm in float 
-                    "arduino_fps": int(commands[4]), # fps
-                    "doing_hardcode": True if commands[5] == "1" else False
+                    "side_ultrasonic_dist": float(commands[4]), # cm in float
+                    "arduino_fps": int(commands[5]), # fps
+                    "doing_hardcode": True if commands[6] == "1" else False
                 }
             except:
                 return dict()
