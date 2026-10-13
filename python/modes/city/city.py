@@ -508,6 +508,10 @@ class Robot:
                 self.fps.update()
                 self.fps.maybe_log_performance()
                 if self.stop_hold.active:
+                    # STOP-sign holds supersede traffic-light permission; discard
+                    # any prior green history so it cannot release this crossing.
+                    if self.traffic_light_window is not None:
+                        self.traffic_light_window.reset()
                     self._run_stop_hold_cycle()
                     continue
 
