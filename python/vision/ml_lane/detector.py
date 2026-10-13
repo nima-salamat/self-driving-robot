@@ -16,6 +16,7 @@ class MLLaneDetector:
     def __init__(self, model_name, model_root=None, cpu_threads=4):
         self.spec = get_model_spec(model_name)
         self.model_name = model_name
+        self.last_steering = 90.0
         self.model_root = Path(model_root) if model_root else Path(__file__).resolve().parents[2] / "models" / "lane"
         self.param_path, self.bin_path = ensure_model_materialized(model_name)
 
@@ -147,7 +148,7 @@ class MLLaneDetector:
 
         if frame is None or frame.size == 0:
             return {
-                "steering_angle": 90,
+                "steering_angle": int(self.last_steering),
                 "error": 0,
                 "lane_type": "none",
                 "perception_valid": False,
@@ -163,10 +164,11 @@ class MLLaneDetector:
         if center_x is None:
             error = 0.0
             lane_type = "none"
+            steering_angle = int(self.last_steering)
         else:
             error = frame_center - center_x
-
-        steering_angle = int(np.clip(90.0 - 0.45 * error, 30.0, 150.0))
+            steering_angle = int(np.clip(90.0 - 0.45 * error, 30.0, 150.0))
+            self.last_steering = float(steering_angle)
 
         vis = frame.copy()
         if mask is not None:
