@@ -244,7 +244,11 @@ class Robot:
                         (time.monotonic() - perception_started) * 1000.0,
                         bool(result.get("perception_valid", False)),
                     )
-                if not result.get("perception_valid", False):
+                # On a valid camera frame, temporarily missing lane markings
+                # must not stop Race mode. Keep the last applied steering angle
+                # and continue at race speed, just as City mode does.
+                lane_missing = result.get("lane_type") == "none"
+                if not result.get("perception_valid", False) and not lane_missing:
                     self.control.stop()
                     if config_race.STREAM or config_race.DEBUG:
                         self.handle_debug_stream(
@@ -256,6 +260,18 @@ class Robot:
                         )
                     self._pace_control_loop()
                     continue
+
+                if lane_missing:
+                    held_angle = self.control.last_angle
+                    if held_angle is None:
+                        held_angle = self.control.current_angle
+                    if held_angle is None:
+                        held_angle = SERVO_CENTER
+                    result["steering_angle"] = int(held_angle)
+                    logger.debug(
+                        "Race lane markings not detected; holding steering angle %s",
+                        held_angle,
+                    )
 
                 angle = result.get("steering_angle")
                 
