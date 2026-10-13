@@ -137,6 +137,7 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         robot.camera.capture_frame.return_value = (frame, frame.copy())
         robot.camera.last_capture_valid = True
         robot.control = Mock()
+        robot.control.set_motion_inhibited.return_value = True
         robot.handle_read_sign_or_tag = Mock(return_value=(None, False, None, None))
         robot.handle_debug_stream = Mock()
         robot._pace_control_loop = Mock()
@@ -149,7 +150,10 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         self.assertIs(call.args[0], frame)
         np.testing.assert_array_equal(call.args[1], frame)
         self.assertTrue(call.kwargs["force_check"])
-        robot.control.stop.assert_called_once_with(reason="traffic_sign_stop_hold")
+        robot.control.stop.assert_not_called()
+        robot.control.set_motion_inhibited.assert_called_once_with(
+            True, reason="traffic_sign_stop_hold"
+        )
         robot.handle_debug_stream.assert_called_once()
         self.assertIn("STOP HOLD", str(robot.handle_debug_stream.call_args))
         robot._pace_control_loop.assert_called_once()
@@ -216,15 +220,21 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         # Simulate having just sent STOP; the next cycle must still send it.
         robot._last_stop_command_at = time.monotonic()
 
-        self.assertTrue(robot._keep_stop_hold())
-        self.assertTrue(robot._keep_stop_hold())
-        self.assertEqual(robot.control.stop.call_count, 2)
-        robot.control.stop.assert_any_call(reason=None)
+        robot.control.set_motion_inhibited.return_value = True
 
-    def test_city_stop_command_repeats_every_hold_cycle(self):
+        self.assertTrue(robot._keep_stop_hold())
+        self.assertTrue(robot._keep_stop_hold())
+        self.assertEqual(robot.control.set_motion_inhibited.call_count, 2)
+        robot.control.set_motion_inhibited.assert_called_with(
+            True, reason="traffic_sign_stop_hold"
+        )
+        # A healthy, already-latched STOP must not flood the UART with writes.
+        robot.control.stop.assert_not_called()
+
+    def test_city_stop_state_is_maintained_without_repeated_stop_writes(self):
         self._assert_stop_command_is_sent_each_cycle("city")
 
-    def test_race_stop_command_repeats_every_hold_cycle(self):
+    def test_race_stop_state_is_maintained_without_repeated_stop_writes(self):
         self._assert_stop_command_is_sent_each_cycle("race")
 
 
