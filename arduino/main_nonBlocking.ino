@@ -554,6 +554,10 @@ void resetPulseCount() {
 }
 
 void setMotorSpeed(int speed) {
+  if (hostStopRequested) {
+    if (speed == 0) stopMotor();
+    return;
+  }
   int dir;
   if (speed > 255) speed = 255;
   if (speed < -255) speed = -255;
@@ -579,6 +583,7 @@ void stopMotor() {
 }
 
 void startServoMoveImmediate(int target) {
+  if (hostStopRequested) return;
   if (target < SERVO_MIN) target = SERVO_MIN;
   if (target > SERVO_MAX) target = SERVO_MAX;
   myServo.write(target);
@@ -586,6 +591,7 @@ void startServoMoveImmediate(int target) {
 }
 
 void startMotorByPulses(char dirChar, int speedVal, int pulses, int servoAngle) {
+  if (hostStopRequested) return;
   noInterrupts();
   resetPulseCount();
   interrupts();
@@ -654,7 +660,7 @@ void handleTmButtons() {
 LANE FUNCTIONS
 ========================= */
 void startLaneChangeLeft() {
-  if (laneState != LANE_NORMAL) return;
+  if (hostStopRequested || laneState != LANE_NORMAL) return;
   queue.clear();
   queue.parseAndEnqueue("b 255 4 50 b 255 3 130");
   laneState = LANE_LEFT;
@@ -665,7 +671,7 @@ void startLaneChangeLeft() {
 }
 
 void startReturnToRightLane() {
-  if (laneState == LANE_RETURNING) return;
+  if (hostStopRequested || laneState == LANE_RETURNING) return;
   queue.clear();
   queue.parseAndEnqueue("f 255 3 130 f 255 3 50");
   laneState = LANE_RETURNING;
@@ -675,6 +681,7 @@ void startReturnToRightLane() {
 }
 
 void finishLaneReturn() {
+  if (hostStopRequested) return;
   laneState = LANE_NORMAL;
   lane = 'R';
 }
@@ -732,7 +739,7 @@ void loop() {
     return;
   }
 
-  // Serial parser: never discard a motor setpoint just because a pulse is active.
+  // Serial parser: STOP handling runs before every normal motion branch.
   if (stringComplete) {
     inputString.trim();
     String work = inputString;
@@ -747,8 +754,8 @@ void loop() {
       requestedMotorSpeed = constrain(work.substring(6).toInt(), -255, 255);
     }
 
-    // Explicit stop must remain effective even during an encoder pulse.
-    if (work == "stop" || (motorCommand && requestedMotorSpeed == 0)) {
+    if (work == "safety stop") {
+      hostStopRequested = true;
       queue.clear();
       pendingHostMotorValid = false;
       stopMotor();
@@ -756,8 +763,35 @@ void loop() {
       laneState = LANE_NORMAL;
       lane = 'R';
       laneChangeStart = 0;
-      hostStopRequested = true;
-      startServoMoveImmediate(SERVO_CENTER);
+      panel.setStop();
+    }
+    else if (work == "motion enable") {
+      if (hostStopRequested) {
+        queue.clear();
+        pendingHostMotorValid = false;
+        stopMotor();
+        targetPulses = 0;
+        laneState = LANE_NORMAL;
+        lane = 'R';
+        laneChangeStart = 0;
+        hostStopRequested = false;
+        panel.clearPanel();
+      }
+    }
+    else if (hostStopRequested &&
+             work != "stop" && work != "status" && work != "u" &&
+             work != "heartbeat") {
+      // No actuator, lane-change or pulse command is accepted in STOP.
+    }
+    else if (work == "stop" || (motorCommand && requestedMotorSpeed == 0)) {
+      // A normal stop cancels current movement but does not latch traffic STOP.
+      queue.clear();
+      pendingHostMotorValid = false;
+      stopMotor();
+      targetPulses = 0;
+      laneState = LANE_NORMAL;
+      lane = 'R';
+      laneChangeStart = 0;
       panel.setStop();
     }
     else if (motorCommand) {
@@ -767,9 +801,11 @@ void loop() {
         pendingHostMotorSpeed = requestedMotorSpeed;
         pendingHostMotorValid = true;
       } else {
-        hostStopRequested = false;
         setMotorSpeed(requestedMotorSpeed);
       }
+    }
+    else if (work == "status" || work == "u" || work == "heartbeat") {
+      // Read-only/liveness commands deliberately do not affect actuators.
     }
     else if (movingByPulses) {
       // Servo/LED/pulse commands are ignored while a pulse sequence owns motion.
@@ -797,48 +833,52 @@ void loop() {
     }
   }
 
-  // Run the most recent host speed once queued pulse motion has finished.
-  if (!movingByPulses && queue.count() == 0 && pendingHostMotorValid) {
-    const int requestedSpeed = pendingHostMotorSpeed;
-    pendingHostMotorValid = false;
-    if (requestedSpeed != 0) {
-      hostStopRequested = false;
-      setMotorSpeed(requestedSpeed);
+  if (!hostStopRequested) {
+    // Run the most recent host speed once queued pulse motion has finished.
+    if (!movingByPulses && queue.count() == 0 && pendingHostMotorValid) {
+      const int requestedSpeed = pendingHostMotorSpeed;
+      pendingHostMotorValid = false;
+      if (requestedSpeed != 0) {
+        setMotorSpeed(requestedSpeed);
+      }
     }
-  }
-  int distSide = ultraSide.getCm();
-  int dl = ultraLeft.getCm();
-  int dr = ultraRight.getCm();
-  bool obstacle = (dl > 0 && dl <= STOP_DISTANCE_CM) || (dr > 0 && dr <= STOP_DISTANCE_CM);
 
-  if (lane == 'R' && obstacle) {
-    if (!lane_changing_mode || hostStopRequested) {
+    int distSide = ultraSide.getCm();
+    int dl = ultraLeft.getCm();
+    int dr = ultraRight.getCm();
+    bool obstacle = (dl > 0 && dl <= STOP_DISTANCE_CM) ||
+                    (dr > 0 && dr <= STOP_DISTANCE_CM);
+
+    if (lane == 'R' && obstacle) {
+      if (!lane_changing_mode) {
+        stopMotor();
+        queue.clear();
+      } else if (laneState == LANE_NORMAL) {
+        startLaneChangeLeft();
+      }
+    }
+
+    if (laneState == LANE_LEFT && !movingByPulses &&
+        (distSide > 0 && distSide <= SIDE_RETURN_DISTANCE_CM)) {
+      startReturnToRightLane();
+    }
+
+    if (laneState == LANE_RETURNING &&
+        millis() - laneChangeStart >= 1000UL) {
+      finishLaneReturn();
+    }
+
+    if (!movingByPulses && queue.count() > 0) {
+      PulseCmd cmd;
+      if (queue.dequeue(cmd)) {
+        startMotorByPulses(cmd.dir, cmd.speed, cmd.pulses, cmd.angle);
+      }
+    }
+
+    if (movingByPulses && getPulseCount() >= targetPulses) {
       stopMotor();
-      queue.clear();
       startServoMoveImmediate(SERVO_CENTER);
-    } else if (laneState == LANE_NORMAL) {
-      startLaneChangeLeft();
     }
-  }
-
-  if (laneState == LANE_LEFT && !movingByPulses && (distSide > 0 && distSide <= SIDE_RETURN_DISTANCE_CM)) {
-    startReturnToRightLane();
-  }
-
-  if (laneState == LANE_RETURNING && millis() - laneChangeStart >= 1000UL) {
-    finishLaneReturn();
-  }
-
-  if (!movingByPulses && queue.count() > 0) {
-    PulseCmd cmd;
-    if (queue.dequeue(cmd)) {
-      startMotorByPulses(cmd.dir, cmd.speed, cmd.pulses, cmd.angle);
-    }
-  }
-
-  if (movingByPulses && getPulseCount() >= targetPulses) {
-    stopMotor();
-    startServoMoveImmediate(SERVO_CENTER);
   }
 
   if (millis() - lastStatusSend >= STATUS_INTERVAL_MS) {
