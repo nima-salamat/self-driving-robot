@@ -156,7 +156,7 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         robot.control.set_angle.assert_not_called()
         robot.control.motor.assert_not_called()
         robot.control.connection.send_command.assert_called_once_with(
-            "safety stop\\n"
+            "safety stop\n"
         )
         robot.handle_debug_stream.assert_called_once()
         self.assertIn("STOP HOLD", str(robot.handle_debug_stream.call_args))
@@ -230,7 +230,7 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         self.assertTrue(robot._keep_stop_hold())
         # Send one latch transition, not a steering/speed command every frame.
         robot.control.connection.send_command.assert_called_once_with(
-            "safety stop\\n"
+            "safety stop\n"
         )
         robot.control.stop.assert_not_called()
         robot.control.set_angle.assert_not_called()
@@ -265,7 +265,7 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
 
         self.assertTrue(robot._observe_stop_result(True, detector_kind="sign"))
         robot.control.connection.send_command.assert_called_once_with(
-            "safety stop\\n"
+            "safety stop\n"
         )
 
         robot.last_sign_observation_at = 50.1
@@ -278,10 +278,10 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         # the explicit release and must send it before normal control resumes.
         self.assertEqual(
             robot.control.connection.send_command.call_args_list,
-            [unittest.mock.call("safety stop\\n")],
+            [unittest.mock.call("safety stop\n")],
         )
         self.assertTrue(robot._set_mcu_stop_latched(False))
-        robot.control.connection.send_command.assert_called_with("motion enable\\n")
+        robot.control.connection.send_command.assert_called_with("motion enable\n")
 
     def test_city_stop_detection_latches_shared_controller(self):
         self._assert_detection_latches_controller_motion("city")
