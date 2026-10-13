@@ -734,6 +734,8 @@ int pendingHostServo = SERVO_CENTER;
    ========================= */
 bool laneChangingMode = true;
 char lane = 'R';
+// Traffic-sign STOP is latched on the MCU so ultrasonic automation cannot restart motion.
+bool hostStopRequested = false;
 
 enum LaneState {
   LANE_NORMAL = 0,
@@ -1103,6 +1105,7 @@ void enterForceStop() {
 
 void exitForceStop() {
   emergencyStopActive = false;
+  hostStopRequested = false;
   clearSerialState();
   writeMotorHardware(0);
   centerServo();
@@ -1257,6 +1260,7 @@ void processSerialLine(char *rawLine) {
   }
 
   if (equalsIgnoreCase(line, "stop")) {
+    hostStopRequested = true;
     clearPulseQueue();
     pulseActive = false;
     pulsePaused = false;
@@ -1304,7 +1308,26 @@ void processSerialLine(char *rawLine) {
   if (startsWithIgnoreCase(line, "motor ")) {
     long speed = 0;
     if (parseIntStrict(trim(line + 6), -255, 255, speed)) {
-      requestMotorSpeed((int)speed);
+      int requestedSpeed = (int)speed;
+      if (requestedSpeed == 0) {
+        clearPulseQueue();
+        pulseActive = false;
+        pulsePaused = false;
+        adaptiveActive = false;
+        pendingHostMotorValid = false;
+        pendingHostServoValid = false;
+        laneState = LANE_NORMAL;
+        lane = 'R';
+        directionChangePending = false;
+        pendingDirectionSpeed = 0;
+        hostStopRequested = true;
+        writeMotorHardware(0);
+        centerServo();
+        panel.stop();
+      } else {
+        hostStopRequested = false;
+        requestMotorSpeed(requestedSpeed);
+      }
     }
     return;
   }
@@ -1472,7 +1495,7 @@ void loop() {
     }
   } else {
     if (lane == 'R' && normalObstacle()) {
-      if (!laneChangingMode) {
+      if (!laneChangingMode || hostStopRequested) {
         clearPulseQueue();
         writeMotorHardware(0);
         centerServo();

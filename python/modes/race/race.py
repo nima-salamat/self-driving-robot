@@ -11,6 +11,7 @@ from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
 from traffic_sign_detector.async_detector import AsyncSignDetector
+from traffic_sign_detector.stop_hold import StopSignHold
 from controller import RobotController
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
@@ -110,6 +111,11 @@ class Robot:
         self.stop_last_seen = None
         self.read_sign_counter = 0
         self.last_sign_result_id = 0
+        self.stop_hold = StopSignHold(clear_confirmations=3)
+        self.stop_hold_detector_kind = None
+        self.last_sign_observation_fresh = False
+        self.last_sign_observation_at = None
+        self._last_stop_command_at = None
         
         # Initialize sign detector strictly based on USE_SIGN variable
         self._marker_lock = threading.RLock()
@@ -172,6 +178,80 @@ class Robot:
     def update_debug_frames(self, frame):
         publish_debug_frame(config_race, frame)
 
+    def _observe_stop_result(self, stop_seen, detector_kind=None):
+        """Update STOP latch state; non-fresh results cannot release it."""
+        if not hasattr(self, "stop_hold"):
+            self.stop_hold = StopSignHold(clear_confirmations=3)
+
+        if stop_seen:
+            self.stop_last_seen = time.time()
+            if detector_kind is not None:
+                self.stop_hold_detector_kind = detector_kind
+
+        was_active = self.stop_hold.active
+        self.stop_hold.update(
+            stop_present=bool(stop_seen),
+            fresh=bool(getattr(self, "last_sign_observation_fresh", False)),
+            observation_time=getattr(self, "last_sign_observation_at", None),
+            now=time.monotonic(),
+        )
+        if self.stop_hold.active and not was_active:
+            self._last_stop_command_at = None
+        elif was_active and not self.stop_hold.active:
+            self.stop_hold_detector_kind = None
+        return self.stop_hold.active
+
+    def _keep_stop_hold(self):
+        """Refresh the hardware STOP command without flooding the serial link."""
+        now = time.monotonic()
+        last_sent = getattr(self, "_last_stop_command_at", None)
+        refresh_interval = max(
+            0.05,
+            float(getattr(config_race, "MOTOR_COMMAND_REFRESH_INTERVAL", 0.1)),
+        )
+        if last_sent is None or now - last_sent >= refresh_interval:
+            reason = "traffic_sign_stop_hold" if last_sent is None else None
+            self.control.stop(reason=reason)
+            self._last_stop_command_at = now
+
+    def _run_stop_hold_cycle(self):
+        """Check STOP on every camera frame while keeping Debug/Stream alive."""
+        frame, frame_resized = self.camera.capture_frame(with_resize=True)
+        if not self.camera.last_capture_valid or frame_resized is None:
+            self._keep_stop_hold()
+            self._pace_control_loop()
+            return
+
+        debug_frame = frame.copy() if (config_race.STREAM or config_race.DEBUG) else None
+        sign_text, _, _, _ = self.handle_read_sign_or_tag(
+            frame,
+            debug_frame,
+            force_check=True,
+        )
+        still_holding = self.stop_hold.active
+        self._keep_stop_hold()
+
+        if config_race.STREAM or config_race.DEBUG:
+            status = "STOP HOLD" if still_holding else "STOP CLEARED - resuming next frame"
+            result = {
+                "steering_angle": SERVO_CENTER,
+                "error": 0,
+                "lane_type": "stop_hold" if still_holding else "stop_cleared",
+                "perception_valid": True,
+                "crosswalk": False,
+                "debug": {"combined": frame},
+            }
+            self.handle_debug_stream(
+                result,
+                frame,
+                SERVO_CENTER,
+                status,
+                "STOP" if still_holding else "STOP CLEARED",
+            )
+
+        self._pace_control_loop()
+
+
    
     def _shutdown_requested(self):
         event = getattr(config_race, "SHUTDOWN_EVENT", None)
@@ -206,6 +286,10 @@ class Robot:
             while not self._shutdown_requested():
                 self.fps.update()
                 self.fps.maybe_log_performance()
+                if self.stop_hold.active:
+                    self._run_stop_hold_cycle()
+                    continue
+
                 if config_race.RUN_LVL == "STOP":
                     self.control.stop()
                     self.control.set_angle(SERVO_CENTER)
@@ -277,32 +361,27 @@ class Robot:
 
                 angle = result.get("steering_angle")
                 
-                # Defaults fallback when USE_SIGN is False to prevent breaking the loop
                 status = "running"
                 sign_text = "None"
-                
-                if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
-                    sign_text, stop_seen, debug_frame, coordinate = self.handle_read_sign_or_tag(frame, debug_frame)
 
-                    status = "stopped" if stop_seen or (self.stop_last_seen is not None and time.time() - self.stop_last_seen <= 2) else "running"
-                 
-                    if coordinate is not None:
-                        (x1, y1), (x2, y2) = coordinate
-                        width = x2 - x1
-                        height = y2 - y1
-                        area = width * height
-                        if area < 5000:
-                            status = "running"
-                            self.stop_last_seen = None
-                            
-                    if status == "stopped":
-                        self.handle_debug_stream(result, frame, angle, status, sign_text)
-                        self.control.stop()
-                        if self._sleep_interruptible(config_race.DELAY):
-                            break
-                        self._pace_control_loop()
-                        continue
-                    
+                if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
+                    sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
+                        frame,
+                        debug_frame,
+                    )
+
+                if self.stop_hold.active:
+                    self.handle_debug_stream(
+                        result,
+                        frame,
+                        angle,
+                        "STOP HOLD",
+                        "STOP",
+                    )
+                    self._keep_stop_hold()
+                    self._pace_control_loop()
+                    continue
+
                 if config_race.DETECT_OBJECT:
                     self.handle_detect_object(frame)
 
@@ -364,58 +443,108 @@ class Robot:
         detected = self.object_detector.detect(object_frame)[1]
         logger.debug("Object detector result: %s", detected)
 
-    def handle_read_sign_or_tag(self, frame, debug_frame):
-        # Strict fallback: Skip all processing if USE_SIGN is disabled
-        if not (config_race.WITH_SIGN or config_race.WITH_APRILTAG):
+    def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False):
+        # A latched STOP keeps using the detector that originally found it,
+        # even if the dashboard's marker-mode toggle changes during the hold.
+        self.last_sign_observation_fresh = False
+        self.last_sign_observation_at = None
+
+        hold_active = getattr(getattr(self, "stop_hold", None), "active", False)
+        hold_detector = getattr(self, "stop_hold_detector_kind", None)
+        if force_check and hold_active:
+            use_apriltag = hold_detector == "apriltag"
+            use_sign = hold_detector == "sign"
+        else:
+            use_apriltag = bool(config_race.WITH_APRILTAG)
+            use_sign = bool(config_race.WITH_SIGN)
+
+        if not (use_sign or use_apriltag):
             return None, False, debug_frame, None
-            
-        sign_tag_frame = crop_image(frame, 
-                                    config_race.ST_TOP_ROI, 
-                                    config_race.ST_BOTTOM_ROI, 
-                                    config_race.ST_LEFT_ROI, 
-                                    config_race.ST_RIGHT_ROI
+
+        sign_tag_frame = crop_image(
+            frame,
+            config_race.ST_TOP_ROI,
+            config_race.ST_BOTTOM_ROI,
+            config_race.ST_LEFT_ROI,
+            config_race.ST_RIGHT_ROI,
         )
-        
+
         stop_seen = False
         coordinate = None
         tag_id = None
-        if config_race.WITH_APRILTAG:
-            tags, debug_frame, largest_tag, coordinate = self.apriltag_detector.detect(sign_tag_frame, debug_frame)
+        detector_kind = None
+
+        if use_apriltag:
+            _, debug_frame, largest_tag, coordinate = self.apriltag_detector.detect(
+                sign_tag_frame,
+                debug_frame,
+            )
+            # AprilTag detection is synchronous, so every captured frame is a
+            # fresh presence/absence observation while STOP hold is active.
+            self.last_sign_observation_fresh = True
+            self.last_sign_observation_at = time.monotonic()
+
             if largest_tag is not None:
                 tag_id = largest_tag["id"]
-                if largest_tag["corners"][1][1] > 180:
-                    if tag_id == STOP:
-                        stop_seen = True
-                        self.stop_last_seen = time.time()
+                if tag_id == STOP:
+                    # STOP must not be hidden by the old y-coordinate gate.
+                    stop_seen = True
+                    detector_kind = "apriltag"
                     self.last_tag = tag_id
-        elif config_race.WITH_SIGN:
-            self.read_sign_counter += 1
-            tag_id = None
-            if self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD:
+                elif largest_tag["corners"][1][1] > 180:
+                    self.last_tag = tag_id
+
+        elif use_sign:
+            if self.sign_detector is None:
+                self._ensure_sign_detector()
+
+            should_check = bool(force_check)
+            if force_check:
+                # No READ_SIGN_THRESHOLD gate in the latched STOP state.
                 self.read_sign_counter = 0
-                self.sign_detector.submit(sign_tag_frame.copy(), debug_frame.copy() if debug_frame is not None else None)
+            else:
+                self.read_sign_counter += 1
+                should_check = (
+                    self.read_sign_counter >= config_race.READ_SIGN_THRESHOLD
+                )
+
+            if should_check:
+                self.read_sign_counter = 0
+                submitted_at = time.monotonic()
+                self.sign_detector.submit(
+                    sign_tag_frame.copy(),
+                    debug_frame.copy() if debug_frame is not None else None,
+                )
                 latest_sign = self.sign_detector.latest(
                     max_age_s=getattr(config_race, "SIGN_RESULT_MAX_AGE", 0.75)
                 )
-                if latest_sign is None or latest_sign[0] <= self.last_sign_result_id:
-                    return None, False, debug_frame, None
-                self.last_sign_result_id = latest_sign[0]
-                sign_result = latest_sign[1]
-                coordinate = sign_result["coordinate"]
-                debug_frame = sign_result["debug_frame"]
-                if sign_result['text'] == "TURN LEFT":
-                    tag_id = TURN_LEFT
-                elif sign_result['text'] == "TURN RIGHT":
-                    tag_id = TURN_RIGHT
-                elif sign_result['text'] == "STRAIGHT":
-                    tag_id = STRAIGHT
-                elif sign_result['text'] == "STOP":
-                    tag_id = STOP
-                    stop_seen = True
-                    self.stop_last_seen = time.time()
-            if tag_id is not None:
-                self.last_tag = tag_id
-            
+                if (
+                    latest_sign is not None
+                    and latest_sign[0] > self.last_sign_result_id
+                ):
+                    self.last_sign_result_id = latest_sign[0]
+                    sign_result = latest_sign[1]
+                    coordinate = sign_result.get("coordinate")
+                    debug_frame = sign_result.get("debug_frame", debug_frame)
+                    self.last_sign_observation_fresh = True
+                    self.last_sign_observation_at = latest_sign[2] or submitted_at
+
+                    sign_label = sign_result.get("text", "")
+                    if sign_label == "TURN LEFT":
+                        tag_id = TURN_LEFT
+                    elif sign_label == "TURN RIGHT":
+                        tag_id = TURN_RIGHT
+                    elif sign_label == "STRAIGHT":
+                        tag_id = STRAIGHT
+                    elif sign_label == "STOP":
+                        tag_id = STOP
+                        stop_seen = True
+                        detector_kind = "sign"
+
+                    if tag_id is not None:
+                        self.last_tag = tag_id
+
+        self._observe_stop_result(stop_seen, detector_kind=detector_kind)
         return tag_id, stop_seen, debug_frame, coordinate
 
 
