@@ -7,10 +7,12 @@ _LOGGER_CONFIGURED = "_self_driving_robot_logging_configured"
 
 
 def _configure_dependency_log_levels(debug):
-    """Keep high-frequency Picamera2 internals quiet unless debug was requested."""
-    level = logging.DEBUG if debug else logging.INFO
+    """Keep high-frequency Picamera2 internals at WARNING, even in app debug mode."""
+    # Picamera2 can emit an "Execute job" DEBUG record for nearly every frame.
+    # These library internals are too noisy for the real-time driving loop, so
+    # keep them at WARNING regardless of the application's own debug setting.
     for name in ("picamera2", "picamera2.picamera2"):
-        logging.getLogger(name).setLevel(level)
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def configure_logging(debug=False, log_dir="output"):
