@@ -70,6 +70,9 @@ def _apply_cli_overrides(config, args):
         if value is not None:
             setattr(config, name, value)
 
+    config.TRAFFIC_LIGHTS_ENABLED = bool(getattr(args, "traffic_lights", False))
+    config.TRAFFIC_LIGHT_WAIT_BEFORE_CHECK = bool(getattr(args, "traffic_light_wait_before_check", False))
+
     # Only an explicit CLI path may enable the strict hello/cfg handshake.
     # Do not allow a stale city.json/race.json value to turn it on implicitly.
     config.ARDUINO_CONFIG = args.arduino_config
@@ -96,6 +99,13 @@ if __name__ == "__main__":
     json_config.load()
     _apply_platform_defaults(config)
     _apply_cli_overrides(config, args)
+
+    if args.traffic_lights and args.mode != "city":
+        raise SystemExit("--traffic-lights is supported only in city mode")
+    if args.traffic_light_wait_before_check and args.mode != "city":
+        raise SystemExit("--traffic-light-wait-before-check is supported only in city mode")
+    if args.traffic_light_wait_before_check and not args.traffic_lights:
+        raise SystemExit("--traffic-light-wait-before-check requires --traffic-lights")
 
     if args.ml_lane_model is not None and args.mode != "race":
         raise SystemExit("--ml-lane-model is currently supported only in race mode")
