@@ -73,6 +73,9 @@ class DatasetConnectorServer:
 
         self.camera = Camera(config=self.config)
         self.camera.set_frame_rate(self.requested_fps)
+        applied_fps = getattr(self.camera, "requested_frame_rate", None)
+        if applied_fps is not None:
+            self.requested_fps = float(applied_fps)
 
     @classmethod
     def from_options(
