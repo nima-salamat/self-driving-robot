@@ -26,7 +26,7 @@
   "RUN_LVL": "MOVE",
   "WITH_SIGN": true,
   "WITH_APRILTAG": false,
-  "READ_SIGN_THRESHOLD": 40,
+  "READ_SIGN_THRESHOLD": 18,
   "TURN_RIGHT": 2,
   "TURN_LEFT": 3,
   "STRAIGHT": 4,
