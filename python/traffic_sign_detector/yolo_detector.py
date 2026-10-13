@@ -1,12 +1,16 @@
 import cv2
 import numpy as np
 import os
+import logging
 import onnxruntime as ort
 
 try:
     from base_config import BASE_DIR
 except ImportError:
     BASE_DIR = "." 
+
+logger = logging.getLogger(__name__)
+
 
 class TrafficSignDetector:
     def __init__(self, model_path=None):
@@ -19,7 +23,7 @@ class TrafficSignDetector:
         else:
             self.model_file = model_path
             
-        print(f"Loading ONNX model from {self.model_file}...")
+        logger.info("Loading ONNX model from %s", self.model_file)
         
         # Initialize ONNX session (CPU execution only, perfectly safe for Pi)
         self.session = ort.InferenceSession(self.model_file, providers=['CPUExecutionProvider'])
@@ -157,11 +161,6 @@ class TrafficSignDetector:
                 cv2.rectangle(debug_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.putText(debug_frame, text, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
-
-        if text:
-            print(text)
-        else:
-            print("nothing")
 
         return {
             "coordinate": best_coordinate,
