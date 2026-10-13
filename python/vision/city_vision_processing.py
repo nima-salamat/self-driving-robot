@@ -23,7 +23,19 @@ class VisionProcessor:
 
     @staticmethod
     def _extract_line(line):
-        return line[0]
+        """Normalize OpenCV line-segment outputs to four coordinates.
+
+        OpenCV detectors can return each segment as either ``(4,)`` or
+        ``(1, 4)``. Flattening the segment supports both formats while
+        rejecting malformed data with a useful error.
+        """
+        coordinates = np.asarray(line).reshape(-1)
+        if coordinates.size != 4:
+            raise ValueError(
+                "Expected a line segment with 4 coordinates, "
+                f"got shape {np.asarray(line).shape}"
+            )
+        return coordinates
 
     @staticmethod
     def _angle_target_score(angle, target_angle, sigma):
