@@ -27,14 +27,21 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install arduino:avr
 
+      - name: Prepare standalone sketches
+        run: |
+          mkdir -p /tmp/arduino-sketches/main_configurable_v1
+          mkdir -p /tmp/arduino-sketches/main_nonBlocking_v2
+          cp arduino/main_configurable_v1.ino /tmp/arduino-sketches/main_configurable_v1/main_configurable_v1.ino
+          cp arduino/main_nonBlocking_v2.ino /tmp/arduino-sketches/main_nonBlocking_v2/main_nonBlocking_v2.ino
+
       - name: Compile Mega2560 configurable firmware
         run: |
           arduino-cli compile \
             --fqbn arduino:avr:mega:cpu=atmega2560 \
-            arduino/main_configurable_v1.ino
+            /tmp/arduino-sketches/main_configurable_v1
 
       - name: Compile Mega2560 non-blocking v2 firmware
         run: |
           arduino-cli compile \
             --fqbn arduino:avr:mega:cpu=atmega2560 \
-            arduino/main_nonBlocking_v2.ino
+            /tmp/arduino-sketches/main_nonBlocking_v2
