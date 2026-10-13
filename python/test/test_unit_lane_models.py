@@ -77,6 +77,24 @@ class LaneModelTests(unittest.TestCase):
         self.assertIn("ml_inference_ms", result)
         self.assertEqual(detector.net.opt.num_threads, 4)
 
+        detector.last_steering = 117.0
+        with patch.object(
+            detector,
+            "_predict_unet",
+            return_value=(
+                np.zeros((230, 380), dtype=np.float32),
+                None,
+                "none",
+                {},
+                1.0,
+            ),
+        ):
+            missing_result = detector.detect(frame)
+
+        self.assertFalse(missing_result["perception_valid"])
+        self.assertEqual(missing_result["lane_type"], "none")
+        self.assertEqual(missing_result["steering_angle"], 117)
+
 
 if __name__ == "__main__":
     unittest.main()
