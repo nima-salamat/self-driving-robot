@@ -201,6 +201,21 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertTrue(controller.motor(220))
             self.assertEqual(controller.connection.commands.count("motor 220\n"), 2)
 
+    def test_missing_lane_holds_last_angle_without_sending_stop(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            controller = controller_module.RobotController(make_controller_config())
+            controller.last_angle = 112
+            controller.current_angle = 112
+            controller.pid.update(10, now=1.0)
+
+            self.assertTrue(controller.set_angle_by_error(999, "none"))
+            self.assertEqual(controller.last_angle, 112)
+            self.assertEqual(controller.current_angle, 112)
+            self.assertNotIn("stop\n", controller.connection.commands)
+            self.assertIsNone(controller.pid._prev_error)
+
     def test_reconnect_invalidates_cached_actuator_state(self):
         from controller import controller as controller_module
 
