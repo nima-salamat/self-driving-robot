@@ -39,6 +39,15 @@ class BLSFLaneDetectorTests(unittest.TestCase):
         self.assertEqual(result["lane_detector"], "blsf-beta")
         self.assertIn("crosswalk", result)
 
+    def test_missing_lane_preserves_last_steering_angle(self):
+        detector = BLSFLaneDetector(self.Config())
+        detector.last_steering = 111.0
+
+        angle, error = detector._steering(None, "none", 160)
+
+        self.assertEqual(angle, 111)
+        self.assertEqual(error, 0.0)
+
     def test_weighted_grayscale(self):
         frame = np.zeros((1, 1, 3), dtype=np.uint8)
         frame[0, 0] = (10, 20, 30)
