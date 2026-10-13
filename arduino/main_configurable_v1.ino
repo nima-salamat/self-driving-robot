@@ -189,6 +189,8 @@ bool pendingHostServoValid = false;
 
 bool forceStopActive = false;
 bool emergencyStopActive = false;
+// Traffic-sign STOP is latched independently of the normal stop command.
+bool hostStopRequested = false;
 
 char leftSequence[MAX_SEQUENCE_CHARS + 1];
 char rightSequence[MAX_SEQUENCE_CHARS + 1];
@@ -646,6 +648,11 @@ void writeMotorHardware(int signedSpeed) {
 void requestMotorSpeed(int speed) {
   speed = constrain(speed, -255, 255);
 
+  if (hostStopRequested) {
+    if (speed == 0) writeMotorHardware(0);
+    return;
+  }
+
   if (forceStopActive || emergencyStopActive || activeConfig.motorCount == 0) {
     writeMotorHardware(0);
     return;
@@ -675,7 +682,7 @@ void updateDirectionChange(uint32_t nowMs) {
 }
 
 void setServoHardware(uint8_t index, int angle) {
-  if (index >= activeConfig.servoCount) return;
+  if (hostStopRequested || index >= activeConfig.servoCount) return;
   angle = constrain(angle,
                     activeConfig.servos[index].minAngle,
                     activeConfig.servos[index].maxAngle);
@@ -1018,7 +1025,7 @@ void stopRobot(bool clearQueue) {
   pendingHostMotorValid = false;
   pendingHostServoValid = false;
   stopAllMotors();
-  centerAllServos();
+  // Do not change steering during STOP; leave the servo at its last target.
   emergencyStopActive = false;
 }
 
@@ -1610,10 +1617,50 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
     return;
   }
 
-  if (strcmp(tokens[0], "stop") == 0) {
+  if (strcmp(tokens[0], "status") == 0 || strcmp(tokens[0], "u") == 0) {
+    sendStatus();
+    return;
+  }
+
+  if (count == 2 && strcmp(tokens[0], "safety") == 0 &&
+      strcmp(tokens[1], "stop") == 0) {
+    hostStopRequested = true;
     stopRobot(true);
     laneState = LANE_NORMAL;
     lane = 'R';
+    return;
+  }
+
+  if (count == 2 && strcmp(tokens[0], "motion") == 0 &&
+      strcmp(tokens[1], "enable") == 0) {
+    if (hostStopRequested) {
+      clearPulseQueue();
+      pulseActive = false;
+      pulsePaused = false;
+      adaptiveActive = false;
+      pulseRemaining = 0;
+      pendingHostMotorValid = false;
+      pendingHostServoValid = false;
+      directionChangePending = false;
+      pendingDirectionSpeed = 0;
+      writeMotorHardware(0);
+      hostStopRequested = false;
+    }
+    return;
+  }
+
+  if (strcmp(tokens[0], "stop") == 0) {
+    // A normal stop is not a persistent traffic-safety latch.
+    stopRobot(true);
+    laneState = LANE_NORMAL;
+    lane = 'R';
+    return;
+  }
+
+  // Reject every actuator/maneuver command until the host explicitly releases
+  // the traffic STOP. Heartbeat and telemetry remain available above.
+  if (hostStopRequested) {
+    Serial.println("ERR MOTION_INHIBITED");
     return;
   }
 
@@ -1621,176 +1668,6 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
     manualResume();
     return;
   }
-
-  if (strcmp(tokens[0], "status") == 0 || strcmp(tokens[0], "u") == 0) {
-    sendStatus();
-    return;
-  }
-
-  if (strcmp(tokens[0], "motor") == 0) {
-    long speed = 0;
-    uint8_t motorId = 0;
-
-    if (count == 2) {
-      if (!parseLongStrict(tokens[1], -255, 255, speed)) {
-        Serial.println("ERR MOTOR_VALUE");
-        return;
-      }
-      if (pulseActive) {
-        pendingHostMotor = (int)speed;
-        pendingHostMotorValid = true;
-      } else {
-        requestMotorSpeed((int)speed);
-      }
-      return;
-    }
-
-    if (count == 3) {
-      long id;
-      if (!parseLongStrict(tokens[1], 0, MAX_MOTORS - 1, id) ||
-          !parseLongStrict(tokens[2], -255, 255, speed) ||
-          id >= activeConfig.motorCount) {
-        Serial.println("ERR MOTOR_ID");
-        return;
-      }
-
-      int signedSpeed = (int)speed;
-      if (pulseActive) {
-        Serial.println("ERR MOTOR_ID_DURING_PULSE");
-        return;
-      }
-
-      signedSpeed = constrain(signedSpeed, -255, 255);
-      int magnitude = abs(signedSpeed);
-      int direction = signedSpeed >= 0 ? HIGH : LOW;
-      digitalWrite(activeConfig.motors[id].dir, direction);
-      analogWrite(activeConfig.motors[id].pwm, magnitude);
-      if (id == 0) currentMotorSpeed = signedSpeed;
-      return;
-    }
-
-    Serial.println("ERR MOTOR_ARGS");
-    return;
-  }
-
-  if (strcmp(tokens[0], "servo") == 0) {
-    long angle;
-    long id = 0;
-
-    if (count == 2) {
-      if (!parseLongStrict(tokens[1], 0, 180, angle)) {
-        Serial.println("ERR SERVO_VALUE");
-        return;
-      }
-    } else if (count == 3) {
-      if (!parseLongStrict(tokens[1], 0, MAX_ATTACHED_SERVOS - 1, id) ||
-          !parseLongStrict(tokens[2], 0, 180, angle) ||
-          id >= activeConfig.servoCount) {
-        Serial.println("ERR SERVO_ID");
-        return;
-      }
-    } else {
-      Serial.println("ERR SERVO_ARGS");
-      return;
-    }
-
-    setServo((uint8_t)id, (int)angle);
-    return;
-  }
-
-  if (strcmp(tokens[0], "left") == 0) {
-    Serial.println("EVENT SIGNAL_LEFT");
-    return;
-  }
-
-  if (strcmp(tokens[0], "right") == 0) {
-    Serial.println("EVENT SIGNAL_RIGHT");
-    return;
-  }
-
-  if (strcmp(tokens[0], "lane") == 0) {
-    if (count == 2 && strcmp(tokens[1], "auto") == 0) {
-      laneChangingMode = true;
-      Serial.println("EVENT LANE_AUTO");
-      return;
-    }
-    if (count == 2 &&
-        (strcmp(tokens[1], "manual") == 0 ||
-         strcmp(tokens[1], "stop") == 0)) {
-      laneChangingMode = false;
-      Serial.println("EVENT LANE_MANUAL");
-      return;
-    }
-    Serial.println("ERR LANE_ARGS");
-    return;
-  }
-
-  if (strcmp(tokens[0], "save") == 0) {
-    if (count == 2 && strcmp(tokens[1], "left") == 0) {
-      saveLaneSequences(true, false);
-      return;
-    }
-    if (count == 2 && strcmp(tokens[1], "right") == 0) {
-      saveLaneSequences(false, true);
-      return;
-    }
-    if (count == 1) {
-      saveLaneSequences(true, true);
-      return;
-    }
-    Serial.println("ERR SAVE_ARGS");
-    return;
-  }
-
-  if (strcmp(tokens[0], "load") == 0) {
-    if (count != 1) {
-      Serial.println("ERR LOAD_ARGS");
-      return;
-    }
-    loadLaneSequences();
-    return;
-  }
-
-  if (strcmp(tokens[0], "set") == 0) {
-    Serial.println("ERR SET_USE_RAW");
-    return;
-  }
-
-  if (tokens[0][1] == '\0' &&
-      (tolower((unsigned char)tokens[0][0]) == 'f' ||
-       tolower((unsigned char)tokens[0][0]) == 'b')) {
-    if (activeConfig.encoderCount == 0) {
-      Serial.println("ERR PULSE_NO_ENCODER");
-      return;
-    }
-    if (count % 4 != 0 || count < 4) {
-      Serial.println("ERR PULSE_ARGS");
-      return;
-    }
-
-    uint8_t groups = count / 4;
-    if ((uint8_t)(queueCount + groups) > PULSE_QUEUE_CAPACITY) {
-      Serial.println("ERR PULSE_QUEUE_FULL");
-      return;
-    }
-
-    PulseCommand commands[MAX_TOKENS / 4];
-    for (uint8_t i = 0; i < groups; ++i) {
-      if (!parsePulseGroup(tokens, (uint8_t)(i * 4), commands[i])) {
-        Serial.println("ERR PULSE_VALUE");
-        return;
-      }
-    }
-
-    for (uint8_t i = 0; i < groups; ++i) {
-      enqueuePulse(commands[i]);
-    }
-    if (!pulseActive) startNextPulse();
-    return;
-  }
-
-  Serial.println("ERR UNKNOWN_COMMAND");
-}
 
 void processLine(char *raw) {
   char *line = raw;
@@ -1936,37 +1813,39 @@ void loop() {
   readSerial();
 
   if (activeConfig.active) {
-    updateDirectionChange(nowMs);
+    if (!hostStopRequested) updateDirectionChange(nowMs);
     updateUltrasonic(nowMs);
     updateButtons(nowMs);
     updateHostSafety(nowMs);
 
-    if (!forceStopActive && !emergencyStopActive && normalObstacle() && !pulseActive) {
-      requestMotorSpeed(0);
-      emergencyStopActive = true;
-    }
+    if (!hostStopRequested) {
+      if (!forceStopActive && !emergencyStopActive && normalObstacle() && !pulseActive) {
+        requestMotorSpeed(0);
+        emergencyStopActive = true;
+      }
 
-    updatePulse(nowMs);
+      updatePulse(nowMs);
 
-    if (!pulseActive && queueCount > 0 && !forceStopActive && !emergencyStopActive) {
-      startNextPulse();
-    }
+      if (!pulseActive && queueCount > 0 && !forceStopActive && !emergencyStopActive) {
+        startNextPulse();
+      }
 
-    int sideDistance = ultraDistance("side");
-    if (laneChangingMode && laneState == LANE_NORMAL && !pulseActive &&
-        normalObstacle()) {
-      startLaneChangeLeft();
-    } else if (!laneChangingMode && laneState == LANE_NORMAL &&
-               normalObstacle() && !pulseActive) {
-      requestMotorSpeed(0);
-      emergencyStopActive = true;
-      Serial.println("ERR OBSTACLE");
-    }
+      int sideDistance = ultraDistance("side");
+      if (laneChangingMode && laneState == LANE_NORMAL && !pulseActive &&
+          normalObstacle()) {
+        startLaneChangeLeft();
+      } else if (!laneChangingMode && laneState == LANE_NORMAL &&
+                 normalObstacle() && !pulseActive) {
+        requestMotorSpeed(0);
+        emergencyStopActive = true;
+        Serial.println("ERR OBSTACLE");
+      }
 
-    if (laneChangingMode && laneState == LANE_LEFT && !pulseActive &&
-        sideDistance > 0 &&
-        sideDistance <= activeConfig.options.sideReturnDistanceCm) {
-      startReturnToRightLane();
+      if (laneChangingMode && laneState == LANE_LEFT && !pulseActive &&
+          sideDistance > 0 &&
+          sideDistance <= activeConfig.options.sideReturnDistanceCm) {
+        startReturnToRightLane();
+      }
     }
 
     if ((uint32_t)(nowMs - lastStatusMs) >= STATUS_INTERVAL_MS) {
