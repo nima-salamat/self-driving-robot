@@ -51,6 +51,10 @@ def _apply_cli_overrides(config, args):
         if value is not None:
             setattr(config, name, value)
 
+    # Only an explicit CLI path may enable the strict hello/cfg handshake.
+    # Do not allow a stale city.json/race.json value to turn it on implicitly.
+    config.ARDUINO_CONFIG = args.arduino_config
+
     if args.ml_lane_model is not None:
         config.USE_ML_LANE_DETECTOR = True
         config.ML_LANE_MODEL = args.ml_lane_model
