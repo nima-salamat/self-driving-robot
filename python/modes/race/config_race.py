@@ -97,7 +97,7 @@ SERIAL_TIMEOUT = 0.1
 MIN_SERVO_ANGLE = 55.0
 MAX_SERVO_ANGLE = 125.0
 # --- Servo Default Config ---
-SERVO_CENTER = 90
+SERVO_CENTER = 95
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
