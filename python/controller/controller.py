@@ -211,6 +211,7 @@ class RobotController:
             self.current_speed = 0
             self._last_motor_command_at = None
         return success
+
     def stop(self, reason=None):
         """Stop the robot and optionally record a semantic stop event."""
         self._sync_connection_state()
