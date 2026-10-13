@@ -2,6 +2,7 @@ import sys
 import unittest
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 PYTHON_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,7 @@ class PicameraFrameRateTests(unittest.TestCase):
     def make_camera(self):
         camera = Camera.__new__(Camera)
         camera.pi_mode = True
+        camera.config = SimpleNamespace(CAMERA_FPS=60.0)
         camera.picam = Mock()
         # Picamera2 expresses FrameDurationLimits in microseconds:
         # 16972 us -> about 58.92 FPS maximum; 5000000 us -> 0.20 FPS minimum.
@@ -44,6 +46,7 @@ class PicameraFrameRateTests(unittest.TestCase):
             "FrameDurationLimits": (16972, 16972),
         })
         self.assertAlmostEqual(camera.requested_frame_rate, max_fps)
+        self.assertAlmostEqual(camera.config.CAMERA_FPS, max_fps)
         self.assertIsNone(camera.measured_frame_rate)
         self.assertEqual(list(camera._capture_timestamps), [])
 
