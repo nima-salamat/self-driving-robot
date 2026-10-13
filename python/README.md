@@ -162,7 +162,16 @@ When \`CAMERA_MODE=picam\`, \`--camera-index\` has no effect.
 
 ## Arduino hardware contract
 
-The strict hardware contract is opt-in.
+The strict hardware contract is opt-in and is enabled only by explicitly passing
+`--arduino-config PATH` on the command line. Values left in `city.json` or
+`race.json` cannot enable the handshake implicitly. The handshake requires
+firmware implementing the `hello`/`cfg` protocol.
+
+For EEPROM/set-based firmware such as
+`arduino/new_main_adaptive_pwm_with_savingPulseInEEPROM`, omit
+`--arduino-config`. City and Race send their hardcoded pulse sequences using
+`set left` and `set right` at startup; Race persists both sequences with the
+firmware's single `save` command. This path does not use a hardware-contract handshake.
 
 Example:
 
