@@ -271,6 +271,29 @@ class CityRaceAprilTagFallbackTests(unittest.TestCase):
         self._assert_missing_apriltag_is_a_normal_result("race")
 
 
+class RaceLaneLossPolicyTests(unittest.TestCase):
+    def test_race_lane_loss_uses_previous_servo_angle(self):
+        from types import SimpleNamespace
+        from modes.race.race import SERVO_CENTER
+
+        control = SimpleNamespace(last_angle=116, current_angle=116)
+        result = {
+            "lane_type": "none",
+            "perception_valid": False,
+            "steering_angle": 150,
+        }
+
+        held_angle = control.last_angle
+        if held_angle is None:
+            held_angle = control.current_angle
+        if held_angle is None:
+            held_angle = SERVO_CENTER
+        result["steering_angle"] = int(held_angle)
+
+        self.assertEqual(result["steering_angle"], 116)
+        self.assertEqual(result["lane_type"], "none")
+
+
 class CityRaceStreamIntegrationTests(unittest.TestCase):
     def _assert_mode_publishes_jpeg(self, mode):
         from types import SimpleNamespace
