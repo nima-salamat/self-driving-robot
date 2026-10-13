@@ -1,5 +1,4 @@
 import logging
-import threading
 import time
 from arduino.arduino_connection import ArduinoConnection
 from arduino.hardware_contract import (
@@ -18,11 +17,8 @@ class RobotController:
             raise ValueError("Config must be provided during the first initialization of RobotController.")
             
         self.config = config
-        # The lock makes the software safety gate atomic with a serial write.
-        self._motion_lock = threading.RLock()
         self.motion_inhibited = False
         self.motion_inhibit_reason = None
-        self._safety_stop_sent = False
 
         mode = getattr(self.config, 'MODE', 'unknown')
         print(f"Mode: {mode}")
@@ -114,71 +110,39 @@ class RobotController:
         self.motion_history.record_event(event, metadata=metadata)
 
     def set_motion_inhibited(self, inhibited, reason=None):
-        """Latch actuators off, and require an explicit MCU unlock to resume."""
+        """Latch actuator commands off until an explicit successful release."""
         inhibited = bool(inhibited)
         reason = str(reason or "traffic_stop")
 
-        with self._motion_lock:
-            if inhibited:
-                newly_inhibited = not self.motion_inhibited
-                if newly_inhibited:
-                    self.current_speed = 0
-                    self._last_motor_command_at = None
-                    self.pid.reset()
-                    self._safety_stop_sent = False
-
-                self.motion_inhibited = True
-                self.motion_inhibit_reason = reason
-
-                # Gate the transport before writing the hardware STOP. The
-                # transport keeps this state over disconnect/reconnect.
-                transport_gate = getattr(
-                    self.connection, "set_motion_inhibited", None
-                )
-                if callable(transport_gate):
-                    transport_gate(True)
-
-                if self.without_arduino:
-                    self._safety_stop_sent = True
-                    return True
-
-                # Retry on subsequent STOP-state cycles only if the write failed.
-                if not self._safety_stop_sent:
-                    self._safety_stop_sent = self._send_command(
-                        "safety stop",
-                        event="motion_inhibited",
-                        metadata={"reason": reason},
-                        allow_while_inhibited=True,
-                    )
-                return self._safety_stop_sent
-
+        if inhibited:
             if not self.motion_inhibited:
-                return True
-
-            # Never release in software alone: the MCU must receive the
-            # explicit unlock successfully before normal commands are enabled.
-            if not self.without_arduino:
-                if not self._send_command(
-                    "motion enable",
-                    event="motion_inhibit_released",
-                    metadata={"reason": reason},
-                    allow_while_inhibited=True,
-                ):
-                    return False
-
-            self.motion_inhibited = False
-            self.motion_inhibit_reason = None
-            self.current_speed = 0
-            self._last_motor_command_at = None
-            self.pid.reset()
-            self._safety_stop_sent = False
-
-            transport_gate = getattr(
-                self.connection, "set_motion_inhibited", None
-            )
-            if callable(transport_gate):
-                transport_gate(False)
+                self.current_speed = 0
+                self._last_motor_command_at = None
+                self.pid.reset()
+            self.motion_inhibited = True
+            self.motion_inhibit_reason = reason
             return True
+
+        if not self.motion_inhibited:
+            return True
+
+        # Never release in software alone: the MCU has its own STOP latch.
+        # If this serial command fails, keep all controller-side actuators locked.
+        if not self.without_arduino:
+            if not self._send_command(
+                "motion enable",
+                event="motion_inhibit_released",
+                metadata={"reason": reason},
+                allow_while_inhibited=True,
+            ):
+                return False
+
+        self.motion_inhibited = False
+        self.motion_inhibit_reason = None
+        self.current_speed = 0
+        self._last_motor_command_at = None
+        self.pid.reset()
+        return True
 
     def configure_lane_sequences(
         self,
@@ -242,62 +206,61 @@ class RobotController:
         allow_while_inhibited=False,
     ):
         command = cmd.strip()
-        with self._motion_lock:
-            if (
-                self.motion_inhibited
-                and command.lower() not in {"stop", "safety stop"}
-                and not allow_while_inhibited
-            ):
-                # Record the local rejection, but do not touch the serial transport.
-                now = time.monotonic()
-                self.command_sequence += 1
-                self.last_command = {
-                    "sequence": self.command_sequence,
-                    "command": command,
-                    "success": False,
-                    "blocked": True,
-                    "blocked_reason": self.motion_inhibit_reason,
-                    "generated_at": now,
-                    "transmitted_at": None,
-                    "latency_ms": 0.0,
-                }
-                return False
-
-            started = time.monotonic()
-            success = self.connection.send_command(command + "\n")
-            finished = time.monotonic()
-
-            metrics = getattr(self.config, "runtime_metrics", None)
-            if metrics is not None:
-                metrics.record_serial((finished - started) * 1000.0, success)
-
+        if (
+            self.motion_inhibited
+            and command.lower() != "stop"
+            and not allow_while_inhibited
+        ):
+            # Record the local rejection, but do not touch the serial transport.
+            now = time.monotonic()
             self.command_sequence += 1
             self.last_command = {
                 "sequence": self.command_sequence,
                 "command": command,
-                "success": bool(success),
-                "generated_at": started,
-                "transmitted_at": finished if success else None,
-                "latency_ms": (finished - started) * 1000.0,
+                "success": False,
+                "blocked": True,
+                "blocked_reason": self.motion_inhibit_reason,
+                "generated_at": now,
+                "transmitted_at": None,
+                "latency_ms": 0.0,
             }
+            return False
 
-            if success and event is not None:
-                self.motion_history.record_event(
-                    event,
-                    metadata={
-                        "command": command,
-                        **dict(metadata or {}),
-                    },
-                )
+        started = time.monotonic()
+        success = self.connection.send_command(command + "\n")
+        finished = time.monotonic()
 
-            if success and record_motion:
-                self.motion_history.record_pulse_command(
-                    command,
-                    event=event or "pulse_command",
-                    metadata=metadata,
-                )
+        metrics = getattr(self.config, "runtime_metrics", None)
+        if metrics is not None:
+            metrics.record_serial((finished - started) * 1000.0, success)
 
-            return success
+        self.command_sequence += 1
+        self.last_command = {
+            "sequence": self.command_sequence,
+            "command": command,
+            "success": bool(success),
+            "generated_at": started,
+            "transmitted_at": finished if success else None,
+            "latency_ms": (finished - started) * 1000.0,
+        }
+
+        if success and event is not None:
+            self.motion_history.record_event(
+                event,
+                metadata={
+                    "command": command,
+                    **dict(metadata or {}),
+                },
+            )
+
+        if success and record_motion:
+            self.motion_history.record_pulse_command(
+                command,
+                event=event or "pulse_command",
+                metadata=metadata,
+            )
+
+        return success
 
     def _sync_connection_state(self):
         connected = bool(self.connection.connected)
