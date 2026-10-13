@@ -182,7 +182,7 @@ class Robot:
         control = getattr(self, "control", None)
         connection = getattr(control, "connection", None) if control is not None else None
 
-        if control is None or bool(getattr(control, "without_arduino", False)):
+        if control is None or getattr(control, "without_arduino", False) is True:
             self._mcu_stop_latched = latched
             return True
 
