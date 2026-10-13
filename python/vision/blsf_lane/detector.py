@@ -595,17 +595,9 @@ class BLSFLaneDetector:
         )
 
         if lane_type == "none":
+            # No new lane estimate exists; keep the last steering command.
             return (
-                int(
-                    np.clip(
-                        self._cfg(
-                            "BLSF_NO_LANE_STEERING",
-                            150,
-                        ),
-                        minimum,
-                        maximum,
-                    )
-                ),
+                int(np.clip(self.last_steering, minimum, maximum)),
                 0.0,
             )
 
