@@ -181,6 +181,24 @@ class Robot:
         event = getattr(config_race, "SHUTDOWN_EVENT", None)
         return bool(event is not None and event.is_set())
 
+    def _hold_last_steering_if_lane_missing(self, result):
+        """Apply the race policy for a temporarily missing lane estimate."""
+        if result.get("lane_type") != "none":
+            return False
+
+        held_angle = self.control.last_angle
+        if held_angle is None:
+            held_angle = getattr(self.control, "current_angle", None)
+        if held_angle is None:
+            held_angle = SERVO_CENTER
+
+        result["steering_angle"] = int(held_angle)
+        logger.debug(
+            "Race lane markings not detected; holding steering angle %s",
+            held_angle,
+        )
+        return True
+
     def run(self):
         logger.info("starting")
         self.fps.start()
@@ -247,7 +265,7 @@ class Robot:
                 # On a valid camera frame, temporarily missing lane markings
                 # must not stop Race mode. Keep the last applied steering angle
                 # and continue at race speed, just as City mode does.
-                lane_missing = result.get("lane_type") == "none"
+                lane_missing = self._hold_last_steering_if_lane_missing(result)
                 if not result.get("perception_valid", False) and not lane_missing:
                     self.control.stop()
                     if config_race.STREAM or config_race.DEBUG:
@@ -260,18 +278,6 @@ class Robot:
                         )
                     self._pace_control_loop()
                     continue
-
-                if lane_missing:
-                    held_angle = self.control.last_angle
-                    if held_angle is None:
-                        held_angle = self.control.current_angle
-                    if held_angle is None:
-                        held_angle = SERVO_CENTER
-                    result["steering_angle"] = int(held_angle)
-                    logger.debug(
-                        "Race lane markings not detected; holding steering angle %s",
-                        held_angle,
-                    )
 
                 angle = result.get("steering_angle")
                 
