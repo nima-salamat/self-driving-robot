@@ -964,6 +964,12 @@ void loop() {
       else if (work == "resume") {
         exitForceStop();
       }
+      else if (work == "lane auto") {
+        lane_changing_mode = true;
+      }
+      else if (work == "lane manual" || work == "lane stop") {
+        lane_changing_mode = false;
+      }
       else if (work.startsWith("motor ")) {
         setMotorSpeed(work.substring(6).toInt());
       }

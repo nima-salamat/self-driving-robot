@@ -52,6 +52,7 @@ class Robot:
 
         # hardcode the left and right lane change
         if not getattr(config_city, "WITHOUT_ARDUINO", False):
+            self.control._send_command("lane manual")
             self.control._send_command(
                 "set left b 170 110 70 b 170 80 125",
                 event="hardcode_lane_change_configured",
@@ -64,6 +65,7 @@ class Robot:
                 metadata={"side": "right"},
             )
             time.sleep(0.4)
+            self.control._send_command("lane auto")
 
         lane_detector = getattr(config_city, "CITY_LANE_DETECTOR", "default")
 
