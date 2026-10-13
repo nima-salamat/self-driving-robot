@@ -526,6 +526,8 @@ LANE LOGIC
 // Do not run EEPROM lane sequences before fresh host SET commands arrive.
 bool lane_changing_mode = false;
 char lane = 'R';
+// A host stop must not be undone by the ultrasonic lane-change automation.
+bool hostStopRequested = false;
 
 enum LaneState {
   LANE_NORMAL = 0,
@@ -950,6 +952,7 @@ void loop() {
       lane = 'R';
       laneChangeStart = 0;
       sidePassState = SIDE_WAITING_OBSTACLE;
+      hostStopRequested = true;
       startServoMoveImmediate(SERVO_CENTER);
       panel.setStop();
     }
@@ -1001,7 +1004,22 @@ void loop() {
       exitForceStop();
     }
     else if (work.startsWith("motor ")) {
-      setMotorSpeed(work.substring(6).toInt());
+      int requestedSpeed = work.substring(6).toInt();
+      if (requestedSpeed == 0) {
+        queue.clear();
+        stopMotor();
+        targetPulses = 0;
+        laneState = LANE_NORMAL;
+        lane = 'R';
+        laneChangeStart = 0;
+        sidePassState = SIDE_WAITING_OBSTACLE;
+        hostStopRequested = true;
+        startServoMoveImmediate(SERVO_CENTER);
+        panel.setStop();
+      } else {
+        hostStopRequested = false;
+        setMotorSpeed(requestedSpeed);
+      }
     }
     else if (work.startsWith("servo ")) {
       startServoMoveImmediate(work.substring(6).toInt());
@@ -1031,7 +1049,7 @@ void loop() {
     }
   } else {
     if (lane == 'R' && normalObstacle) {
-      if (!lane_changing_mode) {
+      if (!lane_changing_mode || hostStopRequested) {
         stopMotor();
         queue.clear();
         startServoMoveImmediate(SERVO_CENTER);
