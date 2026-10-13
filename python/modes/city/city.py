@@ -699,7 +699,7 @@ class Robot:
                             angle,
                             crosswalk,
                             "crosswalk",
-                            sign_text,
+                            sign_text + (f" | {self._traffic_light_status}" if getattr(self, "_traffic_light_status", "") else ""),
                         )
                     self._pace_control_loop()
                     continue
