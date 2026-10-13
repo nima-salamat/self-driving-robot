@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from modes.city import config_city
+from utils import camera_defaults
 
 
 def create_camera_config(
@@ -31,7 +31,7 @@ def create_camera_config(
         setattr(
             config,
             name,
-            getattr(config_city, name),
+            getattr(camera_defaults, name),
         )
 
     if camera_mode is not None:

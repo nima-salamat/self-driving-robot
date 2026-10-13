@@ -1,21 +1,22 @@
 import os
 
+from utils.camera_defaults import (
+    CAM_HEIGHT,
+    CAM_WIDTH,
+    CAMERA_FALLBACK_TO_OPENCV,
+    CAMERA_MODE,
+    USBCAM_ADDR,
+    resize_height,
+    resize_width,
+)
+
 MODE = "city"
 
 # --- Camera Defaults ---
-CAM_WIDTH = 640
-CAM_HEIGHT = 480
-
-resize_width = 380
-resize_height = 230
 CAMERA_PITCH_DEG = -40 # camera angle in real world
 CAMERA_HEIGHT = 27 # height of camera in real world
-USBCAM_ADDR = 0
-
-# Mode options: "picam" for Raspberry Pi Camera, "webcam" for USB camera
-CAMERA_MODE = "picam"
+# Camera backend defaults are shared with calibration.
 CAMERA_FPS = 60.0
-CAMERA_FALLBACK_TO_OPENCV = False
 # Apply saved intrinsic/distortion calibration to runtime camera frames.
 APPLY_CAMERA_CALIBRATION = True
 
