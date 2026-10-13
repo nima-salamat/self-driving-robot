@@ -50,22 +50,14 @@ class Robot:
         self.runtime_exception = None
         self._next_control_time = time.monotonic()
 
-        # hardcode the left and right lane change
+        # SET-based lane configuration is independent of the optional handshake.
         if not getattr(config_city, "WITHOUT_ARDUINO", False):
-            self.control._send_command("lane manual")
-            self.control._send_command(
-                "set left b 170 110 70 b 170 80 125",
-                event="hardcode_lane_change_configured",
-                metadata={"side": "left"},
+            self.control.configure_lane_sequences(
+                "b 170 110 70 b 170 80 125",
+                "f 170 70 125 f 170 70 70",
+                persist=False,
+                command_delay_s=0.4,
             )
-            time.sleep(0.4)
-            self.control._send_command(
-                "set right f 170 70 125 f 170 70 70",
-                event="hardcode_lane_change_configured",
-                metadata={"side": "right"},
-            )
-            time.sleep(0.4)
-            self.control._send_command("lane auto")
 
         lane_detector = getattr(config_city, "CITY_LANE_DETECTOR", "default")
 
