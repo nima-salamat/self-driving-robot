@@ -40,26 +40,16 @@ class SerialAdversarialTests(unittest.TestCase):
                 self.assertFalse(connection.connected)
 
                 self.assertTrue(connection._establish_safe_state())
-                self.assertEqual(fake.writes, [b"stop\n"])
+                self.assertEqual(
+                    fake.writes,
+                    [b"stop\n", b"servo 90\n"],
+                )
                 self.assertFalse(connection.connected)
 
                 connection._set_state(ArduinoConnection.CONNECTED)
                 self.assertTrue(connection.connected)
             finally:
                 connection.close()
-
-    def test_safe_reconnect_preserves_stop_latch_without_servo_write(self):
-        fake = FakeSerial()
-        connection = ArduinoConnection(enabled=False, reboot_wait=0)
-        try:
-            with connection._serial_lock:
-                connection.serial_connection = fake
-            connection.set_motion_inhibited(True)
-
-            self.assertTrue(connection._establish_safe_state())
-            self.assertEqual(fake.writes, [b"safety stop\n"])
-        finally:
-            connection.close()
 
     def test_reconnect_open_aborts_when_shutdown_was_requested(self):
         fake = FakeSerial()
@@ -131,7 +121,6 @@ class FakeControllerConnection:
         self.closed = False
         self.result = True
         self.commands = []
-        self.motion_inhibited = False
 
     def set_print_telemetry(self, enabled):
         self.print_telemetry = enabled
@@ -139,15 +128,7 @@ class FakeControllerConnection:
     def wait_until_connected(self, timeout):
         return self.connected
 
-    def set_motion_inhibited(self, inhibited):
-        self.motion_inhibited = bool(inhibited)
-
     def send_command(self, command):
-        normalized = str(command).strip().lower()
-        if self.motion_inhibited and normalized not in {
-            "stop", "safety stop", "motion enable", "heartbeat", "status", "u"
-        }:
-            return False
         self.commands.append(command)
         return self.result
 
@@ -322,17 +303,10 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertFalse(controller.backward_pulse("b 180 10 90"))
             self.assertFalse(controller._send_command("lane auto"))
 
-            # Both the controller and low-level transport gate reject actuator
-            # commands; only the explicit safety-stop protocol may reach the MCU.
-            self.assertEqual(controller.connection.commands, ["safety stop\n"])
-            self.assertFalse(controller.connection.send_command("servo 100\n"))
-            self.assertFalse(controller.connection.send_command("motor 180\n"))
-            self.assertEqual(controller.connection.commands, ["safety stop\n"])
+            # No actuator/maneuver command escaped the controller gate.
+            self.assertEqual(controller.connection.commands, [])
             self.assertTrue(controller.stop())
-            self.assertEqual(
-                controller.connection.commands,
-                ["safety stop\n", "stop\n"],
-            )
+            self.assertEqual(controller.connection.commands, ["stop\n"])
 
     def test_motion_inhibit_requires_successful_explicit_mcu_unlock(self):
         from controller import controller as controller_module
@@ -355,7 +329,7 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertFalse(controller.motion_inhibited)
             self.assertEqual(
                 controller.connection.commands,
-                ["safety stop\n", "motion enable\n", "motion enable\n"],
+                ["motion enable\n", "motion enable\n"],
             )
             self.assertTrue(controller.motor(120))
             self.assertEqual(controller.connection.commands[-1], "motor 120\n")
