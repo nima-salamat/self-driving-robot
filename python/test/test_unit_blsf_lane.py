@@ -59,6 +59,59 @@ class BLSFLaneDetectorTests(unittest.TestCase):
             int(0.1 * 10 + 0.4 * 20 + 0.5 * 30),
         )
 
+    def test_segments_normalizes_supported_opencv_line_shapes(self):
+        detector = BLSFLaneDetector(self.Config())
+        canonical = np.array(
+            [
+                [[10.0, 100.0, 20.0, 70.0]],
+                [[30.0, 100.0, 40.0, 70.0]],
+            ],
+            dtype=np.float32,
+        )
+        shapes = (
+            canonical,                       # OpenCV's common (N, 1, 4)
+            canonical.reshape(-1, 4),        # (N, 4)
+            canonical.reshape(1, 2, 1, 4),   # wrapped singleton dimensions
+        )
+        binary = np.zeros((120, 160), dtype=np.uint8)
+
+        for raw_lines in shapes:
+            with self.subTest(shape=raw_lines.shape):
+                detector._lsd = types.SimpleNamespace(
+                    detect=lambda _binary, lines=raw_lines: (
+                        lines,
+                        None,
+                        None,
+                        None,
+                    )
+                )
+                segments = detector._segments(binary)
+                self.assertEqual(len(segments), 2)
+                self.assertEqual(len(segments[0]), 6)
+
+    def test_segments_ignore_empty_malformed_and_nonfinite_line_outputs(self):
+        detector = BLSFLaneDetector(self.Config())
+        binary = np.zeros((120, 160), dtype=np.uint8)
+        invalid_outputs = (
+            None,
+            np.asarray([], dtype=np.float32),
+            np.float32(1.0),
+            np.asarray([1.0, 2.0, 3.0], dtype=np.float32),
+            np.asarray([[np.nan, 10.0, 20.0, 30.0]], dtype=np.float32),
+        )
+
+        for raw_lines in invalid_outputs:
+            with self.subTest(output=repr(raw_lines)):
+                detector._lsd = types.SimpleNamespace(
+                    detect=lambda _binary, lines=raw_lines: (
+                        lines,
+                        None,
+                        None,
+                        None,
+                    )
+                )
+                self.assertEqual(detector._segments(binary), [])
+
     def test_ransac_recovers_quadratic_lane(self):
         detector = BLSFLaneDetector(self.Config())
         y = np.linspace(0, 100, 60)
