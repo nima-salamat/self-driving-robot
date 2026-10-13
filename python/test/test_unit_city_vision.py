@@ -30,6 +30,17 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "4 coordinates"):
             VisionProcessor._extract_line(np.array([10, 20, 30], dtype=np.float32))
 
+    def test_no_lane_result_preserves_last_steering_angle(self):
+        processor = VisionProcessor()
+        processor.last_steering = 113
+        blank_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        result = processor.detect(blank_frame)
+
+        self.assertEqual(result["lane_type"], "none")
+        self.assertFalse(result["perception_valid"])
+        self.assertEqual(result["steering_angle"], 113)
+
 
 if __name__ == "__main__":
     unittest.main()
