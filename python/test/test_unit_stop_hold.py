@@ -137,7 +137,9 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         robot.camera.capture_frame.return_value = (frame, frame.copy())
         robot.camera.last_capture_valid = True
         robot.control = Mock()
-        robot.control.set_motion_inhibited.return_value = True
+        robot.control.without_arduino = False
+        robot.control.connection.connected = True
+        robot.control.connection.send_command.return_value = True
         robot.handle_read_sign_or_tag = Mock(return_value=(None, False, None, None))
         robot.handle_debug_stream = Mock()
         robot._pace_control_loop = Mock()
@@ -151,8 +153,10 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         np.testing.assert_array_equal(call.args[1], frame)
         self.assertTrue(call.kwargs["force_check"])
         robot.control.stop.assert_not_called()
-        robot.control.set_motion_inhibited.assert_called_once_with(
-            True, reason="traffic_sign_stop_hold"
+        robot.control.set_angle.assert_not_called()
+        robot.control.motor.assert_not_called()
+        robot.control.connection.send_command.assert_called_once_with(
+            "safety stop\\n"
         )
         robot.handle_debug_stream.assert_called_once()
         self.assertIn("STOP HOLD", str(robot.handle_debug_stream.call_args))
@@ -216,20 +220,21 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
 
         robot = Robot.__new__(Robot)
         robot.control = Mock()
-        robot.control.stop.return_value = True
-        # Simulate having just sent STOP; the next cycle must still send it.
-        robot._last_stop_command_at = time.monotonic()
-
-        robot.control.set_motion_inhibited.return_value = True
+        robot.control.without_arduino = False
+        robot.control.connection.connected = True
+        robot.control.connection.send_command.return_value = True
+        robot._mcu_stop_latched = False
+        robot._stop_connection_state = True
 
         self.assertTrue(robot._keep_stop_hold())
         self.assertTrue(robot._keep_stop_hold())
-        self.assertEqual(robot.control.set_motion_inhibited.call_count, 2)
-        robot.control.set_motion_inhibited.assert_called_with(
-            True, reason="traffic_sign_stop_hold"
+        # Send one latch transition, not a steering/speed command every frame.
+        robot.control.connection.send_command.assert_called_once_with(
+            "safety stop\\n"
         )
-        # A healthy, already-latched STOP must not flood the UART with writes.
         robot.control.stop.assert_not_called()
+        robot.control.set_angle.assert_not_called()
+        robot.control.motor.assert_not_called()
 
     def test_city_stop_state_is_maintained_without_repeated_stop_writes(self):
         self._assert_stop_command_is_sent_each_cycle("city")
@@ -252,11 +257,15 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         robot.last_sign_observation_at = 50.0
         robot._last_stop_command_at = None
         robot.control = Mock()
-        robot.control.set_motion_inhibited.return_value = True
+        robot.control.without_arduino = False
+        robot.control.connection.connected = True
+        robot.control.connection.send_command.return_value = True
+        robot._mcu_stop_latched = False
+        robot._stop_connection_state = True
 
         self.assertTrue(robot._observe_stop_result(True, detector_kind="sign"))
-        robot.control.set_motion_inhibited.assert_called_once_with(
-            True, reason="traffic_sign_stop_hold"
+        robot.control.connection.send_command.assert_called_once_with(
+            "safety stop\\n"
         )
 
         robot.last_sign_observation_at = 50.1
@@ -265,9 +274,14 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         self.assertTrue(robot._observe_stop_result(False))
         robot.last_sign_observation_at = 50.3
         self.assertFalse(robot._observe_stop_result(False))
-        robot.control.set_motion_inhibited.assert_called_with(
-            False, reason="traffic_sign_cleared"
+        # Clearance is detected by the sign handler, but the mode loop owns
+        # the explicit release and must send it before normal control resumes.
+        self.assertEqual(
+            robot.control.connection.send_command.call_args_list,
+            [unittest.mock.call("safety stop\\n")],
         )
+        self.assertTrue(robot._set_mcu_stop_latched(False))
+        robot.control.connection.send_command.assert_called_with("motion enable\\n")
 
     def test_city_stop_detection_latches_shared_controller(self):
         self._assert_detection_latches_controller_motion("city")
