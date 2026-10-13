@@ -452,6 +452,10 @@ int targetPulses = 0;
 int currentMotorSpeed = 0;
 int motorDirection = 1;
 
+// Preserve the latest continuous host speed while an encoder pulse maneuver runs.
+bool pendingHostMotorValid = false;
+int pendingHostMotorSpeed = 0;
+
 /* =========================
 PULSE QUEUE
 ========================= */
@@ -462,6 +466,8 @@ LANE LOGIC
 ========================= */
 bool lane_changing_mode = true;
 char lane = 'R';
+// A host stop inhibits automatic obstacle maneuvers until nonzero host motion resumes.
+bool hostStopRequested = false;
 
 enum LaneState {
   LANE_NORMAL = 0,
@@ -726,60 +732,87 @@ void loop() {
     return;
   }
 
-  // Serial Parser Logic
+  // Serial parser: never discard a motor setpoint just because a pulse is active.
   if (stringComplete) {
-    // If moving by pulses, cleanly discard the complete message
-    if (movingByPulses) {
-      inputString = "";
-      stringComplete = false;
-    } else {
-      inputString.trim();
-      String work = inputString;
-      work.toLowerCase();
-      
-      // Clear for next message
-      inputString = "";
-      stringComplete = false;
+    inputString.trim();
+    String work = inputString;
+    work.toLowerCase();
 
-      if (work == "left") {
-        panel.setLeft();
+    inputString = "";
+    stringComplete = false;
+
+    const bool motorCommand = work.startsWith("motor ");
+    int requestedMotorSpeed = 0;
+    if (motorCommand) {
+      requestedMotorSpeed = constrain(work.substring(6).toInt(), -255, 255);
+    }
+
+    // Explicit stop must remain effective even during an encoder pulse.
+    if (work == "stop" || (motorCommand && requestedMotorSpeed == 0)) {
+      queue.clear();
+      pendingHostMotorValid = false;
+      stopMotor();
+      targetPulses = 0;
+      laneState = LANE_NORMAL;
+      lane = 'R';
+      laneChangeStart = 0;
+      hostStopRequested = true;
+      startServoMoveImmediate(SERVO_CENTER);
+      panel.setStop();
+    }
+    else if (motorCommand) {
+      if (movingByPulses) {
+        // Apply after the current queued maneuver finishes. Repeated host
+        // refreshes overwrite this with the newest requested setpoint.
+        pendingHostMotorSpeed = requestedMotorSpeed;
+        pendingHostMotorValid = true;
+      } else {
+        hostStopRequested = false;
+        setMotorSpeed(requestedMotorSpeed);
       }
-      else if (work == "right") {
-        panel.setRight();
-      }
-      else if (work == "stop") {
-        queue.clear();
-        stopMotor();
-        panel.setStop();
-      }
-      else if (work == "clear" || work == "clear leds" || work == "clearleds") {
-        panel.clearPanel();
-      }
-      else if (work == "allleds" || work == "all leds on") {
-        panel.allLedsOn();
-      }
-      else if (work == "resume") {
-        exitForceStop();
-      }
-      else if (work.startsWith("motor ")) {
-        setMotorSpeed(work.substring(6).toInt());
-      }
-      else if (work.startsWith("servo ")) {
-        startServoMoveImmediate(work.substring(6).toInt());
-      }
-      else {
-        queue.parseAndEnqueue(work);
-      }
+    }
+    else if (movingByPulses) {
+      // Servo/LED/pulse commands are ignored while a pulse sequence owns motion.
+    }
+    else if (work == "left") {
+      panel.setLeft();
+    }
+    else if (work == "right") {
+      panel.setRight();
+    }
+    else if (work == "clear" || work == "clear leds" || work == "clearleds") {
+      panel.clearPanel();
+    }
+    else if (work == "allleds" || work == "all leds on") {
+      panel.allLedsOn();
+    }
+    else if (work == "resume") {
+      exitForceStop();
+    }
+    else if (work.startsWith("servo ")) {
+      startServoMoveImmediate(work.substring(6).toInt());
+    }
+    else {
+      queue.parseAndEnqueue(work);
     }
   }
 
+  // Run the most recent host speed once queued pulse motion has finished.
+  if (!movingByPulses && queue.count() == 0 && pendingHostMotorValid) {
+    const int requestedSpeed = pendingHostMotorSpeed;
+    pendingHostMotorValid = false;
+    if (requestedSpeed != 0) {
+      hostStopRequested = false;
+      setMotorSpeed(requestedSpeed);
+    }
+  }
   int distSide = ultraSide.getCm();
   int dl = ultraLeft.getCm();
   int dr = ultraRight.getCm();
   bool obstacle = (dl > 0 && dl <= STOP_DISTANCE_CM) || (dr > 0 && dr <= STOP_DISTANCE_CM);
 
   if (lane == 'R' && obstacle) {
-    if (!lane_changing_mode) {
+    if (!lane_changing_mode || hostStopRequested) {
       stopMotor();
       queue.clear();
       startServoMoveImmediate(SERVO_CENTER);
