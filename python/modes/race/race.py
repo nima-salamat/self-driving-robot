@@ -92,20 +92,16 @@ class Robot:
             f"f 230 {travel_pulse} {left_angle}"
         )
 
-        # Send commands to Arduino only when hardware control is enabled.
+        # Send the hardcoded sequences with SET commands, without hello/cfg.
+        # This firmware accepts one "save" command for both EEPROM sequences.
         if not getattr(config_race, "WITHOUT_ARDUINO", False):
-            startup_commands = (
-                (cmd_avoid_left, 0.4),
-                ("save left", 0.4),
-                (cmd_return_right, 0.4),
-                ("save right", 0.4),
-            )
-            for command, delay in startup_commands:
-                if self._shutdown_requested():
-                    break
-                self.control._send_command(command)
-                if self._sleep_interruptible(delay):
-                    break
+            if not self._shutdown_requested():
+                self.control.configure_lane_sequences(
+                    cmd_avoid_left[len("set left "):],
+                    cmd_return_right[len("set right "):],
+                    persist=True,
+                    command_delay_s=0.4,
+                )
 
 
         self.vision = VisionProcessor()
