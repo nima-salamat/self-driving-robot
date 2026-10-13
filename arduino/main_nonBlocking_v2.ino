@@ -777,6 +777,8 @@ int clampServo(int angle) {
 }
 
 void setServo(int angle) {
+  // Preserve the current steering position while the safety STOP is latched.
+  if (hostStopRequested) return;
   angle = clampServo(angle);
 
   if (pulseActive) {
@@ -790,6 +792,8 @@ void setServo(int angle) {
 }
 
 void centerServo() {
+  // STOP must not issue a new steering target.
+  if (hostStopRequested) return;
   steering.write(SERVO_CENTER);
   servoCurrent = SERVO_CENTER;
 }
@@ -1240,6 +1244,24 @@ void serviceHostWatchdog(uint32_t nowMs) {
   lastHostHeartbeatMs = nowMs;
 }
 
+void stopHostMotion(bool latchStop) {
+  if (latchStop) hostStopRequested = true;
+
+  clearPulseQueue();
+  pulseActive = false;
+  pulsePaused = false;
+  adaptiveActive = false;
+  pulseRemaining = 0;
+  pendingHostMotorValid = false;
+  pendingHostServoValid = false;
+  directionChangePending = false;
+  pendingDirectionSpeed = 0;
+  laneState = LANE_NORMAL;
+  lane = 'R';
+  writeMotorHardware(0);
+  panel.stop();
+}
+
 void processSerialLine(char *rawLine) {
   char lineCopy[SERIAL_LINE_MAX + 1];
   strncpy(lineCopy, rawLine, SERIAL_LINE_MAX);
@@ -1249,6 +1271,10 @@ void processSerialLine(char *rawLine) {
   if (!*line) return;
 
   if (emergencyStopActive) {
+    if (equalsIgnoreCase(line, "safety stop")) {
+      stopHostMotion(true);
+      return;
+    }
     if (equalsIgnoreCase(line, "resume")) exitForceStop();
     return;
   }
@@ -1265,6 +1291,7 @@ void processSerialLine(char *rawLine) {
       pulseActive = false;
       pulsePaused = false;
       adaptiveActive = false;
+      pulseRemaining = 0;
       pendingHostMotorValid = false;
       pendingHostServoValid = false;
       directionChangePending = false;
@@ -1276,8 +1303,13 @@ void processSerialLine(char *rawLine) {
     return;
   }
 
-  // While a host/traffic STOP is latched, no actuator or maneuver command
-  // is accepted. Only STOP refresh, status and the explicit unlock may pass.
+  if (equalsIgnoreCase(line, "safety stop")) {
+    stopHostMotion(true);
+    return;
+  }
+
+  // The MCU is the final motion arbiter. While STOP is latched, only
+  // STOP refresh, status, heartbeat and the explicit unlock are accepted.
   if (
     hostStopRequested &&
     !equalsIgnoreCase(line, "stop") &&
@@ -1288,20 +1320,7 @@ void processSerialLine(char *rawLine) {
   }
 
   if (equalsIgnoreCase(line, "stop")) {
-    hostStopRequested = true;
-    clearPulseQueue();
-    pulseActive = false;
-    pulsePaused = false;
-    adaptiveActive = false;
-    pendingHostMotorValid = false;
-    pendingHostServoValid = false;
-    laneState = LANE_NORMAL;
-    lane = 'R';
-    directionChangePending = false;
-    pendingDirectionSpeed = 0;
-    writeMotorHardware(0);
-    centerServo();
-    panel.stop();
+    stopHostMotion(false);
     return;
   }
 
@@ -1338,20 +1357,7 @@ void processSerialLine(char *rawLine) {
     if (parseIntStrict(trim(line + 6), -255, 255, speed)) {
       int requestedSpeed = (int)speed;
       if (requestedSpeed == 0) {
-        clearPulseQueue();
-        pulseActive = false;
-        pulsePaused = false;
-        adaptiveActive = false;
-        pendingHostMotorValid = false;
-        pendingHostServoValid = false;
-        laneState = LANE_NORMAL;
-        lane = 'R';
-        directionChangePending = false;
-        pendingDirectionSpeed = 0;
-        hostStopRequested = true;
-        writeMotorHardware(0);
-        centerServo();
-        panel.stop();
+        stopHostMotion(false);
       } else {
         requestMotorSpeed(requestedSpeed);
       }
@@ -1504,7 +1510,7 @@ void loop() {
   pollSerial();
   serviceHostWatchdog(nowMs);
   updateUltra(nowMs);
-  serviceDirectionChange(nowMs);
+  if (!hostStopRequested) serviceDirectionChange(nowMs);
 
   if (emergencyStopActive) {
     if ((uint32_t)(nowMs - lastStatusMs) >= STATUS_INTERVAL_MS) {
@@ -1514,41 +1520,41 @@ void loop() {
     return;
   }
 
-  if (pulseActive) {
-    updatePulseMotion(nowMs);
+  if (!hostStopRequested) {
+    if (pulseActive) {
+      updatePulseMotion(nowMs);
 
-    if (pulseActive && pulsePaused && !pulseObstacle()) {
-      resumePulseMotion();
-    }
-  } else {
-    if (lane == 'R' && normalObstacle()) {
-      if (!laneChangingMode || hostStopRequested) {
-        clearPulseQueue();
-        writeMotorHardware(0);
-        centerServo();
-        panel.stop();
-      } else if (laneState == LANE_NORMAL) {
-        startLaneChangeLeft();
+      if (pulseActive && pulsePaused && !pulseObstacle()) {
+        resumePulseMotion();
       }
-    }
-
-    if (laneState == LANE_LEFT) {
-      int sideDistance = ultraCm(2);
-      if (sideDistance > 0 && sideDistance <= SIDE_RETURN_DISTANCE_CM) {
-        startReturnToRightLane();
+    } else {
+      if (lane == 'R' && normalObstacle()) {
+        if (!laneChangingMode) {
+          clearPulseQueue();
+          writeMotorHardware(0);
+          panel.stop();
+        } else if (laneState == LANE_NORMAL) {
+          startLaneChangeLeft();
+        }
       }
-    }
 
-    if (pendingHostServoValid) {
-      steering.write(clampServo(pendingHostServo));
-      servoCurrent = clampServo(pendingHostServo);
-      pendingHostServoValid = false;
-    }
+      if (laneState == LANE_LEFT) {
+        int sideDistance = ultraCm(2);
+        if (sideDistance > 0 && sideDistance <= SIDE_RETURN_DISTANCE_CM) {
+          startReturnToRightLane();
+        }
+      }
 
-    if (pendingHostMotorValid) {
-      int speed = pendingHostMotor;
-      pendingHostMotorValid = false;
-      requestMotorSpeed(speed);
+      if (pendingHostServoValid) {
+        setServo(pendingHostServo);
+        pendingHostServoValid = false;
+      }
+
+      if (pendingHostMotorValid) {
+        int speed = pendingHostMotor;
+        pendingHostMotorValid = false;
+        requestMotorSpeed(speed);
+      }
     }
   }
 
