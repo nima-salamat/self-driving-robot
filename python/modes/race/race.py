@@ -202,17 +202,14 @@ class Robot:
         return self.stop_hold.active
 
     def _keep_stop_hold(self):
-        """Refresh the hardware STOP command without flooding the serial link."""
-        now = time.monotonic()
-        last_sent = getattr(self, "_last_stop_command_at", None)
-        refresh_interval = max(
-            0.05,
-            float(getattr(config_race, "MOTOR_COMMAND_REFRESH_INTERVAL", 0.1)),
+        """Send a STOP command on every control-loop cycle while STOP is latched."""
+        first_command = getattr(self, "_last_stop_command_at", None) is None
+        success = self.control.stop(
+            reason="traffic_sign_stop_hold" if first_command else None
         )
-        if last_sent is None or now - last_sent >= refresh_interval:
-            reason = "traffic_sign_stop_hold" if last_sent is None else None
-            self.control.stop(reason=reason)
-            self._last_stop_command_at = now
+        # If serial transmission failed, retry on the very next loop iteration.
+        self._last_stop_command_at = time.monotonic() if success else None
+        return bool(success)
 
     def _run_stop_hold_cycle(self):
         """Check STOP on every camera frame while keeping Debug/Stream alive."""

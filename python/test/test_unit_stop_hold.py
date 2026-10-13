@@ -160,6 +160,29 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
     def test_race_stop_state_keeps_stream_frames_live(self):
         self._assert_stop_hold_frame_is_published("race")
 
+    def _assert_stop_command_is_sent_each_cycle(self, mode):
+        if mode == "city":
+            from modes.city.city import Robot
+        else:
+            from modes.race.race import Robot
+
+        robot = Robot.__new__(Robot)
+        robot.control = Mock()
+        robot.control.stop.return_value = True
+        # Simulate having just sent STOP; the next cycle must still send it.
+        robot._last_stop_command_at = time.monotonic()
+
+        self.assertTrue(robot._keep_stop_hold())
+        self.assertTrue(robot._keep_stop_hold())
+        self.assertEqual(robot.control.stop.call_count, 2)
+        robot.control.stop.assert_any_call(reason=None)
+
+    def test_city_stop_command_repeats_every_hold_cycle(self):
+        self._assert_stop_command_is_sent_each_cycle("city")
+
+    def test_race_stop_command_repeats_every_hold_cycle(self):
+        self._assert_stop_command_is_sent_each_cycle("race")
+
 
 if __name__ == "__main__":
     unittest.main()
