@@ -17,7 +17,9 @@ class RobotController:
             raise ValueError("Config must be provided during the first initialization of RobotController.")
             
         self.config = config
-        
+        self.motion_inhibited = False
+        self.motion_inhibit_reason = None
+
         mode = getattr(self.config, 'MODE', 'unknown')
         print(f"Mode: {mode}")
         
@@ -107,6 +109,41 @@ class RobotController:
     def record_event(self, event, metadata=None):
         self.motion_history.record_event(event, metadata=metadata)
 
+    def set_motion_inhibited(self, inhibited, reason=None):
+        """Latch actuator commands off until an explicit successful release."""
+        inhibited = bool(inhibited)
+        reason = str(reason or "traffic_stop")
+
+        if inhibited:
+            if not self.motion_inhibited:
+                self.current_speed = 0
+                self._last_motor_command_at = None
+                self.pid.reset()
+            self.motion_inhibited = True
+            self.motion_inhibit_reason = reason
+            return True
+
+        if not self.motion_inhibited:
+            return True
+
+        # Never release in software alone: the MCU has its own STOP latch.
+        # If this serial command fails, keep all controller-side actuators locked.
+        if not self.without_arduino:
+            if not self._send_command(
+                "motion enable",
+                event="motion_inhibit_released",
+                metadata={"reason": reason},
+                allow_while_inhibited=True,
+            ):
+                return False
+
+        self.motion_inhibited = False
+        self.motion_inhibit_reason = None
+        self.current_speed = 0
+        self._last_motor_command_at = None
+        self.pid.reset()
+        return True
+
     def configure_lane_sequences(
         self,
         left_sequence: str,
@@ -159,8 +196,36 @@ class RobotController:
             return False
         return True
 
-    def _send_command(self, cmd: str, *, event=None, record_motion=False, metadata=None):
+    def _send_command(
+        self,
+        cmd: str,
+        *,
+        event=None,
+        record_motion=False,
+        metadata=None,
+        allow_while_inhibited=False,
+    ):
         command = cmd.strip()
+        if (
+            self.motion_inhibited
+            and command.lower() != "stop"
+            and not allow_while_inhibited
+        ):
+            # Record the local rejection, but do not touch the serial transport.
+            now = time.monotonic()
+            self.command_sequence += 1
+            self.last_command = {
+                "sequence": self.command_sequence,
+                "command": command,
+                "success": False,
+                "blocked": True,
+                "blocked_reason": self.motion_inhibit_reason,
+                "generated_at": now,
+                "transmitted_at": None,
+                "latency_ms": 0.0,
+            }
+            return False
+
         started = time.monotonic()
         success = self.connection.send_command(command + "\n")
         finished = time.monotonic()
@@ -226,6 +291,8 @@ class RobotController:
         return self.without_arduino or self.connection.connected
 
     def servo(self, angle: int):
+        if self.motion_inhibited:
+            return False
         if angle < self.min_servo_angle:
             angle = self.min_servo_angle
         elif angle > self.max_servo_angle:
@@ -234,6 +301,8 @@ class RobotController:
         return self._send_command(f"servo {angle}")
 
     def motor(self, speed: int):
+        if self.motion_inhibited:
+            return False
         self._sync_connection_state()
         if speed > 255:
             speed = 255
@@ -282,6 +351,8 @@ class RobotController:
         return self._send_command("stop")
 
     def set_angle(self, angle: int):
+        if self.motion_inhibited:
+            return False
         self._sync_connection_state()
         angle = max(self.min_servo_angle, min(self.max_servo_angle, angle))
         if self.last_angle == angle:
@@ -310,6 +381,8 @@ class RobotController:
         self.motor(-abs(speed))
         
     def forward_pulse(self, s, event="forward_pulse", metadata=None):
+        if self.motion_inhibited:
+            return False
         return self._send_command(
             s,
             event=event,
@@ -318,6 +391,8 @@ class RobotController:
         )
     
     def backward_pulse(self, s, event="backward_pulse", metadata=None):
+        if self.motion_inhibited:
+            return False
         return self._send_command(
             s,
             event=event,
@@ -362,6 +437,8 @@ class RobotController:
         return steering_angle
     
     def set_angle_by_error(self, error, lane_type):
+        if self.motion_inhibited:
+            return False
         if lane_type == "none":
             # Do not reset the actuator to a stop just because lane pixels are
             # temporarily absent. Hold the last applied servo angle and reset

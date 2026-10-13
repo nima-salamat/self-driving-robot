@@ -184,5 +184,43 @@ class StopHoldRobotIntegrationTests(unittest.TestCase):
         self._assert_stop_command_is_sent_each_cycle("race")
 
 
+    def _assert_detection_latches_controller_motion(self, mode):
+        if mode == "city":
+            from modes.city import city as mode_module
+        else:
+            from modes.race import race as mode_module
+
+        robot = mode_module.Robot.__new__(mode_module.Robot)
+        robot.stop_hold = StopSignHold(clear_confirmations=3)
+        robot.stop_last_seen = None
+        robot.stop_hold_detector_kind = None
+        robot.last_sign_observation_fresh = True
+        robot.last_sign_observation_at = 50.0
+        robot._last_stop_command_at = None
+        robot.control = Mock()
+        robot.control.set_motion_inhibited.return_value = True
+
+        self.assertTrue(robot._observe_stop_result(True, detector_kind="sign"))
+        robot.control.set_motion_inhibited.assert_called_once_with(
+            True, reason="traffic_sign_stop_hold"
+        )
+
+        robot.last_sign_observation_at = 50.1
+        self.assertTrue(robot._observe_stop_result(False))
+        robot.last_sign_observation_at = 50.2
+        self.assertTrue(robot._observe_stop_result(False))
+        robot.last_sign_observation_at = 50.3
+        self.assertFalse(robot._observe_stop_result(False))
+        robot.control.set_motion_inhibited.assert_called_with(
+            False, reason="traffic_sign_cleared"
+        )
+
+    def test_city_stop_detection_latches_shared_controller(self):
+        self._assert_detection_latches_controller_motion("city")
+
+    def test_race_stop_detection_latches_shared_controller(self):
+        self._assert_detection_latches_controller_motion("race")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1259,6 +1259,34 @@ void processSerialLine(char *rawLine) {
     return;
   }
 
+  if (equalsIgnoreCase(line, "motion enable")) {
+    if (hostStopRequested) {
+      clearPulseQueue();
+      pulseActive = false;
+      pulsePaused = false;
+      adaptiveActive = false;
+      pendingHostMotorValid = false;
+      pendingHostServoValid = false;
+      directionChangePending = false;
+      pendingDirectionSpeed = 0;
+      writeMotorHardware(0);
+      hostStopRequested = false;
+      panel.clear();
+    }
+    return;
+  }
+
+  // While a host/traffic STOP is latched, no actuator or maneuver command
+  // is accepted. Only STOP refresh, status and the explicit unlock may pass.
+  if (
+    hostStopRequested &&
+    !equalsIgnoreCase(line, "stop") &&
+    !equalsIgnoreCase(line, "status") &&
+    !equalsIgnoreCase(line, "u")
+  ) {
+    return;
+  }
+
   if (equalsIgnoreCase(line, "stop")) {
     hostStopRequested = true;
     clearPulseQueue();
@@ -1325,7 +1353,6 @@ void processSerialLine(char *rawLine) {
         centerServo();
         panel.stop();
       } else {
-        hostStopRequested = false;
         requestMotorSpeed(requestedSpeed);
       }
     }

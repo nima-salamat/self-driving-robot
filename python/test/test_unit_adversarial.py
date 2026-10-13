@@ -288,6 +288,52 @@ class ControllerAdversarialTests(unittest.TestCase):
             controller.stop()
             self.assertIsNone(controller.pid._prev_error)
 
+    def test_motion_inhibit_blocks_motor_servo_angle_and_pulses(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            controller = controller_module.RobotController(make_controller_config())
+            controller.set_motion_inhibited(True, reason="traffic_stop")
+
+            self.assertFalse(controller.motor(200))
+            self.assertFalse(controller.servo(110))
+            self.assertFalse(controller.set_angle(110))
+            self.assertFalse(controller.set_angle_by_error(20, "both"))
+            self.assertFalse(controller.forward_pulse("f 180 10 90"))
+            self.assertFalse(controller.backward_pulse("b 180 10 90"))
+            self.assertFalse(controller._send_command("lane auto"))
+
+            # No actuator/maneuver command escaped the controller gate.
+            self.assertEqual(controller.connection.commands, [])
+            self.assertTrue(controller.stop())
+            self.assertEqual(controller.connection.commands, ["stop\n"])
+
+    def test_motion_inhibit_requires_successful_explicit_mcu_unlock(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            controller = controller_module.RobotController(make_controller_config())
+            controller.set_motion_inhibited(True, reason="traffic_stop")
+            controller.connection.result = False
+
+            self.assertFalse(
+                controller.set_motion_inhibited(False, reason="traffic_sign_cleared")
+            )
+            self.assertTrue(controller.motion_inhibited)
+            self.assertFalse(controller.motor(120))
+
+            controller.connection.result = True
+            self.assertTrue(
+                controller.set_motion_inhibited(False, reason="traffic_sign_cleared")
+            )
+            self.assertFalse(controller.motion_inhibited)
+            self.assertEqual(
+                controller.connection.commands,
+                ["motion enable\n"],
+            )
+            self.assertTrue(controller.motor(120))
+            self.assertEqual(controller.connection.commands[-1], "motor 120\n")
+
 
 class SignFreshnessAdversarialTests(unittest.TestCase):
     def test_completed_result_has_input_metadata_and_expires(self):

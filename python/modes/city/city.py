@@ -165,9 +165,36 @@ class Robot:
         )
         if self.stop_hold.active and not was_active:
             self._last_stop_command_at = None
+            self._set_controller_motion_inhibited(
+                True, reason="traffic_sign_stop_hold"
+            )
         elif was_active and not self.stop_hold.active:
             self.stop_hold_detector_kind = None
+            self._set_controller_motion_inhibited(
+                False, reason="traffic_sign_cleared"
+            )
+        elif (
+            not self.stop_hold.active
+            and getattr(self.control, "motion_inhibited", False) is True
+        ):
+            # Retry release if the MCU did not accept the previous command.
+            self._set_controller_motion_inhibited(
+                False, reason="traffic_sign_cleared"
+            )
         return self.stop_hold.active
+
+    def _set_controller_motion_inhibited(self, inhibited, reason):
+        control = getattr(self, "control", None)
+        setter = getattr(control, "set_motion_inhibited", None)
+        if not callable(setter):
+            return True
+        released = setter(inhibited, reason=reason)
+        if not released and not inhibited:
+            logger.warning(
+                "Arduino did not accept the motion-unlock command; "
+                "controller remains inhibited"
+            )
+        return bool(released)
 
     def _keep_stop_hold(self):
         """Send a STOP command on every control-loop cycle while STOP is latched."""
@@ -315,6 +342,14 @@ class Robot:
                 if self.stop_hold.active:
                     self._run_stop_hold_cycle()
                     continue
+
+                if getattr(self.control, "motion_inhibited", False) is True:
+                    # Retry the explicit MCU unlock before normal control resumes.
+                    if not self._set_controller_motion_inhibited(
+                        False, reason="traffic_sign_cleared"
+                    ):
+                        self._pace_control_loop()
+                        continue
 
                 if config_city.RUN_LVL == "STOP":
                     self.control.stop()
