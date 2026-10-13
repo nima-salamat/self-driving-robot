@@ -22,10 +22,11 @@ jobs:
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
 
-      - name: Install AVR core
+      - name: Install AVR core and Servo library
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr
+          arduino-cli lib install Servo
 
       - name: Prepare standalone sketches
         run: |
