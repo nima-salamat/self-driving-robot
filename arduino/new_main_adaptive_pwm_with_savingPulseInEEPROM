@@ -523,7 +523,8 @@ PulseQueue queue(16);
 /* =========================
 LANE LOGIC
 ========================= */
-bool lane_changing_mode = true;
+// Do not run EEPROM lane sequences before fresh host SET commands arrive.
+bool lane_changing_mode = false;
 char lane = 'R';
 
 enum LaneState {
@@ -931,69 +932,82 @@ void loop() {
     return;
   }
 
-  // Serial Parser Logic
+  // Safety/configuration commands remain available during pulse motion.
+  // Other new motion commands are ignored while an encoder sequence is active.
   if (stringComplete) {
-    if (movingByPulses) {
-      inputString = "";
-      stringComplete = false;
-    } else {
-      inputString.trim();
-      String work = inputString;
-      work.toLowerCase();
+    inputString.trim();
+    String work = inputString;
+    work.toLowerCase();
 
-      inputString = "";
-      stringComplete = false;
+    inputString = "";
+    stringComplete = false;
 
-      if (work == "left") {
-        panel.setLeft();
-      }
-      else if (work == "right") {
-        panel.setRight();
-      }
-      else if (work == "stop") {
-        queue.clear();
-        stopMotor();
-        panel.setStop();
-      }
-      else if (work == "clear" || work == "clear leds" || work == "clearleds") {
-        panel.clearPanel();
-      }
-      else if (work == "allleds" || work == "all leds on") {
-        panel.allLedsOn();
-      }
-      else if (work == "resume") {
-        exitForceStop();
-      }
-      else if (work == "lane auto") {
-        lane_changing_mode = true;
-      }
-      else if (work == "lane manual" || work == "lane stop") {
-        lane_changing_mode = false;
-      }
-      else if (work.startsWith("motor ")) {
-        setMotorSpeed(work.substring(6).toInt());
-      }
-      else if (work.startsWith("servo ")) {
-        startServoMoveImmediate(work.substring(6).toInt());
-      }
-      else if (work.startsWith("set left ")) {
-        String seq = work.substring(9);
-        seq.trim();
+    if (work == "stop") {
+      queue.clear();
+      stopMotor();
+      targetPulses = 0;
+      laneState = LANE_NORMAL;
+      lane = 'R';
+      laneChangeStart = 0;
+      sidePassState = SIDE_WAITING_OBSTACLE;
+      startServoMoveImmediate(SERVO_CENTER);
+      panel.setStop();
+    }
+    else if (work == "lane manual" || work == "lane stop") {
+      lane_changing_mode = false;
+    }
+    else if (work == "lane auto") {
+      lane_changing_mode = true;
+    }
+    else if (work.startsWith("set left ")) {
+      String seq = work.substring(9);
+      seq.trim();
+      if (seq.length() > 0 && seq.length() < MAX_LANE_CMD_LEN) {
         seq.toCharArray(currentConfig.leftSequence, MAX_LANE_CMD_LEN);
         Serial.println("LEFT CONFIG UPDATED");
+      } else {
+        Serial.println("LEFT CONFIG REJECTED");
       }
-      else if (work.startsWith("set right ")) {
-        String seq = work.substring(10);
-        seq.trim();
+    }
+    else if (work.startsWith("set right ")) {
+      String seq = work.substring(10);
+      seq.trim();
+      if (seq.length() > 0 && seq.length() < MAX_LANE_CMD_LEN) {
         seq.toCharArray(currentConfig.rightSequence, MAX_LANE_CMD_LEN);
         Serial.println("RIGHT CONFIG UPDATED");
+      } else {
+        Serial.println("RIGHT CONFIG REJECTED");
       }
-      else if (work == "save") {
-        saveConfig();
-      }
-      else {
-        queue.parseAndEnqueue(work);
-      }
+    }
+    else if (work == "save") {
+      saveConfig();
+    }
+    else if (movingByPulses) {
+      // Preserve ownership of motion by the active encoder pulse sequence.
+    }
+    else if (work == "left") {
+      panel.setLeft();
+    }
+    else if (work == "right") {
+      panel.setRight();
+    }
+    else if (work == "clear" || work == "clear leds" || work == "clearleds") {
+      panel.clearPanel();
+    }
+    else if (work == "allleds" || work == "all leds on") {
+      panel.allLedsOn();
+    }
+    else if (work == "resume") {
+      exitForceStop();
+    }
+    else if (work.startsWith("motor ")) {
+      setMotorSpeed(work.substring(6).toInt());
+    }
+    else if (work.startsWith("servo ")) {
+      startServoMoveImmediate(work.substring(6).toInt());
+    }
+    else {
+      queue.parseAndEnqueue(work);
     }
   }
 
