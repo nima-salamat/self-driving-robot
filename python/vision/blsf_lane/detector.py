@@ -148,13 +148,32 @@ class BLSFLaneDetector:
         return angle
 
     def _segments(self, binary):
-        lines = self._lsd.detect(binary)[0]
+        detected = self._lsd.detect(binary)
+        lines = detected[0] if detected else None
         if lines is None:
             return []
 
+        # OpenCV builds do not all expose LSD segments with the same shape.
+        # Common forms include (N, 1, 4), (N, 4), and equivalent wrappers
+        # with additional singleton dimensions. Normalize coordinates before
+        # iterating: indexing lines[:, 0] assumes (N, 1, 4) and can yield
+        # individual numpy.float32 values on other valid output shapes.
+        try:
+            line_array = np.asarray(lines, dtype=np.float32)
+        except (TypeError, ValueError, OverflowError):
+            return []
+
+        if line_array.size == 0 or line_array.size % 4 != 0:
+            return []
+
+        line_array = line_array.reshape(-1, 4)
+
         segments = []
-        for line in lines[:, 0]:
-            x1, y1, x2, y2 = map(float, line)
+        for coordinates in line_array:
+            if not np.all(np.isfinite(coordinates)):
+                continue
+
+            x1, y1, x2, y2 = map(float, coordinates)
             length = math.hypot(x2 - x1, y2 - y1)
             if length < self.min_segment_length:
                 continue
