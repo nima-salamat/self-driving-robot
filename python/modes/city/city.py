@@ -292,7 +292,12 @@ class Robot:
                             (time.monotonic() - perception_started) * 1000.0,
                             bool(result.get("perception_valid", False)),
                         )
-                    if not result.get("perception_valid", False):
+                    # Missing lane markings in a valid camera frame are common
+                    # through bends. Hold the last actuator angle and continue
+                    # at cruising speed instead of treating lane_type="none" as
+                    # a camera/perception-system failure.
+                    lane_missing = result.get("lane_type") == "none"
+                    if not result.get("perception_valid", False) and not lane_missing:
                         self.control.stop()
                         if config_city.STREAM or config_city.DEBUG:
                             self.handle_debug_stream(
@@ -305,6 +310,18 @@ class Robot:
                             )
                         self._pace_control_loop()
                         continue
+
+                    if lane_missing:
+                        held_angle = self.control.last_angle
+                        if held_angle is None:
+                            held_angle = self.control.current_angle
+                        if held_angle is None:
+                            held_angle = SERVO_CENTER
+                        result["steering_angle"] = int(held_angle)
+                        logger.debug(
+                            "City lane markings not detected; holding steering angle %s",
+                            held_angle,
+                        )
 
                     angle = result.get("steering_angle")
                     crosswalk = result.get("crosswalk", False)
