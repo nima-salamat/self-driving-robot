@@ -146,6 +146,9 @@ STRAIGHT = 4
 STOP = 5
 
 # without arduino
+# Strict hello/cfg hardware handshake is opt-in via --arduino-config PATH.
+ARDUINO_CONFIG = None
+ARDUINO_CONTRACT_TIMEOUT = 3.0
 WITHOUT_ARDUINO = os.name == "nt"
 
 # Serial recovery / telemetry
