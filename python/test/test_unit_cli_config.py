@@ -14,7 +14,7 @@ class CliConfigPrecedenceTests(unittest.TestCase):
             args = parse_args()
 
         self.assertIsNone(args.debug)
-        self.assertIsNone(args.stream)
+        self.assertFalse(args.stream)
         self.assertIsNone(args.camera_mode)
         self.assertIsNone(args.camera_index)
         self.assertIsNone(args.arduino_config)
@@ -40,6 +40,30 @@ class CliConfigPrecedenceTests(unittest.TestCase):
         self.assertEqual(args.camera_mode, "webcam")
         self.assertEqual(args.camera_index, 2)
         self.assertEqual(args.arduino_config, "profile.json")
+
+    def test_stream_is_disabled_unless_flag_is_supplied(self):
+        for mode in ("city", "race"):
+            with self.subTest(mode=mode):
+                # Simulate a mode/JSON configuration that previously enabled
+                # the stream by default.
+                config = types.SimpleNamespace(STREAM=True)
+                with patch.object(sys, "argv", ["main.py", "--mode", mode]):
+                    args = parse_args()
+                self.assertFalse(args.stream)
+                _apply_cli_overrides(config, args)
+                self.assertFalse(config.STREAM)
+
+                # Passing --stream is the explicit opt-in in both modes.
+                config.STREAM = False
+                with patch.object(
+                    sys,
+                    "argv",
+                    ["main.py", "--mode", mode, "--stream"],
+                ):
+                    args = parse_args()
+                self.assertTrue(args.stream)
+                _apply_cli_overrides(config, args)
+                self.assertTrue(config.STREAM)
 
     def test_only_explicit_values_override_json_values(self):
         config = types.SimpleNamespace(

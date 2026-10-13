@@ -84,9 +84,9 @@ Configuration is loaded in this order:
 
 A value supplied by an explicit CLI flag always has priority over the value loaded from JSON.
 
-An omitted flag does not overwrite the JSON value.
+For most optional flags, an omitted value does not overwrite the JSON value. **The stream is intentionally different:** it is opt-in and remains disabled unless `--stream` is supplied. This CLI rule overrides a stale `"STREAM": true` value in either mode JSON file.
 
-For example, when \`race.json\` contains:
+For example, even if `race.json` contains:
 
 ~~~json
 {
@@ -96,19 +96,23 @@ For example, when \`race.json\` contains:
 }
 ~~~
 
-this command preserves those JSON values:
+this command keeps the dashboard stream disabled:
 
 ~~~bash
 python main.py --mode race
 ~~~
 
-while this command overrides only the camera mode:
+Pass `--stream` to enable it:
+
+~~~bash
+python main.py --mode race --stream
+~~~
+
+Other optional settings, such as camera mode, continue to use the normal configuration precedence:
 
 ~~~bash
 python main.py --mode race --camera-mode webcam
 ~~~
-
-The same rule applies to the existing boolean flags such as \`--stream\`, \`--debug\`, \`--fps\`, and \`--performance\`: they override JSON only when the user explicitly supplies the flag.
 
 ## Camera configuration
 

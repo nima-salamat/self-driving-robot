@@ -113,7 +113,7 @@ CROSSWALK_THRESH_SPEND = 8 # sec  - dont care if crosswalk seen before threshold
 
 
 # Stream (enable/disable) 
-STREAM = True
+STREAM = False
 debug_frames_list = [] # global stream frame variable
 
 # tack snapshot and video of camera

@@ -106,6 +106,14 @@ class StreamApiTests(unittest.TestCase):
             "stream control is disabled",
         )
 
+    def test_city_and_race_stream_defaults_are_disabled(self):
+        from modes.city import config_city
+        from modes.race import config_race
+
+        for config in (config_city, config_race):
+            with self.subTest(mode=config.MODE):
+                self.assertFalse(config.STREAM)
+
     def test_city_and_race_defaults_allow_lan_dashboard_controls(self):
         from modes.city import config_city
         from modes.race import config_race

@@ -23,8 +23,8 @@ def parse_args():
     parser.add_argument(
         "--stream",
         action="store_true",
-        default=None,
-        help="Enable the web stream; overrides the mode configuration.",
+        default=False,
+        help="Enable the web stream; disabled unless this flag is supplied.",
     )
 
     parser.add_argument(
