@@ -8,6 +8,7 @@ from vision.city_vision_processing import VisionProcessor
 from vision.blsf_lane import create_blsf_lane_detector
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
+from vision.traffic_light import TrafficLightDetector, GreenConfirmationWindow
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
 from traffic_sign_detector.async_detector import AsyncSignDetector
@@ -78,6 +79,13 @@ class Robot:
         self.apriltag_detector = ApriltagDetector(config=config_city)
         self.crosswalk_time_start = 0
         self.crosswalk_last_seen = 0
+        self.traffic_light_detector = None
+        self.traffic_light_window = None
+        self._traffic_light_status = ""
+        self._traffic_light_last_state = None
+        if getattr(config_city, "TRAFFIC_LIGHTS_ENABLED", False):
+            self.traffic_light_detector = TrafficLightDetector(config_city)
+            self.traffic_light_window = GreenConfirmationWindow(getattr(config_city,"TL_CONFIRMATION_WINDOW",10),getattr(config_city,"TL_CONFIRMATION_GREEN_REQUIRED",8))
         self.last_tag = None
         self.stop_last_seen = None
         self.read_sign_counter = 0
@@ -347,9 +355,9 @@ class Robot:
         self._pace_control_loop()
 
 
-    def check_crosswalk(self):
+    def check_crosswalk(self, frame=None):
         now = time.time()
-        if now - self.crosswalk_last_seen>= config_city.CROSSWALK_THRESH_SPEND:
+        if self.crosswalk_time_start == 0 and now - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
             self.crosswalk_time_start = now
             self.crosswalk_last_seen = now
             self.control.record_event(
@@ -362,8 +370,32 @@ class Robot:
 
         if self.crosswalk_time_start != 0:
             elapsed = now - self.crosswalk_time_start
-            if elapsed >= config_city.CROSSWALK_SLEEP:
+            enabled = bool(getattr(config_city,"TRAFFIC_LIGHTS_ENABLED",False))
+            permitted = False
+            if enabled:
+                wait = bool(getattr(config_city,"TRAFFIC_LIGHT_WAIT_BEFORE_CHECK",False))
+                if wait and elapsed < float(config_city.CROSSWALK_SLEEP): self._traffic_light_status=f"Waiting before check ({elapsed:.1f}/{config_city.CROSSWALK_SLEEP:.1f}s)"
+                elif frame is None or not getattr(self.camera,"last_capture_valid",False): self._traffic_light_status="UNKNOWN camera frame; holding"
+                else:
+                    try: color,_=self.traffic_light_detector.detect(frame)
+                    except Exception:
+                        logger.exception("Traffic-light detector failed; holding");color=None
+                    token=getattr(self.camera,"last_capture_at",None)
+                    if token is None:token=id(frame)
+                    permitted=self.traffic_light_window.observe(color,token)
+                    if color=="RED":self._traffic_light_status="RED detected; holding"
+                    elif color!="GREEN":self._traffic_light_status="UNKNOWN/ambiguous; holding"
+                    elif permitted:self._traffic_light_status="GREEN confirmed; crossing permitted"
+                    else:self._traffic_light_status=f"GREEN confirmation: {self.traffic_light_window.green_count}/{self.traffic_light_window.window_size}"
+                if self._traffic_light_status!=self._traffic_light_last_state:
+                    logger.info("City traffic-light gate: %s",self._traffic_light_status);self._traffic_light_last_state=self._traffic_light_status
+                if permitted and self._traffic_light_status=="GREEN confirmed; crossing permitted":self.control.record_event("traffic_light_green_confirmed",{"green_count":self.traffic_light_window.green_count,"window_size":self.traffic_light_window.window_size})
+            can_cross=permitted if enabled else elapsed>=config_city.CROSSWALK_SLEEP
+            if can_cross:
                 self.crosswalk_time_start = 0
+                if enabled and self.traffic_light_window is not None:
+                    self.control.record_event("traffic_light_crossing_released",{"tag":self.last_tag})
+                    self.traffic_light_window.reset()
                 logger.debug(f"navigate with tag: {self.last_tag}")
                 if self._shutdown_requested():
                     return
@@ -659,7 +691,7 @@ class Robot:
                         self._pace_control_loop()
                         continue
 
-                    self.check_crosswalk()
+                    self.check_crosswalk(frame)
                     if config_city.DEBUG or config_city.STREAM:
                         self.handle_debug_stream(
                             result,
