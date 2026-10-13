@@ -642,7 +642,9 @@ class Robot:
                         self.handle_detect_object(frame)
                     
                 else:
-                    self.control.stop()
+                    if not self.control.stop():
+                        self._pace_control_loop()
+                        continue
                     time.sleep(2*config_city.DELAY)
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
