@@ -307,9 +307,16 @@ class RobotController:
     
     def set_angle_by_error(self, error, lane_type):
         if lane_type == "none":
+            # Do not reset the actuator to a stop just because lane pixels are
+            # temporarily absent. Hold the last applied servo angle and reset
+            # PID history so the next valid measurement cannot cause a spike.
             self.pid.reset()
-            self.stop(reason="lane_lost")
-            return False
+            held_angle = self.last_angle
+            if held_angle is None:
+                held_angle = self.current_angle
+            if held_angle is None:
+                held_angle = self.servo_center
+            return self.set_angle(held_angle)
         return self.set_angle(self.calculate_angle_by_error(error))
 
     def signal_left(self):
