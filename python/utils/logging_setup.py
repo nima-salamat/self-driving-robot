@@ -6,10 +6,18 @@ from logging.handlers import RotatingFileHandler
 _LOGGER_CONFIGURED = "_self_driving_robot_logging_configured"
 
 
+def _configure_dependency_log_levels(debug):
+    """Keep high-frequency Picamera2 internals quiet unless debug was requested."""
+    level = logging.DEBUG if debug else logging.INFO
+    for name in ("picamera2", "picamera2.picamera2"):
+        logging.getLogger(name).setLevel(level)
+
+
 def configure_logging(debug=False, log_dir="output"):
     logging.disable(logging.NOTSET)
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if debug else logging.INFO)
+    _configure_dependency_log_levels(debug)
 
     if getattr(root, _LOGGER_CONFIGURED, False):
         for handler in root.handlers:
