@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "firmware_types_fwd.h"
 
 #if defined(__AVR__)
 #include <avr/wdt.h>

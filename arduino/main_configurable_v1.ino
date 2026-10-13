@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "firmware_types_fwd.h"
 
 #if defined(__AVR__)
 #include <avr/wdt.h>
@@ -60,7 +61,7 @@ const uint8_t ADAPTIVE_STEP_PWM = 20;
 const uint32_t EEPROM_MAGIC = 0x53445231UL;
 
 const uint8_t MAX_MOTORS = 4;
-const uint8_t MAX_SERVOS = 4;
+const uint8_t MAX_ATTACHED_SERVOS = 4;
 const uint8_t MAX_ULTRASONICS = 8;
 const uint8_t MAX_ENCODERS = 4;
 const uint8_t MAX_SEQUENCE_CHARS = 127;
@@ -122,7 +123,7 @@ struct SafetyOptions {
 
 struct HardwareConfig {
   MotorModule motors[MAX_MOTORS];
-  ServoModule servos[MAX_SERVOS];
+  ServoModule servos[MAX_ATTACHED_SERVOS];
   UltrasonicModule ultras[MAX_ULTRASONICS];
   EncoderModule encoders[MAX_ENCODERS];
   TM1638Module tm;
@@ -138,7 +139,7 @@ struct HardwareConfig {
 HardwareConfig pendingConfig;
 HardwareConfig activeConfig;
 
-Servo servoObjects[MAX_SERVOS];
+Servo servoObjects[MAX_ATTACHED_SERVOS];
 
 volatile uint32_t encoderPulses[MAX_ENCODERS] = {0, 0, 0, 0};
 volatile uint32_t encoderLastUs[MAX_ENCODERS] = {0, 0, 0, 0};
@@ -438,7 +439,7 @@ bool duplicateUltraName(const HardwareConfig &cfg, const char *name) {
 
 bool validateConfig(const HardwareConfig &cfg, char *error, size_t errorSize) {
   if (cfg.motorCount > MAX_MOTORS ||
-      cfg.servoCount > MAX_SERVOS ||
+      cfg.servoCount > MAX_ATTACHED_SERVOS ||
       cfg.ultraCount > MAX_ULTRASONICS ||
       cfg.encoderCount > MAX_ENCODERS) {
     snprintf(error, errorSize, "COUNT_LIMIT");
@@ -1214,7 +1215,7 @@ void sendStatus() {
 void applyHardwareConfig() {
   stopAllMotors();
 
-  for (uint8_t i = 0; i < MAX_SERVOS; ++i) {
+  for (uint8_t i = 0; i < MAX_ATTACHED_SERVOS; ++i) {
     servoObjects[i].detach();
   }
 
@@ -1352,13 +1353,13 @@ void handleConfigCommand(char **tokens, uint8_t count) {
   }
 
   if (strcmp(tokens[1], "servo") == 0) {
-    if (count != 7 || pendingConfig.servoCount >= MAX_SERVOS) {
+    if (count != 7 || pendingConfig.servoCount >= MAX_ATTACHED_SERVOS) {
       Serial.println("ERR CFG SERVO_ARGS");
       return;
     }
 
     long id, pin, minAngle, maxAngle, center;
-    if (!parseLongStrict(tokens[2], 0, MAX_SERVOS - 1, id) ||
+    if (!parseLongStrict(tokens[2], 0, MAX_ATTACHED_SERVOS - 1, id) ||
         !parseLongStrict(tokens[3], 2, 53, pin) ||
         !parseLongStrict(tokens[4], 0, 180, minAngle) ||
         !parseLongStrict(tokens[5], 0, 180, maxAngle) ||
@@ -1682,7 +1683,7 @@ void processRuntimeCommand(char **tokens, uint8_t count, char *rawLine) {
         return;
       }
     } else if (count == 3) {
-      if (!parseLongStrict(tokens[1], 0, MAX_SERVOS - 1, id) ||
+      if (!parseLongStrict(tokens[1], 0, MAX_ATTACHED_SERVOS - 1, id) ||
           !parseLongStrict(tokens[2], 0, 180, angle) ||
           id >= activeConfig.servoCount) {
         Serial.println("ERR SERVO_ID");

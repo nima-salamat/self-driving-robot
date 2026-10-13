@@ -32,6 +32,7 @@ jobs:
         run: |
           mkdir -p /tmp/arduino-sketches/main_configurable_v1
           cp arduino/main_configurable_v1.ino /tmp/arduino-sketches/main_configurable_v1/main_configurable_v1.ino
+          cp arduino/firmware_types_fwd.h /tmp/arduino-sketches/main_configurable_v1/firmware_types_fwd.h
 
       - name: Compile Mega2560 configurable firmware
         run: |
@@ -58,6 +59,7 @@ jobs:
         run: |
           mkdir -p /tmp/arduino-sketches/main_nonBlocking_v2
           cp arduino/main_nonBlocking_v2.ino /tmp/arduino-sketches/main_nonBlocking_v2/main_nonBlocking_v2.ino
+          cp arduino/firmware_types_fwd.h /tmp/arduino-sketches/main_nonBlocking_v2/firmware_types_fwd.h
 
       - name: Compile Mega2560 non-blocking v2 firmware
         run: |
