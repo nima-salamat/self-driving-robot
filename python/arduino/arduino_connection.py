@@ -46,11 +46,6 @@ class ArduinoConnection:
         self._state = self.DISCONNECTED
         self._state_lock = threading.RLock()
         self._serial_lock = threading.RLock()
-        # Serialize the safety latch with every outbound command. This is a
-        # second gate below RobotController, so reconnect/other transport users
-        # cannot bypass a traffic STOP.
-        self._motion_gate_lock = threading.RLock()
-        self._motion_inhibited = False
         self._reconnect_lock = threading.Lock()
         self._reconnect_requested = threading.Event()
         self._stop_event = threading.Event()
@@ -103,16 +98,6 @@ class ArduinoConnection:
     def last_error(self):
         with self._state_lock:
             return self._last_error
-
-    @property
-    def motion_inhibited(self):
-        with self._motion_gate_lock:
-            return self._motion_inhibited
-
-    def set_motion_inhibited(self, inhibited):
-        """Gate all transport writes except safety/status commands while STOP is latched."""
-        with self._motion_gate_lock:
-            self._motion_inhibited = bool(inhibited)
 
     def set_print_telemetry(self, enabled):
         self._print_telemetry = bool(enabled)
@@ -252,21 +237,16 @@ class ArduinoConnection:
                     self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
 
     def _establish_safe_state(self):
-        """Stop after opening/reopening the port without moving the steering servo."""
+        """Send a safe stop/center sequence before normal control resumes."""
         try:
-            # Keep the reconnect safe-state command ordered with STOP latch changes.
-            with self._motion_gate_lock:
-                safe_command = (
-                    b"safety stop\n"
-                    if self._motion_inhibited
-                    else b"stop\n"
-                )
-                with self._serial_lock:
-                    connection = self.serial_connection
-                    if connection is None or not connection.is_open:
-                        return False
-                    connection.write(safe_command)
-                    connection.flush()
+            with self._serial_lock:
+                connection = self.serial_connection
+                if connection is None or not connection.is_open:
+                    return False
+                connection.write(b"stop\n")
+                connection.flush()
+                connection.write(b"servo 90\n")
+                connection.flush()
             return True
         except Exception as exc:
             self._mark_disconnected(exc, expected_connection=self.serial_connection)
@@ -396,55 +376,33 @@ class ArduinoConnection:
 
     @if_is_not_windows
     def send_command(self, command):
-        if isinstance(command, bytes):
-            payload = command
-            command_text = command.decode("utf-8", errors="replace")
-        else:
-            command_text = str(command)
-            payload = command_text.encode()
+        if not self.enabled:
+            return False
 
-        normalized = command_text.strip().lower()
-        allowed_during_stop = {
-            "stop",
-            "safety stop",
-            "motion enable",
-            "heartbeat",
-            "status",
-            "u",
-        }
+        if isinstance(command, str):
+            command = command.encode()
 
-        # Hold this lock through the write. A command that races with the STOP
-        # transition is either completely before it or rejected after it; it
-        # cannot slip through between the safety check and serial.write().
-        with self._motion_gate_lock:
-            if self._motion_inhibited and normalized not in allowed_during_stop:
-                return False
+        self._ensure_reader_started()
 
-            if not self.enabled:
-                return False
+        if not self.connected:
+            self._request_reconnect()
+            return False
 
-            self._ensure_reader_started()
-
-            if not self.connected:
-                self._request_reconnect()
-                return False
-
-            connection = None
-            try:
-                with self._serial_lock:
-                    connection = self.serial_connection
-                    if connection is None or not connection.is_open:
-                        raise serial.SerialException("Arduino connection is not open")
-                    connection.write(payload)
-                    connection.flush()
-                return True
-            except (serial.SerialException, OSError, TimeoutError) as exc:
-                self._mark_disconnected(exc, expected_connection=connection)
-                return False
-            except Exception as exc:
-                logger.exception("Arduino command failed")
-                self._mark_disconnected(exc, expected_connection=connection)
-                return False
+        try:
+            with self._serial_lock:
+                connection = self.serial_connection
+                if connection is None or not connection.is_open:
+                    raise serial.SerialException("Arduino connection is not open")
+                connection.write(command)
+                connection.flush()
+            return True
+        except (serial.SerialException, OSError, TimeoutError) as exc:
+            self._mark_disconnected(exc, expected_connection=connection)
+            return False
+        except Exception as exc:
+            logger.exception("Arduino command failed")
+            self._mark_disconnected(exc, expected_connection=connection)
+            return False
 
     @if_is_not_windows
     def read_command(self):
