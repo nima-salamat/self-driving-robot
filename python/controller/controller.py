@@ -1,3 +1,4 @@
+import logging
 import time
 from arduino.arduino_connection import ArduinoConnection
 from arduino.hardware_contract import (
@@ -6,6 +7,9 @@ from arduino.hardware_contract import (
 )
 from controller.pid_controller import PIDController
 from controller.motion_history import MotionHistory
+
+logger = logging.getLogger(__name__)
+
 
 class RobotController:
     def __init__(self, config=None):
@@ -102,6 +106,58 @@ class RobotController:
 
     def record_event(self, event, metadata=None):
         self.motion_history.record_event(event, metadata=metadata)
+
+    def configure_lane_sequences(
+        self,
+        left_sequence: str,
+        right_sequence: str,
+        *,
+        persist: bool = False,
+        command_delay_s: float = 0.4,
+    ) -> bool:
+        """Send hardcoded lane sequences using the ordinary SET serial protocol."""
+        if self.without_arduino:
+            return False
+
+        wait_s = max(
+            0.0,
+            float(getattr(self.config, "SERIAL_STARTUP_WAIT", 3.0)),
+        )
+        if not self.connection.connected and not self.connection.wait_until_connected(wait_s):
+            logger.error("Cannot configure hardcoded lane sequences: Arduino is not connected.")
+            return False
+
+        commands = [
+            ("lane manual", None, None),
+            (
+                f"set left {left_sequence.strip()}",
+                "hardcode_lane_change_configured",
+                {"side": "left"},
+            ),
+            (
+                f"set right {right_sequence.strip()}",
+                "hardcode_lane_change_configured",
+                {"side": "right"},
+            ),
+        ]
+        if persist:
+            commands.append(("save", "hardcode_lane_change_saved", None))
+
+        for command, event, metadata in commands:
+            if not self._send_command(command, event=event, metadata=metadata):
+                logger.error(
+                    "Failed to send Arduino lane configuration command %r; "
+                    "automatic lane changing remains disabled.",
+                    command,
+                )
+                return False
+            if command_delay_s > 0:
+                time.sleep(command_delay_s)
+
+        if not self._send_command("lane auto"):
+            logger.error("Lane sequences were sent, but lane auto failed.")
+            return False
+        return True
 
     def _send_command(self, cmd: str, *, event=None, record_motion=False, metadata=None):
         command = cmd.strip()
