@@ -15,6 +15,49 @@ from utils.json_config import _validate
 from utils.runtime_metrics import RuntimeMetrics
 
 
+class ArduinoContractCliPolicyTests(unittest.TestCase):
+    @staticmethod
+    def _args(arduino_config=None):
+        return types.SimpleNamespace(
+            debug=None,
+            stream=None,
+            fps=None,
+            performance=None,
+            without_arduino=None,
+            read_arduino_output=None,
+            stream_control=None,
+            camera_mode=None,
+            camera_index=None,
+            arduino_config=arduino_config,
+            arduino_contract_timeout=None,
+            city_lane_detector=None,
+            stream_host=None,
+            ml_lane_model=None,
+        )
+
+    def test_json_cannot_enable_handshake_without_explicit_cli_flag(self):
+        from main import _apply_cli_overrides
+
+        for mode in ("city", "race"):
+            with self.subTest(mode=mode):
+                config = types.SimpleNamespace(ARDUINO_CONFIG="stale-from-json")
+                _apply_cli_overrides(config, self._args())
+                self.assertIsNone(config.ARDUINO_CONFIG)
+
+    def test_explicit_cli_path_enables_handshake(self):
+        from main import _apply_cli_overrides
+
+        config = types.SimpleNamespace(ARDUINO_CONFIG=None)
+        _apply_cli_overrides(
+            config,
+            self._args("python/arduino_configs/mega2560_default.json"),
+        )
+        self.assertEqual(
+            config.ARDUINO_CONFIG,
+            "python/arduino_configs/mega2560_default.json",
+        )
+
+
 class RuntimeMetricsTests(unittest.TestCase):
     def test_statistics_and_counters(self):
         metrics = RuntimeMetrics(window_size=3)
