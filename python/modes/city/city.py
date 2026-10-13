@@ -205,7 +205,7 @@ class Robot:
 
         command = "safety stop" if latched else "motion enable"
         try:
-            success = bool(connection.send_command(command + "\\n"))
+            success = bool(connection.send_command(command + "\n"))
         except Exception:
             logger.exception("Failed to transmit MCU safety command %s", command)
             success = False
