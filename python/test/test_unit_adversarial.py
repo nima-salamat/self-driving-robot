@@ -168,6 +168,36 @@ def make_controller_config(mode="race"):
 
 
 class ControllerAdversarialTests(unittest.TestCase):
+    def test_hardcoded_lane_configuration_uses_set_without_handshake(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            config = make_controller_config("city")
+            config.ARDUINO_CONFIG = None
+            controller = controller_module.RobotController(config=config)
+
+            self.assertTrue(
+                controller.configure_lane_sequences(
+                    "b 170 110 70 b 170 80 125",
+                    "f 170 70 125 f 170 70 70",
+                    persist=True,
+                    command_delay_s=0,
+                )
+            )
+            self.assertEqual(
+                controller.connection.commands,
+                [
+                    "lane manual\n",
+                    "set left b 170 110 70 b 170 80 125\n",
+                    "set right f 170 70 125 f 170 70 70\n",
+                    "save\n",
+                    "lane auto\n",
+                ],
+            )
+            self.assertFalse(
+                any(command.startswith("hello\n") or command.startswith("cfg ") for command in controller.connection.commands)
+            )
+
     def test_failed_commands_do_not_poison_actuator_cache(self):
         from controller import controller as controller_module
 
