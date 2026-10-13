@@ -199,6 +199,7 @@ class Camera:
 
         if self.pi_mode:
             limits = self.get_frame_rate_limits()
+            fps_was_clamped = False
             if limits is not None:
                 min_fps, max_fps = limits
                 if fps > max_fps:
@@ -210,6 +211,7 @@ class Camera:
                         max_fps,
                     )
                     fps = max_fps
+                    fps_was_clamped = True
                 elif fps < min_fps:
                     raise ValueError(
                         f"requested Picamera2 FPS {fps:.2f} is below the "
@@ -232,6 +234,9 @@ class Camera:
                 )
                 raise
             self.requested_frame_rate = fps
+            if fps_was_clamped and getattr(self, "config", None) is not None:
+                # Keep the active config aligned with what the camera can apply.
+                setattr(self.config, "CAMERA_FPS", fps)
             self._capture_timestamps.clear()
             self.measured_frame_rate = None
             return
