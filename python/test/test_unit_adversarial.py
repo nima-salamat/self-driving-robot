@@ -160,6 +160,7 @@ def make_controller_config(mode="race"):
         SERIAL_RECONNECT_TIMEOUT=0.1,
         SERIAL_TELEMETRY_BUFFER_SIZE=4,
         READ_ARDUINO_OUTPUT=False,
+        MOTOR_COMMAND_REFRESH_INTERVAL=0.1,
         PID_MIN_DT=0.001,
         PID_MAX_DT=0.2,
         PID_DERIVATIVE_FILTER=0.25,
@@ -179,6 +180,26 @@ class ControllerAdversarialTests(unittest.TestCase):
             self.assertIsNone(controller.last_angle)
             self.assertFalse(controller.motor(150))
             self.assertEqual(controller.current_speed, 0)
+
+    def test_unchanged_motor_speed_is_retried_after_refresh_interval(self):
+        from controller import controller as controller_module
+
+        with patch.object(controller_module, "ArduinoConnection", FakeControllerConnection):
+            config = make_controller_config()
+            controller = controller_module.RobotController(config=config)
+
+            self.assertTrue(controller.motor(220))
+            self.assertEqual(controller.connection.commands.count("motor 220\n"), 1)
+
+            # Fast control-loop iterations can reuse the cached setpoint.
+            self.assertTrue(controller.motor(220))
+            self.assertEqual(controller.connection.commands.count("motor 220\n"), 1)
+
+            # If the MCU discarded an earlier command during pulse motion, the
+            # same setpoint is sent again after the bounded refresh interval.
+            controller._last_motor_command_at -= 0.11
+            self.assertTrue(controller.motor(220))
+            self.assertEqual(controller.connection.commands.count("motor 220\n"), 2)
 
     def test_reconnect_invalidates_cached_actuator_state(self):
         from controller import controller as controller_module
