@@ -40,16 +40,26 @@ class SerialAdversarialTests(unittest.TestCase):
                 self.assertFalse(connection.connected)
 
                 self.assertTrue(connection._establish_safe_state())
-                self.assertEqual(
-                    fake.writes,
-                    [b"stop\n", b"servo 90\n"],
-                )
+                self.assertEqual(fake.writes, [b"stop\n"])
                 self.assertFalse(connection.connected)
 
                 connection._set_state(ArduinoConnection.CONNECTED)
                 self.assertTrue(connection.connected)
             finally:
                 connection.close()
+
+    def test_safe_reconnect_preserves_stop_latch_without_servo_write(self):
+        fake = FakeSerial()
+        connection = ArduinoConnection(enabled=False, reboot_wait=0)
+        try:
+            with connection._serial_lock:
+                connection.serial_connection = fake
+            connection.set_motion_inhibited(True)
+
+            self.assertTrue(connection._establish_safe_state())
+            self.assertEqual(fake.writes, [b"safety stop\n"])
+        finally:
+            connection.close()
 
     def test_reconnect_open_aborts_when_shutdown_was_requested(self):
         fake = FakeSerial()
