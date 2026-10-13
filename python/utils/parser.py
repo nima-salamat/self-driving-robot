@@ -13,6 +13,11 @@ def parse_args():
         help="Run mode (default: city).",
     )
 
+    parser.add_argument("--traffic-lights", action="store_true", default=False,
+                        help="Enable safety-gated traffic-light crossing in City mode only.")
+    parser.add_argument("--traffic-light-wait-before-check", action="store_true", default=False,
+                        help="With --traffic-lights, wait CROSSWALK_SLEEP before first observation.")
+
     parser.add_argument(
         "--debug",
         action="store_true",
