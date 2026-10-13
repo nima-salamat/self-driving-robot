@@ -89,7 +89,11 @@ def parse_args():
         "--arduino-config",
         default=None,
         metavar="PATH",
-        help="Enable the strict Arduino hardware contract using PATH.",
+        help=(
+            "Opt in to the strict hello/cfg hardware handshake using PATH. "
+            "Only use with firmware that implements the hardware-contract protocol; "
+            "EEPROM/set-based firmware should omit this option."
+        ),
     )
 
     parser.add_argument(
