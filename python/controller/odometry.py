@@ -68,6 +68,8 @@ class EncoderOdometry:
     def ingest(self, sample, received_at=None):
         """Accept one parsed ODOM1 record; repeated pulse totals add no travel."""
         received_at = time.monotonic() if received_at is None else float(received_at)
+        if not math.isfinite(received_at):
+            return False
         with self._lock:
             if not sample.get("extended"):
                 self._mark_gap("invalid or legacy encoder telemetry")
@@ -86,6 +88,12 @@ class EncoderOdometry:
                 self._append(valid=not self._continuity_broken, gap=self._continuity_broken, at=received_at)
                 self._continuity_broken = False
                 return self._valid
+            # Consumers may replay a rolling telemetry window every control cycle.
+            # Ignore duplicate/out-of-order records before considering the epoch
+            # or pulse delta; replaying an older counter can otherwise add false
+            # positive/negative travel to the odometry estimate.
+            if self._last_at is not None and received_at <= self._last_at:
+                return False
             if epoch != self._epoch:
                 self._epoch, self._pulses, self._last_at = epoch, pulses, received_at
                 self._mark_gap("Arduino reboot/counter epoch changed")

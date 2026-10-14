@@ -108,6 +108,103 @@ class OptInFeatureTests(unittest.TestCase):
                                       "epoch": 2, "signed_pulses": 0, "servo": 95}, 1.2))
         self.assertTrue(odom.snapshot(1.2)["history"][-1]["gap"])
 
+    def test_odometry_ignores_replayed_and_out_of_order_records(self):
+        odom = EncoderOdometry(0.5)
+        self.assertTrue(odom.ingest({"extended": True, "valid": True,
+            "epoch": 1, "signed_pulses": 100, "servo": 95}, 1.0))
+        self.assertTrue(odom.ingest({"extended": True, "valid": True,
+            "epoch": 1, "signed_pulses": 110, "servo": 95}, 1.1))
+        distance = odom.snapshot(1.1)["travel_cm"]
+        self.assertFalse(odom.ingest({"extended": True, "valid": True,
+            "epoch": 1, "signed_pulses": 105, "servo": 95}, 1.05))
+        self.assertFalse(odom.ingest({"extended": True, "valid": True,
+            "epoch": 1, "signed_pulses": 110, "servo": 95}, 1.1))
+        self.assertEqual(odom.snapshot(1.1)["travel_cm"], distance)
+
+    def test_image_corridor_options_check_robot_width_and_clearance(self):
+        from vision.object_detector import ObjectDetector
+        shape = (200, 200, 3)
+        boundaries = [[20, 10, 20, 190], [180, 10, 180, 190]]
+        obstacle = {"bbox_px": [70, 80, 60, 35], "centroid_px": [100, 97.5]}
+        options = ObjectDetector.passage_options(
+            obstacle, boundaries, shape, 40, 8, 1
+        )
+        self.assertIn("left", options)
+        self.assertIn("right", options)
+        self.assertLess(options["left"]["target_fraction"], 0.5)
+        self.assertGreater(options["right"]["target_fraction"], 0.5)
+        blocked = ObjectDetector.passage_options(
+            {"bbox_px": [25, 80, 150, 35]}, boundaries, shape, 40, 16, 4
+        )
+        self.assertEqual(blocked, {})
+
+    def test_adaptive_planner_simulated_pass_and_lane_return(self):
+        planner = AdaptiveObstaclePlanner(35, 4, 40, 10, 2, servo_center=95)
+        base = {
+            "front_right_cm": 25, "front_age_s": 0.05,
+            "orange_obstacle_detected": True, "obstacle_lane_relation": "center",
+            "camera_fresh": True, "camera_geometry_valid": True,
+            "steering_calibrated": True, "odometry_valid": True,
+            "passage_options": {
+                "left": {"target_fraction": 0.30, "clearance_cm": 13.0},
+                "right": {"target_fraction": 0.72, "clearance_cm": 16.0},
+            },
+            "path_servo": {"left": 82, "right": 108, "return": 95},
+            "lane_servo": 95, "configured_speed": 180, "slow_speed": 60,
+            "travel_cm": 10.0, "connection_lost": False,
+            "odometry_discontinuity": False,
+            "pass_path_acquired": False, "original_lane_reacquired": False,
+        }
+        d1 = planner.update({**base, "frame_token": 1, "front_sample_sequence": 1}, 1.00)
+        self.assertEqual(d1["state"], "OBSTACLE_CANDIDATE")
+        d2 = planner.update({**base, "frame_token": 2, "front_sample_sequence": 2}, 1.10)
+        self.assertEqual(d2["state"], "APPROACH_SLOW")
+        d3 = planner.update({**base, "frame_token": 3, "front_sample_sequence": 3}, 1.20)
+        self.assertEqual(d3["state"], "ASSESS_PASSAGE")
+        d4 = planner.update({**base, "frame_token": 4, "front_sample_sequence": 4}, 1.30)
+        self.assertEqual(d4["state"], "SHIFT_TO_PASS_PATH")
+        self.assertEqual(d4["selected_side"], "right")
+        path_observation = {**base, "pass_path_acquired": True}
+        d5 = planner.update({**path_observation, "frame_token": 5, "front_sample_sequence": 5}, 1.40)
+        self.assertEqual(d5["state"], "SHIFT_TO_PASS_PATH")
+        d6 = planner.update({**path_observation, "frame_token": 6, "front_sample_sequence": 6}, 1.50)
+        self.assertEqual(d6["state"], "PASS_OBSTACLE")
+
+        passing = {**base, "orange_obstacle_detected": False,
+                   "front_right_cm": 45, "travel_cm": 30.0}
+        planner.update({**passing, "frame_token": 7, "front_sample_sequence": 7}, 1.60)
+        planner.update({**passing, "frame_token": 8, "front_sample_sequence": 8}, 1.70)
+        d9 = planner.update({**passing, "frame_token": 9, "front_sample_sequence": 9}, 1.80)
+        self.assertEqual(d9["state"], "RETURN_TO_ORIGINAL_LANE")
+
+        returning = {**passing, "original_lane_reacquired": True}
+        planner.update({**returning, "frame_token": 10, "front_sample_sequence": 10}, 1.90)
+        d11 = planner.update({**returning, "frame_token": 11, "front_sample_sequence": 11}, 2.00)
+        self.assertEqual(d11["state"], "VERIFY_RETURN")
+        planner.update({**returning, "frame_token": 12, "front_sample_sequence": 12}, 2.10)
+        planner.update({**returning, "frame_token": 13, "front_sample_sequence": 13}, 2.20)
+        d14 = planner.update({**returning, "frame_token": 14, "front_sample_sequence": 14}, 2.30)
+        self.assertEqual(d14["state"], "FOLLOW_LANE")
+
+    def test_adaptive_planner_safe_stop_latched_until_operator_ack(self):
+        planner = AdaptiveObstaclePlanner(35, 4, 40, 12, 3)
+        bad = {"front_right_cm": 25, "front_age_s": 0.1,
+               "orange_obstacle_detected": True, "obstacle_lane_relation": "center",
+               "camera_fresh": True, "camera_geometry_valid": True,
+               "steering_calibrated": False, "odometry_valid": False,
+               "configured_speed": 200, "slow_speed": 70, "lane_servo": 95,
+               "servo_center": 95}
+        planner.update({**bad, "frame_token": 1, "front_sample_sequence": 1}, now=1.0)
+        planner.update({**bad, "frame_token": 2, "front_sample_sequence": 2}, now=1.1)
+        planner.update({**bad, "frame_token": 3, "front_sample_sequence": 3}, now=1.2)
+        stopped = planner.update({**bad, "frame_token": 4, "front_sample_sequence": 4}, now=1.3)
+        self.assertEqual(stopped["state"], "SAFE_STOP")
+        self.assertEqual(stopped["speed"], 0)
+        with self.assertRaises(ValueError):
+            planner.reset_after_manual_clearance()
+        planner.reset_after_manual_clearance(operator_confirmed=True)
+        self.assertEqual(planner.state, "FOLLOW_LANE")
+
     def test_pulse_distance_only_has_no_fabricated_xy(self):
         odom = EncoderOdometry(0.25)
         odom.ingest({"extended": True, "valid": True, "epoch": 1,
@@ -137,13 +234,16 @@ class OptInFeatureTests(unittest.TestCase):
         observation = {"front_right_cm": 25, "front_age_s": 0.1,
                        "left_cm": -1, "orange_obstacle_detected": True,
                        "obstacle_lane_relation": "center", "camera_fresh": True,
-                       "camera_geometry_valid": True, "feasible_sides": [],
-                       "steering_calibrated": False, "configured_speed": 200,
-                       "slow_speed": 70, "lane_servo": 95, "servo_center": 95}
-        planner.update(observation, now=1)
-        candidate = planner.update(observation, now=1.1)
+                       "camera_geometry_valid": True, "passage_options": {},
+                       "steering_calibrated": False, "odometry_valid": False,
+                       "configured_speed": 200, "slow_speed": 70,
+                       "lane_servo": 95, "servo_center": 95}
+        planner.update({**observation, "frame_token": 1, "front_sample_sequence": 1}, now=1.0)
+        candidate = planner.update({**observation, "frame_token": 2, "front_sample_sequence": 2}, now=1.1)
         self.assertEqual(candidate["state"], "APPROACH_SLOW")
-        stopped = planner.update(observation, now=1.2)
+        assessing = planner.update({**observation, "frame_token": 3, "front_sample_sequence": 3}, now=1.2)
+        self.assertEqual(assessing["state"], "ASSESS_PASSAGE")
+        stopped = planner.update({**observation, "frame_token": 4, "front_sample_sequence": 4}, now=1.3)
         self.assertEqual(stopped["state"], "SAFE_STOP")
         self.assertEqual(stopped["speed"], 0)
         self.assertEqual(stopped["steering"], 95)

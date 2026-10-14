@@ -514,11 +514,15 @@ class Robot:
                     self._pace_control_loop()
                     continue
 
-                if getattr(self, "obstacle_planner", None) is not None:
-                    latest_samples = self.control.encoder_telemetry(limit=3)
-                    if latest_samples and self.odometry is not None:
-                        last_sample = latest_samples[-1]
-                        self.odometry.ingest(last_sample, received_at=last_sample["received_at"])
+                if self.odometry is not None:
+                    # Encoder mapping is independent of adaptive obstacle mode.
+                    # Consume extended records from the overlapping telemetry tail;
+                    # EncoderOdometry deduplicates by monotonic receive timestamp.
+                    for sample in self.control.encoder_telemetry(limit=8):
+                        if sample.get("extended"):
+                            self.odometry.ingest(
+                                sample, received_at=sample["received_at"]
+                            )
 
                 # On a valid camera frame, temporarily missing lane markings
                 # must not stop Race mode. Keep the last applied steering angle
@@ -625,79 +629,256 @@ class Robot:
         detected = self.object_detector.detect(object_frame)[1]
         logger.debug("Object detector result: %s", detected)
 
+    def _lane_fraction_under_camera(self, lane_segments_px, frame_shape):
+        """Estimate where the camera/vehicle center lies inside visible lane pixels."""
+        if frame_shape is None:
+            return None
+        height, width = frame_shape[:2]
+        # Race Hough segments are extracted inside the bottom 20% ROI.
+        lookahead_y = min(height - 1, max(1, int(height * 0.90)))
+        bounds = self.object_detector.lane_bounds_at_y(
+            lane_segments_px, frame_shape, lookahead_y
+        )
+        if bounds is None:
+            return None
+        left_bound, right_bound = bounds
+        span = right_bound - left_bound
+        if span <= 1:
+            return None
+        fraction = ((width / 2.0) - left_bound) / span
+        return fraction if math.isfinite(fraction) else None
+
+    def _path_servo_for_fraction(
+        self, lane_segments_px, frame_shape, target_fraction, lookahead_cm
+    ):
+        """Use calibrated bicycle geometry to steer toward a lane-relative target."""
+        if self.odometry is None or not self.odometry.calibrated or frame_shape is None:
+            return None
+        current_fraction = self._lane_fraction_under_camera(lane_segments_px, frame_shape)
+        if current_fraction is None or not 0.0 < float(target_fraction) < 1.0:
+            return None
+        wheelbase = self.odometry.wheelbase_cm
+        road_min = self.odometry.road_angle_min_deg
+        road_max = self.odometry.road_angle_max_deg
+        if (
+            wheelbase is None or wheelbase <= 0
+            or road_min is None or road_max is None
+            or not float(road_min) < 0 < float(road_max)
+        ):
+            return None
+        lane_width_cm = float(config_race.OBSTACLE_LANE_WIDTH_CM)
+        lateral_cm = (float(target_fraction) - current_fraction) * lane_width_cm
+        lookahead = max(
+            float(config_race.OBSTACLE_STOP_DISTANCE_CM) + self.obstacle_planner.clearance_cm,
+            float(lookahead_cm),
+            float(wheelbase) * 2.0,
+        )
+        wheel_angle_deg = math.degrees(math.atan2(
+            2.0 * float(wheelbase) * lateral_cm,
+            lookahead * lookahead + lateral_cm * lateral_cm,
+        ))
+        wheel_angle_deg = max(float(road_min), min(float(road_max), wheel_angle_deg))
+        ratio = (wheel_angle_deg - float(road_min)) / (float(road_max) - float(road_min))
+        servo = self.control.min_servo_angle + ratio * (
+            self.control.max_servo_angle - self.control.min_servo_angle
+        )
+        return int(round(max(
+            self.control.min_servo_angle,
+            min(self.control.max_servo_angle, servo),
+        )))
+
     def _run_adaptive_obstacle_cycle(self, result, configured_speed, confidence):
-        """Issue the single lane/obstacle motion decision for this control cycle."""
-        records = self.control.encoder_telemetry(limit=1)
+        """Collect distinct camera/sensor evidence and apply one planner-owned target."""
+        # ACK/status lines can interleave with ODOM1; select the newest parsed
+        # extended record rather than treating a non-status line as bad sonar data.
+        records = [
+            sample for sample in self.control.encoder_telemetry(limit=20)
+            if sample.get("extended")
+        ]
         record = records[-1] if records else {}
         connection = self.control.connection
-        lines = connection.telemetry_snapshot(limit=1)
         front = record.get("right_ultrasonic_dist") if record.get("front_valid") else None
-        # The disconnected left sensor is intentionally never considered here.
         front_age = record.get("front_age_ms", 1_000_000) / 1000.0
         if record.get("received_at") is not None:
             front_age += max(0.0, time.monotonic() - record["received_at"])
+
         frame = getattr(self.camera, "last_frame", None)
+        now = time.monotonic()
+        camera_fresh = bool(
+            self.camera.last_capture_valid
+            and self.camera.last_capture_at is not None
+            and now - self.camera.last_capture_at <= 0.25
+        )
+        lane_segments = list(result.get("lane_segments_px") or [])
+        if frame is None:
+            source_width = source_height = 1.0
+        else:
+            source_width = float(result.get("frame_width_px") or frame.shape[1])
+            source_height = float(result.get("frame_height_px") or frame.shape[0])
+            scale_x = frame.shape[1] / max(1.0, source_width)
+            scale_y = frame.shape[0] / max(1.0, source_height)
+            lane_segments = [
+                [float(x1) * scale_x, float(y1) * scale_y,
+                 float(x2) * scale_x, float(y2) * scale_y]
+                for x1, y1, x2, y2 in lane_segments
+            ]
+
+        lane_bounds_ok = bool(
+            frame is not None and result.get("lane_type") == "both"
+            and result.get("perception_valid")
+            and self.object_detector.lane_bounds_at_y(
+                lane_segments, frame.shape,
+                max(1, int(frame.shape[0] * 0.90)),
+            ) is not None
+        )
+        current_fraction = (
+            self._lane_fraction_under_camera(lane_segments, frame.shape)
+            if frame is not None and lane_bounds_ok else None
+        )
         obstacle = None
         lane_relation = None
-        geometry_valid = False
-        if frame is not None and self.camera.last_capture_valid:
-            cropped = crop_image(frame, config_race.OBJ_TOP_ROI, config_race.OBJ_BOTTOM_ROI,
-                                 config_race.OBJ_LEFT_ROI, config_race.OBJ_RIGHT_ROI)
-            detected, _percent, mask = self.object_detector.detect(cropped)
+        relation = None
+        passage_options = {}
+
+        if frame is not None and camera_fresh:
+            cropped = crop_image(
+                frame, config_race.OBJ_TOP_ROI, config_race.OBJ_BOTTOM_ROI,
+                config_race.OBJ_LEFT_ROI, config_race.OBJ_RIGHT_ROI,
+            )
+            _detected_by_global_area, _percent, mask = self.object_detector.detect(cropped)
             obstacle = self.object_detector.localize(cropped, mask)
-            geometry_valid = bool(obstacle and obstacle.get("quality", 0) > 0.0)
-            if obstacle:
-                # ROI-local coordinates are translated back into camera frame.
+            if obstacle is not None:
+                # localize() returns ROI-local pixels. Translate to raw-frame pixels.
                 obstacle["bbox_px"][0] += int(config_race.OBJ_LEFT_ROI * frame.shape[1])
                 obstacle["bbox_px"][1] += int(config_race.OBJ_TOP_ROI * frame.shape[0])
                 obstacle["centroid_px"][0] += int(config_race.OBJ_LEFT_ROI * frame.shape[1])
                 obstacle["centroid_px"][1] += int(config_race.OBJ_TOP_ROI * frame.shape[0])
                 lane_relation = self.object_detector.relates_to_lane(
-                    obstacle, result.get("lane_segments_px", []), frame.shape
+                    obstacle, lane_segments, frame.shape
                 )
-        lane_type = result.get("lane_type")
-        relation = (
-            "center" if lane_relation and lane_relation.get("valid") and
-            lane_relation.get("relation") == "inside_lane" and
-            0.25 <= lane_relation.get("image_fraction_across_lane", -1) <= 0.75
-            else "outside_path" if lane_relation and lane_relation.get("valid") and
-            lane_relation.get("relation") == "outside_lane" else None
+                component_ratio = float(obstacle.get("area_px", 0.0)) / max(
+                    1.0, float(frame.shape[0] * frame.shape[1])
+                )
+                object_confirmable = bool(
+                    obstacle.get("valid") and component_ratio >= 0.002
+                    and float(obstacle.get("quality", 0.0)) >= 0.10
+                )
+                if (
+                    object_confirmable and lane_relation.get("valid")
+                    and lane_relation.get("relation") == "inside_lane"
+                ):
+                    fraction = float(lane_relation["image_fraction_across_lane"])
+                    relation = "left" if fraction < 0.40 else (
+                        "right" if fraction > 0.60 else "center"
+                    )
+                    passage_options = self.object_detector.passage_options(
+                        obstacle, lane_segments, frame.shape,
+                        config_race.OBSTACLE_LANE_WIDTH_CM,
+                        config_race.OBSTACLE_ROBOT_WIDTH_CM,
+                        config_race.OBSTACLE_CLEARANCE_CM,
+                    )
+                elif lane_relation.get("valid") and lane_relation.get("relation") == "outside_lane":
+                    relation = "outside_path"
+
+        lane_servo = result.get("steering_angle", self.control.servo_center)
+        snapshot = self.odometry.snapshot() if self.odometry is not None else {"valid": False}
+        path_servo = {}
+        lookahead_cm = (
+            float(front) if isinstance(front, (int, float)) and front > 0
+            else float(config_race.OBSTACLE_TRIGGER_DISTANCE_CM)
         )
-        snapshot = self.odometry.snapshot() if getattr(self, "odometry", None) is not None else {"valid": True}
-        decision = self.obstacle_planner.update({
+        for side, option in passage_options.items():
+            angle = self._path_servo_for_fraction(
+                lane_segments, frame.shape, float(option["target_fraction"]), lookahead_cm
+            ) if frame is not None else None
+            if angle is not None:
+                path_servo[side] = angle
+
+        target_fraction = self.obstacle_planner.target_fraction
+        selected_side = self.obstacle_planner.selected_side
+        if target_fraction is not None and lane_bounds_ok and frame is not None:
+            angle = self._path_servo_for_fraction(
+                lane_segments, frame.shape, target_fraction, lookahead_cm
+            )
+            if selected_side and angle is not None:
+                path_servo[selected_side] = angle
+        if lane_bounds_ok and frame is not None:
+            return_angle = self._path_servo_for_fraction(
+                lane_segments, frame.shape, 0.5, lookahead_cm
+            )
+            if return_angle is not None:
+                path_servo["return"] = return_angle
+
+        pass_path_acquired = bool(
+            current_fraction is not None and target_fraction is not None
+            and abs(current_fraction - target_fraction) <= 0.10
+        )
+        original_lane_reacquired = bool(
+            current_fraction is not None and abs(current_fraction - 0.5) <= 0.10
+        )
+        obstacle_detected_in_lane = bool(
+            obstacle and obstacle.get("valid") and frame is not None
+            and float(obstacle.get("area_px", 0.0)) / max(
+                1.0, float(frame.shape[0] * frame.shape[1])
+            ) >= 0.002
+            and lane_relation and lane_relation.get("valid")
+            and lane_relation.get("relation") == "inside_lane"
+        )
+        observation = {
             "front_right_cm": front,
             "front_age_s": front_age,
             "front_sample_sequence": record.get("front_sequence"),
-            "orange_obstacle_detected": bool(obstacle and obstacle.get("valid")),
+            "orange_obstacle_detected": obstacle_detected_in_lane,
             "obstacle_lane_relation": relation,
-            "camera_fresh": bool(self.camera.last_capture_valid),
-            "camera_geometry_valid": geometry_valid and bool(lane_relation and lane_relation.get("valid")) and lane_type == "both",
-            "feasible_sides": [],  # lane/object image pixels do not prove a traversable physical corridor
-            "steering_calibrated": bool(getattr(self.odometry, "calibrated", False)),
-            "lane_servo": result.get("steering_angle", self.control.servo_center),
+            "camera_fresh": camera_fresh,
+            "camera_geometry_valid": lane_bounds_ok,
+            "frame_token": self.camera.last_capture_at if camera_fresh else None,
+            "passage_options": passage_options,
+            "path_servo": path_servo,
+            "steering_calibrated": bool(self.odometry is not None and self.odometry.calibrated),
+            "odometry_valid": bool(snapshot.get("valid")),
+            "odometry_discontinuity": not bool(snapshot.get("valid")),
+            "travel_cm": snapshot.get("travel_cm"),
+            "pass_path_acquired": pass_path_acquired,
+            "original_lane_reacquired": original_lane_reacquired,
+            "lane_servo": lane_servo,
             "servo_center": self.control.servo_center,
             "configured_speed": configured_speed,
             "slow_speed": min(abs(configured_speed), 70),
             "connection_lost": not connection.connected,
-            "odometry_discontinuity": not snapshot["valid"],
-        })
-        config_race.obstacle_diagnostics = {
-            "state": decision["state"], "reason": decision["reason"],
-            "orange_component": obstacle, "front_sensor_cm": front,
-            "camera_lane_relation": lane_relation,
-            "front_sample_age_s": front_age,
-            "rear_left_sensor_used_for_forward_clearance": False,
         }
-        if decision["state"] == "SAFE_STOP" and self.obstacle_planner.state == "SAFE_STOP":
+        decision = self.obstacle_planner.update(observation)
+        config_race.obstacle_diagnostics = {
+            "state": decision["state"],
+            "reason": decision["reason"],
+            "selected_side": decision.get("selected_side"),
+            "target_fraction": decision.get("target_fraction"),
+            "orange_component": obstacle,
+            "front_sensor_cm": front,
+            "front_sample_age_s": front_age,
+            "camera_lane_relation": lane_relation,
+            "passage_options": passage_options,
+            "current_lane_fraction": current_fraction,
+            "rear_left_sensor_used_for_forward_clearance": False,
+            "odometry": snapshot,
+            "confidence": confidence,
+        }
+
+        if decision["state"] == "SAFE_STOP":
             self.control.stop(reason=decision["reason"])
-        else:
-            steering = max(self.control.min_servo_angle,
-                           min(self.control.max_servo_angle, decision["steering"]))
-            if not self.control.set_angle(steering):
-                self.obstacle_planner._safe("steering target was not acknowledged")
-                self.control.stop(reason="steering target was not acknowledged")
-                return
-            self.control.set_speed(decision["speed"])
+            return
+        steering = max(
+            self.control.min_servo_angle,
+            min(self.control.max_servo_angle, decision["steering"]),
+        )
+        if not self.control.set_angle(steering):
+            decision = self.obstacle_planner._safe("steering target was not acknowledged")
+            self.control.stop(reason=decision["reason"])
+            config_race.obstacle_diagnostics.update(
+                {"state": decision["state"], "reason": decision["reason"]}
+            )
+            return
+        self.control.set_speed(decision["speed"])
 
     def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False):
         # A latched STOP keeps using the detector that originally found it,

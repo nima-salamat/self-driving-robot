@@ -71,6 +71,7 @@ class PerceptionConfidenceEstimator:
         valid = bool(frame_valid and fresh and result.get("perception_valid", False))
         return {"score": score, "valid": valid, "fresh": fresh,
                 "frame_age_s": age, "lane_type": lane_type,
+                "observation_token": token,
                 "factors": factors, "reasons": reasons,
                 "unavailable": unavailable,
                 "name": "heuristic confidence estimate"}
@@ -90,20 +91,35 @@ class ConfidenceSpeedLimiter:
     def limit(self, configured_speed, estimate):
         configured_speed = int(configured_speed)
         score = float(estimate.get("score", 0.0))
+        token = estimate.get("observation_token")
+        distinct = token is None or token != getattr(self, "_last_observation_token", None)
+        if token is not None and distinct:
+            self._last_observation_token = token
+
         if not estimate.get("valid"):
+            # Invalid/stale observations still stop immediately; only valid,
+            # distinct low-confidence frames use the confirmation counter.
+            self._low_confirmations = 0
             desired, reason = 0, "invalid or stale perception; stop"
-            self._low_confirmations += 1
         elif score <= self.stop_threshold:
-            self._low_confirmations += 1
-            desired, reason = 0, "confidence at/below stop threshold"
+            if distinct:
+                self._low_confirmations += 1
+            if self._low_confirmations >= 2:
+                desired, reason = 0, "low confidence confirmed on distinct frames; stop"
+            else:
+                desired = int(abs(configured_speed) * 0.15)
+                reason = "first distinct low-confidence frame; creep while confirming"
         elif score < self.slow_threshold:
-            self._low_confirmations += 1
+            if distinct:
+                self._low_confirmations += 1
             fraction = (score - self.stop_threshold) / (self.slow_threshold - self.stop_threshold)
             desired = int(abs(configured_speed) * max(0.15, min(0.6, fraction * 0.6)))
             reason = "confidence below slow threshold"
         else:
-            self._low_confirmations = 0
+            if distinct:
+                self._low_confirmations = 0
             desired, reason = abs(configured_speed), "confidence permits configured mode speed"
+
         if not hasattr(self, "_initialized"):
             self._initialized = True
         elif desired > self._last_speed and self._last_speed >= 0:

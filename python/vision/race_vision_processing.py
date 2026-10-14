@@ -424,4 +424,6 @@ class VisionProcessor:
             ,"perception_quality": min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0))
             ,"observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0
             ,"lane_segments_px": lane_segments_px
+            ,"frame_width_px": int(width)
+            ,"frame_height_px": int(height)
         }

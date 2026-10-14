@@ -1213,14 +1213,16 @@ void loop() {
     startServoMoveImmediate(SERVO_CENTER);
     Serial.println("ADAPTIVE EMERGENCY STOP");
   }
-  if (currentMotorSpeed != 0 &&
+  // The stricter stale/invalid front-range watchdog belongs to explicit
+  // host-adaptive mode. Preserve legacy motor/pulse behavior when disabled.
+  if (hostAdaptiveMode && currentMotorSpeed != 0 &&
       (!ultraRight.sampleValid || (millis() - ultraRight.lastReadMs) > (2 * ULTRA_INTERVAL_MS))) {
-    if (hostAdaptiveMode) adaptiveEmergencyLatched = true;
-    if (hostAdaptiveMode) adaptiveWatchdogLatched = true;
+    adaptiveEmergencyLatched = true;
+    adaptiveWatchdogLatched = true;
     hostStopRequested = true;
     stopMotor();
     startServoMoveImmediate(SERVO_CENTER);
-    Serial.println(hostAdaptiveMode ? "ADAPTIVE FRONT SENSOR INVALID STOP" : "FRONT SENSOR INVALID STOP");
+    Serial.println("ADAPTIVE FRONT SENSOR INVALID STOP");
   }
 
   // --- OBSTACLE & PAUSE LOGIC ---

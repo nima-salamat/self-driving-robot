@@ -597,8 +597,14 @@ class Robot:
                     perception_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
                     if getattr(self, "odometry", None) is not None:
-                        for sample in self.control.encoder_telemetry(limit=3):
-                            self.odometry.ingest(sample, received_at=sample["received_at"])
+                        # The telemetry API returns a rolling tail, so loops overlap.
+                        # Only feed ODOM1 records; EncoderOdometry also rejects replayed
+                        # and out-of-order receive timestamps.
+                        for sample in self.control.encoder_telemetry(limit=8):
+                            if sample.get("extended"):
+                                self.odometry.ingest(
+                                    sample, received_at=sample["received_at"]
+                                )
                     confidence = None
                     if getattr(self, "confidence_estimator", None) is not None:
                         confidence = self.confidence_estimator.evaluate(
