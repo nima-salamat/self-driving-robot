@@ -112,6 +112,9 @@ CROSSWALK_THRESH_SPEND = 8 # sec  - dont care if crosswalk seen before threshold
 
 # Stream (enable/disable) 
 STREAM = False
+ENCODER_MAP_ENABLED = False
+CONFIDENCE_AWARE_ENABLED = False
+ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED = False
 debug_frames_list = [] # global stream frame variable
 
 # tack snapshot and video of camera

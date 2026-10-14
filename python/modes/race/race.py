@@ -13,6 +13,9 @@ from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTraff
 from traffic_sign_detector.async_detector import AsyncSignDetector
 from traffic_sign_detector.stop_hold import StopSignHold
 from controller import RobotController
+from controller.odometry import EncoderOdometry
+from controller.perception_confidence import PerceptionConfidenceEstimator, ConfidenceSpeedLimiter
+from controller.adaptive_obstacle import AdaptiveObstaclePlanner
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
@@ -53,56 +56,62 @@ class Robot:
         self.runtime_exception = None
         self._next_control_time = time.monotonic()
         
-        # Calculate dynamic obstacle avoidance parameters
-        lane_width = 30      # cm
-        robot_width = 12     # cm (Approximate robot width)
-        safe_margin = 3      # cm (Safety gap from the obstacle)
-        pulse_cm = 0.5
+        if getattr(config_race, "ENCODER_MAP_ENABLED", False) or getattr(config_race, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False):
+            self.odometry = EncoderOdometry(
+                config_race.ENCODER_PULSE_DISTANCE_CM,
+                wheelbase_cm=config_race.ENCODER_WHEELBASE_CM,
+                servo_center=self.control.servo_center,
+                servo_min=self.control.min_servo_angle,
+                servo_max=self.control.max_servo_angle,
+                road_angle_min_deg=config_race.ENCODER_ROAD_ANGLE_MIN_DEG,
+                road_angle_max_deg=config_race.ENCODER_ROAD_ANGLE_MAX_DEG,
+            )
+            if not self.control.request_encoder_telemetry():
+                raise RuntimeError("Selected firmware did not acknowledge encoder telemetry ODOM1")
+            self.control._encoder_telemetry_ready = True
+            config_race.encoder_odometry = self.odometry
+        else:
+            self.odometry = None
 
-        # Calculate required lateral shift to avoid center obstacle
-        lateral_shift_cm = (lane_width / 2) - (robot_width / 2) + safe_margin
+        if getattr(config_race, "CONFIDENCE_AWARE_ENABLED", False):
+            self.confidence_estimator = PerceptionConfidenceEstimator()
+            self.confidence_limiter = ConfidenceSpeedLimiter(
+                config_race.CONFIDENCE_SLOW_THRESHOLD,
+                config_race.CONFIDENCE_STOP_THRESHOLD,
+            )
+            config_race.perception_confidence = None
+        else:
+            self.confidence_estimator = self.confidence_limiter = None
 
-        center_angle = 90
-        turn_angle_offset = 30  # 30 degrees deviation
-
-        left_angle = center_angle - turn_angle_offset   # 60
-        right_angle = center_angle + turn_angle_offset  # 120
-
-        # Calculate hypotenuse distance needed for the lateral shift
-        theta_radians = math.radians(turn_angle_offset)
-        travel_distance_cm = lateral_shift_cm / math.sin(theta_radians)
-
-        # Convert distances to pulses
-        travel_pulse = int(travel_distance_cm / pulse_cm)
-
-        # Command to shift LEFT (Avoid obstacle)
-        # 1. Steer left (60) to move out
-        # 2. Steer right (120) to straighten out in the new lane
-        cmd_avoid_left = (
-            f"set left "
-            f"f 230 {travel_pulse} {left_angle} "
-            f"f 230 {travel_pulse} {right_angle}"
-        )
-
-        # Command to shift RIGHT (Return to original lane after passing the object)
-        # 1. Steer right (120) to move back in
-        # 2. Steer left (60) to straighten out
-        cmd_return_right = (
-            f"set right "
-            f"f 230 {travel_pulse} {right_angle} "
-            f"f 230 {travel_pulse} {left_angle}"
-        )
-
-        # Send the hardcoded sequences with SET commands, without hello/cfg.
-        # This firmware accepts one "save" command for both EEPROM sequences.
-        if not getattr(config_race, "WITHOUT_ARDUINO", False):
-            if not self._shutdown_requested():
-                self.control.configure_lane_sequences(
-                    cmd_avoid_left[len("set left "):],
-                    cmd_return_right[len("set right "):],
-                    persist=True,
-                    command_delay_s=0.4,
-                )
+        if getattr(config_race, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False):
+            if not self.control.request_adaptive_lane_mode(config_race.OBSTACLE_STOP_DISTANCE_CM):
+                raise RuntimeError("Firmware did not acknowledge host-adaptive lane ownership")
+            self.control._adaptive_mode_ready = True
+            self.obstacle_planner = AdaptiveObstaclePlanner(
+                config_race.OBSTACLE_TRIGGER_DISTANCE_CM,
+                config_race.OBSTACLE_STOP_DISTANCE_CM,
+                config_race.OBSTACLE_LANE_WIDTH_CM,
+                config_race.OBSTACLE_ROBOT_WIDTH_CM,
+                config_race.OBSTACLE_CLEARANCE_CM,
+                servo_center=self.control.servo_center,
+                servo_min=self.control.min_servo_angle,
+                servo_max=self.control.max_servo_angle,
+            )
+            config_race.adaptive_reconnected = False
+        else:
+            self.obstacle_planner = None
+            # Preserve legacy sequence configuration and EEPROM persistence.
+            lane_width, robot_width, safe_margin, pulse_cm = 30, 12, 3, 0.5
+            lateral_shift_cm = (lane_width / 2) - (robot_width / 2) + safe_margin
+            theta_radians = math.radians(30)
+            travel_pulse = int((lateral_shift_cm / math.sin(theta_radians)) / pulse_cm)
+            # Preserve the checked-in legacy EEPROM sequence angles exactly.
+            left_angle, right_angle = 60, 120
+            cmd_avoid_left = f"f 230 {travel_pulse} {left_angle} f 230 {travel_pulse} {right_angle}"
+            cmd_return_right = f"f 230 {travel_pulse} {right_angle} f 230 {travel_pulse} {left_angle}"
+            if not getattr(config_race, "WITHOUT_ARDUINO", False) and not self._shutdown_requested():
+                self.control.configure_lane_sequences(cmd_avoid_left, cmd_return_right,
+                                                      persist=True, command_delay_s=0.4)
 
 
         self.vision = VisionProcessor()
@@ -214,9 +223,7 @@ class Robot:
             self._set_mcu_stop_latched(
                 True,
                 force=True,
-                send_command=getattr(
-                    config_race, "SEND_TRAFFIC_STOP_COMMAND", False
-                ),
+                send_command=True,
             )
         return self.stop_hold.active
 
@@ -462,6 +469,7 @@ class Robot:
                 angle = SERVO_CENTER
             
                 frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                self.camera.last_frame = frame
                 if not self.camera.last_capture_valid or frame_resized is None:
                     self.control.stop()
                     self._pace_control_loop()
@@ -473,6 +481,15 @@ class Robot:
                 
                 perception_started = time.monotonic()
                 result = self.vision.detect(frame_resized, debug_frame)
+                observation_at = getattr(self.camera, "last_capture_at", None)
+                confidence = None
+                if getattr(self, "confidence_estimator", None) is not None:
+                    confidence = self.confidence_estimator.evaluate(
+                        result, frame_valid=self.camera.last_capture_valid,
+                        frame_at=observation_at,
+                        observation_token=getattr(self.camera, "frame_sequence", observation_at),
+                    )
+                    config_race.perception_confidence = confidence
                 if self.metrics is not None:
                     self.metrics.record_perception(
                         (time.monotonic() - perception_started) * 1000.0,
@@ -496,6 +513,12 @@ class Robot:
                     self._keep_stop_hold()
                     self._pace_control_loop()
                     continue
+
+                if getattr(self, "obstacle_planner", None) is not None:
+                    latest_samples = self.control.encoder_telemetry(limit=3)
+                    if latest_samples and self.odometry is not None:
+                        last_sample = latest_samples[-1]
+                        self.odometry.ingest(last_sample, received_at=last_sample["received_at"])
 
                 # On a valid camera frame, temporarily missing lane markings
                 # must not stop Race mode. Keep the last applied steering angle
@@ -528,7 +551,10 @@ class Robot:
                     self.control.update_kp(result["kp"])
                 
                 control_started = time.monotonic()
-                if config_race.USE_PID:
+                if getattr(self, "obstacle_planner", None) is not None:
+                    # Adaptive planner supplies the sole actuator target.
+                    pass
+                elif config_race.USE_PID:
                     control_ok = self.control.set_angle_by_error(
                         result["error"],
                         result["lane_type"],
@@ -542,7 +568,27 @@ class Robot:
                         self._pace_control_loop()
                         continue
 
-                self.control.set_speed(SPEED)
+                target_speed = SPEED
+                if getattr(self, "confidence_limiter", None) is not None:
+                    target_speed, reason = self.confidence_limiter.limit(target_speed, confidence)
+                    config_race.speed_decision = {"target": target_speed, "reason": reason}
+                if getattr(self, "obstacle_planner", None) is not None:
+                    if (not self.control.connection.connected or
+                            not getattr(self.control, "_adaptive_mode_ready", False) or
+                            getattr(self.control, "_connection_reestablished", False)):
+                        self.odometry.mark_discontinuity("serial disconnect/reboot during active planner")
+                        decision = self.obstacle_planner._safe("serial reconnect requires fresh initialization and new route decision")
+                        self.control.stop(reason=decision["reason"])
+                        config_race.obstacle_diagnostics = {"state": decision["state"], "reason": decision["reason"]}
+                        self.control._connection_reestablished = False
+                        self._pace_control_loop()
+                        continue
+                    self._run_adaptive_obstacle_cycle(result, target_speed, confidence)
+                    if self.metrics is not None:
+                        self.metrics.record_control((time.monotonic() - control_started) * 1000.0)
+                    self._pace_control_loop()
+                    continue
+                self.control.set_speed(target_speed)
                 if self.metrics is not None:
                     self.metrics.record_control(
                         (time.monotonic() - control_started) * 1000.0
@@ -578,6 +624,80 @@ class Robot:
         )
         detected = self.object_detector.detect(object_frame)[1]
         logger.debug("Object detector result: %s", detected)
+
+    def _run_adaptive_obstacle_cycle(self, result, configured_speed, confidence):
+        """Issue the single lane/obstacle motion decision for this control cycle."""
+        records = self.control.encoder_telemetry(limit=1)
+        record = records[-1] if records else {}
+        connection = self.control.connection
+        lines = connection.telemetry_snapshot(limit=1)
+        front = record.get("right_ultrasonic_dist") if record.get("front_valid") else None
+        # The disconnected left sensor is intentionally never considered here.
+        front_age = record.get("front_age_ms", 1_000_000) / 1000.0
+        if record.get("received_at") is not None:
+            front_age += max(0.0, time.monotonic() - record["received_at"])
+        frame = getattr(self.camera, "last_frame", None)
+        obstacle = None
+        lane_relation = None
+        geometry_valid = False
+        if frame is not None and self.camera.last_capture_valid:
+            cropped = crop_image(frame, config_race.OBJ_TOP_ROI, config_race.OBJ_BOTTOM_ROI,
+                                 config_race.OBJ_LEFT_ROI, config_race.OBJ_RIGHT_ROI)
+            detected, _percent, mask = self.object_detector.detect(cropped)
+            obstacle = self.object_detector.localize(cropped, mask)
+            geometry_valid = bool(obstacle and obstacle.get("quality", 0) > 0.0)
+            if obstacle:
+                # ROI-local coordinates are translated back into camera frame.
+                obstacle["bbox_px"][0] += int(config_race.OBJ_LEFT_ROI * frame.shape[1])
+                obstacle["bbox_px"][1] += int(config_race.OBJ_TOP_ROI * frame.shape[0])
+                obstacle["centroid_px"][0] += int(config_race.OBJ_LEFT_ROI * frame.shape[1])
+                obstacle["centroid_px"][1] += int(config_race.OBJ_TOP_ROI * frame.shape[0])
+                lane_relation = self.object_detector.relates_to_lane(
+                    obstacle, result.get("lane_segments_px", []), frame.shape
+                )
+        lane_type = result.get("lane_type")
+        relation = (
+            "center" if lane_relation and lane_relation.get("valid") and
+            lane_relation.get("relation") == "inside_lane" and
+            0.25 <= lane_relation.get("image_fraction_across_lane", -1) <= 0.75
+            else "outside_path" if lane_relation and lane_relation.get("valid") and
+            lane_relation.get("relation") == "outside_lane" else None
+        )
+        snapshot = self.odometry.snapshot() if getattr(self, "odometry", None) is not None else {"valid": True}
+        decision = self.obstacle_planner.update({
+            "front_right_cm": front,
+            "front_age_s": front_age,
+            "front_sample_sequence": record.get("front_sequence"),
+            "orange_obstacle_detected": bool(obstacle and obstacle.get("valid")),
+            "obstacle_lane_relation": relation,
+            "camera_fresh": bool(self.camera.last_capture_valid),
+            "camera_geometry_valid": geometry_valid and bool(lane_relation and lane_relation.get("valid")) and lane_type == "both",
+            "feasible_sides": [],  # lane/object image pixels do not prove a traversable physical corridor
+            "steering_calibrated": bool(getattr(self.odometry, "calibrated", False)),
+            "lane_servo": result.get("steering_angle", self.control.servo_center),
+            "servo_center": self.control.servo_center,
+            "configured_speed": configured_speed,
+            "slow_speed": min(abs(configured_speed), 70),
+            "connection_lost": not connection.connected,
+            "odometry_discontinuity": not snapshot["valid"],
+        })
+        config_race.obstacle_diagnostics = {
+            "state": decision["state"], "reason": decision["reason"],
+            "orange_component": obstacle, "front_sensor_cm": front,
+            "camera_lane_relation": lane_relation,
+            "front_sample_age_s": front_age,
+            "rear_left_sensor_used_for_forward_clearance": False,
+        }
+        if decision["state"] == "SAFE_STOP" and self.obstacle_planner.state == "SAFE_STOP":
+            self.control.stop(reason=decision["reason"])
+        else:
+            steering = max(self.control.min_servo_angle,
+                           min(self.control.max_servo_angle, decision["steering"]))
+            if not self.control.set_angle(steering):
+                self.obstacle_planner._safe("steering target was not acknowledged")
+                self.control.stop(reason="steering target was not acknowledged")
+                return
+            self.control.set_speed(decision["speed"])
 
     def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False):
         # A latched STOP keeps using the detector that originally found it,
@@ -687,6 +807,15 @@ class Robot:
 
 
     def handle_debug_stream(self, result, frame, angle, status, sign_text):
+        if getattr(config_race, "STREAM", False):
+            diagnostics = []
+            confidence = getattr(config_race, "perception_confidence", None)
+            if confidence:
+                diagnostics.append(f"Confidence:{confidence['score']:.2f} {confidence['name']}")
+            obstacle = getattr(config_race, "obstacle_diagnostics", None)
+            if obstacle:
+                diagnostics.append(f"Obstacle:{obstacle['state']} {obstacle['reason']}")
+            result.setdefault("debug", {})["runtime_diagnostics"] = diagnostics
         if config_race.DEBUG:
             debug = result.get("debug") or {}
             if debug.get("combined") is not None:
@@ -772,7 +901,7 @@ class Robot:
 
         cleanup = [
             ("stop", self.control.stop),
-            ("center servo", lambda: self.control.set_angle(90)),
+            ("center servo", lambda: self.control.set_angle(self.control.servo_center)),
             ("camera release", self.camera.release),
             ("serial close", self.control.connection.close),
         ]

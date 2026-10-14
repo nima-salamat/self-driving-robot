@@ -14,6 +14,7 @@ from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTraff
 from traffic_sign_detector.async_detector import AsyncSignDetector
 from traffic_sign_detector.stop_hold import StopSignHold
 from controller import RobotController
+from controller.perception_confidence import PerceptionConfidenceEstimator, ConfidenceSpeedLimiter
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
@@ -48,9 +49,34 @@ class Robot:
         self.control = RobotController(config=config_city)
         config_city.arduino_connection = self.control.connection
         config_city.robot_controller = self.control
+        if getattr(config_city, "ENCODER_MAP_ENABLED", False):
+            from controller.odometry import EncoderOdometry
+            self.odometry = EncoderOdometry(
+                config_city.ENCODER_PULSE_DISTANCE_CM,
+                wheelbase_cm=config_city.ENCODER_WHEELBASE_CM,
+                servo_center=self.control.servo_center,
+                servo_min=self.control.min_servo_angle,
+                servo_max=self.control.max_servo_angle,
+                road_angle_min_deg=config_city.ENCODER_ROAD_ANGLE_MIN_DEG,
+                road_angle_max_deg=config_city.ENCODER_ROAD_ANGLE_MAX_DEG,
+            )
+            if not self.control.request_encoder_telemetry():
+                raise RuntimeError("Selected firmware did not acknowledge encoder telemetry ODOM1")
+            self.control._encoder_telemetry_ready = True
+            config_city.encoder_odometry = self.odometry
+        else:
+            self.odometry = None
         self.flask_thread = None
         self.runtime_exception = None
         self._next_control_time = time.monotonic()
+        if getattr(config_city, "CONFIDENCE_AWARE_ENABLED", False):
+            self.confidence_estimator = PerceptionConfidenceEstimator()
+            self.confidence_limiter = ConfidenceSpeedLimiter(
+                config_city.CONFIDENCE_SLOW_THRESHOLD,
+                config_city.CONFIDENCE_STOP_THRESHOLD,
+            )
+        else:
+            self.confidence_estimator = self.confidence_limiter = None
 
         # SET-based lane configuration is independent of the optional handshake.
         if not getattr(config_city, "WITHOUT_ARDUINO", False):
@@ -190,9 +216,7 @@ class Robot:
             self._set_mcu_stop_latched(
                 True,
                 force=True,
-                send_command=getattr(
-                    config_city, "SEND_TRAFFIC_STOP_COMMAND", False
-                ),
+                send_command=True,
             )
         return self.stop_hold.active
 
@@ -403,7 +427,7 @@ class Robot:
                     "crosswalk_maneuver_started",
                     {"tag": self.last_tag},
                 )
-                self.control.set_angle(90)
+                self.control.set_angle(self.control.servo_center)
                 if self._sleep_interruptible(0.3):
                     return
 
@@ -556,9 +580,11 @@ class Robot:
                     cv2.waitKey(1)
                 angle=SERVO_CENTER
                 crosswalk = False
+                confidence = None
                 
                 if self.crosswalk_time_start == 0:
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                    self.camera.last_frame = frame
                     if not self.camera.last_capture_valid or frame_resized is None:
                         self.control.stop()
                         self._pace_control_loop()
@@ -570,6 +596,18 @@ class Robot:
                     
                     perception_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
+                    if getattr(self, "odometry", None) is not None:
+                        for sample in self.control.encoder_telemetry(limit=3):
+                            self.odometry.ingest(sample, received_at=sample["received_at"])
+                    confidence = None
+                    if getattr(self, "confidence_estimator", None) is not None:
+                        confidence = self.confidence_estimator.evaluate(
+                            result,
+                            frame_valid=self.camera.last_capture_valid,
+                            frame_at=self.camera.last_capture_at,
+                            observation_token=self.camera.last_capture_at,
+                        )
+                        config_city.perception_confidence = confidence
                     if self.metrics is not None:
                         self.metrics.record_perception(
                             (time.monotonic() - perception_started) * 1000.0,
@@ -669,6 +707,14 @@ class Robot:
                     if config_city.DEBUG or config_city.STREAM:
                         perception_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
+                        if getattr(self, "confidence_estimator", None) is not None:
+                            confidence = self.confidence_estimator.evaluate(
+                                result,
+                                frame_valid=self.camera.last_capture_valid,
+                                frame_at=self.camera.last_capture_at,
+                                observation_token=self.camera.last_capture_at,
+                            )
+                            config_city.perception_confidence = confidence
                         if self.metrics is not None:
                             self.metrics.record_perception(
                                 (time.monotonic() - perception_started) * 1000.0,
@@ -735,7 +781,11 @@ class Robot:
                         self._pace_control_loop()
                         continue
 
-                self.control.set_speed(SPEED)
+                target_speed = SPEED
+                if getattr(self, "confidence_limiter", None) is not None:
+                    target_speed, reason = self.confidence_limiter.limit(target_speed, confidence)
+                    config_city.speed_decision = {"target": target_speed, "reason": reason}
+                self.control.set_speed(target_speed)
                 if self.metrics is not None:
                     self.metrics.record_control(
                         (time.monotonic() - control_started) * 1000.0
@@ -978,7 +1028,7 @@ class Robot:
 
         cleanup = [
             ("stop", self.control.stop),
-            ("center servo", lambda: self.control.set_angle(90)),
+            ("center servo", lambda: self.control.set_angle(self.control.servo_center)),
             ("camera release", self.camera.release),
             ("serial close", self.control.connection.close),
         ]

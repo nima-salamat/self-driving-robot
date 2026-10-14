@@ -89,6 +89,9 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         ),
         "recording_enabled": bool(getattr(config, "RECORD_VIDEO", False)),
         "stream_enabled": bool(getattr(config, "STREAM", False)),
+        "encoder_map_enabled": bool(getattr(config, "ENCODER_MAP_ENABLED", False)),
+        "confidence_aware_enabled": bool(getattr(config, "CONFIDENCE_AWARE_ENABLED", False)),
+        "adaptive_obstacle_avoidance_enabled": bool(getattr(config, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False)),
         "stream_control_enabled": bool(
             getattr(config, "STREAM_ALLOW_CONTROL", False)
         ),

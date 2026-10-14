@@ -19,7 +19,7 @@ class BLSFLaneDetector:
 
     def __init__(self, config):
         self.config = config
-        self.last_steering = float(getattr(config, "SERVO_CENTER", 90))
+        self.last_steering = float(getattr(config, "SERVO_CENTER", 95))
         self.last_error = 0.0
 
         self._bev_key = None
@@ -604,7 +604,7 @@ class BLSFLaneDetector:
 
     def _steering(self, lane_center, lane_type, width):
         center = float(
-            self._cfg("SERVO_CENTER", 90)
+            self._cfg("SERVO_CENTER", 95)
         )
         minimum = float(
             self._cfg("MIN_SERVO_ANGLE", 55)
@@ -881,6 +881,8 @@ class BLSFLaneDetector:
             "lane_right_x": right_x,
             "lane_angle_band": band,
             "lane_angle_votes": votes,
+            "perception_quality": min(1.0, (len(segments) / 20.0) * 0.4 + (0.6 if lane_type == "both" else 0.25 if lane_type in ("only_left", "only_right") else 0.0)),
+            "observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0,
         }
 
 

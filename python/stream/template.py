@@ -37,6 +37,7 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
 </style>
 </head>
 <body>
+{% if encoder_map_enabled %}<div style="margin:0 auto 12px;max-width:1300px"><a href="/encoder-map" style="color:#67e8f9">Estimated Odometry map</a></div>{% endif %}
 <div class="container">
   <div class="card">
     <div class="header">
@@ -1181,7 +1182,10 @@ function updateHealth(){
                 ' | loop max ' + (loop.max_ms || 0).toFixed(1) + ' ms' +
                 ' | camera p95 ' + (camera.p95_ms || 0).toFixed(1) + ' ms' +
                 ' | perception p95 ' + (perception.p95_ms || 0).toFixed(1) + ' ms' +
-                ' | serial p95 ' + (serial.p95_ms || 0).toFixed(1) + ' ms';
+                ' | serial p95 ' + (serial.p95_ms || 0).toFixed(1) + ' ms' +
+                (j.perception_confidence ? ' | Confidence ' + j.perception_confidence.score.toFixed(2) + ' (' + (j.perception_confidence.valid?'valid':'invalid') + ')' : '') +
+                (j.speed_decision ? ' | Speed: ' + j.speed_decision.target + ' ' + j.speed_decision.reason : '') +
+                (j.obstacle_diagnostics ? ' | Obstacle: ' + j.obstacle_diagnostics.state + ' — ' + j.obstacle_diagnostics.reason : '');
         })
         .catch(()=>{});
 }

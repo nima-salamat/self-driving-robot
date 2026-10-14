@@ -24,7 +24,7 @@ class BLSFLaneDetectorTests(unittest.TestCase):
         CW_BOTTOM_ROI = 1.0
         CW_LEFT_ROI = 0.3
         CW_RIGHT_ROI = 0.9
-        SERVO_CENTER = 90
+        SERVO_CENTER = 95
         MIN_SERVO_ANGLE = 55
         MAX_SERVO_ANGLE = 125
 

@@ -154,6 +154,9 @@ class WebStreamer:
         self.app.add_url_rule('/api/mode', 'mode', self.mode)
         self.app.add_url_rule('/api/arduino-output', 'arduino_output', self.arduino_output)
         self.app.add_url_rule('/api/health', 'health', self.health)
+        self.app.add_url_rule('/encoder-map', 'encoder_map_page', self.encoder_map_page)
+        self.app.add_url_rule('/api/encoder-map', 'encoder_map_api', self.encoder_map_api)
+        self.app.add_url_rule('/api/encoder-map/reset-origin', 'encoder_map_reset_origin', self.encoder_map_reset_origin, methods=['POST'])
         self.app.add_url_rule('/take_picture', 'take_picture', self.take_picture, methods=['POST'])
         self.app.add_url_rule('/toggle_record', 'toggle_record', self.toggle_record, methods=['POST'])
         self.app.add_url_rule('/freeze_frame', 'freeze_frame', self.freeze_frame, methods=['POST'])
@@ -174,6 +177,7 @@ class WebStreamer:
                     getattr(self.config, "STREAM_ALLOW_CONTROL", False)
                 ),
                 capabilities=mode_capabilities(self.config),
+                encoder_map_enabled=bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)),
             ),
             mimetype="text/html",
         )
@@ -185,6 +189,39 @@ class WebStreamer:
             "Expires": "0",
         })
         return response
+
+    def encoder_map_page(self):
+        if not bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)):
+            return Response("Not Found", status=404)
+        return Response(ENCODER_MAP_TEMPLATE, mimetype="text/html")
+
+    def encoder_map_api(self):
+        if not bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)):
+            return jsonify(error="encoder map is disabled"), 404
+        odometry = getattr(self.config, "encoder_odometry", None)
+        if odometry is None:
+            return jsonify(error="encoder odometry is not initialized"), 503
+        return jsonify(odometry.snapshot())
+
+    def encoder_map_reset_origin(self):
+        if not bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)):
+            return jsonify(error="encoder map is disabled"), 404
+        if not self._control_allowed():
+            return self._control_denied()
+        odometry = getattr(self.config, "encoder_odometry", None)
+        if odometry is None:
+            return jsonify(error="encoder odometry is not initialized"), 503
+        odometry.reset_display_origin()
+        return jsonify(success=True, message="display origin reset; hardware unchanged")
+
+    def _feature_diagnostics(self):
+        payload = {}
+        if getattr(self.config, "CONFIDENCE_AWARE_ENABLED", False):
+            payload["perception_confidence"] = getattr(self.config, "perception_confidence", None)
+            payload["speed_decision"] = getattr(self.config, "speed_decision", None)
+        if getattr(self.config, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False):
+            payload["obstacle_diagnostics"] = getattr(self.config, "obstacle_diagnostics", None)
+        return payload
 
     def _control_allowed(self):
         return bool(getattr(self.config, "STREAM_ALLOW_CONTROL", False))
@@ -401,6 +438,9 @@ class WebStreamer:
         response = Response(payload, mimetype="image/jpeg")
         response.headers.update(cache_headers)
         response.headers["X-Stream-Frame-Sequence"] = str(frame_id)
+        for key, value in self._feature_diagnostics().items():
+            if value is not None:
+                response.headers["X-Robot-" + key.replace("_", "-")] = json.dumps(value, separators=(",", ":"))
         return response
 
     def mode(self):
@@ -417,6 +457,9 @@ class WebStreamer:
                     and capabilities.get("bev", False)
                 ),
                 "stream": capabilities.get("stream_enabled", False),
+                "encoder_map": capabilities.get("encoder_map_enabled", False),
+                "confidence_aware": capabilities.get("confidence_aware_enabled", False),
+                "adaptive_obstacle_avoidance": capabilities.get("adaptive_obstacle_avoidance_enabled", False),
                 "recording": capabilities.get("recording_enabled", False),
                 "sign": capabilities.get("sign_enabled", False),
                 "apriltag": capabilities.get("apriltag_enabled", False),
@@ -513,6 +556,11 @@ class WebStreamer:
             ),
             "metrics": metrics.snapshot() if metrics is not None else {},
         }
+        if getattr(self.config, "CONFIDENCE_AWARE_ENABLED", False):
+            payload["perception_confidence"] = getattr(self.config, "perception_confidence", None)
+            payload["speed_decision"] = getattr(self.config, "speed_decision", None)
+        if getattr(self.config, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False):
+            payload["obstacle_diagnostics"] = getattr(self.config, "obstacle_diagnostics", None)
 
         sign_detector = getattr(self.config, "sign_detector", None)
         output_manager = getattr(self.config, "output_manager", None)
@@ -764,3 +812,10 @@ def stop_stream(config):
     except Exception:
         logger.exception("Failed to stop stream server")
         return False
+
+
+ENCODER_MAP_TEMPLATE = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>Estimated Odometry</title>
+<style>body{font:16px sans-serif;background:#081426;color:#e6eef6;margin:2rem}canvas{background:#030914;border:1px solid #334155;width:min(90vw,800px);height:500px}.warn{color:#fbbf24}a{color:#67e8f9}</style></head><body>
+<h1>Estimated Odometry</h1><p>Encoder pulses and calibrated steering integration are estimates, not ground-truth localization. Slip, backlash, missed counts and drivetrain geometry cause drift.</p>
+<p id='state'>Waiting for telemetry...</p><canvas id='map' width='800' height='500'></canvas><pre id='details'></pre><button id='reset'>Reset displayed origin</button> <a href='/'>Dashboard</a>
+<script>const c=document.getElementById('map'),x=c.getContext('2d');function draw(d){document.getElementById('state').textContent=d.valid?'Continuous estimate':'ODOMETRY GAP: '+d.reason;document.getElementById('state').className=d.valid?'':'warn';document.getElementById('details').textContent=JSON.stringify({signed_pulses:d.signed_pulses,travel_cm:d.travel_cm,position_cm:[d.x_cm,d.y_cm],heading_rad:d.heading_rad,servo_command:d.servo_command,servo_center:d.servo_center,pulse_distance_cm:d.pulse_distance_cm,steering_calibration:[d.road_wheel_angle_at_servo_min_deg,d.road_wheel_angle_at_servo_max_deg],sample_age_s:d.sample_age_s,trajectory_available:d.trajectory_available,reason:d.reason},null,2);x.clearRect(0,0,c.width,c.height);const h=d.history||[],valid=h.filter(p=>p.valid&&p.x_cm!==null);if(!valid.length)return;const xs=valid.map(p=>p.x_cm),ys=valid.map(p=>p.y_cm),scale=Math.min(400/(Math.max(...xs)-Math.min(...xs)||1),250/(Math.max(...ys)-Math.min(...ys)||1));let prev=null;for(const p of h){if(!p.valid||p.gap||p.x_cm===null){prev=null;continue}const q={x:c.width/2+p.x_cm*scale,y:c.height/2-p.y_cm*scale};if(prev){x.beginPath();x.moveTo(prev.x,prev.y);x.lineTo(q.x,q.y);x.strokeStyle='#22d3ee';x.lineWidth=2;x.stroke()}x.fillStyle='#f8fafc';x.fillRect(q.x-2,q.y-2,4,4);prev=q}}async function poll(){try{const r=await fetch('/api/encoder-map',{cache:'no-store'});if(r.ok)draw(await r.json())}catch(e){}setTimeout(poll,250)}poll();document.getElementById('reset').onclick=async()=>{await fetch('/api/encoder-map/reset-origin',{method:'POST'});};</script></body></html>"""

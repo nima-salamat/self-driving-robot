@@ -106,10 +106,10 @@ SERVO
 ========================= */
 Servo myServo;
 int SERVO_PIN = 9;
-int servoCurrent = 90;
+int servoCurrent = 95;
 const int SERVO_MIN = 50;
 const int SERVO_MAX = 130;
-const int SERVO_CENTER = 90;
+const int SERVO_CENTER = 95;
 
 /* =========================
 ENCODER
@@ -128,7 +128,7 @@ const int ULTRA_RIGHT_ECHO = 7;
 const int ULTRA_SIDE_TRIG  = 8;
 const int ULTRA_SIDE_ECHO  = 24;
 
-const int STOP_DISTANCE_CM = 35;
+const int STOP_DISTANCE_CM = 35; // Legacy automatic mode threshold.
 const int PULSE_STOP_DISTANCE_CM = 10;
 const int SIDE_RETURN_DISTANCE_CM = 15;
 const int SIDE_PASS_FORWARD_PULSES = 10;
@@ -446,6 +446,8 @@ struct NBUltrasonic {
   int distanceCm;
   unsigned long timeoutUs;
   unsigned long intervalMs;
+  unsigned long sampleSeq;
+  bool sampleValid;
 
   NBUltrasonic() {}
 
@@ -456,6 +458,8 @@ struct NBUltrasonic {
     intervalMs = interval_msec;
     lastReadMs = millis() + offset_ms;
     distanceCm = -1;
+    sampleSeq = 0;
+    sampleValid = false;
     pinMode(trigPin, OUTPUT);
     pinMode(echoPin, INPUT);
     digitalWrite(trigPin, LOW);
@@ -475,11 +479,14 @@ struct NBUltrasonic {
 
       if (durationUs == 0) {
         distanceCm = -1;
+        sampleValid = false;
       } else {
         int cm = (int)(durationUs / 58UL);
         if (cm <= 0) cm = -1;
         distanceCm = cm;
+        sampleValid = cm > 0;
       }
+      sampleSeq++;
     }
   }
 
@@ -500,6 +507,18 @@ bool movingByPulses = false;
 long targetPulses = 0;
 int currentMotorSpeed = 0;
 int motorDirection = 1;
+// Separate signed estimate; raw segment count remains resettable for PulseQueue.
+volatile long cumulativeSignedPulses = 0;
+long lastRawForOdometry = 0;
+uint16_t odometryEpoch = 1; // host also declares a discontinuity on serial reconnect.
+bool encoderTelemetryEnabled = false;
+bool hostAdaptiveMode = false;
+bool adaptiveEmergencyLatched = false;
+bool adaptiveWatchdogLatched = false;
+int adaptiveEmergencyDistanceCm = 4;
+unsigned long lastHostHeartbeatMs = 0;
+const unsigned long ADAPTIVE_HEARTBEAT_TIMEOUT_MS = 500UL;
+unsigned long adaptiveFrontStopSampleSeq = 0;
 
 bool isPulsePaused = false; 
 int savedPulseSpeed = 0;    
@@ -584,6 +603,8 @@ void startSideForwardPulseStep();
 bool looksLikePulseGroups(const String &line);
 char motionChar();
 void sendStatus();
+void serialEvent();
+void synchronizeOdometry();
 void enterForceStop();
 void exitForceStop();
 void clearSerialBuffers();
@@ -608,6 +629,7 @@ void setup() {
   pinMode(M2, OUTPUT);
 
   encoder.begin();
+  lastHostHeartbeatMs = millis();
 
   ultraLeft.begin(ULTRA_LEFT_TRIG, ULTRA_LEFT_ECHO, ULTRA_TIMEOUT_US, ULTRA_INTERVAL_MS, 0);
   ultraRight.begin(ULTRA_RIGHT_TRIG, ULTRA_RIGHT_ECHO, ULTRA_TIMEOUT_US, ULTRA_INTERVAL_MS, 40);
@@ -629,8 +651,28 @@ long getPulseCount() {
   return encoder.getCount();
 }
 
+// Counts each raw delta once, assigning sign from commanded motor direction.
+// This is not quadrature direction sensing; coast/reversal pulses are uncertain.
+void synchronizeOdometry() {
+  long raw = getPulseCount();
+  long delta = raw - lastRawForOdometry;
+  // Encoder.h exposes AVR `int` storage (16-bit on the target Mega). Repair
+  // only its natural signed wrap; discontinuities are otherwise left to host.
+  if (delta > 30000L) delta -= 65536L;
+  else if (delta < -30000L) delta += 65536L;
+  if (delta > 0 || delta < 0) {
+    int direction = motorDirection;
+    if (currentMotorSpeed < 0) direction = -1;
+    else if (currentMotorSpeed > 0) direction = 1;
+    cumulativeSignedPulses += (long long)abs(delta) * direction;
+  }
+  lastRawForOdometry = raw;
+}
+
 void resetPulseCount() {
+  synchronizeOdometry();
   encoder.reset();
+  lastRawForOdometry = 0;
 }
 
 /**
@@ -641,6 +683,15 @@ void safeMotorDirectionChange(int speed) {
   if (speed > 255) speed = 255;
   if (speed < -255) speed = -255;
 
+  // Do not discard actuator ownership when a new ordinary command arrives.
+  if (hostAdaptiveMode && speed != 0 &&
+      (adaptiveEmergencyLatched || adaptiveWatchdogLatched ||
+       millis() - lastHostHeartbeatMs > ADAPTIVE_HEARTBEAT_TIMEOUT_MS)) {
+    speed = 0;
+  }
+
+  // Account for all pulses in the old direction before the transition.
+  synchronizeOdometry();
   int newDir = (speed >= 0) ? HIGH : LOW;
   int absSpeed = abs(speed);
 
@@ -655,6 +706,8 @@ void safeMotorDirectionChange(int speed) {
       
       // 2. Wait approximately 30ms to let H-bridge settle
       delay(30);
+      // Attribute reversal-settling pulses to the old commanded direction.
+      synchronizeOdometry();
     }
   }
 
@@ -667,6 +720,7 @@ void safeMotorDirectionChange(int speed) {
   analogWrite(IN2, absSpeed);
 
   currentMotorSpeed = speed;
+  if (speed != 0) motorDirection = speed > 0 ? 1 : -1;
 }
 
 /**
@@ -692,7 +746,12 @@ void initiateAdaptiveStartup(int targetSpeed, bool isPulse) {
 }
 
 void setMotorSpeed(int speed) {
-  initiateAdaptiveStartup(speed, false);
+  if (hostAdaptiveMode) {
+    inAdaptiveStartup = false;
+    safeMotorDirectionChange(speed);
+  } else {
+    initiateAdaptiveStartup(speed, false);
+  }
 }
 
 void stopMotor() {
@@ -731,6 +790,7 @@ void startServoMoveImmediate(int target) {
 }
 
 void startMotorByPulses(char dirChar, int speedVal, int pulses, int servoAngle) {
+  if (hostAdaptiveMode) return;
   noInterrupts();
   resetPulseCount();
   interrupts();
@@ -758,6 +818,9 @@ void clearSerialBuffers() {
 
 void enterForceStop() {
   emergencyStopActive = true;
+  if (hostAdaptiveMode) adaptiveWatchdogLatched = true;
+  hostAdaptiveMode = false;
+  hostStopRequested = true;
   queue.clear();
   stopMotor();
   targetPulses = 0;
@@ -858,7 +921,31 @@ void sendStatus() {
   Serial.print(' ');
   Serial.print(loopHz);
   Serial.print(' ');
-  Serial.println(movingByPulses ? 1 : 0);
+  Serial.print(movingByPulses ? 1 : 0);
+  if (encoderTelemetryEnabled) {
+    synchronizeOdometry();
+    Serial.print(" ODOM1 ");
+    Serial.print(cumulativeSignedPulses);
+    Serial.print(' ');
+    Serial.print(getPulseCount());
+    Serial.print(' ');
+    Serial.print(servoCurrent);
+    Serial.print(' ');
+    Serial.print(odometryEpoch);
+    Serial.print(' ');
+    Serial.print(ultraRight.sampleValid ? 1 : 0);
+    Serial.print(' ');
+    Serial.print(ultraRight.sampleSeq);
+    Serial.print(' ');
+    Serial.print(ultraRight.sampleSeq ? (unsigned long)(millis() - ultraRight.lastReadMs) : 0xFFFFFFFFUL);
+    Serial.print(' ');
+    Serial.print(ultraSide.sampleValid ? 1 : 0);
+    Serial.print(' ');
+    Serial.print(ultraSide.sampleSeq);
+    Serial.print(' ');
+    Serial.print(ultraSide.sampleSeq ? (unsigned long)(millis() - ultraSide.lastReadMs) : 0xFFFFFFFFUL);
+  }
+  Serial.println();
 }
 
 /* ==========================================================================
@@ -936,6 +1023,21 @@ void loop() {
     return;
   }
 
+  // Arduino sketches without an external serialEvent hook need to consume the
+  // line buffer directly; calling serialEvent is safe and preserves bounded
+  // line parsing at this control-loop boundary.
+  serialEvent();
+
+  synchronizeOdometry();
+  if (hostAdaptiveMode && currentMotorSpeed != 0 &&
+      millis() - lastHostHeartbeatMs > ADAPTIVE_HEARTBEAT_TIMEOUT_MS) {
+    stopMotor();
+    startServoMoveImmediate(SERVO_CENTER);
+    adaptiveWatchdogLatched = true;
+    hostStopRequested = true;
+    Serial.println("ADAPTIVE WATCHDOG STOP");
+  }
+
   // Safety/configuration commands remain available during pulse motion.
   // Other new motion commands are ignored while an encoder sequence is active.
   if (stringComplete) {
@@ -946,7 +1048,49 @@ void loop() {
     inputString = "";
     stringComplete = false;
 
-    if (work == "stop") {
+    if (work == "heartbeat") {
+      lastHostHeartbeatMs = millis();
+    }
+    else if (work == "encoder telemetry on") {
+      encoderTelemetryEnabled = true;
+      synchronizeOdometry();
+      Serial.println("ENCODER TELEMETRY ODOM1 ON");
+    }
+    else if (work == "encoder telemetry off") {
+      encoderTelemetryEnabled = false;
+      Serial.println("ENCODER TELEMETRY OFF");
+    }
+    else if (work.startsWith("lane adaptive ")) {
+      String thresholdText = work.substring(14);
+      bool thresholdSyntaxValid = thresholdText.length() > 0;
+      for (unsigned int i = 0; i < thresholdText.length(); i++) {
+        if (!isDigit(thresholdText.charAt(i))) thresholdSyntaxValid = false;
+      }
+      int threshold = thresholdText.toInt();
+      if (!thresholdSyntaxValid || threshold < 1 || threshold >= STOP_DISTANCE_CM || movingByPulses || queue.count() > 0 || currentMotorSpeed != 0 || laneState != LANE_NORMAL || emergencyStopActive || adaptiveEmergencyLatched) {
+        Serial.println("LANE ADAPTIVE REJECTED");
+      } else {
+        lane_changing_mode = false;
+        laneState = LANE_NORMAL;
+        lane = 'R';
+        adaptiveEmergencyDistanceCm = threshold;
+        hostAdaptiveMode = true;
+        adaptiveWatchdogLatched = false;
+        hostStopRequested = false;
+        lastHostHeartbeatMs = millis();
+        Serial.println("LANE ADAPTIVE ACK");
+      }
+    }
+    else if (work == "lane adaptive release") {
+      if (!hostAdaptiveMode || !adaptiveEmergencyLatched || !ultraRight.sampleValid || ultraRight.getCm() <= adaptiveEmergencyDistanceCm) {
+        Serial.println("LANE ADAPTIVE RELEASE REJECTED");
+      } else {
+        adaptiveEmergencyLatched = false;
+        hostStopRequested = false;
+        Serial.println("LANE ADAPTIVE RELEASE ACK");
+      }
+    }
+    else if (work == "stop") {
       queue.clear();
       stopMotor();
       targetPulses = 0;
@@ -960,14 +1104,22 @@ void loop() {
     }
     else if (work == "lane manual" || work == "lane stop") {
       lane_changing_mode = false;
+      hostAdaptiveMode = false;
+      Serial.println("LANE MANUAL ACK");
     }
     else if (work == "lane auto") {
+      if (hostAdaptiveMode) {
+        Serial.println("LANE AUTO REJECTED ADAPTIVE OWNER");
+      } else {
       lane_changing_mode = true;
+      }
     }
     else if (work.startsWith("set left ")) {
       String seq = work.substring(9);
       seq.trim();
-      if (seq.length() > 0 && seq.length() < MAX_LANE_CMD_LEN) {
+      if (hostAdaptiveMode) {
+        Serial.println("LEFT CONFIG REJECTED ADAPTIVE OWNER");
+      } else if (seq.length() > 0 && seq.length() < MAX_LANE_CMD_LEN) {
         seq.toCharArray(currentConfig.leftSequence, MAX_LANE_CMD_LEN);
         Serial.println("LEFT CONFIG UPDATED");
       } else {
@@ -977,7 +1129,9 @@ void loop() {
     else if (work.startsWith("set right ")) {
       String seq = work.substring(10);
       seq.trim();
-      if (seq.length() > 0 && seq.length() < MAX_LANE_CMD_LEN) {
+      if (hostAdaptiveMode) {
+        Serial.println("RIGHT CONFIG REJECTED ADAPTIVE OWNER");
+      } else if (seq.length() > 0 && seq.length() < MAX_LANE_CMD_LEN) {
         seq.toCharArray(currentConfig.rightSequence, MAX_LANE_CMD_LEN);
         Serial.println("RIGHT CONFIG UPDATED");
       } else {
@@ -985,7 +1139,8 @@ void loop() {
       }
     }
     else if (work == "save") {
-      saveConfig();
+      if (hostAdaptiveMode) Serial.println("SAVE REJECTED ADAPTIVE OWNER");
+      else saveConfig();
     }
     else if (movingByPulses) {
       // Preserve ownership of motion by the active encoder pulse sequence.
@@ -1019,12 +1174,22 @@ void loop() {
         startServoMoveImmediate(SERVO_CENTER);
         panel.setStop();
       } else {
+        if (adaptiveEmergencyLatched || adaptiveWatchdogLatched || (hostAdaptiveMode && millis() - lastHostHeartbeatMs > ADAPTIVE_HEARTBEAT_TIMEOUT_MS)) {
+          stopMotor();
+          Serial.println("MOTOR REJECTED ADAPTIVE LATCH");
+          requestedSpeed = 0;
+        }
+      }
+      if (requestedSpeed != 0) {
         hostStopRequested = false;
         setMotorSpeed(requestedSpeed);
       }
     }
     else if (work.startsWith("servo ")) {
       startServoMoveImmediate(work.substring(6).toInt());
+    }
+    else if (hostAdaptiveMode && looksLikePulseGroups(work)) {
+      Serial.println("PULSE REJECTED ADAPTIVE OWNER");
     }
     else {
       queue.parseAndEnqueue(work);
@@ -1038,6 +1203,26 @@ void loop() {
   bool normalObstacle = (dl > 0 && dl <= STOP_DISTANCE_CM) || (dr > 0 && dr <= STOP_DISTANCE_CM);
   bool pulseObstacle = (dl > 0 && dl <= PULSE_STOP_DISTANCE_CM) || (dr > 0 && dr <= PULSE_STOP_DISTANCE_CM);
 
+  if (hostAdaptiveMode && currentMotorSpeed != 0 && ultraRight.sampleValid &&
+      (millis() - ultraRight.lastReadMs) <= (2 * ULTRA_INTERVAL_MS) &&
+      ultraRight.getCm() <= adaptiveEmergencyDistanceCm) {
+    adaptiveEmergencyLatched = true;
+    adaptiveFrontStopSampleSeq = ultraRight.sampleSeq;
+    hostStopRequested = true;
+    stopMotor();
+    startServoMoveImmediate(SERVO_CENTER);
+    Serial.println("ADAPTIVE EMERGENCY STOP");
+  }
+  if (currentMotorSpeed != 0 &&
+      (!ultraRight.sampleValid || (millis() - ultraRight.lastReadMs) > (2 * ULTRA_INTERVAL_MS))) {
+    if (hostAdaptiveMode) adaptiveEmergencyLatched = true;
+    if (hostAdaptiveMode) adaptiveWatchdogLatched = true;
+    hostStopRequested = true;
+    stopMotor();
+    startServoMoveImmediate(SERVO_CENTER);
+    Serial.println(hostAdaptiveMode ? "ADAPTIVE FRONT SENSOR INVALID STOP" : "FRONT SENSOR INVALID STOP");
+  }
+
   // --- OBSTACLE & PAUSE LOGIC ---
   if (movingByPulses) {
     if (pulseObstacle) {
@@ -1045,11 +1230,11 @@ void loop() {
         pausePulseMotor();
       }
     } else {
-      if (isPulsePaused) {
+      if (isPulsePaused && ultraRight.sampleValid && ultraRight.getCm() > PULSE_STOP_DISTANCE_CM) {
         resumePulseMotor();
       }
     }
-  } else {
+  } else if (!hostAdaptiveMode) {
     if (lane == 'R' && normalObstacle) {
       if (!lane_changing_mode || hostStopRequested) {
         stopMotor();
@@ -1064,11 +1249,11 @@ void loop() {
   // --- 10-PULSE SIDE SENSOR LOGIC ---
   if (laneState == LANE_LEFT) {
     if (sidePassState == SIDE_WAITING_OBSTACLE) {
-      if (distSide > 0 && distSide <= SIDE_RETURN_DISTANCE_CM) {
+      if (ultraSide.sampleValid && distSide > 0 && distSide <= SIDE_RETURN_DISTANCE_CM) {
         sidePassState = SIDE_SEEING_OBSTACLE;
       }
     } else if (sidePassState == SIDE_SEEING_OBSTACLE) {
-      if (distSide > SIDE_RETURN_DISTANCE_CM || distSide == -1) {
+      if (ultraSide.sampleValid && (millis() - ultraSide.lastReadMs) <= (2 * ULTRA_INTERVAL_MS) && distSide > SIDE_RETURN_DISTANCE_CM) {
         startSideForwardPulseStep();
       }
     } else if (sidePassState == SIDE_MOVING_FORWARD_10_PULSES) {

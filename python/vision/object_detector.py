@@ -63,3 +63,77 @@ class ObjectDetector:
         detected = orange_percent >= self.min_area_percent
 
         return detected, orange_percent, mask
+
+    @staticmethod
+    def localize(frame, mask, min_component_area=16):
+        """Return measurable orange-mask components in image coordinates.
+
+        Coordinates are image pixels only. Without a calibrated camera/ground
+        plane this does not estimate physical obstacle distance or clearance.
+        """
+        if frame is None or mask is None or getattr(mask, "size", 0) == 0:
+            return None
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        components = []
+        full_height, full_width = frame.shape[:2]
+        scale_x = full_width / max(1, mask.shape[1])
+        scale_y = full_height / max(1, mask.shape[0])
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < float(min_component_area):
+                continue
+            x, y, width, height = cv2.boundingRect(contour)
+            moments = cv2.moments(contour)
+            if moments["m00"] <= 0:
+                continue
+            components.append({
+                "area_px": area,
+                "bbox_px": [int(x * scale_x), int(y * scale_y),
+                            int(width * scale_x), int(height * scale_y)],
+                "centroid_px": [moments["m10"] / moments["m00"] * scale_x,
+                                moments["m01"] / moments["m00"] * scale_y],
+                "quality": min(1.0, area / max(1.0, mask.size * 0.02)),
+            })
+        if not components:
+            return None
+        best = max(components, key=lambda item: item["area_px"])
+        image_center = full_width / 2.0
+        best["valid"] = True
+        best["intersects_center"] = (
+            best["bbox_px"][0] <= image_center <= best["bbox_px"][0] + best["bbox_px"][2]
+        )
+        best["coordinate_space"] = "image pixels; not physical range"
+        best["component_count"] = len(components)
+        return best
+
+    @staticmethod
+    def relates_to_lane(component, lane_segments_px, frame_shape):
+        """Estimate image-plane relation to observed lane segments, not cm."""
+        if not component or not lane_segments_px or frame_shape is None:
+            return {"valid": False, "reason": "orange component or lane segments unavailable"}
+        height, width = frame_shape[:2]
+        x, y = component["centroid_px"]
+        # Use nearby detected lane line endpoints as an image-plane corridor
+        # approximation at obstacle row. Require both sides to interpolate.
+        intersections = []
+        for x1, y1, x2, y2 in lane_segments_px:
+            if min(y1, y2) <= y <= max(y1, y2) and abs(y2 - y1) > 1e-6:
+                intersections.append(x1 + (y - y1) * (x2 - x1) / (y2 - y1))
+        if len(intersections) < 2:
+            return {"valid": False, "reason": "two lane boundaries not measurable at obstacle row"}
+        left, right = sorted(intersections)[0], sorted(intersections)[-1]
+        if right <= left:
+            return {"valid": False, "reason": "invalid lane boundary ordering"}
+        bx, by, bw, bh = component["bbox_px"]
+        intersects = bx + bw >= left and bx <= right
+        return {
+            "valid": True,
+            "relation": "inside_lane" if intersects else "outside_lane",
+            "left_boundary_px": left,
+            "right_boundary_px": right,
+            "obstacle_centroid_px": [x, y],
+            "image_fraction_across_lane": (x - left) / (right - left),
+            "coordinate_space": "image pixels; not physical corridor clearance",
+            "frame_width_px": width,
+            "frame_height_px": height,
+        }

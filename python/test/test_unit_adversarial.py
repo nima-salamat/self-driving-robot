@@ -42,7 +42,7 @@ class SerialAdversarialTests(unittest.TestCase):
                 self.assertTrue(connection._establish_safe_state())
                 self.assertEqual(
                     fake.writes,
-                    [b"stop\n", b"servo 90\n"],
+                    [b"stop\n", b"servo 95\n"],
                 )
                 self.assertFalse(connection.connected)
 
@@ -147,7 +147,7 @@ def make_controller_config(mode="race"):
         OUTPUT_LIMITS=(-80, 80),
         MIN_SERVO_ANGLE=55,
         MAX_SERVO_ANGLE=125,
-        SERVO_CENTER=90,
+        SERVO_CENTER=95,
         SERVO_DIRECTION="ltr",
         WITHOUT_ARDUINO=False,
         SERIAL_PORT="/dev/null",

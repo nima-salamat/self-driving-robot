@@ -398,6 +398,22 @@ class VisionProcessor:
             debug["ll_draw"] = ll_draw
             debug["combined"] = vis
 
+        # Preserve actual Hough segment geometry in frame coordinates for
+        # consumers that can justify camera-local obstacle relationships.
+        lane_segments_px = []
+        for lines, x_offset, y_offset in (
+            (rl_lines, rl_left, rl_top),
+            (ll_lines, ll_left_, ll_top),
+        ):
+            if lines is None:
+                continue
+            for line in lines:
+                x1, y1, x2, y2 = self._extract_line(line)
+                lane_segments_px.append([
+                    float(x1 + x_offset), float(y1 + y_offset),
+                    float(x2 + x_offset), float(y2 + y_offset),
+                ])
+
         return {
             "steering_angle": steering_angle,
             "error": error,
@@ -405,4 +421,7 @@ class VisionProcessor:
             "perception_valid": lane_type != "none",
             "debug": debug,
             "kp": kp
+            ,"perception_quality": min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0))
+            ,"observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0
+            ,"lane_segments_px": lane_segments_px
         }

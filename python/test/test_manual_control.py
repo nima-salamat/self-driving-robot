@@ -26,7 +26,7 @@ try:
 except Exception:
     class _Cfg: pass
     config_city = _Cfg()
-    config_city.SERVO_CENTER = 90
+    config_city.SERVO_CENTER = 95
     config_city.SPEED = 255
 
 # Camera adapter: try project camera, else dummy
@@ -65,7 +65,7 @@ MANUAL_TOKEN = os.getenv('MANUAL_TOKEN', 'changeme')
 STATE_FILE = os.getenv('MANUAL_STATE_FILE', 'manual_enterprise_settings.json')
 Path('.').mkdir(parents=True, exist_ok=True)
 
-SERVO_CENTER = getattr(config_city, 'SERVO_CENTER', 90)
+SERVO_CENTER = getattr(config_city, 'SERVO_CENTER', 95)
 DEFAULT_MAX_SPEED = getattr(config_city, 'SPEED', 255)
 
 CONTROL_HZ = 60.0
@@ -772,7 +772,7 @@ setInterval(()=>{
   const speedLimit = Number(document.getElementById('speed_limit').value || settings.speed_limit);
   const angleLimit = Number(document.getElementById('angle_limit').value || settings.angle_limit);
   const hwSpeed = Math.round(current.forward * speedLimit);
-  const hwAngle = Math.round(90 + current.steer * angleLimit);
+  const hwAngle = Math.round(SERVO_CENTER + current.steer * angleLimit);
 
   // update HUD
   document.getElementById('hud_speed').textContent = hwSpeed;

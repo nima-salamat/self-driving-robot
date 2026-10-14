@@ -13,10 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 class MLLaneDetector:
-    def __init__(self, model_name, model_root=None, cpu_threads=4):
+    def __init__(self, model_name, model_root=None, cpu_threads=4, servo_center=95, servo_min=55, servo_max=125):
         self.spec = get_model_spec(model_name)
         self.model_name = model_name
-        self.last_steering = 90.0
+        self.servo_center = float(servo_center)
+        self.servo_min = float(servo_min)
+        self.servo_max = float(servo_max)
+        self.last_steering = self.servo_center
         self.model_root = Path(model_root) if model_root else Path(__file__).resolve().parents[2] / "models" / "lane"
         try:
             import ncnn
@@ -170,7 +173,7 @@ class MLLaneDetector:
             steering_angle = int(self.last_steering)
         else:
             error = frame_center - center_x
-            steering_angle = int(np.clip(90.0 - 0.45 * error, 30.0, 150.0))
+            steering_angle = int(np.clip(self.servo_center - 0.45 * error, self.servo_min, self.servo_max))
             self.last_steering = float(steering_angle)
 
         vis = frame.copy()
@@ -219,6 +222,10 @@ class MLLaneDetector:
             "ml_model": self.model_name,
             "ml_latency_ms": elapsed_ms,
             "ml_inference_ms": inference_ms,
+            # Output is a thresholded lane mask; this occupancy measure is
+            # detector evidence, not a calibrated probability.
+            "perception_quality": float(np.clip(np.count_nonzero(mask > 0.45) / max(1, mask.size), 0.0, 1.0)) if mask is not None else 0.0,
+            "observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0,
         }
 
 
@@ -229,4 +236,10 @@ def create_ml_lane_detector(config):
 
     model_name = getattr(config, "ML_LANE_MODEL", "unet_depthwise_nano")
     threads = int(getattr(config, "ML_LANE_CPU_THREADS", 4))
-    return MLLaneDetector(model_name, cpu_threads=threads)
+    return MLLaneDetector(
+        model_name,
+        cpu_threads=threads,
+        servo_center=float(getattr(config, "SERVO_CENTER", 95)),
+        servo_min=float(getattr(config, "MIN_SERVO_ANGLE", 55)),
+        servo_max=float(getattr(config, "MAX_SERVO_ANGLE", 125)),
+    )

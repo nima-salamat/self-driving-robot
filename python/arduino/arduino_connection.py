@@ -29,6 +29,7 @@ class ArduinoConnection:
         telemetry_buffer_size=100,
         command_write_timeout=0.1,
         heartbeat_interval=0.1,
+        servo_center=95,
         enabled=True,
     ):
         self.port = port
@@ -41,6 +42,7 @@ class ArduinoConnection:
         self.command_write_timeout = max(0.01, float(command_write_timeout))
         self.heartbeat_interval = max(0.05, float(heartbeat_interval))
         self.enabled = bool(enabled)
+        self.servo_center = int(servo_center)
 
         self.serial_connection = None
         self._state = self.DISCONNECTED
@@ -56,6 +58,7 @@ class ArduinoConnection:
         self._telemetry_thread_started = False
         self._rx_buffer = bytearray()
         self._telemetry = deque(maxlen=max(1, int(telemetry_buffer_size)))
+        self._telemetry_records = deque(maxlen=max(1, int(telemetry_buffer_size)))
         self._telemetry_lock = threading.Lock()
         self._telemetry_enabled = bool(telemetry_enabled)
         self._max_telemetry_line_bytes = 4096
@@ -109,6 +112,14 @@ class ArduinoConnection:
             limit = max(0, int(limit))
             lines = lines[-limit:] if limit else []
         return lines
+
+    def telemetry_records(self, limit=None):
+        with self._telemetry_lock:
+            records = list(self._telemetry_records)
+        if limit is not None:
+            limit = max(0, int(limit))
+            records = records[-limit:] if limit else []
+        return records
 
     def telemetry_status(self, limit=50):
         now = time.monotonic()
@@ -181,6 +192,9 @@ class ArduinoConnection:
                     write_timeout=self.reconnect_timeout,
                 )
                 self.serial_connection = connection
+                # Never join a partial line from the previous serial generation
+                # to bytes emitted by a rebooted board.
+                self._rx_buffer.clear()
 
             # Opening a USB Arduino can reset the board. Preserve the existing
             # reboot delay, but keep it entirely inside the recovery worker.
@@ -245,7 +259,7 @@ class ArduinoConnection:
                     return False
                 connection.write(b"stop\n")
                 connection.flush()
-                connection.write(b"servo 90\n")
+                connection.write(f"servo {self.servo_center}\n".encode("ascii"))
                 connection.flush()
             return True
         except Exception as exc:
@@ -337,6 +351,7 @@ class ArduinoConnection:
                 if len(self._telemetry) == self._telemetry.maxlen:
                     self._telemetry_dropped_lines += 1
                 self._telemetry.append(line)
+                self._telemetry_records.append({"line": line, "received_at": time.monotonic()})
 
             if self._print_telemetry:
                 print(f"[Arduino] {line}", flush=True)
@@ -407,6 +422,8 @@ class ArduinoConnection:
     @if_is_not_windows
     def read_command(self):
         """Compatibility API: return the newest buffered telemetry line only."""
+        if not self.enabled:
+            return ""
         lines = self.telemetry_snapshot(1)
         return lines[-1] if lines else ""
 
