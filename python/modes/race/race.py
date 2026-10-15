@@ -479,6 +479,18 @@ class Robot:
             self._race_terminal_finished = True
             self._set_race_inhibited(True, "race_finished")
 
+    def _read_finish_sign_if_active(self, frame, debug_frame, finish_phase):
+        """Run traffic-sign inference only during the timed finishing phase."""
+        if not finish_phase:
+            return "None", debug_frame
+        sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
+            frame,
+            debug_frame,
+            force_check=True,
+            phase_only="finish",
+        )
+        return sign_text, debug_frame
+
     def _hold_last_steering_if_lane_missing(self, result):
         """Apply the race policy for a temporarily missing lane estimate."""
         if result.get("lane_type") != "none":
@@ -605,17 +617,13 @@ class Robot:
                     and self._race_timer_started
                     and finish_state.update(time.monotonic())
                 )
-                if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
-                    sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
-                        frame,
-                        debug_frame,
-                        force_check=finish_phase,
-                        phase_only="finish" if finish_phase else None,
-                    )
-                elif finish_phase:
-                    sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
-                        frame, debug_frame, force_check=True, phase_only="finish"
-                    )
+                # Sign/AprilTag inference is deliberately phase-gated: after
+                # the start gate releases, do not read signs in the middle of
+                # the race. The sign detector runs again only in the timed
+                # finishing phase, where STOP is the only relevant class.
+                sign_text, debug_frame = self._read_finish_sign_if_active(
+                    frame, debug_frame, finish_phase
+                )
                 if getattr(self, "_race_terminal_finished", False):
                     self._pace_control_loop()
                     continue

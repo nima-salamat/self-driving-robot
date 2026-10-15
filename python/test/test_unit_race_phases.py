@@ -199,6 +199,31 @@ class RacePhaseModeTests(unittest.TestCase):
                 phase_only="finish",
             )
 
+    def test_sign_detector_is_not_called_during_middle_race(self):
+        from modes.race import race as mode
+
+        robot = mode.Robot.__new__(mode.Robot)
+        robot.handle_read_sign_or_tag = Mock(
+            return_value=("STOP", True, None, None)
+        )
+        frame = object()
+
+        sign_text, debug_frame = mode.Robot._read_finish_sign_if_active(
+            robot, frame, None, False
+        )
+        self.assertEqual(sign_text, "None")
+        self.assertIsNone(debug_frame)
+        robot.handle_read_sign_or_tag.assert_not_called()
+
+        sign_text, debug_frame = mode.Robot._read_finish_sign_if_active(
+            robot, frame, None, True
+        )
+        self.assertEqual(sign_text, "STOP")
+        self.assertIsNone(debug_frame)
+        robot.handle_read_sign_or_tag.assert_called_once_with(
+            frame, None, force_check=True, phase_only="finish"
+        )
+
     def test_finish_ignores_other_classes_and_terminal_stop_is_one_way(self):
         robot = self.make_robot("TURN LEFT")
         self.run_phase_result(robot, "TURN LEFT")
