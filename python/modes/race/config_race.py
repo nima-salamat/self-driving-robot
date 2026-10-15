@@ -142,7 +142,7 @@ CHANGE_WITH_JSON = True
 WITH_SIGN = True
 WITH_APRILTAG = not WITH_SIGN
 
-READ_SIGN_THRESHOLD = 40
+READ_SIGN_THRESHOLD = 18
 
 # Sign or Tag id
 TURN_RIGHT = 2
@@ -188,7 +188,7 @@ SHOW_FPS = False
 
 # PID parameters
 USE_PID = True
-KP = 0.42
+KP = 0.4
 KI = 0.0
 KD = 0.008
 KT = 0.01
