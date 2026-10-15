@@ -757,7 +757,10 @@ class Robot:
                             angle,
                             crosswalk,
                             "crosswalk",
-                            sign_text + (f" | {self._traffic_light_status}" if getattr(self, "_traffic_light_status", "") else ""),
+                            self._format_crosswalk_status_text(
+                                sign_text,
+                                getattr(self, "_traffic_light_status", ""),
+                            ),
                         )
                     self._pace_control_loop()
                     continue
@@ -827,6 +830,18 @@ class Robot:
         )
         detected = self.object_detector.detect(object_frame)[1]
         logger.debug("Object detector result: %s", detected)
+
+    @staticmethod
+    def _format_crosswalk_status_text(sign_text, traffic_light_status):
+        """Format optional marker/light status values without assuming strings."""
+        parts = []
+        for value in (sign_text, traffic_light_status):
+            if value is None:
+                continue
+            value_text = str(value).strip()
+            if value_text:
+                parts.append(value_text)
+        return " | ".join(parts)
 
     def _process_crosswalk_marker(self, frame, debug_frame):
         """Use the normal marker pipeline while the robot is in crosswalk mode."""
