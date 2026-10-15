@@ -102,7 +102,7 @@ SERVO_CENTER = 95
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
-SPEED = 200
+SPEED = 255
 HARDCODE_SPEED = 220
 
 # --- Crosswalk Setting ---
