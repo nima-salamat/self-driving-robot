@@ -76,6 +76,25 @@ def _apply_cli_overrides(config, args):
         if value is not None:
             setattr(config, name, value)
 
+    if getattr(args, "mode", None) == "race":
+        config.RACE_START_ON_STOP_SIGN = bool(
+            getattr(args, "race_start_on_stop_sign", False)
+        )
+        # Timed finishing is a strict paired CLI opt-in; JSON cannot enable it.
+        config.RACE_FINISH_AFTER_SECONDS = None
+        config.RACE_FINISH_SPEED = None
+        for name, value in (
+            ("RACE_STOP_ABSENCE_SECONDS", getattr(args, "race_stop_absence_seconds", None)),
+            ("RACE_STOP_CONFIDENCE_THRESHOLD", getattr(args, "race_stop_confidence_threshold", None)),
+        ):
+            if value is not None:
+                setattr(config, name, value)
+        finish_after = getattr(args, "race_finish_after_seconds", None)
+        finish_speed = getattr(args, "race_finish_speed", None)
+        if finish_after is not None or finish_speed is not None:
+            config.RACE_FINISH_AFTER_SECONDS = finish_after
+            config.RACE_FINISH_SPEED = finish_speed
+
     config.TRAFFIC_LIGHTS_ENABLED = bool(getattr(args, "traffic_lights", False))
     config.TRAFFIC_LIGHT_WAIT_BEFORE_CHECK = bool(getattr(args, "traffic_light_wait_before_check", False))
 
@@ -114,6 +133,33 @@ def _validate_opt_in_features(config, args):
     def positive(value, name):
         if value is None or not math.isfinite(float(value)) or float(value) <= 0:
             raise SystemExit(f"{name} must be supplied as a positive finite value")
+
+    if (args.race_start_on_stop_sign or args.race_finish_after_seconds is not None or
+            args.race_finish_speed is not None) and args.mode != "race":
+        raise SystemExit("Race start/finish options are supported only in race mode")
+    if args.race_finish_after_seconds is not None and args.race_finish_speed is None:
+        raise SystemExit("--race-finish-after-seconds requires --race-finish-speed")
+    if args.race_finish_speed is not None and args.race_finish_after_seconds is None:
+        raise SystemExit("--race-finish-speed requires --race-finish-after-seconds")
+    if args.race_finish_speed is not None and not -255 <= args.race_finish_speed <= 255:
+        raise SystemExit("--race-finish-speed must be between -255 and 255")
+    if args.mode == "race" and args.race_start_on_stop_sign:
+        absence = float(getattr(config, "RACE_STOP_ABSENCE_SECONDS", 1.0))
+        if not math.isfinite(absence) or absence < 0:
+            raise SystemExit("Race STOP absence duration must be finite and non-negative")
+    if args.mode == "race" and (
+        args.race_start_on_stop_sign or args.race_finish_after_seconds is not None
+    ):
+        threshold = float(getattr(config, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2))
+        if not math.isfinite(threshold) or not 0 <= threshold <= 1:
+            raise SystemExit("Race STOP confidence threshold must be between 0 and 1")
+    if (args.mode == "race" and
+            (args.race_start_on_stop_sign or args.race_finish_after_seconds is not None) and
+            getattr(config, "SIGN_DETECTOR_METHOD", "yolo") == "svm"):
+        raise SystemExit(
+            "Race STOP start/finish requires the YOLO detector, which exposes "
+            "model confidence; the SVM detector does not expose confidence"
+        )
 
     if args.encoder_map:
         if not args.stream:

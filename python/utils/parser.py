@@ -14,6 +14,23 @@ def _positive_finite_fps(value):
     return fps
 
 
+def _finite_nonnegative(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a finite non-negative number")
+    if not math.isfinite(number) or number < 0:
+        raise argparse.ArgumentTypeError("must be a finite non-negative number")
+    return number
+
+
+def _confidence(value):
+    number = _finite_nonnegative(value)
+    if number > 1:
+        raise argparse.ArgumentTypeError("must be between 0 and 1")
+    return number
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Self-driving robot runtime.",
@@ -37,6 +54,17 @@ def parse_args(argv=None):
             f"inference (default: {DEFAULT_TARGET_FPS:g}); does not set camera FPS."
         ),
     )
+
+    parser.add_argument("--race-start-on-stop-sign", action="store_true", default=False,
+                        help="Race mode waits for STOP, then 1 second of fresh STOP absence.")
+    parser.add_argument("--race-stop-absence-seconds", type=_finite_nonnegative, default=None,
+                        metavar="SECONDS", help="Continuous fresh STOP absence required to start (default: 1.0).")
+    parser.add_argument("--race-stop-confidence-threshold", type=_confidence, default=None,
+                        metavar="0..1", help="Minimum YOLO sign confidence for Race start/finish STOP (default: 0.2).")
+    parser.add_argument("--race-finish-after-seconds", type=_finite_nonnegative, default=None,
+                        metavar="SECONDS", help="Enter Race finishing phase this many seconds after race start.")
+    parser.add_argument("--race-finish-speed", type=int, default=None, metavar="SPEED",
+                        help="Target speed in the Race finishing phase (valid controller range: -255..255).")
 
     parser.add_argument("--traffic-lights", action="store_true", default=False,
                         help="Enable safety-gated traffic-light crossing in City mode only.")

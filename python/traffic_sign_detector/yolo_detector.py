@@ -16,6 +16,7 @@ class TrafficSignDetector:
     def __init__(self, model_path=None):
         self.SIGNS = ["ERROR", "STOP", "TURN RIGHT", "TURN LEFT", "STRAIGHT", "PARK"]
         self.count = 0 
+        self.confidence_threshold = 0.2
         
         # Default to the ONNX model
         if model_path is None:
@@ -79,8 +80,13 @@ class TrafficSignDetector:
         
         return img_batch, r, dw, dh
 
-    def process_frame(self, original_image, debug_frame=None, confidence_threshold=0.2):
+    def process_frame(
+        self, original_image, debug_frame=None, confidence_threshold=None,
+        target_sign_types=None,
+    ):
         self.count += 1
+        if confidence_threshold is None:
+            confidence_threshold = self.confidence_threshold
         
         top_y, bottom_y = self.get_roi(original_image)
         full_binary = np.zeros(original_image.shape[:2], dtype=np.uint8)
@@ -110,6 +116,10 @@ class TrafficSignDetector:
             classes_scores = row[4:]
             class_id = np.argmax(classes_scores)
             conf = classes_scores[class_id]
+
+            if (target_sign_types is not None and
+                    int(class_id) + 1 not in target_sign_types):
+                continue
             
             if conf >= confidence_threshold:
                 # Re-calculate coordinates back to the unpadded, original image scale
@@ -166,6 +176,7 @@ class TrafficSignDetector:
             "coordinate": best_coordinate,
             "binary_mask": full_binary,
             "sign_type": best_sign_type,
+            "confidence": best_conf,
             "text": text,
             "debug_frame": debug_frame 
         }

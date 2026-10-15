@@ -143,6 +143,11 @@ WITH_SIGN = True
 WITH_APRILTAG = not WITH_SIGN
 
 READ_SIGN_THRESHOLD = 18
+RACE_START_ON_STOP_SIGN = False
+RACE_STOP_ABSENCE_SECONDS = 1.0
+RACE_STOP_CONFIDENCE_THRESHOLD = 0.2
+RACE_FINISH_AFTER_SECONDS = None
+RACE_FINISH_SPEED = None
 
 # Targeted detector-box filter. Area uses detector pixel coordinates (px²);
 # 900 px² is a tunable 30×30 px starting point, not an empirical calibration.

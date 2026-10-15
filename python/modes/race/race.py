@@ -16,6 +16,8 @@ from traffic_sign_detector.area_filter import (
     normalize_sign_name,
 )
 from traffic_sign_detector.stop_hold import StopSignHold
+from traffic_sign_detector.race_start_gate import RaceStartGate, RaceFinishState
+from train_sign_detector.labels import SIGN_LABELS
 from controller import RobotController
 from controller.odometry import EncoderOdometry
 from controller.perception_confidence import PerceptionConfidenceEstimator, ConfidenceSpeedLimiter
@@ -37,6 +39,9 @@ from utils.roi_manager import crop_image
 # Set to False to completely bypass sign and tag processing
 
 logger = logging.getLogger(__name__)
+STOP_SIGN_CLASS_ID = next(
+    class_id for class_id, name in SIGN_LABELS.items() if name == "STOP"
+)
 
 # keep defaults (config_race can override)
 OUTPUT_DIR = getattr(config_race, "OUTPUT_DIR", "output")
@@ -133,6 +138,21 @@ class Robot:
             clear_confirmations=3,
             minimum_duration_s=getattr(config_race, "STOP_MIN_HOLD_SECONDS", 3.0),
         )
+        self.race_start_gate = (
+            RaceStartGate(
+                getattr(config_race, "RACE_STOP_ABSENCE_SECONDS", 1.0),
+                getattr(config_race, "SIGN_RESULT_MAX_AGE", 0.75),
+            )
+            if getattr(config_race, "RACE_START_ON_STOP_SIGN", False)
+            else None
+        )
+        self.race_finish = (
+            RaceFinishState(config_race.RACE_FINISH_AFTER_SECONDS, config_race.RACE_FINISH_SPEED)
+            if getattr(config_race, "RACE_FINISH_AFTER_SECONDS", None) is not None
+            else None
+        )
+        self._race_terminal_finished = False
+        self._race_timer_started = False
         self.stop_hold_detector_kind = None
         self.last_sign_observation_fresh = False
         self.last_sign_observation_at = None
@@ -411,6 +431,54 @@ class Robot:
         event = getattr(config_race, "SHUTDOWN_EVENT", None)
         return bool(event is not None and event.is_set())
 
+    def _set_race_inhibited(self, inhibited, reason):
+        inhibit = getattr(self.control, "set_motion_inhibited", None)
+        if not callable(inhibit):
+            logger.error("Race start/finish requires controller motion inhibition")
+            return False
+        try:
+            already_inhibited = bool(getattr(self.control, "motion_inhibited", False))
+            prior_reason = getattr(self.control, "motion_inhibit_reason", None)
+            success = bool(inhibit(bool(inhibited), reason=reason))
+            if inhibited and (not already_inhibited or prior_reason != reason):
+                self.control.stop(reason=reason)
+            return success
+        except Exception:
+            logger.exception("Failed to apply Race motion inhibition (%s)", reason)
+            return False
+
+    def _run_race_start_gate_cycle(self):
+        self._set_race_inhibited(True, "race_start_gate")
+        frame, _ = self.camera.capture_frame(with_resize=False)
+        valid_frame = bool(
+            getattr(self.camera, "last_capture_valid", False) and frame is not None
+        )
+        stop_seen = False
+        if valid_frame:
+            _, stop_seen, _, _ = self.handle_read_sign_or_tag(
+                frame, None, force_check=True, phase_only="start"
+            )
+        observation_id = getattr(self, "last_sign_result_id", None)
+        observation_at = getattr(self, "last_sign_observation_at", None)
+        gate = self.race_start_gate
+        gate.observe(
+            result_id=observation_id,
+            stop_present=stop_seen,
+            observation_at=observation_at,
+            now=time.monotonic(),
+            valid=bool(valid_frame and self.last_sign_observation_fresh),
+        )
+        if gate.released:
+            self._set_race_inhibited(False, "race_start_gate_cleared")
+        self._pace_control_loop()
+
+    def _finish_race(self):
+        if self._race_terminal_finished:
+            return
+        if self.race_finish is not None and self.race_finish.finish():
+            self._race_terminal_finished = True
+            self._set_race_inhibited(True, "race_finished")
+
     def _hold_last_steering_if_lane_missing(self, result):
         """Apply the race policy for a temporarily missing lane estimate."""
         if result.get("lane_type") != "none":
@@ -437,9 +505,19 @@ class Robot:
                 from utils.health import HealthState
                 self.health.set_lifecycle(HealthState.RUNNING)
 
+            if getattr(self, "race_start_gate", None) is not None:
+                self._set_race_inhibited(True, "race_start_gate")
+
             while not self._shutdown_requested():
                 self.fps.update()
                 self.fps.maybe_log_performance()
+                if getattr(self, "_race_terminal_finished", False):
+                    self._set_race_inhibited(True, "race_finished")
+                    self._pace_control_loop()
+                    continue
+                if getattr(self, "race_start_gate", None) is not None and not self.race_start_gate.released:
+                    self._run_race_start_gate_cycle()
+                    continue
                 if self.stop_hold.active:
                     self._run_stop_hold_cycle()
                     continue
@@ -521,11 +599,26 @@ class Robot:
                     )
 
                 sign_text = "None"
+                finish_state = getattr(self, "race_finish", None)
+                finish_phase = bool(
+                    finish_state is not None
+                    and self._race_timer_started
+                    and finish_state.update(time.monotonic())
+                )
                 if config_race.WITH_SIGN or config_race.WITH_APRILTAG:
                     sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
                         frame,
                         debug_frame,
+                        force_check=finish_phase,
+                        phase_only="finish" if finish_phase else None,
                     )
+                elif finish_phase:
+                    sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
+                        frame, debug_frame, force_check=True, phase_only="finish"
+                    )
+                if getattr(self, "_race_terminal_finished", False):
+                    self._pace_control_loop()
+                    continue
                 if self.stop_hold.active:
                     self.handle_debug_stream(
                         result,
@@ -596,7 +689,15 @@ class Robot:
                         self._pace_control_loop()
                         continue
 
-                target_speed = SPEED
+                finish_state = getattr(self, "race_finish", None)
+                if finish_state is not None and not getattr(self, "_race_timer_started", False):
+                    finish_state.start(time.monotonic())
+                    self._race_timer_started = True
+                target_speed = (
+                    finish_state.finish_speed
+                    if finish_state is not None and finish_state.finishing
+                    else SPEED
+                )
                 if getattr(self, "confidence_limiter", None) is not None:
                     target_speed, reason = self.confidence_limiter.limit(target_speed, confidence)
                     config_race.speed_decision = {"target": target_speed, "reason": reason}
@@ -904,7 +1005,7 @@ class Robot:
             return
         self.control.set_speed(decision["speed"])
 
-    def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False):
+    def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False, phase_only=None):
         # A latched STOP keeps using the detector that originally found it,
         # even if the dashboard's marker-mode toggle changes during the hold.
         self.last_sign_observation_fresh = False
@@ -918,6 +1019,10 @@ class Robot:
         else:
             use_apriltag = bool(config_race.WITH_APRILTAG)
             use_sign = bool(config_race.WITH_SIGN)
+
+        if phase_only in {"start", "finish"}:
+            use_sign = True
+            use_apriltag = False
 
         if not (use_sign or use_apriltag):
             return None, False, debug_frame, None
@@ -971,9 +1076,16 @@ class Robot:
 
             if should_submit:
                 self.read_sign_counter = 0
+                submit_options = {}
+                if phase_only in {"start", "finish"}:
+                    submit_options["confidence_threshold"] = float(getattr(
+                        config_race, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2
+                    ))
+                    submit_options["target_sign_types"] = (STOP_SIGN_CLASS_ID,)
                 self.sign_detector.submit(
                     sign_tag_frame.copy(),
                     debug_frame.copy() if debug_frame is not None else None,
+                    **submit_options,
                 )
 
             # Submission is throttled, but a completed result is consumed on
@@ -988,6 +1100,15 @@ class Robot:
                 self.last_sign_result_id = latest_sign[0]
                 sign_result = latest_sign[1]
                 debug_frame = sign_result.get("debug_frame", debug_frame)
+                confidence = sign_result.get("confidence")
+                threshold = float(getattr(
+                    config_race, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2
+                ))
+                confidence_ok = (
+                    isinstance(confidence, (int, float))
+                    and math.isfinite(float(confidence))
+                    and float(confidence) >= threshold
+                )
                 if accepts_sign_detection(
                     sign_result,
                     enabled=getattr(config_race, "SIGN_AREA_FILTER_ENABLED", False),
@@ -999,13 +1120,29 @@ class Robot:
                     self.last_sign_observation_at = latest_sign[2]
 
                     sign_label = normalize_sign_name(sign_result.get("text", ""))
-                    if sign_label == "TURN LEFT":
+                    if phase_only in {"start", "finish"}:
+                        observation_in_phase = (
+                            phase_only != "finish"
+                            or getattr(self.race_finish, "finishing_started_at", None) is None
+                            or latest_sign[2] >= self.race_finish.finishing_started_at
+                        )
+                        stop_seen = (
+                            sign_label == "STOP"
+                            and confidence_ok
+                            and observation_in_phase
+                        )
+                        if stop_seen:
+                            tag_id = STOP
+                            detector_kind = "sign"
+                            self.last_tag = STOP
+                        sign_label = ""
+                    if phase_only not in {"start", "finish"} and sign_label == "TURN LEFT":
                         tag_id = TURN_LEFT
-                    elif sign_label == "TURN RIGHT":
+                    elif phase_only not in {"start", "finish"} and sign_label == "TURN RIGHT":
                         tag_id = TURN_RIGHT
-                    elif sign_label == "STRAIGHT":
+                    elif phase_only not in {"start", "finish"} and sign_label == "STRAIGHT":
                         tag_id = STRAIGHT
-                    elif sign_label == "STOP":
+                    elif phase_only not in {"start", "finish"} and sign_label == "STOP":
                         tag_id = STOP
                         stop_seen = True
                         detector_kind = "sign"
@@ -1013,7 +1150,10 @@ class Robot:
                     if tag_id is not None:
                         self.last_tag = tag_id
 
-        self._observe_stop_result(stop_seen, detector_kind=detector_kind)
+        if phase_only == "finish" and stop_seen:
+            self._finish_race()
+        elif phase_only is None:
+            self._observe_stop_result(stop_seen, detector_kind=detector_kind)
         return tag_id, stop_seen, debug_frame, coordinate
 
 

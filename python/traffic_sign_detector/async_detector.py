@@ -28,7 +28,10 @@ class AsyncSignDetector:
         )
         self._worker.start()
 
-    def submit(self, frame, debug_frame=None):
+    def submit(
+        self, frame, debug_frame=None, confidence_threshold=None,
+        target_sign_types=None,
+    ):
         if frame is None:
             return None
         submitted_at = time.monotonic()
@@ -36,7 +39,10 @@ class AsyncSignDetector:
             self._next_id += 1
             request_id = self._next_id
             self._last_submit_at = submitted_at
-        request = (request_id, frame, debug_frame, submitted_at)
+        request = (
+            request_id, frame, debug_frame, submitted_at,
+            confidence_threshold, target_sign_types,
+        )
         try:
             self._requests.put_nowait(request)
             with self._lock:
@@ -65,19 +71,32 @@ class AsyncSignDetector:
 
         max_age_s = max(0.0, float(max_age_s))
         input_age_s = max(0.0, time.monotonic() - latest[2])
-        return latest if input_age_s <= max_age_s else None
+        return latest if input_age_s < max_age_s else None
 
     def _run(self):
         logger = logging.getLogger(__name__)
         while not self._stop.is_set():
             try:
-                request_id, frame, debug_frame, submitted_at = self._requests.get(timeout=0.1)
+                (request_id, frame, debug_frame, submitted_at,
+                 confidence_threshold, target_sign_types) = self._requests.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             started = time.monotonic()
             try:
-                result = self.detector.process_frame(frame, debug_frame=debug_frame)
+                if confidence_threshold is None and target_sign_types is None:
+                    result = self.detector.process_frame(frame, debug_frame=debug_frame)
+                else:
+                    options = {}
+                    if confidence_threshold is not None:
+                        options["confidence_threshold"] = confidence_threshold
+                    if target_sign_types is not None:
+                        options["target_sign_types"] = target_sign_types
+                    result = self.detector.process_frame(
+                        frame,
+                        debug_frame=debug_frame,
+                        **options,
+                    )
                 completed_at = time.monotonic()
                 with self._lock:
                     self._latest = (
