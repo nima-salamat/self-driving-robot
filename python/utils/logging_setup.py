@@ -6,25 +6,31 @@ from logging.handlers import RotatingFileHandler
 _LOGGER_CONFIGURED = "_self_driving_robot_logging_configured"
 
 
-def _configure_dependency_log_levels(debug):
-    """Keep high-frequency Picamera2 internals at WARNING, even in app debug mode."""
+def _configure_dependency_log_levels():
+    """Keep high-frequency Picamera2 internals at WARNING."""
     # Picamera2 can emit an "Execute job" DEBUG record for nearly every frame.
-    # These library internals are too noisy for the real-time driving loop, so
-    # keep them at WARNING regardless of the application's own debug setting.
+    # Keep these library internals at WARNING to avoid noise in the real-time loop.
     for name in ("picamera2", "picamera2.picamera2"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def configure_logging(debug=False, log_dir="output"):
+    """Configure INFO-and-higher logging in every runtime mode.
+
+    The debug argument remains in the signature for compatibility with callers.
+    Mode-level debug flags control diagnostic visualizations; they do not lower
+    the log verbosity threshold.
+    """
     logging.disable(logging.NOTSET)
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG if debug else logging.INFO)
-    _configure_dependency_log_levels(debug)
+    root.setLevel(logging.INFO)
+    _configure_dependency_log_levels()
 
     if getattr(root, _LOGGER_CONFIGURED, False):
+        # Reconfiguration must not re-enable DEBUG records or leave old handlers
+        # with a more permissive threshold.
         for handler in root.handlers:
-            if isinstance(handler, logging.StreamHandler):
-                handler.setLevel(logging.DEBUG if debug else logging.INFO)
+            handler.setLevel(logging.INFO)
         return
 
     os.makedirs(log_dir, exist_ok=True)
@@ -35,7 +41,7 @@ def configure_logging(debug=False, log_dir="output"):
     )
 
     console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG if debug else logging.INFO)
+    console.setLevel(logging.INFO)
     console.setFormatter(formatter)
 
     file_handler = RotatingFileHandler(
@@ -44,7 +50,7 @@ def configure_logging(debug=False, log_dir="output"):
         backupCount=3,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
 
     root.addHandler(console)
