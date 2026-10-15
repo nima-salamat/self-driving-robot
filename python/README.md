@@ -503,7 +503,7 @@ From the repository's `python/` directory:
 python tools/lane_tuning_gui.py
 ```
 
-Open a directory containing PNG images from **Open PNG folder**, choose `race` or `city`, select an image, tune the lane threshold, Hough vote threshold, minimum segment length, maximum segment gap, blur kernel, preprocessing method, morphology, or BEV option, then press **Apply detection**.
+Open a directory containing PNG images from **Open PNG folder**, choose `race` or `city`, select an image, tune the lane threshold, Hough vote threshold, minimum segment length, maximum segment gap, blur kernel, preprocessing method, morphology, BEV transform, lane ROI shape, each left/right ROI boundary, and trapezoid top-width factors, then press **Apply detection**.
 
 Available views are the original frame, all raw Hough candidates, the best candidate selected for each lane ROI, and left/right edge maps. **Save displayed PNG** exports the current view. **Save preset to mode JSON** merges the detector settings into `race.json` or `city.json` after confirmation and creates a sibling `.bak` backup first.
 
