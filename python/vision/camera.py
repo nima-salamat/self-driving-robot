@@ -122,7 +122,7 @@ class Camera:
                     self.picam.set_controls({
                         "AeEnable": False,
                         "AwbEnable": False,
-                        "ExposureTime": 16600,
+                        "ExposureTime": 10000,
                         "AnalogueGain": 6.0,
                     })
                 
