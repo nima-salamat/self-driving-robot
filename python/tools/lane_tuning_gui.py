@@ -670,18 +670,6 @@ class LaneTuningApp:
         except Exception as exc:
             messagebox.showerror("Could not save preset", f"{type(exc).__name__}: {exc}")
 
-    def _mark_settings(self):
-        self.config.LANE_THRESHOLD = int(self.params["lane"].get())
-        self.config.HOUGH_THRESHOLD = int(self.params["hough"].get())
-        self.config.HOUGH_MIN_LINE_LENGTH = int(self.params["length"].get())
-        self.config.HOUGH_MAX_LINE_GAP = int(self.params["gap"].get())
-        blur = int(self.params["blur"].get())
-        self.config.HOUGH_BLUR_KERNEL = blur if blur % 2 else max(1, blur - 1)
-        self.config.HOUGH_MORPH_CLOSE = bool(self.morph_var.get())
-        self.config.USE_BEV = bool(self.bev_var.get())
-        self.config.OLD_METHOD = self.method_var.get().startswith("Legacy")
-        self.config.DEBUG = True
-        self.config.STREAM = False
 
 
 def main():
