@@ -229,7 +229,7 @@ if __name__ == "__main__":
     base_config.MODE = args.mode
 
     configure_logging(
-        debug=getattr(config, "DEBUG", False),
+        level=args.log_level,
         log_dir=getattr(config, "OUTPUT_DIR", "output"),
     )
     if os.name == "nt":

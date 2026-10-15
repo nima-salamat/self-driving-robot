@@ -4,33 +4,36 @@ from logging.handlers import RotatingFileHandler
 
 
 _LOGGER_CONFIGURED = "_self_driving_robot_logging_configured"
+_LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 
 def _configure_dependency_log_levels():
     """Keep high-frequency Picamera2 internals at WARNING."""
     # Picamera2 can emit an "Execute job" DEBUG record for nearly every frame.
-    # Keep these library internals at WARNING to avoid noise in the real-time loop.
+    # Keep this noisy camera-library logger at WARNING even when application
+    # DEBUG logging is explicitly requested.
     for name in ("picamera2", "picamera2.picamera2"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
-def configure_logging(debug=False, log_dir="output"):
-    """Configure INFO-and-higher logging in every runtime mode.
+def configure_logging(level="INFO", log_dir="output"):
+    """Configure console and rotating-file logging at the selected severity."""
+    if not isinstance(level, str) or level.upper() not in _LOG_LEVEL_NAMES:
+        choices = ", ".join(_LOG_LEVEL_NAMES)
+        raise ValueError(f"Invalid log level {level!r}; expected one of: {choices}")
 
-    The debug argument remains in the signature for compatibility with callers.
-    Mode-level debug flags control diagnostic visualizations; they do not lower
-    the log verbosity threshold.
-    """
+    normalized_level = level.upper()
+    numeric_level = getattr(logging, normalized_level)
+
     logging.disable(logging.NOTSET)
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(numeric_level)
     _configure_dependency_log_levels()
 
     if getattr(root, _LOGGER_CONFIGURED, False):
-        # Reconfiguration must not re-enable DEBUG records or leave old handlers
-        # with a more permissive threshold.
+        # Keep both output destinations in sync if logging is configured again.
         for handler in root.handlers:
-            handler.setLevel(logging.INFO)
+            handler.setLevel(numeric_level)
         return
 
     os.makedirs(log_dir, exist_ok=True)
@@ -41,7 +44,7 @@ def configure_logging(debug=False, log_dir="output"):
     )
 
     console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
+    console.setLevel(numeric_level)
     console.setFormatter(formatter)
 
     file_handler = RotatingFileHandler(
@@ -50,11 +53,13 @@ def configure_logging(debug=False, log_dir="output"):
         backupCount=3,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(numeric_level)
     file_handler.setFormatter(formatter)
 
     root.addHandler(console)
     root.addHandler(file_handler)
     setattr(root, _LOGGER_CONFIGURED, True)
 
-    logging.getLogger(__name__).info("Logging initialized: %s", log_path)
+    logging.getLogger(__name__).info(
+        "Logging initialized at %s: %s", normalized_level, log_path
+    )

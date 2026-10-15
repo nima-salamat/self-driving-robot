@@ -31,7 +31,8 @@ python main.py --help
 The exact line wrapping can vary by Python/terminal width. The command exposes the following interface:
 
 ~~~text
-usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
+usage: main.py [-h] [--mode {city,race}] [--debug]
+               [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--stream]
                [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
                [--without-arduino] [--fps] [--performance] [--preflight]
                [--read-arduino-output] [--arduino-config PATH]
@@ -46,7 +47,9 @@ options:
   -h, --help
                         show this help message and exit
   --mode {city,race}   Run mode. Default: city
-  --debug              Enable debug output
+  --debug              Enable diagnostic visualizations; independent of --log-level
+  --log-level LEVEL     Minimum log severity: DEBUG, INFO, WARNING, ERROR,
+                        or CRITICAL (default: INFO)
   --stream             Enable the web stream
   --stream-host STREAM_HOST
                         Stream bind address (default: 0.0.0.0; all interfaces)
@@ -71,6 +74,26 @@ options:
   --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
                         Enable ML lane detection with the selected model
 ~~~
+
+## Log verbosity
+
+Logging defaults to `INFO`, so `DEBUG` records are hidden from both the terminal
+and `output/robot.log`. Choose a level per run with `--log-level`:
+
+~~~bash
+# Normal operation: INFO and above
+python main.py --mode race
+
+# Troubleshoot lane detection with DEBUG records enabled
+python main.py --mode race --log-level DEBUG
+
+# Only warnings and errors
+python main.py --mode race --log-level WARNING
+~~~
+
+The `--debug` flag is separate: it controls diagnostic image overlays and does
+not set the logging threshold. Picamera2's high-frequency internal logs remain
+limited to `WARNING` to avoid flooding the real-time control loop.
 
 ## Configuration precedence
 

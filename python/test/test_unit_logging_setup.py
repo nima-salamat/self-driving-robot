@@ -10,6 +10,7 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 from utils import logging_setup
+from utils.parser import parse_args
 
 
 _MISSING = object()
@@ -55,57 +56,86 @@ class LoggingSetupTests(unittest.TestCase):
         for name, level in self.original_dependency_levels.items():
             logging.getLogger(name).setLevel(level)
 
-    def test_debug_records_are_filtered_in_city_and_race_and_from_file(self):
+    def _capture_log_output(self, level):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        logging_setup.configure_logging(level=level, log_dir=temp_dir.name)
+        console = next(
+            handler
+            for handler in self.root.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, logging.FileHandler)
+        )
+        console_output = io.StringIO()
+        console.setStream(console_output)
+        return temp_dir.name, console_output
+
+    def test_default_log_level_is_info(self):
+        args = parse_args([])
+        self.assertEqual(args.log_level, "INFO")
+
+    def test_cli_log_level_is_case_insensitive(self):
+        args = parse_args(["--log-level", "debug"])
+        self.assertEqual(args.log_level, "DEBUG")
+
+    def test_info_level_filters_debug_but_keeps_info_and_above_in_both_outputs(self):
+        log_dir, console_output = self._capture_log_output("INFO")
+        logger = logging.getLogger("modes.race.race")
+        original_logger_level = logger.level
+        logger.setLevel(logging.NOTSET)
+        try:
+            logger.debug("DEBUG-MUST-NOT-APPEAR")
+            logger.info("INFO-MUST-APPEAR")
+            logger.warning("WARNING-MUST-APPEAR")
+            logger.error("ERROR-MUST-APPEAR")
+            logger.critical("CRITICAL-MUST-APPEAR")
+        finally:
+            logger.setLevel(original_logger_level)
+
+        for handler in self.root.handlers:
+            handler.flush()
+
+        console_text = console_output.getvalue()
+        file_text = (Path(log_dir) / "robot.log").read_text(encoding="utf-8")
+        for output in (console_text, file_text):
+            self.assertNotIn("DEBUG-MUST-NOT-APPEAR", output)
+            for marker in ("INFO-MUST-APPEAR", "WARNING-MUST-APPEAR",
+                           "ERROR-MUST-APPEAR", "CRITICAL-MUST-APPEAR"):
+                self.assertIn(marker, output)
+
+    def test_explicit_debug_level_emits_debug_records_to_both_outputs(self):
+        log_dir, console_output = self._capture_log_output("DEBUG")
+        logger = logging.getLogger("modes.race.race")
+        original_logger_level = logger.level
+        logger.setLevel(logging.NOTSET)
+        try:
+            logger.debug("RACE-DEBUG-VISIBLE")
+        finally:
+            logger.setLevel(original_logger_level)
+        for handler in self.root.handlers:
+            handler.flush()
+
+        self.assertIn("RACE-DEBUG-VISIBLE", console_output.getvalue())
+        file_text = (Path(log_dir) / "robot.log").read_text(encoding="utf-8")
+        self.assertIn("RACE-DEBUG-VISIBLE", file_text)
+        self.assertEqual(self.root.level, logging.DEBUG)
+        self.assertTrue(
+            all(handler.level == logging.DEBUG for handler in self.root.handlers)
+        )
+
+    def test_reconfiguration_changes_all_handler_levels(self):
         with tempfile.TemporaryDirectory() as log_dir:
-            # Mode DEBUG is commonly enabled for visualization, but must not
-            # cause DEBUG-level log records to appear in any output destination.
-            logging_setup.configure_logging(debug=True, log_dir=log_dir)
-            self.assertEqual(self.root.level, logging.INFO)
-
-            console = next(
-                handler
-                for handler in self.root.handlers
-                if isinstance(handler, logging.StreamHandler)
-                and not isinstance(handler, logging.FileHandler)
-            )
-            console_output = io.StringIO()
-            console.setStream(console_output)
-
-            for mode_logger in ("modes.city.city", "modes.race.race"):
-                with self.subTest(mode=mode_logger):
-                    logger = logging.getLogger(mode_logger)
-                    logger.debug("DEBUG-MUST-NOT-APPEAR-%s", mode_logger)
-                    logger.info("INFO-MUST-APPEAR-%s", mode_logger)
-                    logger.warning("WARNING-MUST-APPEAR-%s", mode_logger)
-                    logger.error("ERROR-MUST-APPEAR-%s", mode_logger)
-                    logger.critical("CRITICAL-MUST-APPEAR-%s", mode_logger)
-
-            for handler in self.root.handlers:
-                handler.flush()
-
-            console_text = console_output.getvalue()
-            log_text = (Path(log_dir) / "robot.log").read_text(encoding="utf-8")
-            self.assertNotIn("DEBUG-MUST-NOT-APPEAR", console_text)
-            self.assertNotIn("DEBUG-MUST-NOT-APPEAR", log_text)
-            for level in ("INFO", "WARNING", "ERROR", "CRITICAL"):
-                self.assertIn(f"{level}-MUST-APPEAR", console_text)
-                self.assertIn(f"{level}-MUST-APPEAR", log_text)
-
-    def test_reconfiguration_cannot_restore_debug_logging(self):
-        with tempfile.TemporaryDirectory() as log_dir:
-            logging_setup.configure_logging(debug=True, log_dir=log_dir)
-
-            # Simulate permissive logger/handler levels left by other setup code.
-            self.root.setLevel(logging.DEBUG)
-            for handler in self.root.handlers:
-                handler.setLevel(logging.DEBUG)
-
-            logging_setup.configure_logging(debug=True, log_dir=log_dir)
-
-            self.assertEqual(self.root.level, logging.INFO)
+            logging_setup.configure_logging(level="DEBUG", log_dir=log_dir)
+            logging_setup.configure_logging(level="WARNING", log_dir=log_dir)
+            self.assertEqual(self.root.level, logging.WARNING)
             self.assertTrue(
-                all(handler.level == logging.INFO for handler in self.root.handlers)
+                all(handler.level == logging.WARNING for handler in self.root.handlers)
             )
+
+    def test_invalid_level_is_rejected(self):
+        with tempfile.TemporaryDirectory() as log_dir:
+            with self.assertRaises(ValueError):
+                logging_setup.configure_logging(level="VERBOSE", log_dir=log_dir)
 
 
 if __name__ == "__main__":

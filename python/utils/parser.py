@@ -1,7 +1,7 @@
 import argparse
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Self-driving robot runtime.",
     )
@@ -22,7 +22,16 @@ def parse_args():
         "--debug",
         action="store_true",
         default=None,
-        help="Enable debug output; overrides the mode configuration.",
+        help="Enable diagnostic visualizations; independent of --log-level.",
+    )
+
+    parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="INFO",
+        metavar="LEVEL",
+        help="Minimum severity for console and output/robot.log (default: INFO).",
     )
 
     parser.add_argument(
@@ -182,4 +191,4 @@ def parse_args():
         ),
     )
 
-    return parser.parse_args()
+    return parser.parse_args(argv)

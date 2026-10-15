@@ -301,7 +301,8 @@ python main.py --help
 The main runtime exposes:
 
 ~~~text
-usage: main.py [-h] [--mode {city,race}] [--debug] [--stream]
+usage: main.py [-h] [--mode {city,race}] [--debug]
+               [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--stream]
                [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
                [--without-arduino] [--fps] [--performance] [--preflight]
                [--read-arduino-output] [--arduino-config PATH]
@@ -337,8 +338,11 @@ The camera backend and index can also be stored in the active mode JSON file.
 ### Examples
 
 ```bash
-# Run city mode with debug output
+# Enable diagnostic overlays (logging still defaults to INFO)
 python main.py --mode city --debug
+
+# Show DEBUG-level application logs for troubleshooting
+python main.py --mode city --log-level DEBUG
 
 # Run race mode with FPS display and streaming
 python main.py --mode race --fps --stream
@@ -536,7 +540,7 @@ See LICENSE file in the project root.
 For issues or questions:
 1. Check the [Troubleshooting](#troubleshooting) section
 2. Review existing test files for usage examples
-3. Enable debug mode for detailed diagnostics
+3. Use --debug for image overlays or --log-level DEBUG for detailed logs
 
 
 
