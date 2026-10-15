@@ -252,6 +252,36 @@ class RacePhaseModeTests(unittest.TestCase):
         self.assertFalse(robot._race_terminal_finished)
         self.assertEqual(robot.control.stops, [])
 
+    def test_async_detector_pause_discards_work_and_resume_reenables_inference(self):
+        import threading
+
+        completed = threading.Event()
+        calls = []
+
+        class Detector:
+            def process_frame(self, frame, debug_frame=None, confidence_threshold=None,
+                              target_sign_types=None):
+                calls.append(frame)
+                completed.set()
+                return {"text": ""}
+
+        worker = AsyncSignDetector(Detector())
+        try:
+            worker.pause()
+            self.assertIsNone(worker.submit("middle-race-frame"))
+            self.assertTrue(worker.wait_until_idle(timeout=0.2))
+            self.assertFalse(completed.is_set())
+            self.assertEqual(calls, [])
+
+            worker.resume()
+            self.assertIsNotNone(worker.submit("finish-phase-frame"))
+            self.assertTrue(completed.wait(2.0))
+            worker.pause()
+            self.assertTrue(worker.wait_until_idle(timeout=2.0))
+            self.assertEqual(calls, ["finish-phase-frame"])
+        finally:
+            worker.close()
+
     def test_async_inference_receives_phase_scoped_stop_filter_and_threshold(self):
         import threading
 

@@ -21,6 +21,10 @@ class AsyncSignDetector:
         self._last_latency_ms = None
         self._last_error = None
         self._stop = threading.Event()
+        self._paused = False
+        self._active = False
+        self._idle_event = threading.Event()
+        self._idle_event.set()
         self._worker = threading.Thread(
             target=self._run,
             name="sign-detector",
@@ -36,31 +40,54 @@ class AsyncSignDetector:
             return None
         submitted_at = time.monotonic()
         with self._lock:
+            if self._paused or self._stop.is_set():
+                return None
             self._next_id += 1
             request_id = self._next_id
             self._last_submit_at = submitted_at
-        request = (
-            request_id, frame, debug_frame, submitted_at,
-            confidence_threshold, target_sign_types,
-        )
-        try:
-            self._requests.put_nowait(request)
-            with self._lock:
-                self._submitted += 1
-            return request_id
-        except queue.Full:
-            try:
-                self._requests.get_nowait()
-                self._requests.task_done()
-            except queue.Empty:
-                pass
+            request = (
+                request_id, frame, debug_frame, submitted_at,
+                confidence_threshold, target_sign_types,
+            )
             try:
                 self._requests.put_nowait(request)
-                with self._lock:
-                    self._submitted += 1
-                return request_id
             except queue.Full:
-                return None
+                try:
+                    self._requests.get_nowait()
+                    self._requests.task_done()
+                except queue.Empty:
+                    pass
+                try:
+                    self._requests.put_nowait(request)
+                except queue.Full:
+                    return None
+            self._submitted += 1
+            self._idle_event.clear()
+            return request_id
+
+    def pause(self):
+        """Stop accepting requests and discard queued frames at a phase boundary."""
+        with self._lock:
+            self._paused = True
+            while True:
+                try:
+                    self._requests.get_nowait()
+                except queue.Empty:
+                    break
+                else:
+                    self._requests.task_done()
+            if not self._active and self._requests.empty():
+                self._idle_event.set()
+
+    def resume(self):
+        """Allow new inference requests in an active sign-detection phase."""
+        with self._lock:
+            if not self._stop.is_set():
+                self._paused = False
+
+    def wait_until_idle(self, timeout=None):
+        """Wait for any inference already in flight to finish."""
+        return self._idle_event.wait(timeout)
 
     def latest(self, max_age_s=None):
         with self._lock:
@@ -80,6 +107,18 @@ class AsyncSignDetector:
                 (request_id, frame, debug_frame, submitted_at,
                  confidence_threshold, target_sign_types) = self._requests.get(timeout=0.1)
             except queue.Empty:
+                continue
+
+            with self._lock:
+                should_process = not self._paused and not self._stop.is_set()
+                if should_process:
+                    self._active = True
+                    self._idle_event.clear()
+            if not should_process:
+                self._requests.task_done()
+                with self._lock:
+                    if not self._active and self._requests.empty():
+                        self._idle_event.set()
                 continue
 
             started = time.monotonic()
@@ -116,6 +155,10 @@ class AsyncSignDetector:
                 logger.exception("Asynchronous sign detection failed")
             finally:
                 self._requests.task_done()
+                with self._lock:
+                    self._active = False
+                    if self._requests.empty():
+                        self._idle_event.set()
 
     def status(self):
         with self._lock:
@@ -126,6 +169,7 @@ class AsyncSignDetector:
             )
             return {
                 "worker_alive": self._worker.is_alive(),
+                "paused": self._paused,
                 "queue_depth": self._requests.qsize(),
                 "submitted": self._submitted,
                 "completed": self._completed,
@@ -144,11 +188,12 @@ class AsyncSignDetector:
                     if self._last_submit_at is not None
                     else None
                 ),
-                "inference_in_flight": self._completed < self._submitted,
+                "inference_in_flight": self._active or not self._requests.empty(),
                 "last_latency_ms": self._last_latency_ms,
                 "last_error": self._last_error,
             }
     def close(self):
+        self.pause()
         self._stop.set()
         if self._worker.is_alive() and self._worker is not threading.current_thread():
             self._worker.join(timeout=1.0)

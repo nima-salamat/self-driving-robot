@@ -153,6 +153,8 @@ class Robot:
         )
         self._race_terminal_finished = False
         self._race_timer_started = False
+        self._race_start_gate_motion_released = self.race_start_gate is None
+        self._race_finish_detector_activated = False
         self.stop_hold_detector_kind = None
         self.last_sign_observation_fresh = False
         self.last_sign_observation_at = None
@@ -167,6 +169,10 @@ class Robot:
         self.sign_detector = None
         if config_race.WITH_SIGN:
             self._ensure_sign_detector()
+        # Inference is phase-gated: keep the preloaded model/worker idle until
+        # the optional start gate or timed finishing phase needs it.
+        if self.sign_detector is not None and self.race_start_gate is None:
+            self.sign_detector.pause()
         setattr(config_race, "sign_detector", self.sign_detector)
         config_race.apply_marker_mode = self.apply_marker_mode
             
@@ -449,6 +455,23 @@ class Robot:
 
     def _run_race_start_gate_cycle(self):
         self._set_race_inhibited(True, "race_start_gate")
+        gate = self.race_start_gate
+
+        # A gate may have reached its timing condition while an asynchronous
+        # inference is still active. Keep motion inhibited until queued work is
+        # discarded and any already-started inference has finished.
+        if gate.released:
+            detector = getattr(self, "sign_detector", None)
+            if detector is not None:
+                detector.pause()
+                if not detector.wait_until_idle(timeout=0.02):
+                    self._pace_control_loop()
+                    return
+            if self._set_race_inhibited(False, "race_start_gate_cleared"):
+                self._race_start_gate_motion_released = True
+            self._pace_control_loop()
+            return
+
         frame, _ = self.camera.capture_frame(with_resize=False)
         valid_frame = bool(
             getattr(self.camera, "last_capture_valid", False) and frame is not None
@@ -460,7 +483,6 @@ class Robot:
             )
         observation_id = getattr(self, "last_sign_result_id", None)
         observation_at = getattr(self, "last_sign_observation_at", None)
-        gate = self.race_start_gate
         gate.observe(
             result_id=observation_id,
             stop_present=stop_seen,
@@ -469,7 +491,14 @@ class Robot:
             valid=bool(valid_frame and self.last_sign_observation_fresh),
         )
         if gate.released:
-            self._set_race_inhibited(False, "race_start_gate_cleared")
+            detector = getattr(self, "sign_detector", None)
+            if detector is not None:
+                detector.pause()
+                if not detector.wait_until_idle(timeout=0.02):
+                    self._pace_control_loop()
+                    return
+            if self._set_race_inhibited(False, "race_start_gate_cleared"):
+                self._race_start_gate_motion_released = True
         self._pace_control_loop()
 
     def _finish_race(self):
@@ -478,11 +507,19 @@ class Robot:
         if self.race_finish is not None and self.race_finish.finish():
             self._race_terminal_finished = True
             self._set_race_inhibited(True, "race_finished")
+            detector = getattr(self, "sign_detector", None)
+            if detector is not None:
+                detector.pause()
 
     def _read_finish_sign_if_active(self, frame, debug_frame, finish_phase):
         """Run traffic-sign inference only during the timed finishing phase."""
         if not finish_phase:
             return "None", debug_frame
+        if not getattr(self, "_race_finish_detector_activated", False):
+            detector = getattr(self, "sign_detector", None)
+            if detector is not None:
+                detector.resume()
+            self._race_finish_detector_activated = True
         sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
             frame,
             debug_frame,
@@ -527,7 +564,13 @@ class Robot:
                     self._set_race_inhibited(True, "race_finished")
                     self._pace_control_loop()
                     continue
-                if getattr(self, "race_start_gate", None) is not None and not self.race_start_gate.released:
+                start_gate = getattr(self, "race_start_gate", None)
+                if (
+                    start_gate is not None
+                    and not getattr(
+                        self, "_race_start_gate_motion_released", start_gate.released
+                    )
+                ):
                     self._run_race_start_gate_cycle()
                     continue
                 if self.stop_hold.active:
