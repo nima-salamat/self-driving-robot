@@ -264,13 +264,14 @@ class VisionProcessor:
                 if mask is not None:
                     edges = cv2.bitwise_and(edges, edges, mask=mask)
 
+                legacy_method = bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
                 lines = cv2.HoughLinesP(
                     edges,
                     1,
-                    np.pi/180,
-                    threshold=15,
-                    minLineLength=5,
-                    maxLineGap=20
+                    np.pi / 180,
+                    threshold=int(getattr(conf, "HOUGH_THRESHOLD", 20 if legacy_method else 15)),
+                    minLineLength=max(1, int(getattr(conf, "HOUGH_MIN_LINE_LENGTH", 5))),
+                    maxLineGap=max(0, int(getattr(conf, "HOUGH_MAX_LINE_GAP", 5 if legacy_method else 20))),
                 )
                 return edges, lines
 
