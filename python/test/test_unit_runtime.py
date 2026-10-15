@@ -139,6 +139,28 @@ class ArduinoConnectionTests(unittest.TestCase):
 
 
 class CityCrosswalkMarkerTests(unittest.TestCase):
+    def test_crosswalk_status_handles_missing_marker_text(self):
+        from modes.city.city import Robot
+
+        self.assertEqual(
+            Robot._format_crosswalk_status_text(None, "RED"),
+            "RED",
+        )
+
+    def test_crosswalk_status_formats_numeric_marker_and_light(self):
+        from modes.city.city import Robot
+
+        self.assertEqual(
+            Robot._format_crosswalk_status_text(5, "GREEN"),
+            "5 | GREEN",
+        )
+
+    def test_crosswalk_status_omits_empty_values(self):
+        from modes.city.city import Robot
+
+        self.assertEqual(Robot._format_crosswalk_status_text(None, ""), "")
+        self.assertEqual(Robot._format_crosswalk_status_text("STOP", None), "STOP")
+
     def test_sign_mode_uses_async_sign_handling_path(self):
         from unittest.mock import Mock, patch
         from modes.city import city as city_module
