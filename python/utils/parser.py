@@ -1,4 +1,17 @@
 import argparse
+import math
+
+from utils.processing_rate import DEFAULT_TARGET_FPS
+
+
+def _positive_finite_fps(value):
+    try:
+        fps = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a positive finite number")
+    if not math.isfinite(fps) or fps <= 0:
+        raise argparse.ArgumentTypeError("must be a positive finite number")
+    return fps
 
 
 def parse_args(argv=None):
@@ -11,6 +24,18 @@ def parse_args(argv=None):
         choices=["city", "race"],
         default="city",
         help="Run mode (default: city).",
+    )
+
+    parser.add_argument(
+        "--target-fps",
+        type=_positive_finite_fps,
+        default=DEFAULT_TARGET_FPS,
+        metavar="N",
+        help=(
+            "Maximum desired rate of complete vision-processing cycles per "
+            f"second, including frame acquisition, perception, and applicable "
+            f"inference (default: {DEFAULT_TARGET_FPS:g}); does not set camera FPS."
+        ),
     )
 
     parser.add_argument("--traffic-lights", action="store_true", default=False,

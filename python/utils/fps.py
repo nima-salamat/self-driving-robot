@@ -65,10 +65,18 @@ class FPS:
 
         self._last_performance_log = now
         timing = self.metrics.snapshot()["timing"]
+        rate_controller = getattr(self.config, "processing_rate_controller", None)
+        rate = rate_controller.snapshot() if rate_controller is not None else None
+        vision_rate = (
+            " target_fps=%.1f vision_fps=%.1f vision_wait_ms=%.2f"
+            % (rate["target_fps"], rate["achieved_fps"], rate["last_wait_ms"])
+            if rate is not None
+            else ""
+        )
         logger.info(
             "performance: fps=%.1f loop_mean=%.2fms loop_p95=%.2fms "
             "loop_max=%.2fms camera_p95=%.2fms perception_p95=%.2fms "
-            "serial_p95=%.2fms",
+            "serial_p95=%.2fms%s",
             self.second_fps,
             timing["loop"]["mean_ms"],
             timing["loop"]["p95_ms"],
@@ -76,6 +84,7 @@ class FPS:
             timing["camera"]["p95_ms"],
             timing["perception"]["p95_ms"],
             timing["serial"]["p95_ms"],
+            vision_rate,
         )
 
     def stop(self):

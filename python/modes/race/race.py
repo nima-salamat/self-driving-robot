@@ -31,6 +31,7 @@ import numpy as np
 import time
 import threading
 from utils.fps import FPS
+from utils.processing_rate import ProcessingRateController, DEFAULT_TARGET_FPS
 from utils.roi_manager import crop_image
 
 # Set to False to completely bypass sign and tag processing
@@ -59,6 +60,10 @@ class Robot:
         self.flask_thread = None
         self.runtime_exception = None
         self._next_control_time = time.monotonic()
+        self.processing_rate = ProcessingRateController(
+            getattr(config_race, "TARGET_PROCESSING_FPS", DEFAULT_TARGET_FPS)
+        )
+        config_race.processing_rate_controller = self.processing_rate
         
         if getattr(config_race, "ENCODER_MAP_ENABLED", False) or getattr(config_race, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False):
             self.odometry = EncoderOdometry(
@@ -194,6 +199,16 @@ class Robot:
             time.sleep(delay)
         else:
             self._next_control_time = time.monotonic()
+
+    def _wait_for_processing_slot(self):
+        if not getattr(self, "processing_rate", None):
+            self.processing_rate = ProcessingRateController(
+                getattr(config_race, "TARGET_PROCESSING_FPS", DEFAULT_TARGET_FPS)
+            )
+            config_race.processing_rate_controller = self.processing_rate
+        return self.processing_rate.wait_for_slot(
+            getattr(config_race, "SHUTDOWN_EVENT", None)
+        )
 
     def update_debug_frames(self, frame):
         publish_debug_frame(config_race, frame)
@@ -469,6 +484,11 @@ class Robot:
 
                 if config_race.DEBUG:
                     cv2.waitKey(1)
+
+                # Keep perception and the actuator decision in one cycle.
+                # STOP-hold and operator-stop paths above remain unthrottled.
+                if not self._wait_for_processing_slot():
+                    break
                 
                 angle = SERVO_CENTER
             

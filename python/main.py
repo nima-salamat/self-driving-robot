@@ -13,6 +13,7 @@ from utils.logging_setup import configure_logging
 from utils.parser import parse_args
 from utils.preflight import run_preflight
 from utils.runtime_metrics import RuntimeMetrics
+from utils.processing_rate import DEFAULT_TARGET_FPS
 import base_config
 
 
@@ -68,6 +69,7 @@ def _apply_cli_overrides(config, args):
         # Request access logs are a strict CLI opt-in. An omitted flag must
         # suppress noisy HTTP polling logs even if stale JSON sets it true.
         "STREAM_REQUEST_LOGS": getattr(args, "stream_request_logs", False),
+        "TARGET_PROCESSING_FPS": getattr(args, "target_fps", DEFAULT_TARGET_FPS),
     }
 
     for name, value in overrides.items():

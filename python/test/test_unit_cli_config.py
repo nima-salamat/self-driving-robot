@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import sys
 import types
 import unittest
@@ -9,6 +11,33 @@ from utils.parser import parse_args
 
 
 class CliConfigPrecedenceTests(unittest.TestCase):
+    def test_target_fps_default_and_explicit_values_propagate(self):
+        self.assertEqual(parse_args([]).target_fps, 30.0)
+        config = types.SimpleNamespace()
+        args = parse_args(["--mode", "race", "--target-fps", "25"])
+        _apply_cli_overrides(config, args)
+        self.assertEqual(config.TARGET_PROCESSING_FPS, 25.0)
+
+        for target in (20, 15):
+            args = parse_args(["--target-fps", str(target)])
+            _apply_cli_overrides(config, args)
+            self.assertEqual(config.TARGET_PROCESSING_FPS, float(target))
+
+    def test_target_fps_rejects_invalid_values(self):
+        for target in ("0", "-1", "nan", "inf", "-inf", "bad"):
+            with self.subTest(target=target), self.assertRaises(SystemExit):
+                parse_args(["--target-fps", target])
+
+    def test_help_describes_processing_rate_and_camera_distinction(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as caught:
+            parse_args(["--help"])
+        self.assertEqual(caught.exception.code, 0)
+        help_text = " ".join(output.getvalue().split())
+        self.assertIn("vision-processing cycles", help_text)
+        self.assertIn("does not set camera FPS", help_text)
+        self.assertIn("default: 30", help_text)
+
     def test_absent_override_flags_do_not_change_config(self):
         with patch.object(sys, "argv", ["main.py"]):
             args = parse_args()
