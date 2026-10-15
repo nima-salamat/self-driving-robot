@@ -311,7 +311,7 @@ class VisionProcessor:
                             vertical += 1
                             cw_lines.append(line)
                         
-            if vertical >= 4 and horizontal >= 3:
+            if vertical >= 6 and horizontal >= 3:
                 if lowest_horizontal_line is not None:
                     _, ly0, _, ly1 = self._extract_line(lowest_horizontal_line)
                     if max(ly0, ly1) > crosswalk_pixel_dist:

@@ -190,7 +190,7 @@ SHOW_FPS = False
 
 # PID parameters
 USE_PID = True
-KP = 0.35
+KP = 0.38
 KI = 0
 KD = 0.01
 KT = 0.01

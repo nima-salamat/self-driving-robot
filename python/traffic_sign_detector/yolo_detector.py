@@ -19,7 +19,7 @@ class TrafficSignDetector:
         
         # Default to the ONNX model
         if model_path is None:
-            self.model_file = os.path.join(BASE_DIR, 'assets', 'best416.onnx')
+            self.model_file = os.path.join(BASE_DIR, 'assets', 'best416_.onnx')
         else:
             self.model_file = model_path
             
