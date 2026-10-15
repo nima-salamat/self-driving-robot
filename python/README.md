@@ -33,6 +33,7 @@ The exact line wrapping can vary by Python/terminal width. The command exposes t
 ~~~text
 usage: main.py [-h] [--mode {city,race}] [--debug]
                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--stream]
+               [--stream-request-logs]
                [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
                [--without-arduino] [--fps] [--performance] [--preflight]
                [--read-arduino-output] [--arduino-config PATH]
@@ -51,6 +52,7 @@ options:
   --log-level LEVEL     Minimum log severity: DEBUG, INFO, WARNING, ERROR,
                         or CRITICAL (default: INFO)
   --stream             Enable the web stream
+  --stream-request-logs Show HTTP request/access logs (disabled by default)
   --stream-host STREAM_HOST
                         Stream bind address (default: 0.0.0.0; all interfaces)
   --stream-control     Enable dashboard controls (enabled by default)
@@ -74,6 +76,24 @@ options:
   --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
                         Enable ML lane detection with the selected model
 ~~~
+
+## Stream request logging
+
+The stream's HTTP access lines are disabled by default to avoid console-I/O
+overhead when the dashboard polls frames and telemetry. Enable them only while
+debugging browser/network requests:
+
+~~~bash
+# Stream runs without per-request access-log spam (default)
+python main.py --mode race --stream
+
+# Explicitly show stream HTTP request/access lines
+python main.py --mode race --stream --stream-request-logs
+~~~
+
+This flag gates access-log lines for the robot dashboard server only. It does
+not suppress Flask application errors or Werkzeug warnings/errors. The global
+`--log-level` still controls which severities are displayed.
 
 ## Log verbosity
 

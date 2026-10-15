@@ -9,7 +9,7 @@ import threading
 import time
 from collections import deque
 from flask import Flask, Response, request, render_template_string, jsonify
-from werkzeug.serving import make_server
+from werkzeug.serving import WSGIRequestHandler, make_server
 from .template import HTML_TEMPLATE
 from .capabilities import mode_capabilities, marker_mode, set_marker_mode
 from base_config import BASE_DIR
@@ -688,6 +688,20 @@ def _stream_access_urls(bind_host, port):
     ]
 
 
+def _make_stream_request_handler(log_requests=False):
+    """Build a request handler that can suppress high-volume HTTP access logs.
+
+    Suppression is scoped to this Stream server. Werkzeug errors and application
+    exceptions retain their normal logging behavior.
+    """
+    class StreamRequestHandler(WSGIRequestHandler):
+        def log_request(self, code="-", size="-"):
+            if log_requests:
+                super().log_request(code, size)
+
+    return StreamRequestHandler
+
+
 def start_stream(config):
     config.stream_start_error = None
     ready_event = getattr(config, "stream_ready_event", None)
@@ -706,6 +720,9 @@ def start_stream(config):
             requested_port,
             streamer.app,
             threaded=True,
+            request_handler=_make_stream_request_handler(
+                bool(getattr(config, "STREAM_REQUEST_LOGS", False))
+            ),
         )
     except Exception as exc:
         config.stream_start_error = f"{type(exc).__name__}: {exc}"

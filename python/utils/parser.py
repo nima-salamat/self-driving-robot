@@ -41,6 +41,13 @@ def parse_args(argv=None):
         help="Enable the web stream; disabled unless this flag is supplied.",
     )
 
+    parser.add_argument(
+        "--stream-request-logs",
+        action="store_true",
+        default=False,
+        help="Show HTTP request/access logs from the stream server (off by default).",
+    )
+
     parser.add_argument("--encoder-map", action="store_true", default=False,
                         help="Enable opt-in encoder odometry and the /encoder-map page (requires --stream).")
     parser.add_argument("--encoder-pulse-distance-cm", type=float, default=None, metavar="FLOAT",

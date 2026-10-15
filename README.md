@@ -303,6 +303,7 @@ The main runtime exposes:
 ~~~text
 usage: main.py [-h] [--mode {city,race}] [--debug]
                [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--stream]
+               [--stream-request-logs]
                [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
                [--without-arduino] [--fps] [--performance] [--preflight]
                [--read-arduino-output] [--arduino-config PATH]
@@ -343,6 +344,12 @@ python main.py --mode city --debug
 
 # Show DEBUG-level application logs for troubleshooting
 python main.py --mode city --log-level DEBUG
+
+# Stream without printing every browser poll/request (default)
+python main.py --mode race --stream
+
+# Opt in to per-request logs while debugging the stream
+python main.py --mode race --stream --stream-request-logs
 
 # Run race mode with FPS display and streaming
 python main.py --mode race --fps --stream

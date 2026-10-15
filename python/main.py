@@ -65,6 +65,9 @@ def _apply_cli_overrides(config, args):
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
         "CITY_LANE_DETECTOR": getattr(args, "city_lane_detector", None),
         "STREAM_HOST": getattr(args, "stream_host", None),
+        # Request access logs are a strict CLI opt-in. An omitted flag must
+        # suppress noisy HTTP polling logs even if stale JSON sets it true.
+        "STREAM_REQUEST_LOGS": getattr(args, "stream_request_logs", False),
     }
 
     for name, value in overrides.items():
