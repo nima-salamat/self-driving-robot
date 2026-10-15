@@ -59,6 +59,7 @@ class LaneTuningApp:
         self.bev_var = tk.BooleanVar(value=False)
         self.morph_var = tk.BooleanVar(value=True)
         self.method_var = tk.StringVar(value="Sobel gradient (current)")
+        self.roi_mode_var = tk.StringVar(value="rectangle")
         self.status_var = tk.StringVar(value="Choose a directory containing PNG images.")
         self.image_info_var = tk.StringVar(value="No image selected")
         self.result_info_var = tk.StringVar(value="Run detection to see the lane result.")
@@ -196,6 +197,24 @@ class LaneTuningApp:
         self._slider("Minimum line length (px)", "length", 1, 100, 1)
         self._slider("Maximum line gap (px)", "gap", 0, 40, 1)
         self._slider("Gaussian blur kernel (odd)", "blur", 1, 7, 2)
+        ttk.Separator(self.control_inner).pack(fill="x", pady=9)
+        ttk.Label(self.control_inner, text="Lane ROI geometry", style="PanelHeading.TLabel").pack(anchor="w", pady=(2, 4))
+        roi_shape = ttk.Combobox(
+            self.control_inner, textvariable=self.roi_mode_var, state="readonly",
+            values=("rectangle", "trapezoid"),
+        )
+        roi_shape.pack(fill="x", pady=(0, 5))
+        roi_shape.bind("<<ComboboxSelected>>", lambda _e: self._mark_dirty())
+        self._slider("Right ROI top (%)", "rl_top", 0, 100, 1)
+        self._slider("Right ROI bottom (%)", "rl_bottom", 0, 100, 1)
+        self._slider("Right ROI left (%)", "rl_left", 0, 100, 1)
+        self._slider("Right ROI right (%)", "rl_right", 0, 100, 1)
+        self._slider("Left ROI top (%)", "ll_top", 0, 100, 1)
+        self._slider("Left ROI bottom (%)", "ll_bottom", 0, 100, 1)
+        self._slider("Left ROI left (%)", "ll_left", 0, 100, 1)
+        self._slider("Left ROI right (%)", "ll_right", 0, 100, 1)
+        self._slider("Right trapezoid top width (%)", "rl_factor", 0, 100, 1)
+        self._slider("Left trapezoid top width (%)", "ll_factor", 0, 100, 1)
         ttk.Label(
             self.control_inner,
             text="Compare edge maps as well as the overlay. More strict settings can also remove faint real lane markings.",
@@ -263,12 +282,23 @@ class LaneTuningApp:
                 "length": int(getattr(self.config, "HOUGH_MIN_LINE_LENGTH", 5)),
                 "gap": int(getattr(self.config, "HOUGH_MAX_LINE_GAP", 20)),
                 "blur": int(getattr(self.config, "HOUGH_BLUR_KERNEL", 3)),
+                "rl_top": round(float(getattr(self.config, "RL_TOP_ROI", 0.8)) * 100),
+                "rl_bottom": round(float(getattr(self.config, "RL_BOTTOM_ROI", 1.0)) * 100),
+                "rl_left": round(float(getattr(self.config, "RL_LEFT_ROI", 0.6)) * 100),
+                "rl_right": round(float(getattr(self.config, "RL_RIGHT_ROI", 0.9)) * 100),
+                "ll_top": round(float(getattr(self.config, "LL_TOP_ROI", 0.8)) * 100),
+                "ll_bottom": round(float(getattr(self.config, "LL_BOTTOM_ROI", 1.0)) * 100),
+                "ll_left": round(float(getattr(self.config, "LL_LEFT_ROI", 0.2)) * 100),
+                "ll_right": round(float(getattr(self.config, "LL_RIGHT_ROI", 0.5)) * 100),
+                "rl_factor": round(float(getattr(self.config, "RL_TOP_WIDTH_FACTOR", 0.85)) * 100),
+                "ll_factor": round(float(getattr(self.config, "LL_TOP_WIDTH_FACTOR", 0.85)) * 100),
             }
             for key, value in values.items():
                 self.params[key].set(value)
             self.bev_var.set(bool(getattr(self.config, "USE_BEV", False)))
             self.morph_var.set(bool(getattr(self.config, "HOUGH_MORPH_CLOSE", True)))
             self.method_var.set("Legacy threshold + Canny" if bool(getattr(self.config, "OLD_METHOD", False)) else "Sobel gradient (current)")
+            self.roi_mode_var.set(str(getattr(self.config, "LANE_ROI_MODE", "rectangle")))
         finally:
             self.loading_vars = False
 
@@ -383,6 +413,24 @@ class LaneTuningApp:
         self.config.HOUGH_MORPH_CLOSE = bool(self.morph_var.get())
         self.config.USE_BEV = bool(self.bev_var.get())
         self.config.OLD_METHOD = self.method_var.get().startswith("Legacy")
+        self.config.LANE_ROI_MODE = self.roi_mode_var.get()
+        roi_map = {
+            "RL_TOP_ROI": "rl_top", "RL_BOTTOM_ROI": "rl_bottom",
+            "RL_LEFT_ROI": "rl_left", "RL_RIGHT_ROI": "rl_right",
+            "LL_TOP_ROI": "ll_top", "LL_BOTTOM_ROI": "ll_bottom",
+            "LL_LEFT_ROI": "ll_left", "LL_RIGHT_ROI": "ll_right",
+        }
+        for config_key, control_key in roi_map.items():
+            setattr(self.config, config_key, int(self.params[control_key].get()) / 100.0)
+        self.config.RL_TOP_WIDTH_FACTOR = int(self.params["rl_factor"].get()) / 100.0
+        self.config.LL_TOP_WIDTH_FACTOR = int(self.params["ll_factor"].get()) / 100.0
+        for side in ("RL", "LL"):
+            top = float(getattr(self.config, f"{side}_TOP_ROI"))
+            bottom = float(getattr(self.config, f"{side}_BOTTOM_ROI"))
+            left = float(getattr(self.config, f"{side}_LEFT_ROI"))
+            right = float(getattr(self.config, f"{side}_RIGHT_ROI"))
+            if not (0.0 <= top < bottom <= 1.0 and 0.0 <= left < right <= 1.0):
+                raise ValueError(f"{side} ROI is invalid: top must be above bottom and left must be left of right.")
         self.config.DEBUG = True
         self.config.STREAM = False
 
@@ -574,7 +622,11 @@ class LaneTuningApp:
                 messagebox.showerror("Save failed", output)
 
     def save_preset(self):
-        self._mark_settings()
+        try:
+            self._mark_settings()
+        except Exception as exc:
+            messagebox.showerror("Invalid parameters", str(exc))
+            return
         target = Path(base_config.BASE_DIR) / f"{self.mode}.json"
         values = {
             "LANE_THRESHOLD": int(self.config.LANE_THRESHOLD),
@@ -585,6 +637,17 @@ class LaneTuningApp:
             "HOUGH_MORPH_CLOSE": bool(self.config.HOUGH_MORPH_CLOSE),
             "OLD_METHOD": bool(self.config.OLD_METHOD),
             "USE_BEV": bool(self.config.USE_BEV),
+            "LANE_ROI_MODE": str(self.config.LANE_ROI_MODE),
+            "RL_TOP_ROI": float(self.config.RL_TOP_ROI),
+            "RL_BOTTOM_ROI": float(self.config.RL_BOTTOM_ROI),
+            "RL_LEFT_ROI": float(self.config.RL_LEFT_ROI),
+            "RL_RIGHT_ROI": float(self.config.RL_RIGHT_ROI),
+            "LL_TOP_ROI": float(self.config.LL_TOP_ROI),
+            "LL_BOTTOM_ROI": float(self.config.LL_BOTTOM_ROI),
+            "LL_LEFT_ROI": float(self.config.LL_LEFT_ROI),
+            "LL_RIGHT_ROI": float(self.config.LL_RIGHT_ROI),
+            "RL_TOP_WIDTH_FACTOR": float(self.config.RL_TOP_WIDTH_FACTOR),
+            "LL_TOP_WIDTH_FACTOR": float(self.config.LL_TOP_WIDTH_FACTOR),
         }
         if not messagebox.askyesno(
             "Save preset",
