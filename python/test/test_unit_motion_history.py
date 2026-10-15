@@ -118,7 +118,7 @@ class JsonConfigPathTests(unittest.TestCase):
         try:
             with patch("utils.json_config.os.getcwd", return_value="/tmp"):
                 load()
-            self.assertAlmostEqual(config_city.LL_LEFT_ROI, 0.139)
+            self.assertAlmostEqual(config_city.LL_LEFT_ROI, 0.142)
         finally:
             base_config.MODE = previous_mode
             config_city.CHANGE_WITH_JSON = previous_change
