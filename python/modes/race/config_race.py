@@ -11,6 +11,7 @@ from utils.camera_defaults import (
 )
 
 MODE = "race"
+# Settings marked [JSON] below are overridden by race.json at startup when CHANGE_WITH_JSON=True.
 # --- Camera Defaults ---
 CAMERA_PITCH_DEG = -40 # camera angle in real world
 CAMERA_HEIGHT = 27 # height of camera in real world
@@ -24,36 +25,38 @@ APPLY_CAMERA_CALIBRATION = True
 # Values are normalized (0.0 – 1.0), multiplied by frame width/height
 
 # Options: "rectangle" or "trapezoid"
-LANE_ROI_MODE = "rectangle"  
+LANE_ROI_MODE = "rectangle"  # [JSON] lane-region geometry mode: rectangle or trapezoid
 
 # Toggle for Crosswalk Trapezoid (True = Isosceles Trapezoid, False = Rectangle)
-CW_TRAPEZOID_MODE = False  
+CW_TRAPEZOID_MODE = False  # [JSON] crosswalk ROI shape: true=trapezoid, false=rectangle
+ST_TRAPEZOID_MODE = False  # [JSON] sign/AprilTag ROI shape: trapezoid or rectangle
+OBJ_TRAPEZOID_MODE = False  # [JSON] object ROI shape: trapezoid or rectangle
 
 # Top width factor for trapezoids (0.0 to 1.0)
 # 0.5 means the top edge will be 50% of the base width
-RL_TOP_WIDTH_FACTOR = 0.85   
-LL_TOP_WIDTH_FACTOR = 0.85 
-CW_TOP_WIDTH_FACTOR = 0.90
-ST_TOP_WIDTH_FACTOR = 0.8
-OBJ_TOP_WIDTH_FACTOR = 0.8
+RL_TOP_WIDTH_FACTOR = 0.85  # [JSON] top width of the right-lane trapezoid as a fraction of its base
+LL_TOP_WIDTH_FACTOR = 0.85  # [JSON] top width of the left-lane trapezoid as a fraction of its base
+CW_TOP_WIDTH_FACTOR = 0.90  # [JSON] top width of the crosswalk trapezoid as a fraction of its base
+ST_TOP_WIDTH_FACTOR = 0.8  # [JSON] top width of the sign/AprilTag trapezoid as a fraction of its base
+OBJ_TOP_WIDTH_FACTOR = 0.8  # [JSON] top width of the object ROI trapezoid as a fraction of its base
 
 # Right lane ROI (fraction of frame)
-RL_TOP_ROI = 0.8   # start 80% down from top
-RL_BOTTOM_ROI = 1  # stop at 100% of frame height
-RL_LEFT_ROI = 0.6   # left boundary (60% of width)
-RL_RIGHT_ROI = 0.9 # right boundary (90% of width)
+RL_TOP_ROI = 0.8  # [JSON] right-lane ROI top edge; Y normalized by frame height
+RL_BOTTOM_ROI = 1  # [JSON] right-lane ROI bottom edge; Y normalized by frame height
+RL_LEFT_ROI = 0.6  # [JSON] right-lane ROI left edge; X normalized by frame width
+RL_RIGHT_ROI = 0.9  # [JSON] right-lane ROI right edge; X normalized by frame width
 
 # Left lane ROI
-LL_TOP_ROI = 0.8
-LL_BOTTOM_ROI = 1
-LL_LEFT_ROI = 0.2
-LL_RIGHT_ROI = 0.5
+LL_TOP_ROI = 0.8  # [JSON] left-lane ROI top edge; Y normalized by frame height
+LL_BOTTOM_ROI = 1  # [JSON] left-lane ROI bottom edge; Y normalized by frame height
+LL_LEFT_ROI = 0.2  # [JSON] left-lane ROI left edge; X normalized by frame width
+LL_RIGHT_ROI = 0.5  # [JSON] left-lane ROI right edge; X normalized by frame width
 
 # Crosswalk ROI (if you later want stop line detection)
-CW_TOP_ROI = 0.8
-CW_BOTTOM_ROI = 1.0
-CW_LEFT_ROI = 0.3
-CW_RIGHT_ROI = 0.9
+CW_TOP_ROI = 0.8  # [JSON] crosswalk ROI top edge; normalized frame coordinates
+CW_BOTTOM_ROI = 1.0  # [JSON] crosswalk ROI bottom edge; normalized frame coordinates
+CW_LEFT_ROI = 0.3  # [JSON] crosswalk ROI left edge; normalized frame coordinates
+CW_RIGHT_ROI = 0.9  # [JSON] crosswalk ROI right edge; normalized frame coordinates
 
 # Apriltag ROI
 AT_TOP_ROI = 0.0
@@ -68,16 +71,16 @@ TL_LEFT_ROI = 0.0
 TL_RIGHT_ROI = 1.0
 
 # Sign or Tag ROI
-ST_TOP_ROI = 0.0
-ST_BOTTOM_ROI = 1
-ST_LEFT_ROI = 0.0
-ST_RIGHT_ROI = 1.0
+ST_TOP_ROI = 0.0  # [JSON] sign/AprilTag processing crop top edge
+ST_BOTTOM_ROI = 1  # [JSON] sign/AprilTag processing crop bottom edge
+ST_LEFT_ROI = 0.0  # [JSON] sign/AprilTag processing crop left edge
+ST_RIGHT_ROI = 1.0  # [JSON] sign/AprilTag processing crop right edge
 
 # Object ROI
-OBJ_TOP_ROI = 0.0
-OBJ_BOTTOM_ROI = 1
-OBJ_LEFT_ROI = 0.0
-OBJ_RIGHT_ROI = 1.0
+OBJ_TOP_ROI = 0.0  # [JSON] object-detection ROI top edge
+OBJ_BOTTOM_ROI = 1  # [JSON] object-detection ROI bottom edge
+OBJ_LEFT_ROI = 0.0  # [JSON] object-detection ROI left edge
+OBJ_RIGHT_ROI = 1.0  # [JSON] object-detection ROI right edge
 
 # --- Control Gains ---
 # These are proportional gains for steering correction
@@ -106,8 +109,8 @@ SPEED = 255
 HARDCODE_SPEED = 220
 
 # --- Crosswalk Setting ---
-CROSSWALK_SLEEP = 3 # sec  - after seeing crosswalk
-CROSSWALK_THRESH_SPEND = 8 # sec  - dont care if crosswalk seen before threshold time
+CROSSWALK_SLEEP = 3  # [JSON] delay after handling a crosswalk, in seconds
+CROSSWALK_THRESH_SPEND = 8  # [JSON] crosswalk re-detection cooldown window, in seconds
 
 
 # Stream (enable/disable) 
@@ -119,17 +122,17 @@ debug_frames_list = [] # global stream frame variable
 
 # tack snapshot and video of camera
 TAKE_PICTURE = False
-RECORD_VIDEO = False
+RECORD_VIDEO = False  # [JSON] enable or disable runtime video recording
 
 # Lane Width (distance between two lane in the track)
 LANE_WIDTH = 30 # cm
 
 # Static Threshold
-LANE_THRESHOLD = 180 # lane vision processing threshold
-CROSSWALK_THRESHOLD = 180 
+LANE_THRESHOLD = 180  # [JSON] pixel-intensity threshold used by classical lane detection
+CROSSWALK_THRESHOLD = 180  # [JSON] pixel threshold used by crosswalk detection
 
 # Run Level 
-RUN_LVL = "MOVE" # it can be MOVE or STOP
+RUN_LVL = "MOVE"  # [JSON] runtime level selected by legacy/dashboard controls: MOVE or STOP
 STOP_MIN_HOLD_SECONDS = 3.0
 STOP_COMMAND_REFRESH_INTERVAL = 0.25
 SEND_TRAFFIC_STOP_COMMAND = False
@@ -139,10 +142,10 @@ SEND_TRAFFIC_STOP_COMMAND = False
 CHANGE_WITH_JSON = True
 
 # Set use sign or apriltag detector
-WITH_SIGN = True
-WITH_APRILTAG = not WITH_SIGN
+WITH_SIGN = True  # [JSON] enable traffic-sign detection; false disables this marker detector
+WITH_APRILTAG = not WITH_SIGN  # [JSON] enable AprilTag detection; do not enable with WITH_SIGN
 
-READ_SIGN_THRESHOLD = 18
+READ_SIGN_THRESHOLD = 18  # [JSON] loop iterations between sign-inference submissions; higher reduces inference frequency
 RACE_START_ON_STOP_SIGN = False
 RACE_STOP_ABSENCE_SECONDS = 1.0
 RACE_STOP_CONFIDENCE_THRESHOLD = 0.2
@@ -151,15 +154,15 @@ RACE_FINISH_SPEED = None
 
 # Targeted detector-box filter. Area uses detector pixel coordinates (px²);
 # 900 px² is a tunable 30×30 px starting point, not an empirical calibration.
-SIGN_AREA_FILTER_ENABLED = True
-SIGN_AREA_FILTER_TARGETS = ["STOP"]
-SIGN_AREA_MIN_PX2 = 900
+SIGN_AREA_FILTER_ENABLED = True  # [JSON] enable minimum bounding-box-area filtering for selected signs
+SIGN_AREA_FILTER_TARGETS = ["STOP"]  # [JSON] sign labels affected by the area filter (for example STOP)
+SIGN_AREA_MIN_PX2 = 900  # [JSON] minimum accepted detector-box area in square pixels
 
 # Sign or Tag id
-TURN_RIGHT = 2
-TURN_LEFT = 3
-STRAIGHT = 4
-STOP = 5
+TURN_RIGHT = 2  # [JSON] numeric AprilTag ID interpreted as TURN RIGHT
+TURN_LEFT = 3  # [JSON] numeric AprilTag ID interpreted as TURN LEFT
+STRAIGHT = 4  # [JSON] numeric AprilTag ID interpreted as STRAIGHT
+STOP = 5  # [JSON] numeric AprilTag ID interpreted as STOP
 
 # without arduino
 # Strict hello/cfg hardware handshake is opt-in via --arduino-config PATH.
@@ -216,16 +219,16 @@ CW_OLD_METHOD = True
 ROI_RESIZABLE = False
 
 # --- BEV (Bird's Eye View) Config ---
-USE_BEV = True 
+USE_BEV = True  # [JSON] enable the bird's-eye-view perspective transform
 
-BEV_SRC_TL_X = 0.35
-BEV_SRC_TL_Y = 0.60
-BEV_SRC_TR_X = 0.65
-BEV_SRC_TR_Y = 0.60
-BEV_SRC_BR_X = 1.00
-BEV_SRC_BR_Y = 1.00
-BEV_SRC_BL_X = 0.00
-BEV_SRC_BL_Y = 1.00 
+BEV_SRC_TL_X = 0.35  # [JSON] source top-left BEV corner X; normalized by frame width
+BEV_SRC_TL_Y = 0.60  # [JSON] source top-left BEV corner Y; normalized by frame height
+BEV_SRC_TR_X = 0.65  # [JSON] source top-right BEV corner X; normalized by frame width
+BEV_SRC_TR_Y = 0.60  # [JSON] source top-right BEV corner Y; normalized by frame height
+BEV_SRC_BR_X = 1.00  # [JSON] source bottom-right BEV corner X; normalized by frame width
+BEV_SRC_BR_Y = 1.00  # [JSON] source bottom-right BEV corner Y; normalized by frame height
+BEV_SRC_BL_X = 0.00  # [JSON] source bottom-left BEV corner X; normalized by frame width
+BEV_SRC_BL_Y = 1.00  # [JSON] source bottom-left BEV corner Y; normalized by frame height
 
 # Detect Object
 DETECT_OBJECT = False
