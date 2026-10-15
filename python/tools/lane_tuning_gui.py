@@ -242,12 +242,12 @@ class LaneTuningApp:
         else:
             self.config = importlib.import_module("modes.city.config_city")
             module = "vision.city_vision_processing"
-        processor_module = importlib.reload(importlib.import_module(module))
-        self.processor = processor_module.VisionProcessor()
         self.config.DEBUG = True
         self.config.STREAM = False
         if hasattr(self.config, "USE_ML_LANE_DETECTOR"):
             self.config.USE_ML_LANE_DETECTOR = False
+        processor_module = importlib.reload(importlib.import_module(module))
+        self.processor = processor_module.VisionProcessor()
         self.config.HOUGH_THRESHOLD = int(getattr(self.config, "HOUGH_THRESHOLD", 20 if getattr(self.config, "OLD_METHOD", False) else 15))
         self.config.HOUGH_MIN_LINE_LENGTH = int(getattr(self.config, "HOUGH_MIN_LINE_LENGTH", 5))
         self.config.HOUGH_MAX_LINE_GAP = int(getattr(self.config, "HOUGH_MAX_LINE_GAP", 5 if getattr(self.config, "OLD_METHOD", False) else 20))
