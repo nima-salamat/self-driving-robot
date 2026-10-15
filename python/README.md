@@ -492,3 +492,19 @@ python main.py --mode city --traffic-lights --traffic-light-wait-before-check
 The delayed option waits `CROSSWALK_SLEEP` before the first observation; it does not bypass confirmation. Crossing requires 8 GREEN observations among the latest 10 distinct fresh frames, with the newest also GREEN. RED, UNKNOWN, invalid frames, and detector errors must hold indefinitely. The wait flag requires `--traffic-lights`.
 
 Image thresholds are separate from temporal confirmation. Configure `TL_RED_HSV_RANGES`, `TL_GREEN_HSV_RANGES`, `TL_MIN_SATURATION`, `TL_MIN_VALUE`, `TL_MIN_CONTOUR_AREA`, and `TL_MIN_ACTIVE_BRIGHTNESS` in `modes/city/config_city.py`. The normalized ROI uses `TL_TOP_ROI`, `TL_BOTTOM_ROI`, `TL_LEFT_ROI`, `TL_RIGHT_ROI`, satisfying `0 <= top < bottom <= 1` and `0 <= left < right <= 1`. Temporal defaults are `TL_CONFIRMATION_WINDOW=10` and `TL_CONFIRMATION_GREEN_REQUIRED=8`. Thresholds are not camera-calibrated; validate with the real camera before physical operation.
+
+## Offline PNG lane tuning GUI
+
+Use the Tkinter tool to inspect saved camera PNGs and tune the actual Race or City Hough lane detector without starting a camera or connecting to an Arduino.
+
+From the repository's `python/` directory:
+
+```bash
+python tools/lane_tuning_gui.py
+```
+
+Open a directory containing PNG images from **Open PNG folder**, choose `race` or `city`, select an image, tune the lane threshold, Hough vote threshold, minimum segment length, maximum segment gap, blur kernel, preprocessing method, morphology, or BEV option, then press **Apply detection**.
+
+Available views are the original frame, all raw Hough candidates, the best candidate selected for each lane ROI, and left/right edge maps. **Save displayed PNG** exports the current view. **Save preset to mode JSON** merges the detector settings into `race.json` or `city.json` after confirmation and creates a sibling `.bak` backup first.
+
+The image is resized to the mode's configured runtime dimensions by default. Turn that option off to run the detector on the original image dimensions. Tuning is offline and does not start camera or Arduino hardware. Validate saved settings on representative recordings and at low speed before using them on the robot.
