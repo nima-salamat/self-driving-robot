@@ -405,8 +405,8 @@ class VisionProcessor:
                     lx1, ly1, lx2, ly2 = self._extract_line(line)
                     sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
                     if rl_draw is not None:
-                        cv2.line(rl_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
-                    cv2.line(vis, (rl_left + int(sx1), rl_top + int(sy1)), (rl_left + int(sx2), rl_top + int(sy2)), (0,255,0), 2)
+                        cv2.line(rl_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0, 165, 255), 2, cv2.LINE_AA)
+                    cv2.line(vis, (rl_left + int(sx1), rl_top + int(sy1)), (rl_left + int(sx2), rl_top + int(sy2)), (0, 165, 255), 3, cv2.LINE_AA)
                 if rl_x_mid is not None:
                     cv2.circle(vis, (rl_left + int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
 
@@ -415,10 +415,25 @@ class VisionProcessor:
                     lx1, ly1, lx2, ly2 = self._extract_line(line)
                     sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
                     if ll_draw is not None:
-                        cv2.line(ll_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
-                    cv2.line(vis, (ll_left + int(sx1), ll_top + int(sy1)), (ll_left + int(sx2), ll_top + int(sy2)), (0,255,0), 2)
+                        cv2.line(ll_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (255, 255, 0), 2, cv2.LINE_AA)
+                    cv2.line(vis, (ll_left + int(sx1), ll_top + int(sy1)), (ll_left + int(sx2), ll_top + int(sy2)), (255, 255, 0), 3, cv2.LINE_AA)
                 if ll_x_mid is not None:
                     cv2.circle(vis, (ll_left_ + int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
+
+            # Make raw Hough output explicit in the live debug feed. These are
+            # candidates only; the green/magenta center guides are estimates.
+            rl_candidate_count = 0 if rl_lines is None else len(rl_lines)
+            ll_candidate_count = 0 if ll_lines is None else len(ll_lines)
+            cv2.putText(
+                vis, f"R Hough candidates: {rl_candidate_count}",
+                (max(4, rl_left + 4), min(h_dbg - 4, rl_top + 20)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 165, 255), 1, cv2.LINE_AA,
+            )
+            cv2.putText(
+                vis, f"L Hough candidates: {ll_candidate_count}",
+                (max(4, ll_left + 4), min(h_dbg - 4, ll_top + 20)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 0), 1, cv2.LINE_AA,
+            )
 
             cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
             cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
