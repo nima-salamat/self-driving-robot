@@ -227,11 +227,15 @@ class StopHoldModeTests(unittest.TestCase):
                 robot.sign_detector.latest.return_value = self.fresh_result()
                 robot.handle_debug_stream = Mock()
                 robot._pace_control_loop = Mock()
+                robot._wait_for_processing_slot = Mock(return_value=True)
                 robot.close = Mock()
 
                 if name == "city":
                     robot.crosswalk_time_start = 0
                     robot.crosswalk_last_seen = 0
+                else:
+                    # Race sign inference is disabled in the middle phase.
+                    robot.odometry = None
 
                 with patch.object(config, "RUN_LVL", "MOVE"), patch.object(
                     config, "WITH_SIGN", True
@@ -247,6 +251,17 @@ class StopHoldModeTests(unittest.TestCase):
                     robot, "_shutdown_requested", side_effect=[False, True]
                 ):
                     robot.run()
+
+                if name == "race":
+                    # A STOP result must not even be consumed in the middle
+                    # of Race; only the start gate and timed finish may infer signs.
+                    robot.sign_detector.latest.assert_not_called()
+                    robot.sign_detector.submit.assert_not_called()
+                    self.assertFalse(robot.stop_hold.active)
+                    self.assertEqual(robot.control.commands, ["stop\n"])
+                    self.assertEqual(robot.control.motion_calls, [])
+                    robot.close.assert_called_once()
+                    continue
 
                 robot.sign_detector.latest.assert_called_once()
                 robot.sign_detector.submit.assert_not_called()
