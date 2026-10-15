@@ -12,6 +12,10 @@ from vision.traffic_light import TrafficLightDetector, GreenConfirmationWindow
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
 from traffic_sign_detector.async_detector import AsyncSignDetector
+from traffic_sign_detector.area_filter import (
+    accepts_sign_detection,
+    normalize_sign_name,
+)
 from traffic_sign_detector.stop_hold import StopSignHold
 from controller import RobotController
 from controller.perception_confidence import PerceptionConfidenceEstimator, ConfidenceSpeedLimiter
@@ -939,25 +943,31 @@ class Robot:
             ):
                 self.last_sign_result_id = latest_sign[0]
                 sign_result = latest_sign[1]
-                coordinate = sign_result.get("coordinate")
                 debug_frame = sign_result.get("debug_frame", debug_frame)
-                self.last_sign_observation_fresh = True
-                self.last_sign_observation_at = latest_sign[2]
+                if accepts_sign_detection(
+                    sign_result,
+                    enabled=getattr(config_city, "SIGN_AREA_FILTER_ENABLED", False),
+                    targets=getattr(config_city, "SIGN_AREA_FILTER_TARGETS", []),
+                    minimum_area_px2=getattr(config_city, "SIGN_AREA_MIN_PX2", 0),
+                ):
+                    coordinate = sign_result.get("coordinate")
+                    self.last_sign_observation_fresh = True
+                    self.last_sign_observation_at = latest_sign[2]
 
-                sign_label = sign_result.get("text", "")
-                if sign_label == "TURN LEFT":
-                    tag_id = TURN_LEFT
-                elif sign_label == "TURN RIGHT":
-                    tag_id = TURN_RIGHT
-                elif sign_label == "STRAIGHT":
-                    tag_id = STRAIGHT
-                elif sign_label == "STOP":
-                    tag_id = STOP
-                    stop_seen = True
-                    detector_kind = "sign"
+                    sign_label = normalize_sign_name(sign_result.get("text", ""))
+                    if sign_label == "TURN LEFT":
+                        tag_id = TURN_LEFT
+                    elif sign_label == "TURN RIGHT":
+                        tag_id = TURN_RIGHT
+                    elif sign_label == "STRAIGHT":
+                        tag_id = STRAIGHT
+                    elif sign_label == "STOP":
+                        tag_id = STOP
+                        stop_seen = True
+                        detector_kind = "sign"
 
-                if tag_id is not None:
-                    self.last_tag = tag_id
+                    if tag_id is not None:
+                        self.last_tag = tag_id
 
         self._observe_stop_result(stop_seen, detector_kind=detector_kind)
         return tag_id, stop_seen, debug_frame, coordinate

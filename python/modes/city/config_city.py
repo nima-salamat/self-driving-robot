@@ -146,6 +146,12 @@ WITH_APRILTAG = not WITH_SIGN
 
 READ_SIGN_THRESHOLD = 40
 
+# Targeted detector-box filter. Area uses detector pixel coordinates (px²);
+# 900 px² is a tunable 30×30 px starting point, not an empirical calibration.
+SIGN_AREA_FILTER_ENABLED = True
+SIGN_AREA_FILTER_TARGETS = ["STOP"]
+SIGN_AREA_MIN_PX2 = 900
+
 # Sign or Tag id
 TURN_RIGHT = 2
 TURN_LEFT = 3

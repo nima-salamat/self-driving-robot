@@ -193,7 +193,7 @@ class StopHoldModeTests(unittest.TestCase):
         submitted_at = time.monotonic() - 0.01 if submitted_at is None else submitted_at
         return (
             result_id,
-            {"coordinate": None, "debug_frame": None, "text": label},
+            {"coordinate": ((0, 0), (40, 40)), "debug_frame": None, "text": label, "sign_type": 1},
             submitted_at,
             time.monotonic(),
         )
@@ -326,6 +326,113 @@ class StopHoldModeTests(unittest.TestCase):
 
                 self.assertEqual(robot.stop_hold.clear_observations, 1)
                 self.assertTrue(robot.stop_hold.active)
+
+    def _handle_sign_result(self, mode_module, config, robot, result, **overrides):
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        robot.sign_detector = Mock()
+        robot.sign_detector.latest.return_value = result
+        settings = {
+            "WITH_SIGN": True,
+            "WITH_APRILTAG": False,
+            "READ_SIGN_THRESHOLD": 10000,
+            "ST_TOP_ROI": 0.0,
+            "ST_BOTTOM_ROI": 1.0,
+            "ST_LEFT_ROI": 0.0,
+            "ST_RIGHT_ROI": 1.0,
+            "SIGN_AREA_FILTER_ENABLED": True,
+            "SIGN_AREA_FILTER_TARGETS": ["STOP"],
+            "SIGN_AREA_MIN_PX2": 100,
+        }
+        settings.update(overrides)
+        with patch.multiple(config, **settings):
+            return robot.handle_read_sign_or_tag(frame, None, force_check=True)
+
+    def test_area_filter_in_both_modes_blocks_small_stop_and_accepts_large_stop(self):
+        for name, mode_module, config in MODE_CASES:
+            with self.subTest(mode=name, size="small"):
+                robot = self.make_robot(mode_module)
+                item = self.fresh_result()
+                small = (item[0], {**item[1], "coordinate": ((0, 0), (10, 10))}, item[2], item[3])
+                result = self._handle_sign_result(mode_module, config, robot, small)
+                self.assertIsNone(result[0])
+                self.assertFalse(result[1])
+                self.assertIsNone(robot.last_tag)
+                self.assertFalse(robot.stop_hold.active)
+                self.assertEqual(robot.control.commands, [])
+                self.assertFalse(robot.last_sign_observation_fresh)
+
+            with self.subTest(mode=name, size="accepted"):
+                robot = self.make_robot(mode_module)
+                result = self._handle_sign_result(
+                    mode_module, config, robot, self.fresh_result(result_id=2)
+                )
+                self.assertEqual(result[0], config.STOP)
+                self.assertTrue(result[1])
+                self.assertTrue(robot.stop_hold.active)
+                self.assertEqual(robot.control.commands, ["stop\n"])
+
+    def test_filtered_stop_does_not_count_as_clearance_or_duplicate_observation(self):
+        for name, mode_module, config in MODE_CASES:
+            with self.subTest(mode=name):
+                robot = self.make_robot(mode_module)
+                started = time.monotonic()
+                robot.stop_hold.observe(
+                    stop_present=True,
+                    fresh=True,
+                    observation_time=started,
+                    now=started,
+                )
+                robot.stop_hold_detector_kind = "sign"
+                item = self.fresh_result(result_id=2, submitted_at=started + 0.01)
+                tiny_stop = (
+                    item[0],
+                    {**item[1], "coordinate": ((0, 0), (1, 1))},
+                    item[2],
+                    item[3],
+                )
+                self._handle_sign_result(mode_module, config, robot, tiny_stop)
+                self._handle_sign_result(mode_module, config, robot, tiny_stop)
+                self.assertTrue(robot.stop_hold.active)
+                self.assertEqual(robot.stop_hold.clear_observations, 0)
+                self.assertEqual(robot.last_sign_result_id, 2)
+
+    def test_non_target_small_sign_still_triggers_and_apriltag_is_unfiltered(self):
+        for name, mode_module, config in MODE_CASES:
+            with self.subTest(mode=name, kind="sign"):
+                robot = self.make_robot(mode_module)
+                item = self.fresh_result(label="TURN LEFT")
+                small_left = (
+                    item[0],
+                    {**item[1], "coordinate": ((0, 0), (1, 1)), "sign_type": 3},
+                    item[2],
+                    item[3],
+                )
+                result = self._handle_sign_result(mode_module, config, robot, small_left)
+                self.assertEqual(result[0], config.TURN_LEFT)
+                self.assertTrue(robot.last_sign_observation_fresh)
+
+            with self.subTest(mode=name, kind="apriltag"):
+                robot = self.make_robot(mode_module)
+                robot.apriltag_detector = Mock()
+                robot.apriltag_detector.detect.return_value = (
+                    [], None, {"id": config.STOP, "corners": [(0, 0), (0, 0)]}, None
+                )
+                frame = np.zeros((240, 320, 3), dtype=np.uint8)
+                with patch.multiple(
+                    config,
+                    WITH_SIGN=False,
+                    WITH_APRILTAG=True,
+                    ST_TOP_ROI=0.0,
+                    ST_BOTTOM_ROI=1.0,
+                    ST_LEFT_ROI=0.0,
+                    ST_RIGHT_ROI=1.0,
+                    SIGN_AREA_FILTER_ENABLED=True,
+                    SIGN_AREA_FILTER_TARGETS=["STOP"],
+                    SIGN_AREA_MIN_PX2=100000,
+                ):
+                    result = robot.handle_read_sign_or_tag(frame, None)
+                self.assertEqual(result[0], config.STOP)
+                self.assertTrue(result[1])
 
     def test_failed_stop_write_does_not_clear_gate_and_retries(self):
         for name, mode_module, _ in MODE_CASES:

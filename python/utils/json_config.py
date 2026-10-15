@@ -3,6 +3,8 @@ import logging
 import os
 from pathlib import Path
 
+from traffic_sign_detector.area_filter import validate_sign_area_filter
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +53,13 @@ BOOL_KEYS = {
 
 
 def _validate(name, value):
+    if name in {
+        "SIGN_AREA_FILTER_ENABLED",
+        "SIGN_AREA_FILTER_TARGETS",
+        "SIGN_AREA_MIN_PX2",
+    }:
+        return validate_sign_area_filter(name, value)
+
     if name in BOOL_KEYS and not isinstance(value, bool):
         raise ValueError(f"{name} must be boolean")
 
