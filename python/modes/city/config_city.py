@@ -104,7 +104,7 @@ SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
 # --- Speed Config ---
 SPEED = 175  # Normal City cruising PWM command (0-255)
-HARDCODE_SPEED = 240  # Crosswalk maneuver PWM command
+HARDCODE_SPEED = 220  # Crosswalk maneuver PWM command
 MOTOR_COMMAND_REFRESH_INTERVAL = 0.1  # Retry steady motor setpoints every 100 ms
 
 # --- Crosswalk Setting ---

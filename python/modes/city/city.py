@@ -440,7 +440,7 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 80 95  f {HARDCODE_SPEED} 80 120 b {HARDCODE_SPEED} 80 70 f {HARDCODE_SPEED} 80 110",
+                        f"f {HARDCODE_SPEED} 80 95  f {HARDCODE_SPEED} 80 120 b {HARDCODE_SPEED} 80 65 f {HARDCODE_SPEED} 85 110",
                         event="crosswalk_turn_right",
                         metadata={"tag": self.last_tag},
                     )
@@ -455,7 +455,7 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 120 95 f {HARDCODE_SPEED} 120 60",
+                        f"f {HARDCODE_SPEED} 110 95 f {HARDCODE_SPEED} 130 65",
                         event="crosswalk_turn_left",
                         metadata={"tag": self.last_tag},
                     )
