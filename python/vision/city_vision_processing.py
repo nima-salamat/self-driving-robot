@@ -209,7 +209,7 @@ class VisionProcessor:
                 cw_frame = cv2.bitwise_and(cw_frame, cw_frame, mask=mask_cw)
 
         def process_roi(roi, mask=None):
-            if OLD_METHOD:
+            if bool(getattr(conf, "OLD_METHOD", OLD_METHOD)):
                 if roi is None:
                     return None, None
                 
@@ -220,15 +220,26 @@ class VisionProcessor:
                 if mask is not None:
                     edges = cv2.bitwise_and(edges, edges, mask=mask)
                     
-                lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
-                                        minLineLength=5, maxLineGap=5)
+                legacy_method = bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
+                lines = cv2.HoughLinesP(
+                    edges,
+                    1,
+                    np.pi / 180,
+                    threshold=int(getattr(conf, "HOUGH_THRESHOLD", 20 if legacy_method else 15)),
+                    minLineLength=max(1, int(getattr(conf, "HOUGH_MIN_LINE_LENGTH", 5))),
+                    maxLineGap=max(0, int(getattr(conf, "HOUGH_MAX_LINE_GAP", 5 if legacy_method else 20))),
+                )
                 return edges, lines
             else:
                 if roi is None:
                     return None, None
 
                 gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                gray = cv2.GaussianBlur(gray, (3,3), 0)
+                blur_kernel = max(1, int(getattr(conf, "HOUGH_BLUR_KERNEL", 3)))
+                if blur_kernel % 2 == 0:
+                    blur_kernel += 1
+                if blur_kernel > 1:
+                    gray = cv2.GaussianBlur(gray, (blur_kernel, blur_kernel), 0)
                 sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
                 sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
 
@@ -241,13 +252,14 @@ class VisionProcessor:
                     255,
                     cv2.THRESH_BINARY
                 )
-                kernel = self._morph_kernel
-                edges = cv2.morphologyEx(
-                    edges,
-                    cv2.MORPH_CLOSE,
-                    kernel,
-                    iterations=1
-                )
+                if bool(getattr(conf, "HOUGH_MORPH_CLOSE", True)):
+                    kernel = self._morph_kernel
+                    edges = cv2.morphologyEx(
+                        edges,
+                        cv2.MORPH_CLOSE,
+                        kernel,
+                        iterations=1
+                    )
 
                 if mask is not None:
                     edges = cv2.bitwise_and(edges, edges, mask=mask)
@@ -390,7 +402,11 @@ class VisionProcessor:
 
         self.last_error = error
         
-        debug = {"rl_draw": None, "ll_draw": None, "combined": None, "cw_draw": None}
+        debug = {
+            "rl_draw": None, "ll_draw": None, "combined": None, "cw_draw": None,
+            "rl_edges": None, "ll_edges": None, "rl_lines": None, "ll_lines": None,
+            "rl_offset": None, "ll_offset": None,
+        }
         
         if (conf.DEBUG or conf.STREAM) and debug_frame is not None:    
             def scale(line_coords):
@@ -454,7 +470,7 @@ class VisionProcessor:
                         cv2.line(rl_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
                     cv2.line(vis, (rl_left + int(sx1), rl_top + int(sy1)), (rl_left + int(sx2), rl_top + int(sy2)), (0,255,0), 2)
                 if rl_x_mid is not None:
-                    cv2.circle(vis, (int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
+                    cv2.circle(vis, (rl_left + int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
 
             if ll_lines is not None:
                 for line in ll_lines:
@@ -464,7 +480,7 @@ class VisionProcessor:
                         cv2.line(ll_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
                     cv2.line(vis, (ll_left + int(sx1), ll_top + int(sy1)), (ll_left + int(sx2), ll_top + int(sy2)), (0,255,0), 2)
                 if ll_x_mid is not None:
-                    cv2.circle(vis, (int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
+                    cv2.circle(vis, (ll_left_ + int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
 
             cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
             cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
@@ -481,6 +497,12 @@ class VisionProcessor:
             debug["ll_draw"] = ll_draw
             debug["cw_draw"] = cw_draw
             debug["combined"] = vis
+            debug["rl_edges"] = rl_edge
+            debug["ll_edges"] = ll_edge
+            debug["rl_lines"] = rl_lines
+            debug["ll_lines"] = ll_lines
+            debug["rl_offset"] = (rl_left, rl_top)
+            debug["ll_offset"] = (ll_left_, ll_top)
 
         return {
             "steering_angle": steering_angle,
