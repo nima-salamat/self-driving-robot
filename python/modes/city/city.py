@@ -957,15 +957,20 @@ class Robot:
                 self.last_sign_result_id = latest_sign[0]
                 sign_result = latest_sign[1]
                 debug_frame = sign_result.get("debug_frame", debug_frame)
-                if accepts_sign_detection(
+                detection_accepted = accepts_sign_detection(
                     sign_result,
                     enabled=getattr(config_city, "SIGN_AREA_FILTER_ENABLED", False),
                     targets=getattr(config_city, "SIGN_AREA_FILTER_TARGETS", []),
                     minimum_area_px2=getattr(config_city, "SIGN_AREA_MIN_PX2", 0),
-                ):
-                    coordinate = sign_result.get("coordinate")
+                )
+                if detection_accepted or (hold_active and force_check):
+                    # While held, a completed but filtered result is still a
+                    # fresh observation that contains no accepted STOP.
                     self.last_sign_observation_fresh = True
                     self.last_sign_observation_at = latest_sign[2]
+
+                if detection_accepted:
+                    coordinate = sign_result.get("coordinate")
 
                     sign_label = normalize_sign_name(sign_result.get("text", ""))
                     if sign_label == "TURN LEFT":
