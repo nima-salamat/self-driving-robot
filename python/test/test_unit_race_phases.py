@@ -1,4 +1,5 @@
 import argparse
+import time
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -7,6 +8,7 @@ import numpy as np
 
 from main import _apply_cli_overrides, _validate_opt_in_features
 from traffic_sign_detector.race_start_gate import RaceFinishState, RaceStartGate
+from traffic_sign_detector.stop_hold import StopSignHold
 from traffic_sign_detector.async_detector import AsyncSignDetector
 from utils.parser import parse_args
 
@@ -125,6 +127,7 @@ class RacePhaseModeTests(unittest.TestCase):
 
         class FakeControl:
             def __init__(self):
+                self.without_arduino = True
                 self.motion_inhibited = False
                 self.motion_inhibit_reason = None
                 self.stops = []
@@ -139,7 +142,7 @@ class RacePhaseModeTests(unittest.TestCase):
                 return True
 
         robot = mode.Robot.__new__(mode.Robot)
-        robot.stop_hold = types.SimpleNamespace(active=False)
+        robot.stop_hold = StopSignHold()
         robot.stop_hold_detector_kind = None
         robot.last_sign_observation_fresh = False
         robot.last_sign_observation_at = None
@@ -159,20 +162,20 @@ class RacePhaseModeTests(unittest.TestCase):
         robot.race_finish = RaceFinishState(1.0, 25)
         robot.race_finish.start(0.0)
         robot.race_finish.update(1.0)
-        robot._race_terminal_finished = False
         robot._last_stop_command_at = None
         robot._last_stop_release_attempt_at = None
         robot._mcu_stop_latched = False
         robot._stop_connection_state = None
-        robot._finish_race = lambda: mode.Robot._finish_race(robot)
         robot._set_race_inhibited = lambda inhibited, reason: mode.Robot._set_race_inhibited(robot, inhibited, reason)
         robot.last_tag = None
         robot._mode_module = mode
         return robot
 
     def run_phase_result(self, robot, label, threshold=0.2, confidence=0.8,
-                         observation_at=10.0):
+                         observation_at=None):
         config = robot._mode_module.config_race
+        if observation_at is None:
+            observation_at = time.monotonic()
         robot.sign_detector.latest.return_value = (
             robot.last_sign_result_id + 1,
             {"coordinate": ((0, 0), (40, 40)), "debug_frame": None,
@@ -196,61 +199,59 @@ class RacePhaseModeTests(unittest.TestCase):
             return robot.handle_read_sign_or_tag(
                 np.zeros((240, 320, 3), dtype=np.uint8),
                 None,
-                phase_only="finish",
+                phase_only="monitor",
             )
 
-    def test_sign_detector_is_not_called_during_middle_race(self):
+    def test_sign_detector_monitors_stop_during_middle_race(self):
         from modes.race import race as mode
 
         robot = mode.Robot.__new__(mode.Robot)
+        robot.sign_detector = Mock()
         robot.handle_read_sign_or_tag = Mock(
             return_value=("STOP", True, None, None)
         )
         frame = object()
 
-        sign_text, debug_frame = mode.Robot._read_finish_sign_if_active(
-            robot, frame, None, False
-        )
-        self.assertEqual(sign_text, "None")
-        self.assertIsNone(debug_frame)
-        robot.handle_read_sign_or_tag.assert_not_called()
-
-        sign_text, debug_frame = mode.Robot._read_finish_sign_if_active(
-            robot, frame, None, True
-        )
+        with patch.multiple(
+            mode.config_race,
+            WITH_SIGN=True,
+            WITH_APRILTAG=False,
+        ):
+            sign_text, debug_frame = mode.Robot._read_stop_sign_if_active(
+                robot, frame, None
+            )
         self.assertEqual(sign_text, "STOP")
         self.assertIsNone(debug_frame)
+        robot.sign_detector.resume.assert_called_once()
         robot.handle_read_sign_or_tag.assert_called_once_with(
-            frame, None, force_check=True, phase_only="finish"
+            frame, None, force_check=True, phase_only="monitor"
         )
 
-    def test_finish_ignores_other_classes_and_terminal_stop_is_one_way(self):
+    def test_finish_stop_hold_releases_when_stop_disappears(self):
         robot = self.make_robot("TURN LEFT")
         self.run_phase_result(robot, "TURN LEFT")
-        self.assertFalse(robot._race_terminal_finished)
         self.assertEqual(robot.control.stops, [])
 
         self.run_phase_result(robot, "STOP")
-        self.assertTrue(robot._race_terminal_finished)
+        self.assertTrue(robot.stop_hold.active)
         self.assertTrue(robot.control.motion_inhibited)
-        self.assertEqual(robot.control.stops, ["race_finished"])
 
-        self.run_phase_result(robot, "STOP")
         self.run_phase_result(robot, "TURN RIGHT")
-        self.assertTrue(robot._race_terminal_finished)
-        self.assertEqual(robot.control.stops, ["race_finished"])
+        self.assertTrue(robot._release_stop_hold_if_ready())
+        self.assertFalse(robot.stop_hold.active)
+        self.assertFalse(robot.control.motion_inhibited)
 
     def test_stop_below_phase_confidence_threshold_cannot_finish(self):
         robot = self.make_robot("STOP")
         self.run_phase_result(robot, "STOP", threshold=0.7, confidence=0.69)
-        self.assertFalse(robot._race_terminal_finished)
+        self.assertFalse(robot.stop_hold.active)
         self.assertEqual(robot.control.stops, [])
 
-    def test_stop_result_captured_before_finish_phase_cannot_finish(self):
+    def test_stop_is_monitored_before_finish_speed_phase(self):
         robot = self.make_robot("STOP")
         self.run_phase_result(robot, "STOP", observation_at=0.5)
-        self.assertFalse(robot._race_terminal_finished)
-        self.assertEqual(robot.control.stops, [])
+        self.assertTrue(robot.stop_hold.active)
+        self.assertTrue(robot.control.motion_inhibited)
 
     def test_async_detector_pause_discards_work_and_resume_reenables_inference(self):
         import threading

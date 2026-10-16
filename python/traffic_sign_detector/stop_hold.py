@@ -1,26 +1,20 @@
-"""Fail-safe state for a traffic STOP sign.
-
-Inference is polled continuously while this state is active. Missing, stale, or
-failed inference results never clear the stop state. Releasing motion requires
-both a minimum hold duration and several distinct, fresh observations that do
-not contain STOP.
-"""
+"""State for stopping while a fresh traffic-sign observation contains STOP."""
 
 import math
 import time
 
 
 class StopSignHold:
-    """Latch STOP until its timer and fresh-clearance requirements are met."""
+    """Latch STOP until the next distinct, fresh observation clears it."""
 
-    def __init__(self, clear_confirmations=3, minimum_duration_s=3.0):
+    def __init__(self, clear_confirmations=1, minimum_duration_s=0.0):
         confirmations = int(clear_confirmations)
         if confirmations < 1:
             raise ValueError("clear_confirmations must be at least 1")
 
         duration = float(minimum_duration_s)
-        if not math.isfinite(duration) or duration < 3.0:
-            raise ValueError("minimum_duration_s must be finite and at least 3 seconds")
+        if not math.isfinite(duration) or duration < 0.0:
+            raise ValueError("minimum_duration_s must be finite and non-negative")
 
         self.clear_confirmations = confirmations
         self.minimum_duration_s = duration
@@ -85,7 +79,7 @@ class StopSignHold:
         return True
 
     def can_release(self, now=None):
-        """Return whether duration and distinct-clearance requirements pass."""
+        """Return whether a fresh STOP-absent observation has been received."""
         if not self.active or self.started_at is None:
             return False
         if now is None:

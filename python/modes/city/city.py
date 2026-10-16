@@ -125,10 +125,7 @@ class Robot:
         self.stop_last_seen = None
         self.read_sign_counter = 0
         self.last_sign_result_id = 0
-        self.stop_hold = StopSignHold(
-            clear_confirmations=3,
-            minimum_duration_s=getattr(config_city, "STOP_MIN_HOLD_SECONDS", 3.0),
-        )
+        self.stop_hold = StopSignHold()
         self.stop_hold_detector_kind = None
         self.last_sign_observation_fresh = False
         self.last_sign_observation_at = None
@@ -209,12 +206,7 @@ class Robot:
     def _observe_stop_result(self, stop_seen, detector_kind=None):
         """Update the mode-owned STOP state from a fresh detector observation."""
         if not hasattr(self, "stop_hold"):
-            self.stop_hold = StopSignHold(
-                clear_confirmations=3,
-                minimum_duration_s=getattr(
-                    config_city, "STOP_MIN_HOLD_SECONDS", 3.0
-                ),
-            )
+            self.stop_hold = StopSignHold()
 
         if stop_seen:
             self.stop_last_seen = time.time()
@@ -346,7 +338,7 @@ class Robot:
         return bool(success)
 
     def _release_stop_hold_if_ready(self):
-        """Release only after clearance/time pass and the controller unlock succeeds."""
+        """Release on the first fresh clear observation if the controller unlocks."""
         if not self.stop_hold.can_release(time.monotonic()):
             return False
         if not self._set_mcu_stop_latched(False):
@@ -953,18 +945,11 @@ class Robot:
                     debug_frame.copy() if debug_frame is not None else None,
                 )
 
-            # Submission is throttled, but a completed result is consumed on
-            # every loop iteration so READ_SIGN_THRESHOLD cannot delay STOP.
-            # During STOP hold, inference may take longer than the normal
-            # result-age limit. Consume its latest completed frame so fresh
-            # post-STOP clear observations can release the hold; StopSignHold
-            # rejects results captured before the hold began.
-            result_max_age = (
-                None
-                if force_check and hold_active
-                else getattr(config_city, "SIGN_RESULT_MAX_AGE", 0.75)
-            )
-            latest_sign = self.sign_detector.latest(max_age_s=result_max_age)
+            # Consume each completed result once even if inference took longer
+            # than the configured age limit. Otherwise a slow detector can
+            # discard both the STOP sighting and the later clear observation.
+            # StopSignHold rejects clear frames captured before the hold began.
+            latest_sign = self.sign_detector.latest()
             if (
                 latest_sign is not None
                 and latest_sign[0] > self.last_sign_result_id

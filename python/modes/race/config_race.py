@@ -133,7 +133,6 @@ CROSSWALK_THRESHOLD = 180  # [JSON] pixel threshold used by crosswalk detection
 
 # Run Level 
 RUN_LVL = "MOVE"  # [JSON] runtime level selected by legacy/dashboard controls: MOVE or STOP
-STOP_MIN_HOLD_SECONDS = 3.0
 STOP_COMMAND_REFRESH_INTERVAL = 0.25
 SEND_TRAFFIC_STOP_COMMAND = False
 

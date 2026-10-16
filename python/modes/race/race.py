@@ -134,10 +134,7 @@ class Robot:
         self.stop_last_seen = None
         self.read_sign_counter = 0
         self.last_sign_result_id = 0
-        self.stop_hold = StopSignHold(
-            clear_confirmations=3,
-            minimum_duration_s=getattr(config_race, "STOP_MIN_HOLD_SECONDS", 3.0),
-        )
+        self.stop_hold = StopSignHold()
         self.race_start_gate = (
             RaceStartGate(
                 getattr(config_race, "RACE_STOP_ABSENCE_SECONDS", 1.0),
@@ -151,10 +148,8 @@ class Robot:
             if getattr(config_race, "RACE_FINISH_AFTER_SECONDS", None) is not None
             else None
         )
-        self._race_terminal_finished = False
         self._race_timer_started = False
         self._race_start_gate_motion_released = self.race_start_gate is None
-        self._race_finish_detector_activated = False
         self.stop_hold_detector_kind = None
         self.last_sign_observation_fresh = False
         self.last_sign_observation_at = None
@@ -169,8 +164,7 @@ class Robot:
         self.sign_detector = None
         if config_race.WITH_SIGN:
             self._ensure_sign_detector()
-        # Inference is phase-gated: keep the preloaded model/worker idle until
-        # the optional start gate or timed finishing phase needs it.
+        # Keep the worker idle until the active-race STOP monitor starts.
         if self.sign_detector is not None and self.race_start_gate is None:
             self.sign_detector.pause()
         setattr(config_race, "sign_detector", self.sign_detector)
@@ -242,12 +236,7 @@ class Robot:
     def _observe_stop_result(self, stop_seen, detector_kind=None):
         """Update the mode-owned STOP state from a fresh detector observation."""
         if not hasattr(self, "stop_hold"):
-            self.stop_hold = StopSignHold(
-                clear_confirmations=3,
-                minimum_duration_s=getattr(
-                    config_race, "STOP_MIN_HOLD_SECONDS", 3.0
-                ),
-            )
+            self.stop_hold = StopSignHold()
 
         if stop_seen:
             self.stop_last_seen = time.time()
@@ -381,7 +370,7 @@ class Robot:
         return bool(success)
 
     def _release_stop_hold_if_ready(self):
-        """Release only after clearance/time pass and the controller unlock succeeds."""
+        """Release on the first fresh clear observation if the controller unlocks."""
         if not self.stop_hold.can_release(time.monotonic()):
             return False
         if not self._set_mcu_stop_latched(False):
@@ -501,30 +490,23 @@ class Robot:
                 self._race_start_gate_motion_released = True
         self._pace_control_loop()
 
-    def _finish_race(self):
-        if self._race_terminal_finished:
-            return
-        if self.race_finish is not None and self.race_finish.finish():
-            self._race_terminal_finished = True
-            self._set_race_inhibited(True, "race_finished")
-            detector = getattr(self, "sign_detector", None)
-            if detector is not None:
-                detector.pause()
-
-    def _read_finish_sign_if_active(self, frame, debug_frame, finish_phase):
-        """Run traffic-sign inference only during the timed finishing phase."""
-        if not finish_phase:
+    def _read_stop_sign_if_active(self, frame, debug_frame):
+        """Monitor STOP continuously while Race is driving."""
+        if not (config_race.WITH_SIGN or config_race.WITH_APRILTAG):
             return "None", debug_frame
-        if not getattr(self, "_race_finish_detector_activated", False):
-            detector = getattr(self, "sign_detector", None)
-            if detector is not None:
-                detector.resume()
-            self._race_finish_detector_activated = True
+
+        detector = getattr(self, "sign_detector", None)
+        if config_race.WITH_SIGN:
+            if detector is None:
+                self._ensure_sign_detector()
+                detector = self.sign_detector
+            detector.resume()
+
         sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
             frame,
             debug_frame,
             force_check=True,
-            phase_only="finish",
+            phase_only="monitor",
         )
         return sign_text, debug_frame
 
@@ -560,10 +542,6 @@ class Robot:
             while not self._shutdown_requested():
                 self.fps.update()
                 self.fps.maybe_log_performance()
-                if getattr(self, "_race_terminal_finished", False):
-                    self._set_race_inhibited(True, "race_finished")
-                    self._pace_control_loop()
-                    continue
                 start_gate = getattr(self, "race_start_gate", None)
                 if (
                     start_gate is not None
@@ -655,21 +633,13 @@ class Robot:
 
                 sign_text = "None"
                 finish_state = getattr(self, "race_finish", None)
-                finish_phase = bool(
-                    finish_state is not None
-                    and self._race_timer_started
-                    and finish_state.update(time.monotonic())
+                if finish_state is not None and self._race_timer_started:
+                    finish_state.update(time.monotonic())
+                # STOP is monitored throughout the race. The finish timer
+                # changes speed only; it does not disable STOP handling.
+                sign_text, debug_frame = self._read_stop_sign_if_active(
+                    frame, debug_frame
                 )
-                # Sign/AprilTag inference is deliberately phase-gated: after
-                # the start gate releases, do not read signs in the middle of
-                # the race. The sign detector runs again only in the timed
-                # finishing phase, where STOP is the only relevant class.
-                sign_text, debug_frame = self._read_finish_sign_if_active(
-                    frame, debug_frame, finish_phase
-                )
-                if getattr(self, "_race_terminal_finished", False):
-                    self._pace_control_loop()
-                    continue
                 if self.stop_hold.active:
                     self.handle_debug_stream(
                         result,
@@ -1071,7 +1041,7 @@ class Robot:
             use_apriltag = bool(config_race.WITH_APRILTAG)
             use_sign = bool(config_race.WITH_SIGN)
 
-        if phase_only in {"start", "finish"}:
+        if phase_only == "start":
             use_sign = True
             use_apriltag = False
 
@@ -1128,10 +1098,10 @@ class Robot:
             if should_submit:
                 self.read_sign_counter = 0
                 submit_options = {}
-                if phase_only in {"start", "finish"}:
-                    submit_options["confidence_threshold"] = float(getattr(
-                        config_race, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2
-                    ))
+                if phase_only in {"start", "monitor"}:
+                    submit_options["confidence_threshold"] = float(
+                        getattr(config_race, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2)
+                    )
                     submit_options["target_sign_types"] = (STOP_SIGN_CLASS_ID,)
                 self.sign_detector.submit(
                     sign_tag_frame.copy(),
@@ -1141,13 +1111,12 @@ class Robot:
 
             # Submission is throttled, but a completed result is consumed on
             # every loop iteration so READ_SIGN_THRESHOLD cannot delay STOP.
-            # During STOP hold, inference may take longer than the normal
-            # result-age limit. Consume its latest completed frame so fresh
-            # post-STOP clear observations can release the hold; StopSignHold
-            # rejects results captured before the hold began.
+            # STOP monitoring must consume completed results even when
+            # inference took longer than the normal age limit. StopSignHold
+            # rejects clear frames captured before the hold began.
             result_max_age = (
                 None
-                if force_check and hold_active
+                if force_check and phase_only == "monitor"
                 else getattr(config_race, "SIGN_RESULT_MAX_AGE", 0.75)
             )
             latest_sign = self.sign_detector.latest(max_age_s=result_max_age)
@@ -1178,29 +1147,23 @@ class Robot:
                     self.last_sign_observation_at = latest_sign[2]
 
                     sign_label = normalize_sign_name(sign_result.get("text", ""))
-                    if phase_only in {"start", "finish"}:
-                        observation_in_phase = (
-                            phase_only != "finish"
-                            or getattr(self.race_finish, "finishing_started_at", None) is None
-                            or latest_sign[2] >= self.race_finish.finishing_started_at
-                        )
+                    if phase_only in {"start", "monitor"}:
                         stop_seen = (
                             sign_label == "STOP"
                             and confidence_ok
-                            and observation_in_phase
                         )
                         if stop_seen:
                             tag_id = STOP
                             detector_kind = "sign"
                             self.last_tag = STOP
                         sign_label = ""
-                    if phase_only not in {"start", "finish"} and sign_label == "TURN LEFT":
+                    if phase_only not in {"start", "monitor"} and sign_label == "TURN LEFT":
                         tag_id = TURN_LEFT
-                    elif phase_only not in {"start", "finish"} and sign_label == "TURN RIGHT":
+                    elif phase_only not in {"start", "monitor"} and sign_label == "TURN RIGHT":
                         tag_id = TURN_RIGHT
-                    elif phase_only not in {"start", "finish"} and sign_label == "STRAIGHT":
+                    elif phase_only not in {"start", "monitor"} and sign_label == "STRAIGHT":
                         tag_id = STRAIGHT
-                    elif phase_only not in {"start", "finish"} and sign_label == "STOP":
+                    elif phase_only not in {"start", "monitor"} and sign_label == "STOP":
                         tag_id = STOP
                         stop_seen = True
                         detector_kind = "sign"
@@ -1208,9 +1171,7 @@ class Robot:
                     if tag_id is not None:
                         self.last_tag = tag_id
 
-        if phase_only == "finish" and stop_seen:
-            self._finish_race()
-        elif phase_only is None:
+        if phase_only in {None, "monitor"}:
             self._observe_stop_result(stop_seen, detector_kind=detector_kind)
         return tag_id, stop_seen, debug_frame, coordinate
 

@@ -102,31 +102,26 @@ class StopSignHoldStateTests(unittest.TestCase):
         self.assertFalse(state.release(now=12.99))
         self.assertTrue(state.active)
 
-    def test_configured_minimum_cannot_be_less_than_three_seconds(self):
+    def test_negative_minimum_duration_is_rejected(self):
         with self.assertRaises(ValueError):
-            StopSignHold(minimum_duration_s=2.99)
+            StopSignHold(minimum_duration_s=-0.01)
 
-    def test_stop_releases_only_after_duration_and_three_fresh_absences(self):
+    def test_default_stop_releases_after_first_fresh_absence(self):
         state = StopSignHold()
         self.start(state)
-        for timestamp in (10.1, 10.2):
-            self.absent(state, timestamp, now=10.4)
-        self.assertFalse(state.can_release(now=13.01))
-        self.assertTrue(state.active)
-
-        self.absent(state, 10.3, now=13.01)
-        self.assertTrue(state.can_release(now=13.0))
-        self.assertTrue(state.release(now=13.0))
+        self.absent(state, 10.1, now=10.1)
+        self.assertTrue(state.can_release(now=10.1))
+        self.assertTrue(state.release(now=10.1))
         self.assertFalse(state.active)
 
     def test_timer_alone_never_releases_stop(self):
-        state = StopSignHold()
+        state = StopSignHold(clear_confirmations=3)
         self.start(state)
         self.assertFalse(state.can_release(now=100.0))
         self.assertTrue(state.active)
 
     def test_stale_duplicate_missing_and_failed_results_do_not_confirm_absence(self):
-        state = StopSignHold()
+        state = StopSignHold(clear_confirmations=3)
         self.start(state, activation=10.0, observation=10.0)
         self.absent(state, 9.9, now=13.0)  # predates activation
         self.absent(state, 10.1, now=13.0)
@@ -159,14 +154,14 @@ class StopSignHoldStateTests(unittest.TestCase):
         self.assertEqual(state.clear_observations, 1)
         self.assertTrue(state.active)
 
-    def test_three_early_absences_do_not_release_before_minimum_duration(self):
+    def test_default_does_not_wait_after_a_fresh_absence(self):
         state = StopSignHold()
         self.start(state)
-        for timestamp in (10.1, 10.2, 10.3):
-            self.absent(state, timestamp, now=10.4)
-        self.assertEqual(state.clear_observations, 3)
-        self.assertFalse(state.can_release(now=12.99))
-        self.assertTrue(state.active)
+        self.absent(state, 10.1, now=10.1)
+        self.assertEqual(state.clear_observations, 1)
+        self.assertTrue(state.can_release(now=10.1))
+        self.assertTrue(state.release(now=10.1))
+        self.assertFalse(state.active)
 
 
 class StopHoldModeTests(unittest.TestCase):
