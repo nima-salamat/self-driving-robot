@@ -14,13 +14,16 @@ logger = logging.getLogger(__name__)
 
 class TrafficSignDetector:
     def __init__(self, model_path=None):
-        self.SIGNS = ["ERROR", "STOP", "TURN RIGHT", "TURN LEFT", "STRAIGHT", "PARK"]
+        self.SIGNS = [
+            "ERROR", "STOP", "TURN RIGHT", "TURN LEFT", "STRAIGHT", "PARK",
+            "NOWAY",
+        ]
         self.count = 0 
         self.confidence_threshold = 0.2
         
         # Default to the ONNX model
         if model_path is None:
-            self.model_file = os.path.join(BASE_DIR, 'assets', 'best416_.onnx')
+            self.model_file = os.path.join(BASE_DIR, 'assets', 'best_noway.onnx')
         else:
             self.model_file = model_path
             
@@ -116,9 +119,15 @@ class TrafficSignDetector:
             classes_scores = row[4:]
             class_id = np.argmax(classes_scores)
             conf = classes_scores[class_id]
+            sign_type = int(class_id) + 1
+
+            # NOWAY is recognized by the model but is intentionally not
+            # exposed to the runtime as a detected sign or tag.
+            if sign_type < len(self.SIGNS) and self.SIGNS[sign_type] == "NOWAY":
+                continue
 
             if (target_sign_types is not None and
-                    int(class_id) + 1 not in target_sign_types):
+                    sign_type not in target_sign_types):
                 continue
             
             if conf >= confidence_threshold:
@@ -154,7 +163,7 @@ class TrafficSignDetector:
                     best_conf = float(conf)
                     
                     # Align YOLO zero-indexed IDs to your 1-indexed class array
-                    best_sign_type = int(class_id) + 1
+                    best_sign_type = sign_type
 
         # 5. Format outputs exactly like the old codebase expects
         if best_sign_type != -1:
