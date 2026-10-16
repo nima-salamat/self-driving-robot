@@ -338,7 +338,7 @@ class Robot:
         return bool(success)
 
     def _release_stop_hold_if_ready(self):
-        """Release on the first fresh clear observation if the controller unlocks."""
+        """Release after STOP has remained absent for the configured interval."""
         if not self.stop_hold.can_release(time.monotonic()):
             return False
         if not self._set_mcu_stop_latched(False):

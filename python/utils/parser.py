@@ -62,7 +62,7 @@ def parse_args(argv=None):
     parser.add_argument("--race-stop-confidence-threshold", type=_confidence, default=None,
                         metavar="0..1", help="Minimum YOLO sign confidence for Race start/finish STOP (default: 0.2).")
     parser.add_argument("--race-finish-after-seconds", type=_finite_nonnegative, default=None,
-                        metavar="SECONDS", help="Enter Race finishing phase this many seconds after race start.")
+                        metavar="SECONDS", help="Enter Race finishing phase and enable STOP monitoring this many seconds after race start.")
     parser.add_argument("--race-finish-speed", type=int, default=None, metavar="SPEED",
                         help="Target speed in the Race finishing phase (valid controller range: -255..255).")
 

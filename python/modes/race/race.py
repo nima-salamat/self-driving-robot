@@ -370,7 +370,7 @@ class Robot:
         return bool(success)
 
     def _release_stop_hold_if_ready(self):
-        """Release on the first fresh clear observation if the controller unlocks."""
+        """Release after STOP has remained absent for the configured interval."""
         if not self.stop_hold.can_release(time.monotonic()):
             return False
         if not self._set_mcu_stop_latched(False):
@@ -491,7 +491,14 @@ class Robot:
         self._pace_control_loop()
 
     def _read_stop_sign_if_active(self, frame, debug_frame):
-        """Monitor STOP continuously while Race is driving."""
+        """Monitor STOP after the timed Race phase begins, when configured."""
+        finish_state = getattr(self, "race_finish", None)
+        if finish_state is not None and (
+            not getattr(self, "_race_timer_started", False)
+            or not finish_state.finishing
+        ):
+            return "None", debug_frame
+
         if not (config_race.WITH_SIGN or config_race.WITH_APRILTAG):
             return "None", debug_frame
 
@@ -635,8 +642,8 @@ class Robot:
                 finish_state = getattr(self, "race_finish", None)
                 if finish_state is not None and self._race_timer_started:
                     finish_state.update(time.monotonic())
-                # STOP is monitored throughout the race. The finish timer
-                # changes speed only; it does not disable STOP handling.
+                # When timed finishing is configured, sign/marker perception
+                # starts only after its timer elapses; STOP then remains active.
                 sign_text, debug_frame = self._read_stop_sign_if_active(
                     frame, debug_frame
                 )
