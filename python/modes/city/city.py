@@ -955,9 +955,16 @@ class Robot:
 
             # Submission is throttled, but a completed result is consumed on
             # every loop iteration so READ_SIGN_THRESHOLD cannot delay STOP.
-            latest_sign = self.sign_detector.latest(
-                max_age_s=getattr(config_city, "SIGN_RESULT_MAX_AGE", 0.75)
+            # During STOP hold, inference may take longer than the normal
+            # result-age limit. Consume its latest completed frame so fresh
+            # post-STOP clear observations can release the hold; StopSignHold
+            # rejects results captured before the hold began.
+            result_max_age = (
+                None
+                if force_check and hold_active
+                else getattr(config_city, "SIGN_RESULT_MAX_AGE", 0.75)
             )
+            latest_sign = self.sign_detector.latest(max_age_s=result_max_age)
             if (
                 latest_sign is not None
                 and latest_sign[0] > self.last_sign_result_id
