@@ -224,16 +224,16 @@ class ArduinoConnection:
 
     def _reconnect_worker(self):
         while not self._stop_event.is_set():
-            self._reconnect_requested.wait(timeout=self.reconnect_interval)
-            if self._stop_event.is_set():
-                break
-            if not self._reconnect_requested.is_set():
+            if self.connected:
+                self._reconnect_requested.wait(timeout=self.reconnect_interval)
+                self._reconnect_requested.clear()
                 continue
-            self._reconnect_requested.clear()
 
+            self._reconnect_requested.clear()
             with self._reconnect_lock:
-                if self.connected:
+                if self._stop_event.is_set() or self.connected:
                     continue
+
                 if self._open_serial():
                     if self._establish_safe_state():
                         self._consecutive_reconnect_failures = 0
@@ -243,12 +243,20 @@ class ArduinoConnection:
                             self.port,
                             self.baudrate,
                         )
-                    elif self._consecutive_reconnect_failures >= self.max_retries:
-                        # Back off after repeated failures without blocking the control thread.
-                        self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
-                elif self._consecutive_reconnect_failures >= self.max_retries:
-                    # Back off after repeated failures without blocking the control thread.
-                    self._stop_event.wait(min(self.reconnect_interval * 4.0, 5.0))
+                        continue
+
+                    # _open_serial counts open failures; count safe-state failures
+                    # here so both failure paths use the same retry policy.
+                    self._consecutive_reconnect_failures += 1
+
+            # Retry autonomously after every failed attempt. The stop event makes
+            # both the normal interval and bounded backoff promptly interruptible.
+            delay = self.reconnect_interval
+            if self._consecutive_reconnect_failures >= self.max_retries:
+                delay = min(self.reconnect_interval * 4.0, 5.0)
+            self._reconnect_requested.clear()
+            if self._stop_event.wait(delay):
+                break
 
     def _establish_safe_state(self):
         """Send a safe stop/center sequence before normal control resumes."""
