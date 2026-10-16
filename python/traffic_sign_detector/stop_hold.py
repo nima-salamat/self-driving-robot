@@ -5,9 +5,9 @@ import time
 
 
 class StopSignHold:
-    """Latch STOP until the next distinct, fresh observation clears it."""
+    """Latch STOP until it has been absent for the configured clear interval."""
 
-    def __init__(self, clear_confirmations=1, minimum_duration_s=0.0):
+    def __init__(self, clear_confirmations=1, minimum_duration_s=3.0):
         confirmations = int(clear_confirmations)
         if confirmations < 1:
             raise ValueError("clear_confirmations must be at least 1")
@@ -20,6 +20,7 @@ class StopSignHold:
         self.minimum_duration_s = duration
         self.active = False
         self.started_at = None
+        self.clear_started_at = None
         self.clear_observations = 0
         self._last_observation_time = None
 
@@ -34,9 +35,9 @@ class StopSignHold:
         """Record a new detector observation without releasing the hold.
 
         ``observation_time`` is the monotonic time at which the frame was
-        submitted to inference. ``started_at`` is instead set to ``now`` when
-        Python accepts the STOP result, so inference latency cannot shorten the
-        required hold duration.
+        submitted to inference. ``started_at`` is set to ``now`` when Python
+        accepts the STOP result. The clear interval starts when Python accepts
+        the first fresh result without STOP; a new STOP result resets it.
         """
         if now is None:
             now = time.monotonic()
@@ -54,6 +55,7 @@ class StopSignHold:
                 return False
             self.active = True
             self.started_at = now
+            self.clear_started_at = None
             self.clear_observations = 0
             self._last_observation_time = observation_time
             return True
@@ -72,19 +74,22 @@ class StopSignHold:
 
         self._last_observation_time = observation_time
         if stop_present:
+            self.clear_started_at = None
             self.clear_observations = 0
             return True
 
+        if self.clear_started_at is None:
+            self.clear_started_at = now
         self.clear_observations += 1
         return True
 
     def can_release(self, now=None):
-        """Return whether a fresh STOP-absent observation has been received."""
-        if not self.active or self.started_at is None:
+        """Return whether STOP has remained absent for the clear interval."""
+        if not self.active or self.clear_started_at is None:
             return False
         if now is None:
             now = time.monotonic()
-        elapsed = float(now) - self.started_at
+        elapsed = float(now) - self.clear_started_at
         return (
             elapsed >= self.minimum_duration_s
             and self.clear_observations >= self.clear_confirmations
@@ -96,6 +101,7 @@ class StopSignHold:
             return False
         self.active = False
         self.started_at = None
+        self.clear_started_at = None
         self.clear_observations = 0
         self._last_observation_time = None
         return True
