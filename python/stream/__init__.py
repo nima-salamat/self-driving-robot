@@ -88,7 +88,8 @@ ADVANCED_VARS = {
     "STRAIGHT": 4,
     "STOP": 5,
     "RECORD_VIDEO": False,
-    
+    "DETECT_OBJECT": False,
+
     "LANE_ROI_MODE": "trapezoid", 
     "CW_TRAPEZOID_MODE": True,
     "ST_TRAPEZOID_MODE": True,    
