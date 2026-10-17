@@ -6,43 +6,282 @@ HTML_TEMPLATE = """
 <title>Interactive ROI & Settings</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{
-  --bg:#071426; --card:#0b1220; --accent:#06b6d4; --muted:#94a3b8; --txt:#e6eef6;
+
+:root {
+  color-scheme: dark;
+  --bg: #0b1119;
+  --panel: #121b27;
+  --panel-raised: #182332;
+  --border: #2b3949;
+  --accent: #22d3ee;
+  --accent-soft: rgba(34, 211, 238, .12);
+  --muted: #9bacbd;
+  --txt: #e6edf5;
 }
-*{box-sizing:border-box}
-body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#071026 0%, #07142a 100%);color:var(--txt);padding:18px}
-.container{max-width:1300px;margin:0 auto;display:grid;grid-template-columns: 1fr 480px;gap:18px;align-items:start}
-.card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.03);padding:14px;border-radius:10px;box-shadow: 0 6px 24px rgba(2,6,23,0.6)}
-.header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
-.h1{font-size:18px;font-weight:600}
-.controls{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-select,input[type=number],input[type=color],input[type=checkbox],input[type=range]{background:#071428;color:var(--txt);border:1px solid rgba(255,255,255,0.04);padding:6px 8px;border-radius:6px}
-input[type=range]{accent-color: var(--accent);}
-button.btn{background:var(--accent);color:#012; border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600; transition: 0.2s;}
-button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--txt);padding:7px 10px;border-radius:8px;cursor:pointer}
-canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
-.label{width:160px;color:var(--muted);font-size:13px}
-.small{font-size:13px;color:var(--muted)}
-.right-panel{display:flex;flex-direction:column;gap:12px}
-.inputs{max-height:220px;overflow:auto;padding-right:6px}
-.input-wrap{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.counter{min-width:72px;text-align:center}
-.section-title{font-weight:700;margin-bottom:10px;font-size:15px; color:var(--accent);}
-.toggle-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-.notice{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;color:var(--muted);font-size:13px}
-.toast{position:fixed;right:20px;bottom:20px;background:#0b1220;border:1px solid rgba(255,255,255,0.06);padding:10px 14px;border-radius:8px;color:var(--txt);box-shadow:0 8px 30px rgba(2,6,23,0.6); z-index: 9999;}
-.form-row{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
-.small-muted{font-size:12px;color:var(--muted)}
-.status-line{margin-top:4px;font-size:13px;color:var(--accent)}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body {
+  padding: 0;
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--txt);
+  background: var(--bg);
+}
+.container {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  margin: 0;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 8px;
+  align-items: stretch;
+  overflow: hidden;
+}
+.container > .card {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .2);
+}
+.header {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+.h1 { font-size: 16px; font-weight: 700; white-space: nowrap; }
+.header > .small { min-width: 0; line-height: 1.35; }
+.controls {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 34px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+select, input[type=number], input[type=color], input[type=checkbox], input[type=range] {
+  background: #0b1420;
+  color: var(--txt);
+  border: 1px solid var(--border);
+  padding: 5px 7px;
+  border-radius: 5px;
+}
+input[type=checkbox] { accent-color: var(--accent); }
+input[type=range] { accent-color: var(--accent); }
+button.btn {
+  background: var(--accent);
+  color: #06202a;
+  border: 1px solid transparent;
+  padding: 7px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: background .15s ease;
+}
+button.btn:hover { background: #67e8f9; }
+button.ghost {
+  background: #101925;
+  border: 1px solid var(--border);
+  color: var(--txt);
+  padding: 6px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+button.ghost:hover { border-color: var(--accent); background: var(--accent-soft); }
+button:disabled, input:disabled, select:disabled { opacity: .45; cursor: not-allowed; }
+.canvas-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 80px;
+  overflow: hidden;
+  padding: 5px;
+  border: 1px solid #344456;
+  border-radius: 6px;
+  background-color: #080d14;
+  background-image:
+    linear-gradient(rgba(115, 145, 170, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(115, 145, 170, .08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+canvas {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: 3px;
+  display: block;
+  background: #000;
+}
+.label { width: 145px; color: var(--muted); font-size: 12px; }
+.small { font-size: 12px; color: var(--muted); }
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 1px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #33475b transparent;
+}
+.dock-panel {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.dock-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 9px 11px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.dock-summary::-webkit-details-marker { display: none; }
+.dock-summary:hover { background: rgba(255,255,255,.025); }
+.dock-panel[open] .dock-summary {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+.dock-chevron { color: var(--muted); transition: transform .15s ease; }
+.dock-panel[open] .dock-chevron { transform: rotate(180deg); }
+.dock-content { padding: 10px; min-width: 0; }
+.dock-content > .section-title { display: none; }
+.inputs { max-height: 220px; overflow: auto; padding-right: 5px; }
+.input-wrap { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.counter { min-width: 64px; text-align: center; }
+.section-title { font-weight: 700; margin-bottom: 10px; font-size: 14px; color: var(--accent); }
+.toggle-row { display: flex; gap: 7px; align-items: center; margin-bottom: 7px; flex-wrap: wrap; }
+.notice {
+  background: rgba(255,255,255,.025);
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.workspace-statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 25px;
+  padding: 3px 2px 1px;
+  color: #a6bacb;
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.workspace-statusbar .cad-help { overflow: hidden; text-overflow: ellipsis; }
+.workspace-statusbar .cad-area { margin-left: auto; color: var(--accent); }
+.status-line { margin-top: 4px; font-size: 12px; color: var(--accent); }
+.small-muted { font-size: 11px; color: var(--muted); }
+.form-row { display: flex; gap: 7px; align-items: center; margin: 5px 0; flex-wrap: wrap; }
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  max-width: min(420px, calc(100vw - 32px));
+  background: #101925;
+  border: 1px solid var(--border);
+  padding: 10px 13px;
+  border-radius: 6px;
+  color: var(--txt);
+  box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  z-index: 9999;
+}
+.encoder-map-link {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
+  text-decoration: none;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.encoder-map-link:hover { background: var(--accent-soft); }
+.container.dock-hidden { grid-template-columns: minmax(0, 1fr); }
+.container.dock-hidden .right-panel { display: none; }
+@media (max-width: 1050px) {
+  .container { grid-template-columns: minmax(0, 1fr) 285px; }
+  .h1 { font-size: 14px; }
+  .header > .small { display: none; }
+  .label { width: 125px; }
+}
+@media (max-width: 720px) {
+  .container { grid-template-columns: minmax(0, 1fr); padding: 5px; }
+  .container > .card { padding: 7px; }
+  .right-panel {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    top: 50px;
+    right: 5px;
+    bottom: 5px;
+    width: min(330px, calc(100vw - 10px));
+    height: auto;
+    padding: 5px;
+    background: #0b1119;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    box-shadow: 0 14px 45px rgba(0,0,0,.6);
+  }
+  .container.show-dock .right-panel { display: flex; }
+  .header { gap: 6px; }
+  .h1 { font-size: 13px; }
+  .controls { gap: 4px; }
+  .controls .small { font-size: 11px; }
+  #workspace_zoom { width: 58px !important; }
+  .workspace-statusbar { gap: 7px; font-size: 10px; }
+  .workspace-statusbar .cad-help { display: none; }
+  .encoder-map-link { padding: 5px; font-size: 10px; }
+}
+
 </style>
 </head>
 <body>
-{% if encoder_map_enabled %}<div style="margin:0 auto 12px;max-width:1300px"><a href="/encoder-map" style="color:#67e8f9">Estimated Odometry map</a></div>{% endif %}
 <div class="container">
   <div class="card">
     <div class="header">
       <div class="h1">Interactive ROI Editor — {{ mode|capitalize }} Mode</div>
       <div class="small">Drag to move/resize bounding boxes or BEV corners. Use sliders for Trapezoid shapes. <span id="mode_features" style="color:var(--accent);"></span></div>
+      {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
+      <button id="toggle_dock_btn" type="button" class="ghost">Hide Panels</button>
     </div>
     <div class="controls">
       <label class="small" for="variable_select">Select Area</label>
@@ -63,7 +302,17 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <label class="small" style="color:var(--accent); font-weight:bold; margin-left: 10px;">Show Overlays <input id="show_rects" type="checkbox" checked></label>
       <div id="frame_mode" class="small status-line" style="margin-left: 10px;">Mode: Live</div>
     </div>
-    <canvas id="video_canvas" width="900" height="600"></canvas>
+    <div id="canvas_stage" class="canvas-stage">
+      <canvas id="video_canvas" width="900" height="600"></canvas>
+    </div>
+    <div class="workspace-statusbar" aria-live="off">
+      <span id="cad_cursor_x">X: — px</span>
+      <span id="cad_cursor_y">Y: — px</span>
+      <span id="cad_cursor_u">U: — %</span>
+      <span id="cad_cursor_v">V: — %</span>
+      <span class="cad-help">Drag ROI edges/handles or BEV corner points · coordinates are shown relative to the camera image</span>
+      <span id="cad_selected_area" class="cad-area">Area: NONE</span>
+    </div>
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button id="apply_all" class="btn">Apply Base Settings</button>
       <button id="refresh_vals" class="ghost">Refresh Feed</button>
@@ -74,22 +323,22 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
   </div>
 
   <div class="right-panel">
-    <div class="card">
+    <details class="dock-panel"><summary class="dock-summary"><span>Arduino Telemetry</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
       <div class="section-title">Arduino Telemetry</div>
       <div id="arduino_status" class="small status-line">Waiting for serial state...</div>
       <pre id="arduino_output" style="max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;background:#050b15;border-radius:8px;color:var(--txt);font-size:12px;white-space:pre-wrap"></pre>
-    </div>
+    </div></details>
 
   
-      <div class="card">
+      <details class="dock-panel" open><summary class="dock-summary"><span>Runtime Health</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
         <div class="section-title">Runtime Health</div>
         <div id="health_state" class="status-line">State: UNKNOWN</div>
         <div id="health_faults" class="small">Faults: none</div>
         <div id="health_metrics" class="small" style="margin-top:6px;"></div>
-      </div>
+      </div></details>
 
-    <div class="card">
+    <details class="dock-panel"><summary class="dock-summary"><span>Bird's Eye View (BEV) Config</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Bird's Eye View (BEV) Config</div>
       <div class="form-row" style="margin-bottom: 10px;">
         <label class="label" style="color:var(--txt); font-weight:bold;">Enable BEV System</label>
@@ -109,9 +358,9 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <div style="margin-top:10px">
          <button id="confirm_bev_inputs" class="btn">Apply BEV Inputs</button>
       </div>
-    </div>
+    </div></details>
 
-    <div class="card">
+    <details class="dock-panel"><summary class="dock-summary"><span>ROI Shape & Factors</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">ROI Shape & Factors</div>
       <div class="form-row"><label class="label">Lane Mode</label>
         <select id="lane_roi_mode" style="width: 140px;">
@@ -130,9 +379,9 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <div class="form-row"><label class="label">Object Trapezoid</label><input type="checkbox" id="obj_trap_mode"></div>
       <div class="form-row"><label class="label">OBJ Top Factor</label><input id="obj_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="obj_factor_val" class="small" style="width:30px;"></span></div>
       <div style="margin-top:10px"><button id="confirm_shape" class="btn">Save Shapes to System</button></div>
-    </div>
+    </div></details>
 
-    <div class="card">
+    <details class="dock-panel"><summary class="dock-summary"><span>Bounding Box Adjustments</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Bounding Box Adjustments</div>
       <div class="inputs" id="inputs_container">
         {% for var in variables %}
@@ -144,18 +393,18 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
         </div>
         {% endfor %}
       </div>
-    </div>
+    </div></details>
 
-    <div class="card"> <div class="section-title">Display & Colors</div>
+    <details class="dock-panel"><summary class="dock-summary"><span>Display & Colors</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content"> <div class="section-title">Display & Colors</div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_rl" checked> Right Lane</label><input type="color" id="color_rl" value="{{ ui.colors.RL }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_ll" checked> Left Lane</label><input type="color" id="color_ll" value="{{ ui.colors.LL }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_cw" checked> Crosswalk</label><input type="color" id="color_cw" value="{{ ui.colors.CW }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_st" checked> Sign/Tag</label><input type="color" id="color_st" value="{{ ui.colors.ST }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_obj" checked> Object</label><input type="color" id="color_obj" value="{{ ui.colors.OBJ }}"></div>
       <div class="toggle-row"><label><input type="checkbox" id="vis_bev" checked> BEV Area</label><input type="color" id="color_bev" value="{{ ui.colors.BEV }}"></div>
-    </div>
+    </div></details>
 
-    <div class="card">
+    <details class="dock-panel"><summary class="dock-summary"><span>Vision Advanced Limits</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Vision Advanced Limits</div>
       <div class="inputs" style="max-height:200px; overflow-y:auto; font-size:12px;">
         <div class="form-row"><label class="label">LANE_THRESHOLD</label><input id="lane_threshold" type="number" min="0" max="255" step="1" class="counter"></div>
@@ -175,9 +424,9 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
         <div class="form-row"><label class="label">Use AprilTag</label><input type="checkbox" id="with_apriltag"></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px"><button id="confirm_advanced" class="btn">Confirm Advanced Limits</button></div>
-    </div>
+    </div></details>
 
-    <div class="card">
+    <details class="dock-panel"><summary class="dock-summary"><span>Stream Controls</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Stream Controls</div>
       <div class="form-row">
         <button id="take_picture_btn" class="btn">Take Picture</button>
@@ -192,7 +441,7 @@ canvas{width:100%;height:auto;border-radius:8px;display:block;background:#000}
       <div class="form-row">
         <button id="stop_all_btn" class="btn" style="background:#ef4444; color:white; width:100%;">Stop All Sync & Requests</button>
       </div>
-    </div>
+    </div></details>
 
   </div>
 </div>
@@ -1246,7 +1495,7 @@ function loadModeFeatures(){
         controls.forEach(item=>disable(item[0], item[1], item[2]));
         if(!STREAM_CONTROL_ALLOWED){
             document.querySelectorAll('button,input,select').forEach(el=>{
-                if(el.id !== 'download_json') el.disabled = true;
+                if(el.id !== 'download_json' && el.id !== 'toggle_dock_btn') el.disabled = true;
             });
         }
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
@@ -1254,7 +1503,64 @@ function loadModeFeatures(){
     }).catch(()=>{});
 }
 
+
+function setupCadWorkspace() {
+    const workspace = document.querySelector('.container');
+    const dockToggle = document.getElementById('toggle_dock_btn');
+    const isNarrow = () => window.matchMedia('(max-width: 720px)').matches;
+    const isDockVisible = () => isNarrow()
+        ? workspace.classList.contains('show-dock')
+        : !workspace.classList.contains('dock-hidden');
+
+    function setDockVisible(visible) {
+        if(isNarrow()) {
+            workspace.classList.toggle('show-dock', visible);
+            workspace.classList.remove('dock-hidden');
+        } else {
+            workspace.classList.toggle('dock-hidden', !visible);
+            workspace.classList.remove('show-dock');
+        }
+        dockToggle.textContent = visible ? 'Hide Panels' : 'Show Panels';
+        dockToggle.setAttribute('aria-expanded', String(visible));
+    }
+
+    dockToggle.addEventListener('click', () => setDockVisible(!isDockVisible()));
+    window.addEventListener('resize', () => setDockVisible(isDockVisible()));
+    setDockVisible(!isNarrow());
+
+    const readout = {
+        x: document.getElementById('cad_cursor_x'),
+        y: document.getElementById('cad_cursor_y'),
+        u: document.getElementById('cad_cursor_u'),
+        v: document.getElementById('cad_cursor_v'),
+        area: document.getElementById('cad_selected_area')
+    };
+    function updateCadReadout(event) {
+        const rect = canvas.getBoundingClientRect();
+        if(rect.width <= 0 || rect.height <= 0) return;
+        const u = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        const v = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+        readout.x.textContent = 'X: ' + Math.round(u * canvas.width) + ' px';
+        readout.y.textContent = 'Y: ' + Math.round(v * canvas.height) + ' px';
+        readout.u.textContent = 'U: ' + (u * 100).toFixed(1) + ' %';
+        readout.v.textContent = 'V: ' + (v * 100).toFixed(1) + ' %';
+    }
+    canvas.addEventListener('mousemove', updateCadReadout, {passive: true});
+    canvas.addEventListener('mouseleave', () => {
+        readout.x.textContent = 'X: — px';
+        readout.y.textContent = 'Y: — px';
+        readout.u.textContent = 'U: — %';
+        readout.v.textContent = 'V: — %';
+    }, {passive: true});
+    const selectArea = () => {
+        readout.area.textContent = 'Area: ' + (select.value || 'NONE');
+    };
+    select.addEventListener('change', selectArea);
+    selectArea();
+}
+
 function initApp(){
+    setupCadWorkspace();
     updateInputsFromValues();
     loadModeFeatures(); 
     document.getElementById('vis_rl').checked = ui.visible.RL;
