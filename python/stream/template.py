@@ -121,7 +121,7 @@ button:disabled, input:disabled, select:disabled { opacity: .45; cursor: not-all
   background-size: 24px 24px;
 }
 canvas {
-  width: auto;
+  width: 100%;
   height: auto;
   max-width: 100%;
   max-height: 100%;
@@ -1538,8 +1538,11 @@ function setupCadWorkspace() {
     function updateCadReadout(event) {
         const rect = canvas.getBoundingClientRect();
         if(rect.width <= 0 || rect.height <= 0) return;
-        const u = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-        const v = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+        const pointX = event.clientX - rect.left;
+        const pointY = event.clientY - rect.top;
+        const imageBounds = getImgBounds();
+        const u = (pointX - imageBounds.ix) / imageBounds.iw;
+        const v = (pointY - imageBounds.iy) / imageBounds.ih;
         readout.x.textContent = 'X: ' + Math.round(u * canvas.width) + ' px';
         readout.y.textContent = 'Y: ' + Math.round(v * canvas.height) + ' px';
         readout.u.textContent = 'U: ' + (u * 100).toFixed(1) + ' %';
