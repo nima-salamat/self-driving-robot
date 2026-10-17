@@ -364,6 +364,41 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(queried.status_code, 200)
             self.assertIn("config", queried.get_json())
 
+    def test_live_feature_controls_are_gated_and_persisted(self):
+        import tempfile
+
+        config = self.make_config()
+        client = WebStreamer(config).app.test_client()
+
+        before = client.get("/api/features")
+        self.assertEqual(before.status_code, 200)
+        self.assertFalse(before.get_json()["controls_enabled"])
+
+        config.STREAM_ALLOW_CONTROL = True
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            enabled = client.post(
+                "/api/features",
+                json={"feature": "DETECT_OBJECT", "value": True},
+            )
+            self.assertEqual(enabled.status_code, 200, enabled.get_data(as_text=True))
+            self.assertTrue(config.DETECT_OBJECT)
+            exported = client.get("/api/config/full").get_json()
+            self.assertTrue(exported["advanced"]["DETECT_OBJECT"])
+
+            marker = client.post(
+                "/api/features",
+                json={"feature": "marker_mode", "value": "apriltag"},
+            )
+            self.assertEqual(marker.status_code, 200, marker.get_data(as_text=True))
+            self.assertTrue(config.WITH_APRILTAG)
+            self.assertFalse(config.WITH_SIGN)
+
+            startup_only = client.post(
+                "/api/features",
+                json={"feature": "TRAFFIC_LIGHTS_ENABLED", "value": True},
+            )
+            self.assertEqual(startup_only.status_code, 400)
+
     def test_video_frame_endpoint_does_not_cache_live_frames(self):
         config = self.make_config()
         config.debug_frames_list = []
