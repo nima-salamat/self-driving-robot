@@ -4,6 +4,8 @@ import json
 import os
 import socket
 import ipaddress
+import math
+import re
 from urllib.parse import urlsplit
 import threading
 import time
@@ -15,6 +17,54 @@ from .capabilities import mode_capabilities, marker_mode, set_marker_mode
 from base_config import BASE_DIR
 
 logger = logging.getLogger(__name__)
+
+CONFIG_HISTORY_LIMIT = 50
+STREAM_LOG_LIMIT = 500
+_STREAM_LOG_LOCK = threading.RLock()
+_STREAM_LOGS = deque(maxlen=STREAM_LOG_LIMIT)
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)(token|password|passwd|secret|api[_-]?key|authorization)(\s*[:=]\s*)([^\s,;]+)"),
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/-]+=*"),
+)
+
+
+def _redact_log_message(message):
+    value = str(message)[:2000]
+    for pattern in _SECRET_PATTERNS:
+        if "bearer" in pattern.pattern.lower():
+            value = pattern.sub("Bearer [REDACTED]", value)
+        else:
+            value = pattern.sub(lambda match: match.group(1) + match.group(2) + "[REDACTED]", value)
+    return value
+
+
+class _StreamLogBuffer(logging.Handler):
+    def emit(self, record):
+        try:
+            name = str(record.name or "")
+            allowed = (name == "stream" or name.startswith((
+                "stream.", "modes.", "vision.", "controller.", "arduino.",
+                "traffic_sign_detector.", "manager.", "utils.", "main"
+            )))
+            if not allowed:
+                return
+            entry = {
+                "timestamp": time.time(),
+                "level": record.levelname,
+                "logger": name[:120],
+                "message": _redact_log_message(self.format(record)),
+            }
+            with _STREAM_LOG_LOCK:
+                _STREAM_LOGS.append(entry)
+        except Exception:
+            self.handleError(record)
+
+
+if not any(isinstance(handler, _StreamLogBuffer) for handler in logging.getLogger().handlers):
+    _log_buffer_handler = _StreamLogBuffer()
+    _log_buffer_handler.setLevel(logging.NOTSET)
+    _log_buffer_handler.setFormatter(logging.Formatter("%(message)s"))
+    logging.getLogger().addHandler(_log_buffer_handler)
 
 VARIABLES = [
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
@@ -98,8 +148,9 @@ class WebStreamer:
     def load_ui_settings(self):
         fname = self.ui_filename()
         default_ui = {
-            "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef", "ST":"#bf7bff", "OBJ":"#ff5757"}, 
-            "visible": {"RL":True, "LL":True, "CW":True, "BEV":True, "ST":True, "OBJ":True} 
+            "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef", "ST":"#bf7bff", "OBJ":"#ff5757"},
+            "visible": {"RL":True, "LL":True, "CW":True, "BEV":True, "ST":True, "OBJ":True},
+            "opacity": {"RL":1.0, "LL":1.0, "CW":1.0, "BEV":0.8, "ST":1.0, "OBJ":1.0}
         }
         if os.path.exists(fname):
             try:
@@ -107,12 +158,14 @@ class WebStreamer:
                     data = json.load(f)
                     ui = {
                         "colors": data.get("colors", default_ui["colors"]),
-                        "visible": data.get("visible", default_ui["visible"])
+                        "visible": data.get("visible", default_ui["visible"]),
+                        "opacity": data.get("opacity", default_ui["opacity"])
                     }
                     for key in default_ui["colors"]:
                         if key not in ui["colors"]: ui["colors"][key] = default_ui["colors"][key]
                     for key in default_ui["visible"]:
                         if key not in ui["visible"]: ui["visible"][key] = default_ui["visible"][key]
+                        if key not in ui["opacity"]: ui["opacity"][key] = default_ui["opacity"][key]
                     return ui
             except Exception:
                 logger.exception("Failed load UI settings")
@@ -121,8 +174,9 @@ class WebStreamer:
     def save_ui_settings(self):
         fname = self.ui_filename()
         try:
-            with open(fname, "w") as f:
-                json.dump(self.ui_settings, f, indent=2)
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+            with open(fname, "w", encoding="utf-8") as f:
+                json.dump(self.ui_settings, f, indent=2, allow_nan=False)
         except Exception:
             logger.exception("Failed writing UI settings")
 
@@ -134,9 +188,12 @@ class WebStreamer:
         filename = self.config_filename()
         data = {var: self.get_base_var(var) for var in VARIABLES}
         data.update(self.get_all_advanced())
+        target_rate = getattr(self.config, "processing_rate_controller", None)
+        if target_rate is not None:
+            data["TARGET_PROCESSING_FPS"] = float(target_rate.target_fps)
         try:
             with open(filename, "w") as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, indent=2, allow_nan=False)
         except Exception:
             logger.exception("Failed writing config JSON")
 
@@ -154,6 +211,16 @@ class WebStreamer:
         self.app.add_url_rule('/api/mode', 'mode', self.mode)
         self.app.add_url_rule('/api/arduino-output', 'arduino_output', self.arduino_output)
         self.app.add_url_rule('/api/health', 'health', self.health)
+        self.app.add_url_rule('/api/config/full', 'full_config', self.full_config, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/config/history', 'config_history', self.config_history, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/config/presets', 'config_presets', self.config_presets, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/workspace', 'workspace_api', self.workspace_api, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/logs', 'server_logs', self.server_logs)
+        self.app.add_url_rule('/api/traffic-lights', 'traffic_lights_api', self.traffic_lights_api)
+        self.app.add_url_rule('/api/race', 'race_status_api', self.race_status_api)
+        self.app.add_url_rule('/api/camera/settings', 'camera_settings_api', self.camera_settings_api, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/processing-rate', 'processing_rate_api', self.processing_rate_api, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/safety', 'safety_api', self.safety_api, methods=['GET', 'POST'])
         self.app.add_url_rule('/encoder-map', 'encoder_map_page', self.encoder_map_page)
         self.app.add_url_rule('/api/encoder-map', 'encoder_map_api', self.encoder_map_api)
         self.app.add_url_rule('/api/encoder-map/reset-origin', 'encoder_map_reset_origin', self.encoder_map_reset_origin, methods=['POST'])
@@ -241,6 +308,7 @@ class WebStreamer:
                     success=False,
                     message="request body must be an object",
                 ), 400
+            before = self._full_config_snapshot()
             updated = {}
             for var in VARIABLES:
                 if var not in data:
@@ -261,6 +329,8 @@ class WebStreamer:
                 updated[var] = val
             if updated:
                 self.save_conf_to_json()
+                self._record_config_history("before ROI update", before)
+                self._record_config_history("ROI settings updated")
             return jsonify(
                 success=True,
                 values={var: self.get_base_var(var) for var in VARIABLES},
@@ -287,6 +357,7 @@ class WebStreamer:
                 success=False,
                 message="request body must be a JSON object",
             ), 400
+        before = self._full_config_snapshot()
         capabilities = mode_capabilities(self.config)
         unsupported = []
         if "USE_BEV" in data and not capabilities.get("supports_bev", False):
@@ -372,6 +443,8 @@ class WebStreamer:
             return jsonify(success=False), 400
             
         self.save_conf_to_json()
+        self._record_config_history("before advanced settings update", before)
+        self._record_config_history("advanced settings updated")
         return jsonify(success=True, advanced=self.get_all_advanced())
 
     def get_ui(self): 
@@ -380,13 +453,657 @@ class WebStreamer:
     def set_ui(self):
         if not self._control_allowed():
             return self._control_denied()
-        data = request.get_json() or {}
-        if "colors" in data: 
-            self.ui_settings["colors"].update({k:v for k,v in data["colors"].items() if k in self.ui_settings["colors"]})
-        if "visible" in data: 
-            self.ui_settings["visible"].update({k:bool(v) for k,v in data["visible"].items() if k in self.ui_settings["visible"]})
-        self.save_ui_settings()
-        return jsonify(success=True, ui=self.ui_settings)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify(success=False, message="request body must be a JSON object"), 400
+        before = self._full_config_snapshot()
+        try:
+            for key, value in data.get("colors", {}).items():
+                if key not in self.ui_settings["colors"] or not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                    raise ValueError("colors must be six-digit hex colors for known layers")
+            for key, value in data.get("visible", {}).items():
+                if key not in self.ui_settings["visible"] or not isinstance(value, bool):
+                    raise ValueError("visible must contain boolean values for known layers")
+            for key, value in data.get("opacity", {}).items():
+                if key not in self.ui_settings["visible"] or isinstance(value, bool):
+                    raise ValueError("opacity must contain numeric values for known layers")
+                number = float(value)
+                if not math.isfinite(number) or not 0 <= number <= 1:
+                    raise ValueError("opacity must be between 0 and 1")
+            self.ui_settings["colors"].update({k:v.lower() for k,v in data.get("colors", {}).items()})
+            self.ui_settings["visible"].update(data.get("visible", {}))
+            self.ui_settings.setdefault("opacity", {}).update({k:float(v) for k,v in data.get("opacity", {}).items()})
+            self.save_ui_settings()
+            self._record_config_history("before layer update", before)
+            self._record_config_history("layer visibility/color/opacity update")
+            return jsonify(success=True, ui=self.ui_settings)
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+
+    def _mode_slug(self):
+        raw = str(getattr(self.config, "MODE", "mode")).lower()
+        slug = "".join(ch for ch in raw if ch.isalnum() or ch in "-_")
+        return slug[:32] or "mode"
+
+    def _state_filename(self, suffix):
+        return os.path.join(str(BASE_DIR), f"{self._mode_slug()}_{suffix}.json")
+
+    @staticmethod
+    def _write_json_atomic(filename, data):
+        directory = os.path.dirname(filename) or "."
+        os.makedirs(directory, exist_ok=True)
+        temporary = filename + ".tmp"
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False, allow_nan=False)
+        os.replace(temporary, filename)
+
+    @staticmethod
+    def _read_json_file(filename, default):
+        try:
+            with open(filename, "r", encoding="utf-8") as handle:
+                value = json.load(handle)
+            return value if isinstance(value, dict) else default
+        except FileNotFoundError:
+            return default
+        except (OSError, ValueError, TypeError):
+            logger.exception("Unable to read dashboard state file")
+            return default
+
+    def _camera_settings_snapshot(self, camera):
+        if camera is None:
+            return {"available": False, "reason": "camera is not initialized"}
+        if not bool(getattr(camera, "pi_mode", False)):
+            return {"available": False, "supported": False, "reason": "runtime tuning currently supports Picamera2 only",
+                    "requested_fps": getattr(camera, "requested_frame_rate", None),
+                    "measured_fps": getattr(camera, "measured_frame_rate", None)}
+        picam = getattr(camera, "picam", None)
+        controls = getattr(picam, "camera_controls", {}) if picam is not None else {}
+        current = getattr(camera, "_dashboard_image_controls", {"ExposureTime": 10000, "AnalogueGain": 6.0, "AeEnable": False, "AwbEnable": False})
+        return {"available": picam is not None, "supported": picam is not None, "mode": "picam",
+                "requested_fps": getattr(camera, "requested_frame_rate", None),
+                "measured_fps": getattr(camera, "measured_frame_rate", None),
+                "hardware_limits": camera.get_frame_rate_limits() if hasattr(camera, "get_frame_rate_limits") else None,
+                "control_names": sorted(str(key) for key in controls.keys()),
+                "controls": current}
+
+    def _full_config_snapshot(self):
+        rate = getattr(self.config, "processing_rate_controller", None)
+        camera = getattr(self.config, "camera", None)
+        return {
+            "schema_version": 1,
+            "mode": self._mode_slug(),
+            "values": {var: self.get_base_var(var) for var in VARIABLES},
+            "advanced": self.get_all_advanced(),
+            "ui": json.loads(json.dumps(self.ui_settings)),
+            "runtime": {
+                "target_processing_fps": (
+                    float(getattr(rate, "target_fps"))
+                    if rate is not None and getattr(rate, "target_fps", None) is not None
+                    else getattr(self.config, "TARGET_PROCESSING_FPS", None)
+                ),
+                "camera": self._camera_settings_snapshot(camera),
+            },
+        }
+
+    def _history_file(self):
+        return self._state_filename("config_history")
+
+    def _record_config_history(self, label, snapshot=None):
+        try:
+            data = self._read_json_file(self._history_file(), {"items": []})
+            items = data.get("items", [])
+            if not isinstance(items, list):
+                items = []
+            state = snapshot or self._full_config_snapshot()
+            signature = json.dumps(state, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if items:
+                previous = items[-1]
+                previous_state = previous.get("snapshot", {}) if isinstance(previous, dict) else {}
+                if json.dumps(previous_state, sort_keys=True, separators=(",", ":"), allow_nan=False) == signature:
+                    return
+            items.append({"id": int(time.time() * 1000), "timestamp": time.time(),
+                          "label": str(label)[:100], "snapshot": state})
+            self._write_json_atomic(self._history_file(), {"version": 1, "items": items[-CONFIG_HISTORY_LIMIT:]})
+        except Exception:
+            logger.exception("Failed to record dashboard configuration history")
+
+    def _normalize_full_config(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("configuration must be a JSON object")
+        if payload.get("schema_version", 1) not in (1,):
+            raise ValueError("unsupported configuration schema version")
+        if str(payload.get("mode", "")).lower() != self._mode_slug():
+            raise ValueError("configuration mode does not match the active robot mode")
+        raw_values = payload.get("values", {})
+        raw_advanced = payload.get("advanced", {})
+        raw_ui = payload.get("ui", {})
+        if not isinstance(raw_values, dict) or not isinstance(raw_advanced, dict) or not isinstance(raw_ui, dict):
+            raise ValueError("values, advanced, and ui must be objects")
+        unknown_values = sorted(set(raw_values) - set(VARIABLES))
+        unknown_advanced = sorted(set(raw_advanced) - set(ADVANCED_VARS))
+        if unknown_values or unknown_advanced:
+            raise ValueError("unknown configuration keys: " + ", ".join(unknown_values + unknown_advanced))
+        values = {}
+        for key, value in raw_values.items():
+            if isinstance(value, bool):
+                raise ValueError(f"{key} must be numeric")
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be numeric") from None
+            if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+                raise ValueError(f"{key} must be finite and between 0 and 1")
+            values[key] = number
+
+        capabilities = mode_capabilities(self.config)
+        if "USE_BEV" in raw_advanced and not capabilities.get("supports_bev", False):
+            raise ValueError("USE_BEV is unsupported by the active perception pipeline")
+        crosswalk_keys = {"CROSSWALK_THRESHOLD", "CROSSWALK_SLEEP", "CROSSWALK_THRESH_SPEND", "CW_TRAPEZOID_MODE", "CW_TOP_WIDTH_FACTOR"}
+        lane_shape_keys = {"LANE_ROI_MODE", "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR"}
+        if any(key in raw_advanced for key in crosswalk_keys) and not capabilities.get("supports_crosswalk", False):
+            raise ValueError("crosswalk settings are unsupported by the active mode")
+        if any(key in raw_advanced for key in lane_shape_keys) and not capabilities.get("supports_lane_roi", False):
+            raise ValueError("lane ROI settings are unsupported by the active lane detector")
+
+        advanced = {}
+        for key, value in raw_advanced.items():
+            default = ADVANCED_VARS[key]
+            if type(default) is bool:
+                if not isinstance(value, bool):
+                    raise ValueError(f"{key} must be boolean")
+                normalized = value
+            elif type(default) is int:
+                if isinstance(value, bool):
+                    raise ValueError(f"{key} must be an integer")
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    raise ValueError(f"{key} must be an integer") from None
+                if not math.isfinite(number) or not number.is_integer():
+                    raise ValueError(f"{key} must be a finite integer")
+                normalized = int(number)
+            elif type(default) is float:
+                if isinstance(value, bool):
+                    raise ValueError(f"{key} must be numeric")
+                try:
+                    normalized = float(value)
+                except (TypeError, ValueError):
+                    raise ValueError(f"{key} must be numeric") from None
+                if not math.isfinite(normalized):
+                    raise ValueError(f"{key} must be finite")
+            else:
+                normalized = str(value)
+            if key in {"LANE_THRESHOLD", "CROSSWALK_THRESHOLD"} and not 0 <= normalized <= 255:
+                raise ValueError(f"{key} must be between 0 and 255")
+            if key == "LANE_ROI_MODE" and normalized not in {"rectangle", "trapezoid"}:
+                raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
+            if key == "RUN_LVL" and normalized not in {"MOVE", "STOP"}:
+                raise ValueError("RUN_LVL must be MOVE or STOP")
+            if key.endswith("_WIDTH_FACTOR") and not 0.0 <= normalized <= 1.0:
+                raise ValueError(f"{key} must be between 0 and 1")
+            if key.startswith("BEV_SRC_") and not -5.0 <= normalized <= 5.0:
+                raise ValueError(f"{key} must be between -5 and 5")
+            advanced[key] = normalized
+        if advanced.get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False)) and advanced.get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False)):
+            raise ValueError("WITH_SIGN and WITH_APRILTAG cannot both be enabled")
+
+        ui = json.loads(json.dumps(self.ui_settings))
+        colors, visible, opacity = raw_ui.get("colors", {}), raw_ui.get("visible", {}), raw_ui.get("opacity", {})
+        if not all(isinstance(obj, dict) for obj in (colors, visible, opacity)):
+            raise ValueError("ui.colors, ui.visible, and ui.opacity must be objects")
+        ui.setdefault("opacity", {key: 1.0 for key in ui["visible"]})
+        for key, value in colors.items():
+            if key not in ui["colors"] or not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                raise ValueError(f"invalid UI color for {key}")
+            ui["colors"][key] = value.lower()
+        for key, value in visible.items():
+            if key not in ui["visible"] or not isinstance(value, bool):
+                raise ValueError(f"invalid UI visibility for {key}")
+            ui["visible"][key] = value
+        for key, value in opacity.items():
+            if key not in ui["visible"] or isinstance(value, bool):
+                raise ValueError(f"invalid layer opacity for {key}")
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid layer opacity for {key}") from None
+            if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+                raise ValueError(f"layer opacity for {key} must be between 0 and 1")
+            ui["opacity"][key] = number
+
+        runtime = payload.get("runtime", {})
+        if runtime is not None and not isinstance(runtime, dict):
+            raise ValueError("runtime must be an object")
+        normalized_runtime = {}
+        if isinstance(runtime, dict) and runtime.get("target_processing_fps") is not None:
+            if getattr(self.config, "processing_rate_controller", None) is None:
+                raise ValueError("live processing-rate control is unavailable in this runtime")
+            try:
+                fps = float(runtime["target_processing_fps"])
+            except (TypeError, ValueError):
+                raise ValueError("target_processing_fps must be numeric") from None
+            if not math.isfinite(fps) or not 1.0 <= fps <= 60.0:
+                raise ValueError("target_processing_fps must be between 1 and 60")
+            normalized_runtime["target_processing_fps"] = fps
+        if isinstance(runtime, dict):
+            raw_camera = runtime.get("camera", {})
+            raw_controls = raw_camera.get("controls", {}) if isinstance(raw_camera, dict) else {}
+            if isinstance(raw_controls, dict) and raw_controls and raw_camera.get("supported"):
+                camera = getattr(self.config, "camera", None)
+                if camera is None or not getattr(camera, "pi_mode", False) or getattr(camera, "picam", None) is None:
+                    raise ValueError("configuration includes Picamera2 controls but this runtime has no compatible camera")
+                supported = getattr(camera.picam, "camera_controls", {})
+                normalized_controls = {}
+                for key, value in raw_controls.items():
+                    if key not in {"ExposureTime", "AnalogueGain", "AeEnable", "AwbEnable"}:
+                        continue
+                    if key not in supported:
+                        raise ValueError(f"camera does not support imported control {key}")
+                    if key in {"AeEnable", "AwbEnable"}:
+                        if not isinstance(value, bool):
+                            raise ValueError(f"{key} must be boolean")
+                        normalized_controls[key] = value
+                    else:
+                        number = float(value)
+                        if not math.isfinite(number):
+                            raise ValueError(f"{key} must be finite")
+                        bounds = supported.get(key)
+                        if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 and not float(bounds[0]) <= number <= float(bounds[1]):
+                            raise ValueError(f"{key} is outside this camera's supported range")
+                        normalized_controls[key] = int(round(number)) if key == "ExposureTime" else number
+                if normalized_controls:
+                    normalized_runtime["camera_controls"] = normalized_controls
+        return {"schema_version": 1, "mode": self._mode_slug(), "values": values,
+                "advanced": advanced, "ui": ui, "runtime": normalized_runtime}
+
+    def _apply_full_config(self, payload, label="configuration restore"):
+        normalized = self._normalize_full_config(payload)
+        before = self._full_config_snapshot()
+        try:
+            for key, value in normalized["values"].items():
+                setattr(self.config, key, value)
+            for key, value in normalized["advanced"].items():
+                if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
+                    setattr(self.config, key, value)
+            if "WITH_SIGN" in normalized["advanced"] or "WITH_APRILTAG" in normalized["advanced"]:
+                sign = normalized["advanced"].get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False))
+                tag = normalized["advanced"].get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False))
+                set_marker_mode(self.config, "sign" if sign else "apriltag" if tag else "none")
+            self.ui_settings = normalized["ui"]
+            self.save_ui_settings()
+            if "target_processing_fps" in normalized["runtime"]:
+                fps = normalized["runtime"]["target_processing_fps"]
+                self.config.processing_rate_controller.set_target_fps(fps)
+                setattr(self.config, "TARGET_PROCESSING_FPS", fps)
+            if "camera_controls" in normalized["runtime"]:
+                camera = self.config.camera
+                camera.picam.set_controls(normalized["runtime"]["camera_controls"])
+                current = dict(getattr(camera, "_dashboard_image_controls", {}))
+                current.update(normalized["runtime"]["camera_controls"])
+                setattr(camera, "_dashboard_image_controls", current)
+            self.save_conf_to_json()
+            self._record_config_history("before " + label, before)
+            self._record_config_history(label, self._full_config_snapshot())
+            return self._full_config_snapshot()
+        except Exception:
+            for key, value in before.get("values", {}).items():
+                setattr(self.config, key, value)
+            for key, value in before.get("advanced", {}).items():
+                if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
+                    setattr(self.config, key, value)
+            try:
+                set_marker_mode(self.config, "sign" if before["advanced"].get("WITH_SIGN") else "apriltag" if before["advanced"].get("WITH_APRILTAG") else "none")
+            except Exception:
+                logger.exception("Could not roll back marker mode after failed import")
+            self.ui_settings = before["ui"]
+            self.save_ui_settings()
+            raise
+
+    def full_config(self):
+        if request.method == "GET":
+            snapshot = self._full_config_snapshot()
+            snapshot["exported_at"] = time.time()
+            snapshot["controls_enabled"] = self._control_allowed()
+            return jsonify(snapshot)
+        if not self._control_allowed():
+            return self._control_denied()
+        payload = request.get_json(silent=True)
+        try:
+            result = self._apply_full_config(payload, "imported configuration")
+            return jsonify(success=True, config=result)
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Failed to apply full dashboard configuration")
+            return jsonify(success=False, message="configuration apply failed"), 500
+
+    def config_history(self):
+        data = self._read_json_file(self._history_file(), {"items": []})
+        items = data.get("items", []) if isinstance(data.get("items", []), list) else []
+        items = items[-CONFIG_HISTORY_LIMIT:]
+        if request.method == "GET":
+            summary = []
+            for index, item in enumerate(items):
+                snap = item.get("snapshot", {}) if isinstance(item, dict) else {}
+                summary.append({"index": index, "id": item.get("id"), "timestamp": item.get("timestamp"),
+                                "label": item.get("label", "Configuration"), "mode": snap.get("mode"),
+                                "advanced_keys": len(snap.get("advanced", {})), "roi_keys": len(snap.get("values", {}))})
+            return jsonify(items=summary, limit=CONFIG_HISTORY_LIMIT)
+        if not self._control_allowed():
+            return self._control_denied()
+        body = request.get_json(silent=True) or {}
+        if body.get("action") != "restore":
+            return jsonify(success=False, message="action must be restore"), 400
+        try:
+            index = int(body.get("index"))
+        except (TypeError, ValueError):
+            return jsonify(success=False, message="index must be an integer"), 400
+        if index < 0 or index >= len(items):
+            return jsonify(success=False, message="history index not found"), 404
+        try:
+            result = self._apply_full_config(items[index].get("snapshot"), "restored history")
+            return jsonify(success=True, config=result)
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Failed to restore configuration history")
+            return jsonify(success=False, message="history restore failed"), 500
+
+    def config_presets(self):
+        filename = self._state_filename("config_presets")
+        data = self._read_json_file(filename, {"presets": {}})
+        presets = data.get("presets", {}) if isinstance(data.get("presets", {}), dict) else {}
+        if request.method == "GET":
+            return jsonify(presets=[{"name": name, "mode": value.get("mode"), "saved_at": value.get("saved_at")}
+                                    for name, value in sorted(presets.items())])
+        if not self._control_allowed():
+            return self._control_denied()
+        body = request.get_json(silent=True) or {}
+        action, name = str(body.get("action", "")), str(body.get("name", "")).strip()
+        if not name or len(name) > 48 or not re.fullmatch(r"[A-Za-z0-9 _.-]+", name):
+            return jsonify(success=False, message="preset name must be 1-48 safe characters"), 400
+        if action == "save":
+            presets[name] = {"mode": self._mode_slug(), "saved_at": time.time(), "config": self._full_config_snapshot()}
+        elif action == "delete":
+            if name not in presets:
+                return jsonify(success=False, message="preset not found"), 404
+            del presets[name]
+        elif action == "apply":
+            preset = presets.get(name)
+            if not preset:
+                return jsonify(success=False, message="preset not found"), 404
+            try:
+                result = self._apply_full_config(preset.get("config"), "applied preset " + name)
+            except (TypeError, ValueError) as exc:
+                return jsonify(success=False, message=str(exc)), 400
+            except Exception:
+                logger.exception("Failed to apply configuration preset")
+                return jsonify(success=False, message="preset apply failed"), 500
+            self._write_json_atomic(filename, {"version": 1, "presets": presets})
+            return jsonify(success=True, config=result)
+        else:
+            return jsonify(success=False, message="action must be save, delete, or apply"), 400
+        self._write_json_atomic(filename, {"version": 1, "presets": presets})
+        return jsonify(success=True, presets=[{"name": key, "mode": value.get("mode"), "saved_at": value.get("saved_at")} for key, value in sorted(presets.items())])
+
+    def _workspace_default(self):
+        return {"version": 1, "workspace": {}, "profiles": {}}
+
+    def _sanitize_workspace(self, workspace):
+        if not isinstance(workspace, dict):
+            raise ValueError("workspace must be a JSON object")
+        if len(json.dumps(workspace, ensure_ascii=False)) > 250000:
+            raise ValueError("workspace data exceeds 250 KB")
+        clean = {}
+        view = workspace.get("view", {})
+        if not isinstance(view, dict):
+            raise ValueError("view must be an object")
+        clean_view = {}
+        for key, minimum, maximum in (("zoom", 0.3, 4.0), ("panX", -100000.0, 100000.0), ("panY", -100000.0, 100000.0)):
+            if key in view:
+                value = view[key]
+                if isinstance(value, bool):
+                    raise ValueError(f"view.{key} must be numeric")
+                value = float(value)
+                if not math.isfinite(value) or not minimum <= value <= maximum:
+                    raise ValueError(f"view.{key} is out of range")
+                clean_view[key] = value
+        for key in ("grid", "snap", "crosshair", "showRuler", "overlays"):
+            if key in view:
+                if not isinstance(view[key], bool):
+                    raise ValueError(f"view.{key} must be boolean")
+                clean_view[key] = view[key]
+        if "tool" in view:
+            if view["tool"] not in {"select", "pan", "annotate", "ruler"}:
+                raise ValueError("view.tool is invalid")
+            clean_view["tool"] = view["tool"]
+        clean["view"] = clean_view
+        panels = workspace.get("panels", {})
+        if not isinstance(panels, dict):
+            raise ValueError("panels must be an object")
+        clean["panels"] = {str(key)[:80]: value for key, value in panels.items() if isinstance(value, bool)}
+        layers = workspace.get("layers", {})
+        if not isinstance(layers, dict):
+            raise ValueError("layers must be an object")
+        clean_layers = {}
+        for key, layer in layers.items():
+            if key not in {"RL", "LL", "CW", "ST", "OBJ", "BEV", "ANNOTATIONS", "GRID"} or not isinstance(layer, dict):
+                continue
+            entry = {}
+            if "visible" in layer:
+                if not isinstance(layer["visible"], bool):
+                    raise ValueError(f"layers.{key}.visible must be boolean")
+                entry["visible"] = layer["visible"]
+            if "opacity" in layer:
+                val = float(layer["opacity"])
+                if not math.isfinite(val) or not 0 <= val <= 1:
+                    raise ValueError(f"layers.{key}.opacity must be between 0 and 1")
+                entry["opacity"] = val
+            clean_layers[key] = entry
+        clean["layers"] = clean_layers
+        annotations = workspace.get("annotations", [])
+        if not isinstance(annotations, list) or len(annotations) > 250:
+            raise ValueError("annotations must be a list of at most 250 items")
+        clean_annotations = []
+        for item in annotations:
+            if not isinstance(item, dict) or item.get("kind") not in {"marker", "note", "ruler"}:
+                raise ValueError("annotation has an unsupported kind")
+            entry = {"kind": item["kind"]}
+            for key in ("u", "v", "u2", "v2"):
+                if key in item:
+                    val = float(item[key])
+                    if not math.isfinite(val) or not 0 <= val <= 1:
+                        raise ValueError("annotation coordinates must be normalized between 0 and 1")
+                    entry[key] = val
+            if "label" in item:
+                entry["label"] = str(item["label"])[:80]
+            if "color" in item and isinstance(item["color"], str) and re.fullmatch(r"#[0-9a-fA-F]{6}", item["color"]):
+                entry["color"] = item["color"].lower()
+            clean_annotations.append(entry)
+        clean["annotations"] = clean_annotations
+        return clean
+
+    def workspace_api(self):
+        filename = self._state_filename("workspace")
+        data = self._read_json_file(filename, self._workspace_default())
+        if not isinstance(data.get("profiles"), dict):
+            data["profiles"] = {}
+        if request.method == "GET":
+            return jsonify(version=1, workspace=data.get("workspace", {}), profiles=sorted(data["profiles"].keys()))
+        body = request.get_json(silent=True) or {}
+        action = str(body.get("action", "save_workspace"))
+        try:
+            if action == "save_workspace":
+                data["workspace"] = self._sanitize_workspace(body.get("workspace", {}))
+            elif action == "save_profile":
+                name = str(body.get("name", "")).strip()
+                if not name or len(name) > 48 or not re.fullmatch(r"[A-Za-z0-9 _.-]+", name):
+                    raise ValueError("profile name must be 1-48 safe characters")
+                data["profiles"][name] = self._sanitize_workspace(body.get("workspace", {}))
+            elif action == "delete_profile":
+                name = str(body.get("name", "")).strip()
+                if name not in data["profiles"]:
+                    return jsonify(success=False, message="profile not found"), 404
+                del data["profiles"][name]
+            elif action == "load_profile":
+                name = str(body.get("name", "")).strip()
+                if name not in data["profiles"]:
+                    return jsonify(success=False, message="profile not found"), 404
+                return jsonify(success=True, workspace=data["profiles"][name], name=name)
+            else:
+                return jsonify(success=False, message="unsupported workspace action"), 400
+            self._write_json_atomic(filename, data)
+            return jsonify(success=True, workspace=data.get("workspace", {}), profiles=sorted(data["profiles"].keys()))
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Failed to persist dashboard workspace")
+            return jsonify(success=False, message="workspace save failed"), 500
+
+    def server_logs(self):
+        try:
+            limit = max(1, min(200, int(request.args.get("limit", "100"))))
+        except (TypeError, ValueError):
+            return jsonify(success=False, message="limit must be an integer"), 400
+        query = str(request.args.get("q", "")).strip().lower()[:120]
+        level = str(request.args.get("level", "ALL")).upper()
+        levels = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50}
+        if level != "ALL" and level not in levels:
+            return jsonify(success=False, message="invalid log level"), 400
+        with _STREAM_LOG_LOCK:
+            entries = list(_STREAM_LOGS)
+        selected = []
+        for entry in reversed(entries):
+            if level != "ALL" and levels.get(entry["level"], 0) < levels[level]:
+                continue
+            if query and query not in (entry["message"] + " " + entry["logger"]).lower():
+                continue
+            selected.append(dict(entry))
+            if len(selected) >= limit:
+                break
+        return jsonify(items=selected, count=len(selected), buffer_limit=STREAM_LOG_LIMIT,
+                       source="in-memory runtime log buffer")
+
+    def traffic_lights_api(self):
+        if self._mode_slug() != "city":
+            return jsonify(enabled=False, available=False, reason="traffic-light status is city-only"), 409
+        robot = getattr(self.config, "runtime_robot", None)
+        enabled = bool(getattr(self.config, "TRAFFIC_LIGHTS_ENABLED", False))
+        window = getattr(robot, "traffic_light_window", None) if robot is not None else None
+        return jsonify(available=robot is not None, enabled=enabled,
+                       wait_before_check=bool(getattr(self.config, "TRAFFIC_LIGHT_WAIT_BEFORE_CHECK", False)),
+                       status=getattr(robot, "_traffic_light_status", getattr(self.config, "traffic_light_status", "UNKNOWN")) if robot is not None else "runtime object unavailable",
+                       last_state=getattr(robot, "_traffic_light_last_state", None) if robot is not None else None,
+                       confirmation_window=window.snapshot() if window is not None and callable(getattr(window, "snapshot", None)) else None,
+                       restart_required=not enabled)
+
+    def race_status_api(self):
+        if self._mode_slug() != "race":
+            return jsonify(available=False, reason="race lifecycle is race-only"), 409
+        robot = getattr(self.config, "runtime_robot", None)
+        if robot is None:
+            return jsonify(available=False, reason="race runtime object unavailable")
+        gate, finish, hold = (getattr(robot, "race_start_gate", None),
+                              getattr(robot, "race_finish", None), getattr(robot, "stop_hold", None))
+        return jsonify(available=True, start_gate_enabled=gate is not None,
+                       start_gate_released=bool(getattr(gate, "released", True)) if gate is not None else True,
+                       motion_released=bool(getattr(robot, "_race_start_gate_motion_released", True)),
+                       timer_started=bool(getattr(robot, "_race_timer_started", False)),
+                       finishing=bool(getattr(finish, "finishing", False)) if finish is not None else False,
+                       finished=bool(getattr(finish, "finished", False)) if finish is not None else False,
+                       stop_hold_active=bool(getattr(hold, "active", False)) if hold is not None else False,
+                       sign_observation_fresh=bool(getattr(robot, "last_sign_observation_fresh", False)),
+                       stop_detector=getattr(robot, "stop_hold_detector_kind", None),
+                       run_level=str(getattr(self.config, "RUN_LVL", "MOVE")))
+
+    def camera_settings_api(self):
+        camera = getattr(self.config, "camera", None)
+        if request.method == "GET":
+            return jsonify(camera=self._camera_settings_snapshot(camera))
+        if not self._control_allowed():
+            return self._control_denied()
+        if camera is None or not bool(getattr(camera, "pi_mode", False)) or getattr(camera, "picam", None) is None:
+            return jsonify(success=False, message="runtime camera controls require an initialized Picamera2 camera"), 409
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="request body must be an object"), 400
+        allowed = {"ExposureTime", "AnalogueGain", "AeEnable", "AwbEnable"}
+        if not body or set(body) - allowed:
+            return jsonify(success=False, message="only ExposureTime, AnalogueGain, AeEnable, and AwbEnable are accepted"), 400
+        supported = getattr(camera.picam, "camera_controls", {})
+        controls = {}
+        try:
+            for key, value in body.items():
+                if key not in supported:
+                    return jsonify(success=False, message=f"camera does not support {key}"), 409
+                if key in {"AeEnable", "AwbEnable"}:
+                    if not isinstance(value, bool):
+                        raise ValueError(f"{key} must be boolean")
+                    controls[key] = value
+                else:
+                    if isinstance(value, bool):
+                        raise ValueError(f"{key} must be numeric")
+                    number = float(value)
+                    if not math.isfinite(number):
+                        raise ValueError(f"{key} must be finite")
+                    bounds = supported.get(key)
+                    if isinstance(bounds, (tuple, list)) and len(bounds) >= 2:
+                        lower, upper = float(bounds[0]), float(bounds[1])
+                        if not lower <= number <= upper:
+                            raise ValueError(f"{key} must be between the camera-supported limits {lower:g} and {upper:g}")
+                    controls[key] = int(round(number)) if key == "ExposureTime" else number
+            camera.picam.set_controls(controls)
+            current = dict(getattr(camera, "_dashboard_image_controls", {}))
+            current.update(controls)
+            setattr(camera, "_dashboard_image_controls", current)
+            logger.info("Dashboard applied camera controls: %s", ", ".join(sorted(controls)))
+            return jsonify(success=True, camera=self._camera_settings_snapshot(camera))
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Failed to apply runtime Picamera2 controls")
+            return jsonify(success=False, message="camera rejected these controls"), 502
+
+    def processing_rate_api(self):
+        rate = getattr(self.config, "processing_rate_controller", None)
+        if request.method == "GET":
+            return jsonify(available=rate is not None, runtime_only=True,
+                           target_fps=getattr(rate, "target_fps", getattr(self.config, "TARGET_PROCESSING_FPS", None)) if rate is not None else None,
+                           diagnostics=rate.snapshot() if rate is not None and hasattr(rate, "snapshot") else None)
+        if not self._control_allowed():
+            return self._control_denied()
+        if rate is None or not callable(getattr(rate, "set_target_fps", None)):
+            return jsonify(success=False, message="the active runtime does not expose live processing-rate control"), 409
+        body = request.get_json(silent=True) or {}
+        try:
+            fps = float(body.get("target_fps"))
+            if not math.isfinite(fps) or not 1.0 <= fps <= 60.0:
+                raise ValueError("target_fps must be between 1 and 60")
+            rate.set_target_fps(fps)
+            setattr(self.config, "TARGET_PROCESSING_FPS", fps)
+            return jsonify(success=True, runtime_only=True, target_fps=rate.target_fps, diagnostics=rate.snapshot())
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+
+    def safety_api(self):
+        if request.method == "GET":
+            level = str(getattr(self.config, "RUN_LVL", "MOVE"))
+            return jsonify(controls_enabled=self._control_allowed(), run_level=level,
+                           software_stop_active=level == "STOP",
+                           disclaimer="Software stop is processed by the active Python control loop; it is not a hardware emergency stop.")
+        if not self._control_allowed():
+            return self._control_denied()
+        body = request.get_json(silent=True) or {}
+        action = body.get("action")
+        if action not in {"stop", "resume"}:
+            return jsonify(success=False, message="action must be stop or resume"), 400
+        # The mode loop owns the MCU latch; do not send a guessed raw serial command.
+        setattr(self.config, "RUN_LVL", "STOP" if action == "stop" else "MOVE")
+        self.save_conf_to_json()
+        self._record_config_history("dashboard software " + action)
+        logger.warning("Dashboard requested software %s (mode=%s)", action, self._mode_slug())
+        return jsonify(success=True, action=action, run_level=getattr(self.config, "RUN_LVL"),
+                       software_stop_active=action == "stop", hardware_emergency_stop=False)
 
     def video_feed_frame(self):
         with self._frame_lock:
