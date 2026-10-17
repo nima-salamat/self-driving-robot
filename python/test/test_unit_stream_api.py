@@ -199,20 +199,170 @@ class StreamApiTests(unittest.TestCase):
         response = WebStreamer(self.make_config()).app.test_client().get("/")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        script_match = re.search(r"<script>(.*?)</script>", html, re.DOTALL)
-        self.assertIsNotNone(script_match, "Rendered page has no inline script")
+        scripts = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
+        self.assertGreaterEqual(len(scripts), 2, "Expected dashboard and extension inline scripts")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            script_path = Path(tmp_dir) / "stream-dashboard.js"
-            script_path.write_text(script_match.group(1), encoding="utf-8")
-            result = subprocess.run(
-                [node, "--check", str(script_path)],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            for index, script in enumerate(scripts):
+                with self.subTest(inline_script=index):
+                    script_path = Path(tmp_dir) / f"stream-dashboard-{index}.js"
+                    script_path.write_text(script, encoding="utf-8")
+                    result = subprocess.run(
+                        [node, "--check", str(script_path)],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+    def test_full_config_export_contains_all_ui_sections_and_current_mode(self):
+        client = WebStreamer(self.make_config()).app.test_client()
+        response = client.get("/api/config/full")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["schema_version"], 1)
+        self.assertEqual(data["mode"], "city")
+        self.assertIn("RL_TOP_ROI", data["values"])
+        self.assertIn("LANE_THRESHOLD", data["advanced"])
+        self.assertIn("colors", data["ui"])
+        self.assertIn("visible", data["ui"])
+        self.assertIn("opacity", data["ui"])
+        self.assertIn("runtime", data)
+
+    def test_full_config_import_is_read_only_until_controls_are_enabled(self):
+        config = self.make_config()
+        client = WebStreamer(config).app.test_client()
+        payload = {
+            "schema_version": 1,
+            "mode": "city",
+            "values": {"RL_TOP_ROI": 0.25},
+            "advanced": {},
+            "ui": {},
+        }
+
+        response = client.post("/api/config/full", json=payload)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(config.RL_TOP_ROI if hasattr(config, "RL_TOP_ROI") else 0.0, 0.0)
+
+    def test_full_config_round_trip_and_history_are_persisted_atomically(self):
+        import tempfile
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            exported = client.get("/api/config/full")
+            self.assertEqual(exported.status_code, 200)
+            payload = exported.get_json()
+            payload["values"]["RL_TOP_ROI"] = 0.25
+
+            applied = client.post("/api/config/full", json=payload)
+            self.assertEqual(applied.status_code, 200, applied.get_data(as_text=True))
+            self.assertTrue(applied.get_json()["success"])
+            self.assertEqual(config.RL_TOP_ROI, 0.25)
+
+            history = client.get("/api/config/history")
+            self.assertEqual(history.status_code, 200)
+            self.assertGreaterEqual(len(history.get_json()["items"]), 1)
+
+    def test_full_config_rejects_wrong_mode_and_non_finite_roi(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        client = WebStreamer(config).app.test_client()
+        base = {
+            "schema_version": 1,
+            "mode": "city",
+            "values": {},
+            "advanced": {},
+            "ui": {},
+        }
+
+        wrong_mode = dict(base, mode="race")
+        response = client.post("/api/config/full", json=wrong_mode)
+        self.assertEqual(response.status_code, 400)
+
+        bad_roi = dict(base, values={"RL_TOP_ROI": float("nan")})
+        response = client.post("/api/config/full", json=bad_roi)
+        self.assertEqual(response.status_code, 400)
+
+    def test_workspace_rejects_out_of_range_annotations_and_saves_profiles(self):
+        import tempfile
+
+        client = WebStreamer(self.make_config()).app.test_client()
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            bad = client.post(
+                "/api/workspace",
+                json={"action": "save_workspace", "workspace": {
+                    "annotations": [{"kind": "marker", "u": 1.5, "v": 0.2}]
+                }},
+            )
+            self.assertEqual(bad.status_code, 400)
+
+            saved = client.post(
+                "/api/workspace",
+                json={"action": "save_profile", "name": "Night layout",
+                      "workspace": {"view": {"zoom": 1.5, "grid": True}}},
+            )
+            self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+            loaded = client.post(
+                "/api/workspace",
+                json={"action": "load_profile", "name": "Night layout"},
+            )
+            self.assertEqual(loaded.status_code, 200)
+            self.assertEqual(loaded.get_json()["workspace"]["view"]["zoom"], 1.5)
+
+    def test_software_stop_endpoint_is_gated_and_clearly_not_hardware_emergency_stop(self):
+        import tempfile
+
+        config = self.make_config()
+        client = WebStreamer(config).app.test_client()
+        denied = client.post("/api/safety", json={"action": "stop"})
+        self.assertEqual(denied.status_code, 403)
+
+        config.STREAM_ALLOW_CONTROL = True
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            stopped = client.post("/api/safety", json={"action": "stop"})
+            self.assertEqual(stopped.status_code, 200)
+            self.assertEqual(config.RUN_LVL, "STOP")
+            self.assertFalse(stopped.get_json()["hardware_emergency_stop"])
+
+            resumed = client.post("/api/safety", json={"action": "resume"})
+            self.assertEqual(resumed.status_code, 200)
+            self.assertEqual(config.RUN_LVL, "MOVE")
+
+    def test_camera_and_processing_rate_report_unavailable_capabilities_cleanly(self):
+        streamer = WebStreamer(self.make_config())
+        client = streamer.app.test_client()
+
+        camera = client.get("/api/camera/settings")
+        self.assertEqual(camera.status_code, 200)
+        self.assertFalse(camera.get_json()["camera"]["available"])
+
+        rate = client.get("/api/processing-rate")
+        self.assertEqual(rate.status_code, 200)
+        self.assertFalse(rate.get_json()["available"])
+
+        config = streamer.config
+        config.STREAM_ALLOW_CONTROL = True
+        denied = client.post("/api/processing-rate", json={"target_fps": 25})
+        self.assertEqual(denied.status_code, 409)
+
+    def test_config_preset_can_be_queried_for_comparison(self):
+        import tempfile
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        client = WebStreamer(config).app.test_client()
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            saved = client.post("/api/config/presets", json={"action": "save", "name": "Stable"})
+            self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+            queried = client.get("/api/config/presets?name=Stable")
+            self.assertEqual(queried.status_code, 200)
+            self.assertIn("config", queried.get_json())
 
     def test_video_frame_endpoint_does_not_cache_live_frames(self):
         config = self.make_config()
