@@ -581,8 +581,9 @@ canvas {
     </div></details>
 
     <details class="dock-panel" id="ext_live_features_panel"><summary class="dock-summary"><span>Live Feature Status</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
-      <div class="section-title">Feature State</div><pre id="ext_feature_status" class="ext-pre">Loading capabilities…</pre>
-      <div class="small-muted">Only features designed for runtime updates are switched live. Features requiring construction/firmware negotiation are reported as restart-required, not toggled deceptively.</div>
+      <div class="section-title">Live Feature Controls</div><div id="ext_live_feature_rows" class="ext-list">Loading supported controls…</div>
+      <div class="section-title" style="margin-top:10px">Startup-Only / Firmware-Gated Features</div><pre id="ext_feature_status" class="ext-pre">Loading capabilities…</pre>
+      <div class="small-muted">Live controls use the active mode's existing code paths. Traffic lights, confidence limiting, adaptive obstacle planning and encoder telemetry remain startup/firmware gated rather than being enabled unsafely from the browser.</div>
     </div></details>
 
     <details class="dock-panel" id="ext_server_logs_panel"><summary class="dock-summary"><span>Python Server Logs</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
@@ -1800,7 +1801,7 @@ function restoreTrackingStack(){
 }
 function isTrackedMutation(url,method){
   if(method!=='POST')return false;
-  return ['/update_conf','/set_advanced','/set_ui','/api/config/full','/api/processing-rate','/api/camera/settings','/api/safety','/toggle_record'].some(function(path){return url.split('?')[0].endsWith(path);});
+  return ['/update_conf','/set_advanced','/set_ui','/api/config/full','/api/processing-rate','/api/camera/settings','/api/safety','/api/features','/toggle_record'].some(function(path){return url.split('?')[0].endsWith(path);});
 }
 window.fetch=async function(input,init){
   const url=typeof input==='string'?input:(input&&input.url)||'';
@@ -2130,18 +2131,54 @@ async function refreshRuntime(){
     $('ext_obstacle_status').textContent=JSON.stringify(health.obstacle_diagnostics||null,null,2);
   }catch(err){$('ext_health_summary').textContent='Runtime telemetry unavailable: '+err.message;}
 }
+function renderLiveFeatureControls(snapshot){
+  const root=$('ext_live_feature_rows');if(!root)return;root.replaceChildren();
+  const live=snapshot.live||{},canControl=!!snapshot.controls_enabled&&STREAM_CONTROL_ALLOWED;
+  const checks=[
+    ['DETECT_OBJECT','Object detection',live.DETECT_OBJECT],
+    ['USE_BEV','Bird’s-eye transform',live.USE_BEV],
+    ['RECORD_VIDEO','Video recording',live.RECORD_VIDEO]
+  ];
+  checks.forEach(function(item){
+    const feature=item[0],meta=item[2]||{},row=document.createElement('div');row.className='ext-list-row';
+    const left=document.createElement('div');left.style.display='grid';left.style.gap='2px';left.style.minWidth='0';
+    const title=document.createElement('strong');title.textContent=item[1];left.appendChild(title);
+    const note=document.createElement('span');note.className='small-muted';note.textContent=meta.description||'';left.appendChild(note);row.appendChild(left);
+    const control=document.createElement('input');control.type='checkbox';control.checked=!!meta.enabled;control.disabled=!canControl||!meta.available;control.title=meta.available?'Live control':'Unsupported by active mode/lane pipeline';
+    control.onchange=function(){applyLiveFeature(feature,control.checked).catch(function(err){showToast(err.message);refreshFeatureStatus();});};row.appendChild(control);root.appendChild(row);
+  });
+  const marker=live.marker_mode||{},row=document.createElement('div');row.className='ext-list-row';
+  const label=document.createElement('label');label.textContent='Marker detector';label.style.flex='1';row.appendChild(label);
+  const select=document.createElement('select');[['none','Off'],['sign','Traffic signs'],['apriltag','AprilTag']].forEach(function(pair){const opt=document.createElement('option');opt.value=pair[0];opt.textContent=pair[1];select.appendChild(opt);});
+  select.value=marker.value||'none';select.disabled=!canControl||!marker.available;select.onchange=function(){applyLiveFeature('marker_mode',select.value).catch(function(err){showToast(err.message);refreshFeatureStatus();});};row.appendChild(select);root.appendChild(row);
+  if(!canControl){const note=document.createElement('div');note.className='small-muted';note.textContent='Read-only mode: live feature changes are disabled.';root.appendChild(note);}
+}
+async function applyLiveFeature(feature,value){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const descriptions={DETECT_OBJECT:'Change object detection for live frames?',USE_BEV:'Change the bird’s-eye transform live? Re-check lane overlays before moving.',RECORD_VIDEO:'Change video recording state?',marker_mode:'Change the active sign/AprilTag detector?'};
+  if(!confirm((descriptions[feature]||'Apply this live feature change?')+' This update is saved to the active mode config.'))return;
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  const response=await nativeFetch('/api/features',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature:feature,value:value})});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  const after=await readConfig();
+  if(!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}
+  currentConfig=after;showToast('Updated '+feature);noteWorkspaceEvent('info','Live feature changed: '+feature+'='+String(value));await refreshFeatureStatus();
+}
 async function refreshFeatureStatus(){
   try{
     const mode=await nativeFetch('/api/mode',{cache:'no-store'}).then(function(r){return r.json();});const f=mode.features||{},c=mode.capabilities||{};
+    const features=await nativeFetch('/api/features',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+    renderLiveFeatureControls(features);
     const rows=[
-      ['Lane detector',f.lane_detector||'unknown'],['BEV',f.bev?'enabled':'disabled'],['ML lane detector',f.ml_lane_detector?'enabled':'disabled'],
-      ['Traffic signs',f.sign_enabled?'enabled':'disabled'],['AprilTag',f.apriltag_enabled?'enabled':'disabled'],['Object detection',f.object_detection_enabled?'enabled':'disabled'],
-      ['Recording',f.recording_enabled?'enabled':'disabled'],['Confidence-aware speed',f.confidence_aware_enabled?'enabled':'disabled'],['Adaptive obstacle avoidance',f.adaptive_obstacle_avoidance_enabled?'enabled':'disabled'],
-      ['Encoder map',f.encoder_map_enabled?'enabled':'disabled'],['Stream control',f.stream_control_enabled?'enabled':'read-only']
+      ['Traffic lights',features.restart_required&&features.restart_required.TRAFFIC_LIGHTS_ENABLED],
+      ['Confidence-aware speed',features.restart_required&&features.restart_required.CONFIDENCE_AWARE_ENABLED],
+      ['Adaptive obstacle avoidance',features.restart_required&&features.restart_required.ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED],
+      ['Encoder map',features.restart_required&&features.restart_required.ENCODER_MAP_ENABLED]
     ];
-    const newline=String.fromCharCode(10);$('ext_feature_status').textContent=rows.map(function(r){return r[0]+': '+r[1];}).join(newline)+newline+newline+'Mode capabilities:'+newline+JSON.stringify(c,null,2);
+    const newline=String.fromCharCode(10);
+    $('ext_feature_status').textContent=rows.map(function(r){const meta=r[1]||{};return r[0]+': '+(meta.enabled?'enabled':'disabled')+' — '+(meta.reason||'startup configuration');}).join(newline)+newline+newline+'Lane detector: '+(f.lane_detector||'unknown')+newline+'ML lane detector: '+String(!!f.ml_lane_detector)+newline+'Mode capabilities:'+newline+JSON.stringify(c,null,2);
     if(f.encoder_map_enabled){$('ext_encoder_embed').hidden=false;$('ext_encoder_status').textContent='Encoder odometry is active.';if(!$('ext_encoder_frame').src||!$('ext_encoder_frame').src.endsWith('/encoder-map'))$('ext_encoder_frame').src='/encoder-map';}
-    else{$('ext_encoder_embed').hidden=true;$('ext_encoder_status').textContent='Encoder map is disabled (enable with --encoder-map and restart).';}
+    else{$('ext_encoder_embed').hidden=true;$('ext_encoder_status').textContent='Encoder map is disabled (enable with --encoder-map and compatible firmware, then restart).';}
     if(f.mode==='city'){$('ext_traffic_status').parentElement.style.display='';$('ext_traffic_status').previousElementSibling.style.display='';$('ext_race_status').parentElement.style.display='none';}
     if(f.mode==='race'){$('ext_race_status').parentElement.style.display='';$('ext_race_status').previousElementSibling.style.display='';$('ext_traffic_status').parentElement.style.display='none';}
     if(f.mode!=='city'&&f.mode!=='race'){$('ext_traffic_status').parentElement.style.display='none';$('ext_race_status').parentElement.style.display='none';}
