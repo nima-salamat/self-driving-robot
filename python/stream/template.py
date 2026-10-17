@@ -272,9 +272,41 @@ canvas {
   .encoder-map-link { padding: 5px; font-size: 10px; }
 }
 
+
+.container { height:calc(100vh - 32px); height:calc(100dvh - 32px); grid-template-columns:minmax(0,1fr) 315px; }
+.app-menubar{height:32px;min-height:32px;display:flex;align-items:center;gap:3px;padding:0 8px;background:#0a1018;border-bottom:1px solid #263444;color:var(--txt);user-select:none;position:relative;z-index:300}
+.app-brand{display:flex;align-items:center;gap:7px;padding:0 10px 0 4px;font-size:11px;font-weight:800;letter-spacing:.07em;color:#dce8f3;white-space:nowrap}
+.brand-mark{width:17px;height:17px;border:2px solid var(--accent);border-radius:4px;position:relative}.brand-mark:after{content:"";position:absolute;inset:3px;background:var(--accent);opacity:.65}
+.menu-group{position:relative;height:100%;display:flex;align-items:center}.menu-group>summary{list-style:none;cursor:pointer;padding:6px 9px;border-radius:4px;font-size:12px;color:#c2cfdd}.menu-group>summary::-webkit-details-marker{display:none}
+.menu-group[open]>summary,.menu-group>summary:hover{background:#1c2a39;color:white}
+.menu-dropdown{display:flex;flex-direction:column;position:absolute;top:29px;left:0;min-width:196px;padding:5px;background:#151f2c;border:1px solid #324253;border-radius:6px;box-shadow:0 12px 28px rgba(0,0,0,.45);z-index:500}
+.menu-dropdown button{text-align:left;border:0;background:transparent;color:#e0e8f1;padding:7px 9px;border-radius:4px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}.menu-dropdown button:hover{background:#233549}.menu-dropdown .menu-separator{border-top:1px solid #2b3949;margin:4px 5px}
+.menu-spacer{flex:1}.menu-live{color:#9bacbd;font:11px ui-monospace,Consolas,monospace;white-space:nowrap}
+.workspace-main{flex:1 1 auto;display:grid;grid-template-columns:42px minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;min-width:0;min-height:0;gap:7px}
+.left-toolbar{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:5px 3px;background:#0b131d;border:1px solid #263444;border-radius:6px;min-height:0}
+.tool-button{position:relative;width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:5px;background:transparent;color:#b9c7d6;cursor:pointer;font-size:17px}.tool-button:hover{background:#1b2b3b;color:#fff}.tool-button[aria-pressed="true"]{color:var(--accent);border-color:#237185;background:rgba(34,211,238,.13)}
+.tool-tip{display:none;position:absolute;z-index:350;left:38px;top:4px;padding:5px 7px;border:1px solid #324253;border-radius:4px;color:var(--txt);background:#111b27;font-size:11px;white-space:nowrap;pointer-events:none}.tool-button:hover .tool-tip{display:block}.tool-separator{height:1px;margin:3px 4px;background:#2b3949}
+.workspace-stage-column{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;gap:4px}.workspace-stage-column .canvas-stage{width:100%}.workspace-stage-column .workspace-statusbar{min-height:24px}.workspace-stage-column .workspace-actionbar{flex:0 0 auto;margin-top:0!important;min-height:30px;gap:6px!important}#video_canvas{touch-action:none}
+.bottom-console{grid-column:1/-1;min-width:0;height:34px;overflow:hidden;display:flex;flex-direction:column;border:1px solid #2c3a4a;border-radius:6px;background:#0a1018;transition:height .16s ease}.bottom-console.console-open{height:178px}
+.console-titlebar{flex:0 0 32px;display:flex;align-items:center;gap:8px;padding:0 9px;background:#111a25;border-bottom:1px solid #273646}.console-toggle{padding:3px 2px;border:0;background:transparent;color:#d7e2ed;cursor:pointer;font-size:11px;font-weight:700}
+.console-tab{height:31px;padding:0 8px;border:0;border-bottom:2px solid transparent;background:transparent;color:#95a8ba;cursor:pointer;font-size:11px}.console-tab[aria-selected="true"]{color:#e5eef7;border-bottom-color:var(--accent)}.console-count{color:#91a6bb;font:10px ui-monospace,monospace}.console-flex{flex:1}
+.console-clear{border:1px solid #324253;border-radius:4px;background:#131e2b;color:#c5d3e0;padding:4px 7px;cursor:pointer;font-size:10px}.console-body{min-height:0;flex:1;overflow:auto;padding:3px 0}.console-body[hidden]{display:none}
+.console-entry{display:grid;grid-template-columns:86px 50px minmax(0,1fr);gap:8px;padding:3px 9px;color:#c4d0dc;font:11px/1.35 ui-monospace,Consolas,monospace}.console-entry:hover{background:rgba(255,255,255,.035)}.console-time{color:#8499ad}.console-level{color:#22d3ee}.console-level.warn{color:#fbbf24}.console-level.error{color:#fb7185}.console-message{overflow-wrap:anywhere;white-space:pre-wrap}.console-empty{padding:10px;color:#7e91a5;font-size:11px}
+.right-panel .properties-panel{order:-1}.properties-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px}.property-field{min-width:0;display:flex;flex-direction:column;gap:4px;color:#9bacbd;font-size:10px}.property-field input,.property-field select{width:100%;min-width:0;font-size:12px}.property-actions{display:flex;gap:6px;margin-top:9px}.property-actions>button{flex:1}.property-hint{color:#8195a8;font-size:10px;line-height:1.4;margin-top:7px}#prop_point_fields[hidden],#prop_roi_fields[hidden]{display:none!important}
+@media(max-width:1050px){.container{grid-template-columns:minmax(0,1fr) 285px}.workspace-main{grid-template-columns:38px minmax(0,1fr)}.tool-button{width:30px;height:31px}.left-toolbar{padding-left:2px;padding-right:2px}}
+@media(max-width:720px){.app-brand{padding-right:3px}.menu-group>summary{padding:5px;font-size:11px}.menu-live{display:none}.workspace-main{grid-template-columns:36px minmax(0,1fr);gap:4px}.left-toolbar{gap:3px}.tool-button{width:29px;height:30px}.bottom-console.console-open{height:155px}.console-entry{grid-template-columns:72px 42px minmax(0,1fr);gap:5px;font-size:10px}.workspace-stage-column .workspace-actionbar .small{display:none}}
+
 </style>
 </head>
 <body>
+<div class="app-menubar" role="menubar" aria-label="Workspace menu">
+<div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>ROBOY STUDIO</span></div>
+<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
+<details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
+<details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
+<details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
+<details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
+<span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
 <div class="container">
   <div class="card">
     <div class="header">
@@ -296,12 +328,23 @@ canvas {
       <div style="flex:1"></div>
       
       <label class="small" style="color:var(--accent); font-weight:bold;">
-        View Zoom <input id="workspace_zoom" type="range" min="0.3" max="1.5" step="0.1" value="1.0" style="width:70px; vertical-align:middle;">
+        View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0" style="width:70px; vertical-align:middle;">
       </label>
 
       <label class="small" style="color:var(--accent); font-weight:bold; margin-left: 10px;">Show Overlays <input id="show_rects" type="checkbox" checked></label>
       <div id="frame_mode" class="small status-line" style="margin-left: 10px;">Mode: Live</div>
     </div>
+    <div class="workspace-main">
+<aside class="left-toolbar" aria-label="Tools">
+<button type="button" class="tool-button" data-tool="select" aria-pressed="true" title="Select / Edit ROI (V)">↖<span class="tool-tip">Select / Edit ROI · V</span></button>
+<button type="button" class="tool-button" data-tool="pan" aria-pressed="false" title="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="zoom-in" title="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
+<button type="button" class="tool-button" data-action="zoom-out" title="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
+<button type="button" class="tool-button" data-action="fit-view" title="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" title="Toggle overlays (O)">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
+<button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="toggle-console" title="Recent events console">▤<span class="tool-tip">Recent Events · Ctrl+Backtick</span></button></aside>
+<div class="workspace-stage-column">
     <div id="canvas_stage" class="canvas-stage">
       <canvas id="video_canvas" width="900" height="600"></canvas>
     </div>
@@ -313,16 +356,30 @@ canvas {
       <span class="cad-help">Drag ROI edges/handles or BEV corner points · coordinates are shown relative to the camera image</span>
       <span id="cad_selected_area" class="cad-area">Area: NONE</span>
     </div>
-    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <div class="workspace-actionbar" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button id="apply_all" class="btn">Apply Base Settings</button>
       <button id="refresh_vals" class="ghost">Refresh Feed</button>
       <button id="download_json" class="ghost">Download JSON</button>
       <div style="flex:1"></div>
       <div class="small">Tip: Freeze frame to tune angles accurately</div>
     </div>
-  </div>
+</div>
+<section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
+<div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
+</section>
+</div>
+</div>
 
-  <div class="right-panel">
+<div class="right-panel">
+<details class="dock-panel properties-panel" open><summary class="dock-summary"><span>Properties</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+<div class="properties-mode" id="properties_mode">RL · ROI bounds</div>
+<label class="property-field" style="margin-bottom:8px;">Object / Point<select id="prop_target"><option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option><option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option><option value="BEV_TL">BEV · Top Left</option><option value="BEV_TR">BEV · Top Right</option><option value="BEV_BR">BEV · Bottom Right</option><option value="BEV_BL">BEV · Bottom Left</option></select></label>
+<div class="properties-grid" id="prop_roi_fields"><label class="property-field">Left (U) <input id="prop_left" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Top (V) <input id="prop_top" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Right (U) <input id="prop_right" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Bottom (V) <input id="prop_bottom" type="number" min="0" max="1" step="0.001"></label></div>
+<div class="properties-grid" id="prop_point_fields" hidden><label class="property-field">X / U <input id="prop_point_x" type="number" min="-5" max="5" step="0.001"></label><label class="property-field">Y / V <input id="prop_point_y" type="number" min="-5" max="5" step="0.001"></label></div>
+<div class="property-actions"><button type="button" class="btn" id="prop_apply_btn">Apply</button><button type="button" class="ghost" id="prop_revert_btn">Reload</button></div><div class="property-hint" id="prop_hint">Normalized camera coordinates (0–1). Select a region to inspect or edit.</div>
+</div></details>
     <details class="dock-panel"><summary class="dock-summary"><span>Arduino Telemetry</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
       <div class="section-title">Arduino Telemetry</div>
@@ -499,6 +556,7 @@ function updateDashboardConnectionState(online) {
 
 function noteDashboardApiFailure(err) {
     const wasOnline = dashboardApiOnline;
+    if(wasOnline){noteWorkspaceEvent('error','Robot dashboard connection lost: '+(err&&err.message?err.message:err));recordApiEvent('error','Dashboard request failed: '+(err&&err.message?err.message:err));}
     dashboardApiOnline = false;
     dashboardApiFailureCount += 1;
     const delayMs = Math.min(
@@ -514,6 +572,7 @@ function noteDashboardApiFailure(err) {
 
 function noteDashboardApiSuccess() {
     const wasOffline = !dashboardApiOnline;
+    if(wasOffline){noteWorkspaceEvent('info','Robot dashboard connection restored');recordApiEvent('info','Dashboard requests responding again');}
     dashboardApiOnline = true;
     dashboardApiFailureCount = 0;
     dashboardApiRetryAt = 0;
@@ -550,11 +609,15 @@ async function fetchDashboardJson(url, options = {}) {
 }
 
 // Workspace Zoom Variable
-let workspaceZoom = 1.0;
-document.getElementById('workspace_zoom').addEventListener('input', (e) => {
-    workspaceZoom = parseFloat(e.target.value);
-    drawOverlays(); 
-});
+let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,workspaceTool='select';
+const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
+function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
+function renderWorkspaceEventLog(channel='events'){const store=channel==='api'?workspaceApiEvents:workspaceEvents,root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;root.replaceChildren();if(!store.length){const e=document.createElement('div');e.className='console-empty';e.textContent=channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}else for(const entry of store.slice().reverse()){const row=document.createElement('div');row.className='console-entry';const stamp=document.createElement('span');stamp.className='console-time';stamp.textContent=entry.time.toLocaleTimeString([],{hour12:false})+'.'+String(entry.time.getMilliseconds()).padStart(3,'0');const level=document.createElement('span');level.className='console-level '+(entry.level==='error'?'error':entry.level==='warn'?'warn':'');level.textContent=entry.level.toUpperCase();const msg=document.createElement('span');msg.className='console-message';msg.textContent=entry.message;row.append(stamp,level,msg);root.appendChild(row);}const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';}
+function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
+function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return;const b=getImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;const nw=canvas.width*z,nh=canvas.height*z;viewPanX=ax-u*nw-(canvas.width-nw)/2;viewPanY=ay-v*nh-(canvas.height-nh)/2;document.getElementById('workspace_zoom').value=String(z);renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');}
+function fitWorkspaceView(log=true){workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
+function updateZoomStatus(){const el=document.getElementById('menu_live_status');if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String('{{ mode|capitalize }}').toUpperCase()+' · '+Math.round(workspaceZoom*100)+'%';}
+document.getElementById('workspace_zoom').addEventListener('input',e=>setWorkspaceZoom(parseFloat(e.target.value),canvas.width/2,canvas.height/2));
 
 /* ---------- Utilities & Math ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
@@ -563,6 +626,7 @@ function showToast(text, timeout=2500){
     const t = document.getElementById('toast');
     t.textContent = text;
     t.style.display = 'block';
+    if(typeof noteWorkspaceEvent==='function')noteWorkspaceEvent('info',text);
     setTimeout(()=> t.style.display='none', timeout);
 }
 function varColorByKey(key){
@@ -579,6 +643,7 @@ function updateFrameModeText(){
 }
 function sendAdvanced(payload) {
     if(!syncActive) return showToast('Requests are stopped!');
+    recordApiEvent('info','Saving advanced properties: '+Object.keys(payload).join(', '));
     fetch('/set_advanced',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
         .then(async r => {
             const data = await r.json().catch(() => ({}));
@@ -601,15 +666,9 @@ function sendAdvanced(payload) {
 }
 
 // Convert image norm coords (0-1) to physical canvas coords, honoring workspace zoom
-function getImgBounds() {
-    const w = canvas.width;
-    const h = canvas.height;
-    const iw = w * workspaceZoom;
-    const ih = h * workspaceZoom;
-    const ix = (w - iw) / 2;
-    const iy = (h - ih) / 2;
-    return {ix, iy, iw, ih};
-}
+function getImgBounds(){const w=canvas.width,h=canvas.height,iw=w*workspaceZoom,ih=h*workspaceZoom;return{ix:(w-iw)/2+viewPanX,iy:(h-ih)/2+viewPanY,iw,ih};}
+function canvasPointFromEvent(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return{x:0,y:0};return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height};}
+function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();}
 
 function toCanvas(nx, ny) {
     const b = getImgBounds();
@@ -688,10 +747,8 @@ function fetchFrameOnce(){
                 canvas.height = dispH;
             }
 
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const b = getImgBounds();
-            ctx.drawImage(img, b.ix, b.iy, b.iw, b.ih);
-            drawOverlays();
+            lastFrameImage=img;
+            renderWorkspaceCanvas();
 
             hasRenderedFrame = true;
             frameRequestFailures = 0;
@@ -917,28 +974,32 @@ function hitTest(px, py){
     return {type:'none'};
 }
 
-canvas.addEventListener('mousedown', e=>{
-    if(!syncActive) return;
-    const rectB = canvas.getBoundingClientRect();
-    const px = e.clientX - rectB.left;
-    const py = e.clientY - rectB.top;
+canvas.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('wheel',e=>{e.preventDefault();const p=canvasPointFromEvent(e);setWorkspaceZoom(workspaceZoom*(e.deltaY<0?1.12:1/1.12),p.x,p.y);},{passive:false});
+canvas.addEventListener('mousedown',e=>{
+    if(e.button===1||(e.button===0&&workspaceTool==='pan')){e.preventDefault();const p=canvasPointFromEvent(e);viewPanState={startX:p.x,startY:p.y,originalX:viewPanX,originalY:viewPanY};dragState=null;canvas.style.cursor='grabbing';noteWorkspaceEvent('info','Pan started (middle mouse / hand tool)');return;}
+    if(e.button!==0||!syncActive||workspaceTool!=='select')return;
+    const p=canvasPointFromEvent(e),px=p.x,py=p.y;
     const hit = hitTest(px, py);
     
     if(hit.group === 'BEV') {
         dragState = {type:'resize', group:'BEV', corner:hit.corner, start:{x:px,y:py}, orig: {...advanced}};
         markerHighlight = 'BEV';
+        window.syncPropertiesSelection('BEV_' + hit.corner);
     } 
     else if(hit.type==='handle'){
         dragState = {type:'resize', group:hit.group, corner:hit.corner, origRect:hit.rect, start:{x:px,y:py}};
         markerHighlight = hit.group;
         selectedVar = mapGroupToDefaultVar(hit.group);
         select.value = selectedVar;
+        window.syncPropertiesSelection(hit.group);
     } 
     else if(hit.type==='inside'){
         dragState = {type:'move', group:hit.group, origRect:hit.rect, start:{x:px,y:py}};
         markerHighlight = hit.group;
         selectedVar = mapGroupToDefaultVar(hit.group);
         select.value = selectedVar;
+        window.syncPropertiesSelection(hit.group);
     } 
     else {
         dragState = null;
@@ -946,10 +1007,9 @@ canvas.addEventListener('mousedown', e=>{
     }
 });
 
-canvas.addEventListener('mousemove', e=>{
-    const rectB = canvas.getBoundingClientRect();
-    const px = e.clientX - rectB.left;
-    const py = e.clientY - rectB.top;
+canvas.addEventListener('mousemove',e=>{
+    const p=canvasPointFromEvent(e),px=p.x,py=p.y;
+    if(viewPanState){viewPanX=viewPanState.originalX+(px-viewPanState.startX);viewPanY=viewPanState.originalY+(py-viewPanState.startY);canvas.style.cursor='grabbing';renderWorkspaceCanvas();return;}
     const hover = hitTest(px, py);
     
     if(dragState){
@@ -982,6 +1042,7 @@ canvas.addEventListener('mousemove', e=>{
         
         updateShapeUIFromData(); 
         drawOverlays();
+        window.syncPropertiesSelection('BEV_' + c);
         
         if(debounceTimers['BEV']) clearTimeout(debounceTimers['BEV']);
         debounceTimers['BEV'] = setTimeout(()=>{
@@ -1021,6 +1082,7 @@ canvas.addEventListener('mousemove', e=>{
     values[leftVar] = round01(nx_l); values[rightVar] = round01(nx_r);
     updateInputsFromValues(); 
     drawOverlays();
+    window.syncPropertiesSelection(group);
     
     if(debounceTimers[group]) clearTimeout(debounceTimers[group]);
     debounceTimers[group] = setTimeout(()=>{
@@ -1028,7 +1090,8 @@ canvas.addEventListener('mousemove', e=>{
     }, 220);
 });
 
-window.addEventListener('mouseup', ()=>{
+window.addEventListener('mouseup',()=>{
+    if(viewPanState){viewPanState=null;canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info','Pan finished');return;}
     if(!dragState || !syncActive) {
         dragState = null;
         canvas.style.cursor = 'default';
@@ -1225,6 +1288,7 @@ document.getElementById('apply_all').addEventListener('click', ()=>{
 });
 function sendUpdate(data){
     if(!syncActive) return;
+    recordApiEvent('info','Saving ROI/config fields: '+Object.keys(data).join(', '));
     fetch('/update_conf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
         .then(async r => {
             const result = await r.json().catch(() => ({}));
@@ -1235,6 +1299,7 @@ function sendUpdate(data){
             if(j && j.values){
                 values = j.values;
                 updateInputsFromValues(); drawOverlays();
+                if(window.syncPropertiesSelection)window.syncPropertiesSelection(document.getElementById('prop_target').value);
                 showToast('Base Updated');
             } else {
                 showToast((j && j.message) || 'Could not update base settings');
@@ -1375,11 +1440,11 @@ document.getElementById('confirm_advanced').addEventListener('click', ()=>{
 /* ---------- Buttons setup ---------- */
 document.getElementById('freeze_btn').addEventListener('click', ()=> {
     if(!syncActive) return showToast('Requests are stopped!');
-    fetch('/freeze_frame', {method:'POST'}).then(()=> {isFrozen=true; updateFrameModeText(); showToast('Frame frozen');})
+    fetch('/freeze_frame', {method:'POST'}).then(()=> {isFrozen=true; updateFrameModeText(); updateZoomStatus(); showToast('Frame frozen'); noteWorkspaceEvent('info','Camera frame frozen');})
 });
 document.getElementById('unfreeze_btn').addEventListener('click', ()=> {
     if(!syncActive) return showToast('Requests are stopped!');
-    fetch('/unfreeze_frame', {method:'POST'}).then(()=> {isFrozen=false; updateFrameModeText(); showToast('Back to live');})
+    fetch('/unfreeze_frame', {method:'POST'}).then(()=> {isFrozen=false; updateFrameModeText(); updateZoomStatus(); showToast('Back to live'); noteWorkspaceEvent('info','Live camera resumed');})
 });
 
 document.getElementById('take_picture_btn').addEventListener('click', () => {
@@ -1398,6 +1463,7 @@ document.getElementById('toggle_record_btn').addEventListener('click', () => {
             statusDiv.style.color = isRecording ? '#ef4444' : 'var(--accent)';
             btn.textContent = isRecording ? 'Stop Recording' : 'Start Recording';
             showToast(isRecording ? 'Recording Started' : 'Recording Stopped');
+            noteWorkspaceEvent('info',isRecording?'Video recording started':'Video recording stopped');
         }
     });
 });
@@ -1495,7 +1561,7 @@ function loadModeFeatures(){
         controls.forEach(item=>disable(item[0], item[1], item[2]));
         if(!STREAM_CONTROL_ALLOWED){
             document.querySelectorAll('button,input,select').forEach(el=>{
-                if(el.id !== 'download_json' && el.id !== 'toggle_dock_btn') el.disabled = true;
+                if(!['download_json','toggle_dock_btn','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
             });
         }
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
@@ -1504,62 +1570,44 @@ function loadModeFeatures(){
 }
 
 
-function setupCadWorkspace() {
-    const workspace = document.querySelector('.container');
-    const dockToggle = document.getElementById('toggle_dock_btn');
-    const isNarrow = () => window.matchMedia('(max-width: 720px)').matches;
-    const isDockVisible = () => isNarrow()
-        ? workspace.classList.contains('show-dock')
-        : !workspace.classList.contains('dock-hidden');
-
-    function setDockVisible(visible) {
-        if(isNarrow()) {
-            workspace.classList.toggle('show-dock', visible);
-            workspace.classList.remove('dock-hidden');
-        } else {
-            workspace.classList.toggle('dock-hidden', !visible);
-            workspace.classList.remove('show-dock');
-        }
-        dockToggle.textContent = visible ? 'Hide Panels' : 'Show Panels';
-        dockToggle.setAttribute('aria-expanded', String(visible));
-    }
-
-    dockToggle.addEventListener('click', () => setDockVisible(!isDockVisible()));
-    window.addEventListener('resize', () => setDockVisible(isDockVisible()));
-    setDockVisible(!isNarrow());
-
-    const readout = {
-        x: document.getElementById('cad_cursor_x'),
-        y: document.getElementById('cad_cursor_y'),
-        u: document.getElementById('cad_cursor_u'),
-        v: document.getElementById('cad_cursor_v'),
-        area: document.getElementById('cad_selected_area')
-    };
-    function updateCadReadout(event) {
-        const rect = canvas.getBoundingClientRect();
-        if(rect.width <= 0 || rect.height <= 0) return;
-        const pointX = event.clientX - rect.left;
-        const pointY = event.clientY - rect.top;
-        const imageBounds = getImgBounds();
-        const u = (pointX - imageBounds.ix) / imageBounds.iw;
-        const v = (pointY - imageBounds.iy) / imageBounds.ih;
-        readout.x.textContent = 'X: ' + Math.round(u * canvas.width) + ' px';
-        readout.y.textContent = 'Y: ' + Math.round(v * canvas.height) + ' px';
-        readout.u.textContent = 'U: ' + (u * 100).toFixed(1) + ' %';
-        readout.v.textContent = 'V: ' + (v * 100).toFixed(1) + ' %';
-    }
-    canvas.addEventListener('mousemove', updateCadReadout, {passive: true});
-    canvas.addEventListener('mouseleave', () => {
-        readout.x.textContent = 'X: — px';
-        readout.y.textContent = 'Y: — px';
-        readout.u.textContent = 'U: — %';
-        readout.v.textContent = 'V: — %';
-    }, {passive: true});
-    const selectArea = () => {
-        readout.area.textContent = 'Area: ' + (select.value || 'NONE');
-    };
-    select.addEventListener('change', selectArea);
-    selectArea();
+function setupCadWorkspace(){
+const workspace=document.querySelector('.container'),dockToggle=document.getElementById('toggle_dock_btn'),consoleDock=document.getElementById('bottom_console'),consoleToggle=document.getElementById('console_toggle_btn'),consoleClear=document.getElementById('console_clear_btn'),propTarget=document.getElementById('prop_target');let consoleTab='events';
+const narrow=()=>window.matchMedia('(max-width:720px)').matches,dockVisible=()=>narrow()?workspace.classList.contains('show-dock'):!workspace.classList.contains('dock-hidden');
+function setDock(open){if(narrow()){workspace.classList.toggle('show-dock',open);workspace.classList.remove('dock-hidden');}else{workspace.classList.toggle('dock-hidden',!open);workspace.classList.remove('show-dock');}dockToggle.textContent=open?'Hide Panels':'Show Panels';dockToggle.setAttribute('aria-expanded',String(open));}
+dockToggle.addEventListener('click',()=>{setDock(!dockVisible());noteWorkspaceEvent('info','Settings dock '+(dockVisible()?'shown':'hidden'));});window.addEventListener('resize',()=>setDock(dockVisible()));setDock(!narrow());
+function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));consoleToggle.textContent=(open?'⌄':'⌃')+' EVENT CONSOLE';}
+consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
+consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared');});
+document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{consoleTab=b.dataset.consoleTab;document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));document.getElementById('console_events').hidden=consoleTab!=='events';document.getElementById('console_api').hidden=consoleTab!=='api';renderWorkspaceEventLog(consoleTab);}));
+document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
+function setTool(tool){workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');}
+function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}
+function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;document.getElementById('tool_overlays_btn').setAttribute('aria-pressed',String(showRectsCheckbox.checked));renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
+function toggleProperties(){const p=document.querySelector('.properties-panel');if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
+document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{switch(b.dataset.action){
+case 'export-config':document.getElementById('download_json').click();break;case 'refresh-config':document.getElementById('refresh_vals').click();noteWorkspaceEvent('info','Configuration refresh requested');break;
+case 'take-picture':document.getElementById('take_picture_btn').click();break;case 'clear-selection':document.getElementById('clear_selection').click();break;case 'apply-base':document.getElementById('apply_all').click();break;case 'properties':toggleProperties();break;case 'toggle-properties':document.getElementById('toggle_dock_btn').click();break;
+case 'zoom-in':zoomBy(1.2);break;case 'zoom-out':zoomBy(1/1.2);break;case 'fit-view':fitWorkspaceView();break;case 'toggle-overlays':toggleOverlays();break;case 'toggle-console':setConsoleOpen(!consoleDock.classList.contains('console-open'));break;
+case 'tool-select':setTool('select');break;case 'tool-pan':setTool('pan');break;case 'freeze':document.getElementById('freeze_btn').click();break;case 'unfreeze':document.getElementById('unfreeze_btn').click();break;
+case 'help':showToast('Wheel: zoom at cursor · Middle mouse: pan · H: hand · V: select · 0: fit · O: overlays · Ctrl+Backtick: console',6500);break;}if(b.closest('.menu-group'))b.closest('.menu-group').open=false;}));
+document.getElementById('center_reset').addEventListener('click',()=>fitWorkspaceView());document.getElementById('tool_overlays_btn').addEventListener('click',toggleOverlays);
+document.addEventListener('keydown',e=>{const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():'';if((e.ctrlKey||e.metaKey)&&e.code==='Backquote'){e.preventDefault();setConsoleOpen(!consoleDock.classList.contains('console-open'));return;}if(['input','textarea','select'].includes(tag)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;const k=e.key.toLowerCase();if(k==='h')setTool('pan');else if(k==='v')setTool('select');else if(k==='0')fitWorkspaceView();else if(k==='o')toggleOverlays();else if(k==='+'||k==='=')zoomBy(1.2);else if(k==='-')zoomBy(1/1.2);else if(k==='escape')document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
+function names(g){const p=g+'_';return{top:p+'TOP_ROI',bottom:p+'BOTTOM_ROI',left:p+'LEFT_ROI',right:p+'RIGHT_ROI'};}
+function info(){return propTarget.value.startsWith('BEV_')?{kind:'point',corner:propTarget.value.slice(4)}:{kind:'roi',group:propTarget.value};}
+function syncPropertiesSelection(target){if(!target)return;if(target.startsWith('BEV_'))propTarget.value=target;else if(['RL','LL','CW','ST','OBJ'].includes(target))propTarget.value=target;const s=info();document.getElementById('prop_roi_fields').hidden=s.kind!=='roi';document.getElementById('prop_point_fields').hidden=s.kind!=='point';
+if(s.kind==='roi'){const n=names(s.group);document.getElementById('properties_mode').textContent=s.group+' · ROI bounds';document.getElementById('prop_left').value=values[n.left]??'';document.getElementById('prop_top').value=values[n.top]??'';document.getElementById('prop_right').value=values[n.right]??'';document.getElementById('prop_bottom').value=values[n.bottom]??'';document.getElementById('prop_hint').textContent='Normalized camera coordinates (0–1). Drag this ROI or edit fields, then Apply.';document.getElementById('cad_selected_area').textContent='Area: '+s.group;}
+else{const c=s.corner;document.getElementById('properties_mode').textContent='BEV · '+c+' control point';document.getElementById('prop_point_x').value=advanced['BEV_SRC_'+c+'_X']??'';document.getElementById('prop_point_y').value=advanced['BEV_SRC_'+c+'_Y']??'';document.getElementById('prop_hint').textContent='BEV point coordinates range from -5 to 5. Drag the corner or edit X/Y, then Apply.';document.getElementById('cad_selected_area').textContent='Area: BEV '+c;}}
+window.syncPropertiesSelection=syncPropertiesSelection;
+propTarget.addEventListener('change',()=>{const s=info();markerHighlight=s.kind==='point'?'BEV':s.group;if(s.kind==='roi'){selectedVar=mapGroupToDefaultVar(s.group);select.value=selectedVar;}syncPropertiesSelection(propTarget.value);renderWorkspaceCanvas();noteWorkspaceEvent('info','Properties target selected: '+propTarget.value);});
+document.getElementById('prop_apply_btn').addEventListener('click',()=>{if(!syncActive)return showToast('Requests are stopped!');const s=info();if(s.kind==='roi'){const n=names(s.group);let l=Number(document.getElementById('prop_left').value),t=Number(document.getElementById('prop_top').value),r=Number(document.getElementById('prop_right').value),b=Number(document.getElementById('prop_bottom').value);if(![l,t,r,b].every(Number.isFinite))return showToast('Enter valid numeric ROI coordinates');l=clamp01(l);t=clamp01(t);r=clamp01(r);b=clamp01(b);if(r-l<.01||b-t<.01)return showToast('ROI requires right > left and bottom > top');values[n.left]=round01(l);values[n.top]=round01(t);values[n.right]=round01(r);values[n.bottom]=round01(b);updateInputsFromValues();renderWorkspaceCanvas();sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});syncPropertiesSelection(s.group);noteWorkspaceEvent('info',s.group+' ROI properties applied');}
+else{const c=s.corner,x=Number(document.getElementById('prop_point_x').value),y=Number(document.getElementById('prop_point_y').value);if(!Number.isFinite(x)||!Number.isFinite(y))return showToast('Enter valid BEV point coordinates');advanced['BEV_SRC_'+c+'_X']=Math.max(-5,Math.min(5,round01(x)));advanced['BEV_SRC_'+c+'_Y']=Math.max(-5,Math.min(5,round01(y)));updateShapeUIFromData();renderWorkspaceCanvas();sendAdvanced({['BEV_SRC_'+c+'_X']:advanced['BEV_SRC_'+c+'_X'],['BEV_SRC_'+c+'_Y']:advanced['BEV_SRC_'+c+'_Y']});syncPropertiesSelection('BEV_'+c);noteWorkspaceEvent('info','BEV '+c+' point properties applied');}});
+document.getElementById('prop_revert_btn').addEventListener('click',()=>syncPropertiesSelection(propTarget.value));
+const readout={x:document.getElementById('cad_cursor_x'),y:document.getElementById('cad_cursor_y'),u:document.getElementById('cad_cursor_u'),v:document.getElementById('cad_cursor_v'),area:document.getElementById('cad_selected_area')};
+function updateCadReadout(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;readout.x.textContent='X: '+Math.round(u*canvas.width)+' px';readout.y.textContent='Y: '+Math.round(v*canvas.height)+' px';readout.u.textContent='U: '+(u*100).toFixed(1)+' %';readout.v.textContent='V: '+(v*100).toFixed(1)+' %';}
+canvas.addEventListener('mousemove',updateCadReadout,{passive:true});canvas.addEventListener('mouseleave',()=>{if(!viewPanState){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';}},{passive:true});
+select.addEventListener('change',()=>{selectedVar=select.value;readout.area.textContent='Area: '+(select.value||'NONE');if(selectedVar.endsWith('_TOP_ROI'))window.syncPropertiesSelection(selectedVar.split('_')[0]);});
+noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('RL');updateZoomStatus();
 }
 
 function initApp(){
