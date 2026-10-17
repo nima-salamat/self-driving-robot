@@ -2018,14 +2018,18 @@ function applyConfigToUI(snapshot){
   const runtime=cfg.runtime||{};if(runtime.target_processing_fps!=null&&$('ext_target_fps'))$('ext_target_fps').value=String(runtime.target_processing_fps);
   syncLegacyLayerControls();syncLayerControls();renderWorkspaceCanvas();drawPrecisionOverlay();
 }
-async function applyFullConfig(snapshot,label){
+async function applyFullConfig(snapshot,label,trackForUndo){
   if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
   const body=normalizedConfig(snapshot);if(!body)throw new Error('Configuration snapshot is invalid.');
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
   internalConfigWrite++;
   try{
     const response=await nativeFetch('/api/config/full',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
-    applyConfigToUI(data.config);noteWorkspaceEvent('info',label||'Configuration restored');return data.config;
+    applyConfigToUI(data.config);
+    const after=normalizedConfig(data.config);
+    if(trackForUndo&&!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}
+    noteWorkspaceEvent('info',label||'Configuration restored');return data.config;
   }finally{internalConfigWrite--;}
 }
 async function doUndo(){
@@ -2065,9 +2069,10 @@ async function presetAction(action){
   const name=String($('ext_preset_name').value||$('ext_preset_select').value||'').trim();if(!name)throw new Error('Enter or select a preset name.');
   if(action==='delete'&&!confirm('Delete configuration preset "'+name+'"?'))return;
   if(action==='apply'&&!confirm('Apply preset "'+name+'"? This changes live robot configuration.'))return;
+  const before=action==='apply'?(currentConfig?jsonClone(currentConfig):await readConfig()):null;
   const response=await nativeFetch('/api/config/presets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,name:name})});
   const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
-  if(action==='apply'){applyConfigToUI(data.config);showToast('Preset applied: '+name);}
+  if(action==='apply'){applyConfigToUI(data.config);const after=normalizedConfig(data.config);if(!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}showToast('Preset applied: '+name);}
   await refreshPresets();if(action==='save')noteWorkspaceEvent('info','Saved configuration preset: '+name);
 }
 function renderConfigDiff(current,saved){
@@ -2093,9 +2098,12 @@ async function refreshHistory(){
 async function restoreHistory(){
   const index=$('ext_history_select').value;if(index==='')throw new Error('Choose a history snapshot first.');
   if(!confirm('Restore the selected configuration snapshot?'))return;
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const response=await nativeFetch('/api/config/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'restore',index:Number(index)})});
   const data=await response.json();if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
-  applyConfigToUI(data.config);showToast('Configuration history restored');await refreshHistory();
+  applyConfigToUI(data.config);const after=normalizedConfig(data.config);
+  if(!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}
+  showToast('Configuration history restored');await refreshHistory();
 }
 function importFullConfigFile(file){
   const reader=new FileReader();reader.onload=async function(){try{
@@ -2103,7 +2111,7 @@ function importFullConfigFile(file){
     if(!normalized||!normalized.values||!normalized.advanced||!normalized.ui)throw new Error('JSON is missing required full configuration sections.');
     if(normalized.mode!==String('{{ mode }}').toLowerCase())throw new Error('File mode does not match this dashboard.');
     if(!confirm('Import this full configuration into the live robot runtime?'))return;
-    const result=await applyFullConfig(normalized,'Imported full configuration');showToast('Full configuration imported');currentConfig=normalizedConfig(result);await refreshHistory();
+    const result=await applyFullConfig(normalized,'Imported full configuration',true);showToast('Full configuration imported');currentConfig=normalizedConfig(result);await refreshHistory();
   }catch(err){showToast('Import failed: '+err.message);}};reader.onerror=function(){showToast('Could not read the selected file');};reader.readAsText(file);
 }
 async function exportFullConfig(){
