@@ -456,6 +456,9 @@ class WebStreamer:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify(success=False, message="request body must be a JSON object"), 400
+        for group in ("colors", "visible", "opacity"):
+            if group in data and not isinstance(data[group], dict):
+                return jsonify(success=False, message=f"{group} must be a JSON object"), 400
         before = self._full_config_snapshot()
         try:
             for key, value in data.get("colors", {}).items():
@@ -518,7 +521,9 @@ class WebStreamer:
                     "measured_fps": getattr(camera, "measured_frame_rate", None)}
         picam = getattr(camera, "picam", None)
         controls = getattr(picam, "camera_controls", {}) if picam is not None else {}
-        current = getattr(camera, "_dashboard_image_controls", {"ExposureTime": 10000, "AnalogueGain": 6.0, "AeEnable": False, "AwbEnable": False})
+        saved = getattr(camera, "_dashboard_image_controls", {"ExposureTime": 10000, "AnalogueGain": 6.0, "AeEnable": False, "AwbEnable": False})
+        allowed_controls = {"ExposureTime", "AnalogueGain", "AeEnable", "AwbEnable"}
+        current = {key: value for key, value in saved.items() if key in controls and key in allowed_controls}
         return {"available": picam is not None, "supported": picam is not None, "mode": "picam",
                 "requested_fps": getattr(camera, "requested_frame_rate", None),
                 "measured_fps": getattr(camera, "measured_frame_rate", None),
@@ -596,14 +601,24 @@ class WebStreamer:
             values[key] = number
 
         capabilities = mode_capabilities(self.config)
-        if "USE_BEV" in raw_advanced and not capabilities.get("supports_bev", False):
-            raise ValueError("USE_BEV is unsupported by the active perception pipeline")
+        if ("USE_BEV" in raw_advanced
+                and not capabilities.get("supports_bev", False)
+                and bool(raw_advanced["USE_BEV"]) != bool(getattr(self.config, "USE_BEV", False))):
+            raise ValueError("USE_BEV cannot be changed by the active perception pipeline")
         crosswalk_keys = {"CROSSWALK_THRESHOLD", "CROSSWALK_SLEEP", "CROSSWALK_THRESH_SPEND", "CW_TRAPEZOID_MODE", "CW_TOP_WIDTH_FACTOR"}
         lane_shape_keys = {"LANE_ROI_MODE", "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR"}
-        if any(key in raw_advanced for key in crosswalk_keys) and not capabilities.get("supports_crosswalk", False):
-            raise ValueError("crosswalk settings are unsupported by the active mode")
-        if any(key in raw_advanced for key in lane_shape_keys) and not capabilities.get("supports_lane_roi", False):
-            raise ValueError("lane ROI settings are unsupported by the active lane detector")
+        changed_crosswalk = any(
+            key in raw_advanced and raw_advanced[key] != getattr(self.config, key, ADVANCED_VARS[key])
+            for key in crosswalk_keys
+        )
+        changed_lane_shape = any(
+            key in raw_advanced and raw_advanced[key] != getattr(self.config, key, ADVANCED_VARS[key])
+            for key in lane_shape_keys
+        )
+        if changed_crosswalk and not capabilities.get("supports_crosswalk", False):
+            raise ValueError("crosswalk settings cannot be changed by the active mode")
+        if changed_lane_shape and not capabilities.get("supports_lane_roi", False):
+            raise ValueError("lane ROI settings cannot be changed by the active lane detector")
 
         advanced = {}
         for key, value in raw_advanced.items():
@@ -814,6 +829,13 @@ class WebStreamer:
         data = self._read_json_file(filename, {"presets": {}})
         presets = data.get("presets", {}) if isinstance(data.get("presets", {}), dict) else {}
         if request.method == "GET":
+            requested_name = str(request.args.get("name", "")).strip()
+            if requested_name:
+                preset = presets.get(requested_name)
+                if not preset:
+                    return jsonify(success=False, message="preset not found"), 404
+                return jsonify(name=requested_name, mode=preset.get("mode"), saved_at=preset.get("saved_at"),
+                               config=preset.get("config"))
             return jsonify(presets=[{"name": name, "mode": value.get("mode"), "saved_at": value.get("saved_at")}
                                     for name, value in sorted(presets.items())])
         if not self._control_allowed():
@@ -859,7 +881,7 @@ class WebStreamer:
         if not isinstance(view, dict):
             raise ValueError("view must be an object")
         clean_view = {}
-        for key, minimum, maximum in (("zoom", 0.3, 4.0), ("panX", -100000.0, 100000.0), ("panY", -100000.0, 100000.0)):
+        for key, minimum, maximum in (("zoom", 0.3, 4.0), ("panX", -100000.0, 100000.0), ("panY", -100000.0, 100000.0), ("rightPaneWidth", 250.0, 700.0)):
             if key in view:
                 value = view[key]
                 if isinstance(value, bool):
