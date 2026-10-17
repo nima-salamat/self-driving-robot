@@ -559,7 +559,7 @@ canvas {
 
     <details class="dock-panel" open id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Runtime Health</div><div id="ext_health_summary" class="small status-line">Waiting for runtime telemetry…</div>
-      <div class="ext-charts"><div><div class="small-muted">Vision FPS</div><canvas id="ext_fps_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Loop latency · ms</div><canvas id="ext_latency_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Perception latency · ms</div><canvas id="ext_perception_chart" width="300" height="58"></canvas></div></div>
+      <div class="ext-charts"><div><div class="small-muted">Processing FPS</div><canvas id="ext_fps_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Loop latency · ms</div><canvas id="ext_latency_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Perception latency · ms</div><canvas id="ext_perception_chart" width="300" height="58"></canvas></div></div>
       <pre class="ext-pre" id="ext_runtime_details">Runtime detail is loading…</pre>
       <div class="section-title" style="margin-top:10px">Sign Detector Worker</div><pre class="ext-pre" id="ext_sign_status">Waiting…</pre>
       <div class="section-title" style="margin-top:10px">Confidence / Speed Decision</div><pre class="ext-pre" id="ext_confidence_status">Inactive or unavailable</pre>
@@ -2112,11 +2112,11 @@ async function exportFullConfig(){
 async function refreshRuntime(){
   try{
     const health=await nativeFetch('/api/health',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
-    const h=health.health||{},m=health.metrics||{},timing=m.timing||{},camera=timing.camera||{},perception=timing.perception||{},loop=timing.loop||{};
-    const fps=Number(m.avg_fps)||0;extRuntimeSample.push({fps:fps,loop:Number(loop.mean_ms)||0,perception:Number(perception.mean_ms)||0});extRuntimeSample=extRuntimeSample.slice(-60);
+    const h=health.health||{},m=health.metrics||{},timing=m.timing||{},camera=timing.camera||{},perception=timing.perception||{},loop=timing.loop||{},rate=health.processing_rate||{};
+    const fps=Number(rate.achieved_fps)||Number(m.avg_fps)||0;extRuntimeSample.push({fps:fps,loop:Number(loop.mean_ms)||0,perception:Number(perception.mean_ms)||0});extRuntimeSample=extRuntimeSample.slice(-60);
     drawSparkline('ext_fps_chart',extRuntimeSample.map(function(v){return v.fps;}));drawSparkline('ext_latency_chart',extRuntimeSample.map(function(v){return v.loop;}));drawSparkline('ext_perception_chart',extRuntimeSample.map(function(v){return v.perception;}));
     const faults=h.faults||{};const faultNames=Object.keys(faults);$('ext_health_summary').textContent='State: '+(h.state||h.lifecycle||'UNKNOWN')+' · FPS: '+fps.toFixed(1)+' · Faults: '+faultNames.length;
-    $('ext_runtime_details').textContent=JSON.stringify({health:h,metrics:m,control:health.control,camera:health.camera,stream:health.stream},null,2);
+    $('ext_runtime_details').textContent=JSON.stringify({health:h,metrics:m,processing_rate:rate,control:health.control,camera:health.camera,stream:health.stream},null,2);
     $('ext_sign_status').textContent=JSON.stringify(health.sign_detector||((h.resources||{}).sign_detector)||{active:false},null,2);
     $('ext_confidence_status').textContent=JSON.stringify({perception_confidence:health.perception_confidence,speed_decision:health.speed_decision},null,2);
     $('ext_obstacle_status').textContent=JSON.stringify(health.obstacle_diagnostics||null,null,2);
