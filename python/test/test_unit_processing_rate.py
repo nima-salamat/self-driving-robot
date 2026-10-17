@@ -61,6 +61,26 @@ class ProcessingRateControllerTests(unittest.TestCase):
                 limiter.last_start - started, 1 / 30 - 1e-9
             )
 
+    def test_live_rate_update_resets_deadline_without_catch_up_debt(self):
+        clock = FakeClock()
+        limiter = ProcessingRateController(30, clock, clock.sleep)
+        self.assertTrue(limiter.wait_for_slot())
+        clock.now += 0.010
+        self.assertTrue(limiter.wait_for_slot())
+
+        snapshot = limiter.set_target_fps(20)
+        self.assertEqual(snapshot["target_fps"], 20)
+        self.assertAlmostEqual(limiter.interval, 0.05)
+        self.assertIsNone(limiter._next_start)
+        self.assertTrue(limiter.wait_for_slot())
+        self.assertAlmostEqual(limiter.last_start, clock.now)
+
+    def test_live_rate_update_rejects_out_of_range_values(self):
+        limiter = ProcessingRateController(30)
+        for rate in (0, -1, 0.5, 60.1, math.inf, math.nan):
+            with self.subTest(rate=rate), self.assertRaises(ValueError):
+                limiter.set_target_fps(rate)
+
     def test_rejects_non_positive_and_non_finite_rates(self):
         for rate in (0, -1, math.inf, -math.inf, math.nan):
             with self.subTest(rate=rate), self.assertRaises(ValueError):
