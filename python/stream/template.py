@@ -2076,7 +2076,7 @@ function renderConfigDiff(current,saved){
     names.forEach(function(name){if(JSON.stringify(a[name])!==JSON.stringify(b[name]))changes.push(name+': current='+JSON.stringify(a[name])+' → preset='+JSON.stringify(b[name]));});
     if(changes.length)lines.push('['+section[0]+']',...changes);
   });
-  $('ext_config_diff').textContent=lines.join('\n')||'No differences between the current configuration and this preset.';
+  $('ext_config_diff').textContent=lines.join(String.fromCharCode(10))||'No differences between the current configuration and this preset.';
 }
 async function comparePreset(){
   const name=$('ext_preset_select').value;if(!name)throw new Error('Choose a preset to compare.');
@@ -2131,7 +2131,7 @@ async function refreshFeatureStatus(){
       ['Recording',f.recording_enabled?'enabled':'disabled'],['Confidence-aware speed',f.confidence_aware_enabled?'enabled':'disabled'],['Adaptive obstacle avoidance',f.adaptive_obstacle_avoidance_enabled?'enabled':'disabled'],
       ['Encoder map',f.encoder_map_enabled?'enabled':'disabled'],['Stream control',f.stream_control_enabled?'enabled':'read-only']
     ];
-    $('ext_feature_status').textContent=rows.map(function(r){return r[0]+': '+r[1];}).join('\n')+'\n\nMode capabilities:\n'+JSON.stringify(c,null,2);
+    const newline=String.fromCharCode(10);$('ext_feature_status').textContent=rows.map(function(r){return r[0]+': '+r[1];}).join(newline)+newline+newline+'Mode capabilities:'+newline+JSON.stringify(c,null,2);
     if(f.encoder_map_enabled){$('ext_encoder_embed').hidden=false;$('ext_encoder_status').textContent='Encoder odometry is active.';if(!$('ext_encoder_frame').src||!$('ext_encoder_frame').src.endsWith('/encoder-map'))$('ext_encoder_frame').src='/encoder-map';}
     else{$('ext_encoder_embed').hidden=true;$('ext_encoder_status').textContent='Encoder map is disabled (enable with --encoder-map and restart).';}
     if(f.mode==='city'){$('ext_traffic_status').parentElement.style.display='';$('ext_traffic_status').previousElementSibling.style.display='';$('ext_race_status').parentElement.style.display='none';}
@@ -2177,7 +2177,7 @@ async function refreshServerLogs(){
   const level=encodeURIComponent($('ext_log_level').value||'ALL'),q=encodeURIComponent($('ext_log_search').value||'');
   try{
     const data=await nativeFetch('/api/logs?limit=200&level='+level+'&q='+q,{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-    serverLogsVisible=data.items||[];$('ext_server_logs').textContent=serverLogsVisible.map(function(item){return new Date(item.timestamp*1000).toLocaleTimeString()+' '+item.level.padEnd(8)+' '+item.logger+' — '+item.message;}).join('\n')||'No matching in-memory runtime logs.';
+    serverLogsVisible=data.items||[];$('ext_server_logs').textContent=serverLogsVisible.map(function(item){return new Date(item.timestamp*1000).toLocaleTimeString()+' '+item.level.padEnd(8)+' '+item.logger+' — '+item.message;}).join(String.fromCharCode(10))||'No matching in-memory runtime logs.';
   }catch(err){$('ext_server_logs').textContent='Log API unavailable: '+err.message;}
 }
 async function safetyAction(action){
