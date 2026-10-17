@@ -570,7 +570,7 @@ canvas {
     </div></details>
 
     <details class="dock-panel" id="ext_camera_panel"><summary class="dock-summary"><span>Camera & Processing Rate</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
-      <div class="section-title">Processing Rate Limit</div><div class="small-muted">This changes the live vision-cycle limiter, not the physical camera sensor rate. Runtime-only until separately configured at startup.</div>
+      <div class="section-title">Processing Rate Limit</div><div class="small-muted">Changes and saves the desired vision-processing cycle rate. This is not the physical camera sensor FPS.</div>
       <div class="form-row"><label class="label" for="ext_target_fps">Target processing FPS</label><input type="number" id="ext_target_fps" min="1" max="60" step="1" value="30" class="counter"></div><div class="form-row"><button type="button" class="btn" id="ext_apply_fps">Apply FPS Limit</button><span class="small-muted" id="ext_fps_status">Loading…</span></div>
       <div class="section-title" style="margin-top:12px">Camera Runtime Controls</div><div class="small-muted" id="ext_camera_support">Checking camera capabilities…</div>
       <div class="form-row"><label class="label" for="ext_exposure">Exposure (µs)</label><input type="number" id="ext_exposure" min="1" step="100" value="10000" class="counter"></div>
@@ -1775,7 +1775,7 @@ let extGrid=false, extSnap=false, extCrosshair=false, extCrosshairPoint=null;
 let editorTool='select', rulerStart=null, extAnnotations=[], extFrameGallery=[], extRuntimeSample=[];
 let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null;
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
-let frameCompareImage=null;
+let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
 const nativeFetch = window.fetch.bind(window);
 
 function normalizedConfig(snapshot){
@@ -2153,11 +2153,20 @@ async function refreshTrafficAndRace(){
 async function refreshCameraSettings(){
   try{
     const data=await nativeFetch('/api/camera/settings',{cache:'no-store'}).then(function(r){return r.json();});const c=data.camera||{};
-    $('ext_camera_support').textContent=c.supported?'Picamera2 controls detected. Available controls: '+(c.control_names||[]).join(', '):'Not editable: '+(c.reason||'camera controls unavailable');
+    cameraSupportedControlNames=c.control_names||[];cameraSettingsEditable=!!c.supported;
+    $('ext_camera_support').textContent=c.supported?'Picamera2 controls detected. Available controls: '+cameraSupportedControlNames.join(', '):'Not editable: '+(c.reason||'camera controls unavailable');
     const controls=c.controls||{};if(controls.ExposureTime!=null)$('ext_exposure').value=String(controls.ExposureTime);if(controls.AnalogueGain!=null)$('ext_gain').value=String(controls.AnalogueGain);
     $('ext_auto_exposure').checked=!!controls.AeEnable;$('ext_auto_wb').checked=!!controls.AwbEnable;
-    const enable=!!c.supported&&STREAM_CONTROL_ALLOWED;['ext_exposure','ext_gain','ext_auto_exposure','ext_auto_wb','ext_apply_camera'].forEach(function(id){$(id).disabled=!enable;});
+    updateCameraControlsEnabled();
   }catch(err){$('ext_camera_support').textContent='Camera capability read failed: '+err.message;}
+}
+function updateCameraControlsEnabled(){
+  const writable=!!cameraSettingsEditable&&STREAM_CONTROL_ALLOWED;
+  $('ext_exposure').disabled=!writable||$('ext_auto_exposure').checked||!cameraSupportedControlNames.includes('ExposureTime');
+  $('ext_gain').disabled=!writable||$('ext_auto_exposure').checked||!cameraSupportedControlNames.includes('AnalogueGain');
+  $('ext_auto_exposure').disabled=!writable||!cameraSupportedControlNames.includes('AeEnable');
+  $('ext_auto_wb').disabled=!writable||!cameraSupportedControlNames.includes('AwbEnable');
+  $('ext_apply_camera').disabled=!writable||!cameraSupportedControlNames.some(function(key){return ['ExposureTime','AnalogueGain','AeEnable','AwbEnable'].includes(key);});
 }
 async function refreshProcessingRate(){
   try{
@@ -2192,7 +2201,18 @@ async function applyProcessingRate(){
   $('ext_fps_status').textContent='Live · '+Number(data.target_fps).toFixed(1)+' FPS';showToast('Processing-rate limit updated at runtime');currentConfig=await readConfig().catch(function(){return currentConfig;});
 }
 async function applyCameraControls(){
-  const payload={ExposureTime:Number($('ext_exposure').value),AnalogueGain:Number($('ext_gain').value),AeEnable:!!$('ext_auto_exposure').checked,AwbEnable:!!$('ext_auto_wb').checked};
+  const payload={};
+  if(cameraSupportedControlNames.includes('AeEnable')){
+    payload.AeEnable=!!$('ext_auto_exposure').checked;
+  }
+  if(cameraSupportedControlNames.includes('AwbEnable')){
+    payload.AwbEnable=!!$('ext_auto_wb').checked;
+  }
+  if(!$('ext_auto_exposure').checked){
+    if(cameraSupportedControlNames.includes('ExposureTime'))payload.ExposureTime=Number($('ext_exposure').value);
+    if(cameraSupportedControlNames.includes('AnalogueGain'))payload.AnalogueGain=Number($('ext_gain').value);
+  }
+  if(!Object.keys(payload).length)throw new Error('This camera does not expose any supported runtime controls.');
   const response=await nativeFetch('/api/camera/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));showToast('Runtime camera controls applied');await refreshCameraSettings();currentConfig=await readConfig().catch(function(){return currentConfig;});
 }
@@ -2251,6 +2271,7 @@ function installExtension(){
   $('ext_compare_preset').onclick=function(){comparePreset().catch(function(e){showToast(e.message);});};$('ext_history_refresh').onclick=function(){refreshHistory().catch(function(e){showToast(e.message);});};$('ext_history_restore').onclick=function(){restoreHistory().catch(function(e){showToast(e.message);});};
   $('ext_apply_fps').onclick=function(){applyProcessingRate().catch(function(e){showToast(e.message);});};$('ext_apply_camera').onclick=function(){applyCameraControls().catch(function(e){showToast(e.message);});};
   $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
+  $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String('{{ mode }}').toLowerCase()+'-annotations.json','application/json');};
