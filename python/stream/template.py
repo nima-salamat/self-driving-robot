@@ -326,7 +326,7 @@ canvas {
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
 <details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
-<span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
+<button type="button" class="ghost" id="ext_open_palette" title="Command Palette · Ctrl+K" style="margin-left:6px;padding:4px 8px">⌘ Commands</button><span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
 <div class="container">
   <div class="card">
     <div class="header">
@@ -530,7 +530,7 @@ canvas {
       <div class="section-title">Precision Tools</div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
-      <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
       <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
       <div id="ext_annotations_list" class="ext-list"></div>
@@ -1940,7 +1940,7 @@ function renderFrameGallery(){
     const info=document.createElement('div');info.textContent=new Date(item.timestamp).toLocaleTimeString()+' · '+item.width+'×'+item.height;card.appendChild(info);
     const row=document.createElement('div');row.style.display='flex';row.style.gap='3px';row.style.padding='4px';
     const cmp=document.createElement('button');cmp.type='button';cmp.className='ghost';cmp.textContent='Compare';cmp.style.flex='1';cmp.onclick=function(){showFrameComparison(item);};row.appendChild(cmp);
-    const save=document.createElement('button');save.type='button';save.className='ghost';save.textContent='Save';save.onclick=function(){downloadText(item.src,'frame-snapshot.jpg','image/jpeg');};row.appendChild(save);card.appendChild(row);root.appendChild(card);
+    const save=document.createElement('a');save.className='ghost';save.textContent='Save';save.href=item.src;save.download='frame-snapshot-'+(index+1)+'.jpg';save.style.textDecoration='none';save.style.fontSize='11px';row.appendChild(save);card.appendChild(row);root.appendChild(card);
   });
 }
 function showFrameComparison(item){
@@ -2253,6 +2253,8 @@ function installExtension(){
   $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
+  $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String('{{ mode }}').toLowerCase()+'-annotations.json','application/json');};
+  $('ext_open_palette').onclick=openCommandPalette;
   $('ext_encoder_reset').onclick=async function(){if(!confirm('Reset only the displayed odometry origin? Hardware counters will not be reset.'))return;const r=await nativeFetch('/api/encoder-map/reset-origin',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));showToast('Displayed odometry origin reset');};
   $('ext_frame_compare_close').onclick=function(){$('ext_frame_compare').style.display='none';};
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
