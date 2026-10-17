@@ -221,6 +221,7 @@ class WebStreamer:
         self.app.add_url_rule('/api/camera/settings', 'camera_settings_api', self.camera_settings_api, methods=['GET', 'POST'])
         self.app.add_url_rule('/api/processing-rate', 'processing_rate_api', self.processing_rate_api, methods=['GET', 'POST'])
         self.app.add_url_rule('/api/safety', 'safety_api', self.safety_api, methods=['GET', 'POST'])
+        self.app.add_url_rule('/api/features', 'features_api', self.features_api, methods=['GET', 'POST'])
         self.app.add_url_rule('/encoder-map', 'encoder_map_page', self.encoder_map_page)
         self.app.add_url_rule('/api/encoder-map', 'encoder_map_api', self.encoder_map_api)
         self.app.add_url_rule('/api/encoder-map/reset-origin', 'encoder_map_reset_origin', self.encoder_map_reset_origin, methods=['POST'])
@@ -1151,6 +1152,114 @@ class WebStreamer:
         logger.warning("Dashboard requested software %s (mode=%s)", action, self._mode_slug())
         return jsonify(success=True, action=action, run_level=getattr(self.config, "RUN_LVL"),
                        software_stop_active=action == "stop", hardware_emergency_stop=False)
+
+    def _feature_snapshot(self):
+        capabilities = mode_capabilities(self.config)
+        robot = getattr(self.config, "runtime_robot", None)
+        traffic_detector_ready = bool(
+            robot is not None
+            and getattr(robot, "traffic_light_detector", None) is not None
+            and getattr(robot, "traffic_light_window", None) is not None
+        )
+        return {
+            "mode": self._mode_slug(),
+            "controls_enabled": self._control_allowed(),
+            "live": {
+                "DETECT_OBJECT": {
+                    "enabled": bool(getattr(self.config, "DETECT_OBJECT", False)),
+                    "available": bool(capabilities.get("supports_object_detection", False)),
+                    "description": "Object detection is checked each control cycle; the detector is constructed by the active mode.",
+                },
+                "RECORD_VIDEO": {
+                    "enabled": bool(getattr(self.config, "RECORD_VIDEO", False)),
+                    "available": bool(capabilities.get("supports_recording", False)),
+                    "description": "Recording flag is consumed by the active mode's output manager.",
+                },
+                "USE_BEV": {
+                    "enabled": bool(getattr(self.config, "USE_BEV", False)),
+                    "available": bool(capabilities.get("supports_bev", False)),
+                    "description": "Bird's-eye transform can be changed live only when supported by the active lane pipeline.",
+                },
+                "marker_mode": {
+                    "value": marker_mode(self.config),
+                    "available": bool(capabilities.get("supports_sign", False) and capabilities.get("supports_apriltag", False)),
+                    "description": "Marker mode uses the mode's existing runtime apply_marker_mode callback.",
+                },
+            },
+            "restart_required": {
+                "TRAFFIC_LIGHTS_ENABLED": {
+                    "enabled": bool(getattr(self.config, "TRAFFIC_LIGHTS_ENABLED", False)),
+                    "available": traffic_detector_ready,
+                    "restart_required_to_enable": not traffic_detector_ready,
+                    "reason": "City-only opt-in constructed by --traffic-lights at startup; dashboard will not silently create or bypass its safety gate.",
+                },
+                "CONFIDENCE_AWARE_ENABLED": {
+                    "enabled": bool(getattr(self.config, "CONFIDENCE_AWARE_ENABLED", False)),
+                    "reason": "Estimator/limiter lifecycle is created during mode initialization; requires --confidence-aware and restart.",
+                },
+                "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED": {
+                    "enabled": bool(getattr(self.config, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False)),
+                    "reason": "Planner and firmware lane-ownership negotiation are startup-time; requires --adaptive-obstacle-avoidance and compatible firmware.",
+                },
+                "ENCODER_MAP_ENABLED": {
+                    "enabled": bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)),
+                    "reason": "Odometry and serial telemetry contract are initialized at startup; requires --encoder-map and compatible firmware.",
+                },
+            },
+        }
+
+    def features_api(self):
+        if request.method == "GET":
+            return jsonify(self._feature_snapshot())
+        if not self._control_allowed():
+            return self._control_denied()
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="request body must be a JSON object"), 400
+        feature = str(body.get("feature", ""))
+        value = body.get("value")
+        capabilities = mode_capabilities(self.config)
+        before = self._full_config_snapshot()
+        try:
+            if feature == "DETECT_OBJECT":
+                if not capabilities.get("supports_object_detection", False):
+                    return jsonify(success=False, message="object detection is unsupported by the active mode"), 409
+                if not isinstance(value, bool):
+                    raise ValueError("DETECT_OBJECT value must be boolean")
+                setattr(self.config, "DETECT_OBJECT", value)
+            elif feature == "RECORD_VIDEO":
+                if not capabilities.get("supports_recording", False):
+                    return jsonify(success=False, message="recording is unsupported by the active mode"), 409
+                if not isinstance(value, bool):
+                    raise ValueError("RECORD_VIDEO value must be boolean")
+                setattr(self.config, "RECORD_VIDEO", value)
+            elif feature == "USE_BEV":
+                if not capabilities.get("supports_bev", False):
+                    return jsonify(success=False, message="BEV cannot be changed by the active lane pipeline"), 409
+                if not isinstance(value, bool):
+                    raise ValueError("USE_BEV value must be boolean")
+                setattr(self.config, "USE_BEV", value)
+            elif feature == "marker_mode":
+                value = str(value).lower()
+                if value not in {"none", "sign", "apriltag"}:
+                    raise ValueError("marker_mode must be none, sign, or apriltag")
+                if value == "sign" and not capabilities.get("supports_sign", False):
+                    return jsonify(success=False, message="traffic sign detection is unsupported by this mode"), 409
+                if value == "apriltag" and not capabilities.get("supports_apriltag", False):
+                    return jsonify(success=False, message="AprilTag detection is unsupported by this mode"), 409
+                set_marker_mode(self.config, value)
+            else:
+                return jsonify(success=False, message="feature is not runtime-controllable; check restart_required status"), 400
+            self.save_conf_to_json()
+            self._record_config_history("before feature change " + feature, before)
+            self._record_config_history("feature changed: " + feature)
+            logger.info("Dashboard live feature change: %s=%s", feature, value)
+            return jsonify(success=True, feature=feature, value=value, state=self._feature_snapshot())
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Failed to apply live feature change")
+            return jsonify(success=False, message="feature change failed"), 500
 
     def video_feed_frame(self):
         with self._frame_lock:
