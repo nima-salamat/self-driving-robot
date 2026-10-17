@@ -770,6 +770,24 @@ class WebStreamer:
                 set_marker_mode(self.config, "sign" if before["advanced"].get("WITH_SIGN") else "apriltag" if before["advanced"].get("WITH_APRILTAG") else "none")
             except Exception:
                 logger.exception("Could not roll back marker mode after failed import")
+            before_runtime = before.get("runtime", {})
+            old_rate = before_runtime.get("target_processing_fps")
+            rate = getattr(self.config, "processing_rate_controller", None)
+            if rate is not None and old_rate is not None:
+                try:
+                    rate.set_target_fps(old_rate)
+                    setattr(self.config, "TARGET_PROCESSING_FPS", old_rate)
+                except Exception:
+                    logger.exception("Could not roll back processing rate after failed import")
+            old_camera = before_runtime.get("camera", {})
+            old_controls = old_camera.get("controls", {}) if isinstance(old_camera, dict) else {}
+            camera = getattr(self.config, "camera", None)
+            if old_controls and camera is not None and getattr(camera, "picam", None) is not None:
+                try:
+                    camera.picam.set_controls(old_controls)
+                    setattr(camera, "_dashboard_image_controls", dict(old_controls))
+                except Exception:
+                    logger.exception("Could not roll back camera controls after failed import")
             self.ui_settings = before["ui"]
             self.save_ui_settings()
             raise
