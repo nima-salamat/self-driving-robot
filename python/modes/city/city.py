@@ -150,6 +150,8 @@ class Robot:
             self.health.set_lifecycle(HealthState.READY)
 
 
+        config_city.runtime_robot = self
+
     def _ensure_sign_detector(self):
         if self.sign_detector is not None:
             return
