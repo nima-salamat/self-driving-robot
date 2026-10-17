@@ -611,6 +611,7 @@ async function fetchDashboardJson(url, options = {}) {
 // Workspace Zoom Variable
 let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,workspaceTool='select';
 const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
+let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
 function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
 function renderWorkspaceEventLog(channel='events'){const store=channel==='api'?workspaceApiEvents:workspaceEvents,root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;root.replaceChildren();if(!store.length){const e=document.createElement('div');e.className='console-empty';e.textContent=channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}else for(const entry of store.slice().reverse()){const row=document.createElement('div');row.className='console-entry';const stamp=document.createElement('span');stamp.className='console-time';stamp.textContent=entry.time.toLocaleTimeString([],{hour12:false})+'.'+String(entry.time.getMilliseconds()).padStart(3,'0');const level=document.createElement('span');level.className='console-level '+(entry.level==='error'?'error':entry.level==='warn'?'warn':'');level.textContent=entry.level.toUpperCase();const msg=document.createElement('span');msg.className='console-message';msg.textContent=entry.message;row.append(stamp,level,msg);root.appendChild(row);}const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';}
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
@@ -660,6 +661,7 @@ function sendAdvanced(payload) {
             }
         })
         .catch(err => {
+            recordApiEvent('error', 'Failed to save advanced settings: ' + err.message);
             console.error('Failed to save advanced settings:', err);
             showToast('Advanced settings failed: ' + err.message);
         });
@@ -1306,6 +1308,7 @@ function sendUpdate(data){
             }
         })
         .catch(err => {
+            recordApiEvent('error', 'Failed to update base settings: ' + err.message);
             console.error('Failed to update base settings:', err);
             showToast('Settings update failed: ' + err.message);
         });
@@ -1480,13 +1483,24 @@ function updateHealth(){
             const state = document.getElementById('health_state');
             const faults = document.getElementById('health_faults');
             const metrics = document.getElementById('health_metrics');
-            state.textContent = 'State: ' + (h.state || 'UNKNOWN');
+            const healthStateName = String(h.state || 'UNKNOWN');
+            state.textContent = 'State: ' + healthStateName;
+            if(lastLoggedHealthState !== healthStateName) {
+                noteWorkspaceEvent(healthStateName === 'HEALTHY' || healthStateName === 'OK' ? 'info' : 'warn', 'Runtime health state: ' + (lastLoggedHealthState || 'initial') + ' → ' + healthStateName);
+                lastLoggedHealthState = healthStateName;
+            }
             const names = Object.keys(h.faults || {});
             const details = names.map(name => {
                 const fault = h.faults[name] || {};
                 return name + (fault.message ? ': ' + fault.message : '');
             });
-            faults.textContent = 'Faults: ' + (details.length ? details.join(' | ') : 'none');
+            const faultSignature = details.join(' | ');
+            faults.textContent = 'Faults: ' + (details.length ? faultSignature : 'none');
+            if(lastLoggedFaultSignature !== faultSignature) {
+                if(faultSignature) noteWorkspaceEvent('error', 'Runtime faults: ' + faultSignature);
+                else if(lastLoggedFaultSignature) noteWorkspaceEvent('info', 'Runtime faults cleared');
+                lastLoggedFaultSignature = faultSignature;
+            }
             const loop = t.loop || {};
             const camera = t.camera || {};
             const perception = t.perception || {};
@@ -1512,7 +1526,12 @@ function updateArduinoOutput(){
             if(!j) return;
             const status = document.getElementById('arduino_status');
             const output = document.getElementById('arduino_output');
-            status.textContent = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
+            const arduinoStateText = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
+            status.textContent = arduinoStateText;
+            if(lastLoggedArduinoState !== arduinoStateText) {
+                noteWorkspaceEvent(j.connected ? 'info' : 'warn', 'Arduino telemetry: ' + arduinoStateText);
+                lastLoggedArduinoState = arduinoStateText;
+            }
             output.textContent = (j.lines || []).join('\\n');
             output.scrollTop = output.scrollHeight;
         })
@@ -1530,11 +1549,9 @@ function loadModeFeatures(){
         const f=j.features || {};
         const c=j.capabilities || {};
         const lane = f.lane_detector || 'default';
-        document.getElementById('mode_features').textContent =
-            'Lane: ' + lane +
-            ' | BEV: ' + (f.bev ? 'on' : 'off') +
-            ' | ML: ' + (f.ml_lane_detector ? 'on' : 'off') +
-            ' | Marker: ' + (f.marker_mode || 'none');
+        const modeSignature = String(lane) + ' | BEV: ' + (f.bev ? 'on' : 'off') + ' | ML: ' + (f.ml_lane_detector ? 'on' : 'off') + ' | Marker: ' + (f.marker_mode || 'none');
+        document.getElementById('mode_features').textContent = 'Lane: ' + lane + ' | BEV: ' + (f.bev ? 'on' : 'off') + ' | ML: ' + (f.ml_lane_detector ? 'on' : 'off') + ' | Marker: ' + (f.marker_mode || 'none');
+        if(lastLoggedModeSignature !== modeSignature) { noteWorkspaceEvent('info', 'Runtime mode features: ' + modeSignature); lastLoggedModeSignature = modeSignature; }
 
         const disable = (el, condition, reason) => {
             if(!el) return;
@@ -1577,7 +1594,7 @@ function setDock(open){if(narrow()){workspace.classList.toggle('show-dock',open)
 dockToggle.addEventListener('click',()=>{setDock(!dockVisible());noteWorkspaceEvent('info','Settings dock '+(dockVisible()?'shown':'hidden'));});window.addEventListener('resize',()=>setDock(dockVisible()));setDock(!narrow());
 function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));consoleToggle.textContent=(open?'⌄':'⌃')+' EVENT CONSOLE';}
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
-consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared');});
+consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared',consoleTab);});
 document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{consoleTab=b.dataset.consoleTab;document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));document.getElementById('console_events').hidden=consoleTab!=='events';document.getElementById('console_api').hidden=consoleTab!=='api';renderWorkspaceEventLog(consoleTab);}));
 document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
 function setTool(tool){workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');}
