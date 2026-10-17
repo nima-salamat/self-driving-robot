@@ -1,756 +1,123 @@
-# Python & Arduino Integration - Self Driving Robot
+# Self-Driving Robot
 
-This document covers the Python and Arduino components of the Self Driving Robot project. These components work together to enable autonomous navigation through computer vision, sensor processing, and motor control.
+A Python-and-Arduino autonomous robot project for camera-based navigation, lane detection, motion control, and optional traffic-sign/traffic-light behaviors.
 
+[Watch the demo](https://github.com/user-attachments/assets/ad7efa66-dcdb-4234-98d1-214cd702bc16)
 
-## 📋 Table of Contents
-- [Demo](#demo)
-- [Architecture Overview](#architecture-overview)
-- [Arduino Component](#arduino-component)
-- [Python Component](#python-component)
-- [Setup & Installation](#setup--installation)
-- [Usage](#usage)
-- [Communication Protocol](#communication-protocol)
-- [Troubleshooting](#troubleshooting)
+## How it works
 
----
-## Demo
+- **Python runtime** (`python/main.py`) runs on the host computer/Raspberry Pi. It selects City or Race mode, processes camera frames, runs perception and steering logic, and sends motion commands over serial.
+- **Arduino firmware** controls the motors, steering servo, encoder and ultrasonic sensors. The host and firmware communicate using line-based serial commands.
+- **Tools** under `python/calibration/`, `python/train_sign_detector/`, `python/dataset_connector/` and `python/tools/` support camera calibration, sign-model data collection, and offline lane-detector tuning.
 
-https://github.com/user-attachments/assets/ad7efa66-dcdb-4234-98d1-214cd702bc16
+## Quick start
 
----
-
-## 🏗️ Architecture Overview
-
-The system is built on a two-tier architecture:
-
-```
-┌─────────────────────────────────────────────┐
-│         PYTHON (Main Controller)            │
-│  - Vision Processing (Camera)               │
-│  - Traffic Sign Detection                   │
-│  - PID Control Logic                        │
-│  - Mode Management (City/Race)              │
-│  - Serial Communication Handler             │
-└──────────────┬──────────────────────────────┘
-               │ Serial Communication (USB)
-               │
-┌──────────────▼──────────────────────────────┐
-│      ARDUINO (Motor & Sensor Controller)    │
-│  - Motor Control (PWM)                      │
-│  - Servo Control (Steering)                 │
-│  - Ultrasonic Distance Sensors              │
-│  - Encoder (Speed Measurement)              │
-│  - Non-blocking Command Processing          │
-└─────────────────────────────────────────────┘
-```
-
----
-
-## 🤖 Arduino Component
-
-### Overview
-The Arduino handles real-time motor control, sensor monitoring, and obstacle detection. It operates independently with non-blocking I/O to ensure responsive command handling.
-
-### Hardware Components
-
-| Component | Pin(s) | Purpose |
-|-----------|--------|---------|
-| **Motor 1** | IN1(10), M1(12) | Forward direction & speed control |
-| **Motor 2** | IN2(11), M2(13) | Forward direction & speed control |
-| **Servo** | Pin 9 | Steering control (10-170°) |
-| **Encoder** | Pin 2 (REED) | Wheel speed measurement |
-| **Ultrasonic Left** | Trig(4), Echo(5) | Front-left distance sensor |
-| **Ultrasonic Right** | Trig(6), Echo(7) | Front-right distance sensor |
-| **Ultrasonic Side** | Trig(8), Echo(24) | Side distance sensor |
-
-### Key Features
-
-- **Non-blocking Motor Control**: Asynchronous command processing prevents blocking operations
-- **Multiple Sensor Input**: Handles 3 ultrasonic sensors + encoder simultaneously
-- **Servo Steering**: Smooth servo control with configurable range (10-170°)
-- **Safety Limits**: Automatic obstacle detection with configurable stop distances
-- **Encoder Support**: Dual modes - HALL sensor (5000µs debounce) or laser sensor (0µs debounce)
-
-### File Structure
-
-```
-arduino/
-├── main.ino                 # Primary firmware
-├── main_Blocking.ino        # Blocking (legacy) version
-├── main_nonBlocking.ino     # Non-blocking version (recommended)
-├── main_nonBlocking_v2.ino  # Hardened fixed-pin version
-├── main_configurable_v1.ino # Configurable firmware with Python hardware-contract handshake
-└── libraries/               # Custom libraries
-    ├── UltrasonicSensor/    # Distance measurement
-    ├── PulseQueue/          # Command queue
-    └── Encoder/             # Speed measurement
-```
-
-### Arduino Communication Protocol
-
-The current Python runtime uses 115200 baud and line-based commands with the non-blocking firmware family.
-
-Typical current commands:
-
-~~~text
-motor 200
-servo 90
-stop
-resume
-left
-right
-set left <pulse sequence>
-set right <pulse sequence>
-save left
-save right
-status
-heartbeat
-~~~
-
-Current telemetry is a six-field line:
-
-~~~text
-<lane> <motion> <right_distance_cm> <left_distance_cm> <loop_hz> <pulse_active>
-~~~
-
-The legacy single-character/JSON protocol belongs to older Arduino firmware and is not the current Python contract. See [arduino/README.md](arduino/README.md) for firmware differences.
-
----
-
-## 🐍 Python Component
-
-### Overview
-The Python application handles high-level decision making, computer vision processing, and autonomous mode management. It communicates with Arduino via serial connection and implements two operational modes: City and Race.
-
-### Project Structure
-
-```
-python/
-├── main.py                          # Entry point with argument parsing
-├── base_config.py                   # Base configuration
-├── requirements.txt                 # Dependencies
-│
-├── modes/                           # Operational modes
-│   ├── city/
-│   │   ├── config_city.py          # City mode configuration
-│   │   └── city.py                 # City mode logic
-│   └── race/
-│       ├── config_race.py          # Race mode configuration
-│       └── race.py                 # Race mode logic
-│
-├── vision/                          # Computer vision processing
-│   ├── camera.py                   # Camera capture & initialization
-│   ├── vision_processing.py        # Base vision processor
-│   ├── city_vision_processing.py   # City-specific vision (lane detection)
-│   ├── race_vision_processing.py   # Race-specific vision
-│   ├── traffic_light.py            # Traffic light detection
-│   └── apriltag.py                 # AprilTag marker detection
-│
-├── controller/                      # Motion control
-│   ├── controller.py               # Main controller
-│   └── pid_controller.py           # PID controller implementation
-│
-├── arduino/                         # Serial communication
-│   └── arduino_connection.py       # Arduino serial handler
-│
-├── manager/                         # Output management
-│   └── output_manager.py           # Video stream & display manager
-│
-├── stream/                          # Web streaming (optional)
-│   ├── template.py                 # Flask templates
-│   └── __init__.py                 # Flask app
-│
-├── traffic_sign_detector/           # Traffic sign recognition
-│   └── detector.py                 # Sign detection model
-│
-├── train_sign_detector/             # Model training and dataset collection
-│   ├── main.py                     # Training entry point
-│   ├── classification.py           # Classification logic
-│   ├── dataset_collector.py         # Dataset collection entry point
-│   └── labels.py                    # Authoritative class mapping
-│
-├── utils/                           # Utility modules
-│   ├── parser.py                   # Command-line argument parser
-│   ├── config_mode.py              # Configuration utilities
-│   ├── json_config.py              # JSON config handling
-│   ├── fps.py                      # FPS counter
-│   └── decorators.py               # Utility decorators
-│
-├── calibration/                     # Camera calibration
-│   ├── calibrate.py                # Offline calibration entry point
-│   ├── calibrator.py               # Calibration algorithms and runtime loader
-│   ├── capture.py                  # Calibration image store
-│   └── stream.py                   # Flask live calibration interface
-│
-└── test/                            # Unit tests
-    ├── test_traffic_light.py       # Traffic light tests
-    ├── test_stream.py              # Stream tests
-    ├── test_manual_control.py      # Manual control tests
-    └── test_apriltag.py            # AprilTag tests
-```
-
-### Key Features
-
-#### Vision Processing
-- **Lane Detection**: Identifies road lanes for autonomous navigation (City mode)
-- **Traffic Light Detection**: Detects and responds to traffic signals
-- **AprilTag Recognition**: Locates and interprets marker-based navigation points
-- **Traffic Sign Detection**: ML-based sign recognition and classification
-- **Camera Calibration**: Distortion correction using checkerboard calibration
-
-#### Control System
-- **PID Controller**: Proportional-Integral-Derivative control for smooth steering
-- **Speed Management**: Adaptive speed control based on obstacles and mode
-- **Servo Control**: Steering angle management
-
-#### Operational Modes
-
-**City Mode**:
-- Lane-following behavior
-- Traffic light compliance
-- Obstacle avoidance using ultrasonic sensors
-- Traffic sign recognition
-
-**Race Mode**:
-- High-speed autonomous navigation
-- Optimized steering response
-- Minimal processing overhead
-- AprilTag-based waypoint detection
-
-#### Dependencies
-
-```
-requests          # HTTP requests (API communication)
-flask             # Web streaming interface
-opencv-python     # Computer vision & image processing
-serial            # Serial communication with Arduino
-```
-
----
-
-## 🔧 Setup & Installation
-
-### Requirements
-
-- **Python**: 3.8+
-- **Arduino**: Compatible board (Uno, Mega, etc.)
-- **USB Connection**: Serial port for Arduino communication
-
-### Step 1: Arduino Setup
-
-1. Choose the firmware documented in [arduino/README.md](arduino/README.md).
-2. For `main_configurable_v1.ino`, the hardware layout is supplied by Python at startup; the firmware uses the Arduino core plus Servo and EEPROM.
-3. Upload the selected firmware to your Arduino board.
-4. Note the serial port (for example `COM3` on Windows or `/dev/ttyUSB0` on Linux).
-
-### Step 2: Python Environment
+From the repository root, create an environment and install the project dependencies:
 
 ```bash
-# Navigate to python directory
-cd python
+python -m venv .venv
+# Linux / Raspberry Pi
+source .venv/bin/activate
+# Windows PowerShell instead:
+# .venv\Scripts\Activate.ps1
 
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r ../requirements.txt
+python -m pip install -r requirements.txt
+python python/main.py --help
 ```
 
-### Step 3: Camera Calibration (Recommended)
-
-Start the live Flask calibration stream:
-
-~~~bash
-python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
-~~~
-
-Capture valid chessboard frames from the web UI, then run calibration:
-
-~~~bash
-python -m calibration.calibrate --image-dir assets/images --square-size 1.0
-~~~
-
-The legacy `capture_calibration_images.py` and misspelled `callibrate_camera.py` entrypoints remain compatibility wrappers.
-
----
-
-## 🚀 Usage
-
-### Basic Launch
+Run a mode:
 
 ```bash
-cd python
-
-# City mode (lane-following)
-python main.py --mode city
+# City mode (the default)
+python python/main.py --mode city
 
 # Race mode
-python main.py --mode race
+python python/main.py --mode race
+
+# Run the processing loop at a lower target rate (default: 30 FPS)
+python python/main.py --mode race --target-fps 20
 ```
 
-### Command-Line Arguments
+Camera hardware, operating-system packages, and permissions vary by platform. Verify the selected camera and Arduino connection before testing motion.
 
-Run:
+## Modes and optional features
 
-~~~bash
-python main.py --help
-~~~
-
-The main runtime exposes:
-
-~~~text
-usage: main.py [-h] [--mode {city,race}] [--debug]
-               [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--stream]
-               [--stream-request-logs]
-               [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
-               [--without-arduino] [--fps] [--performance] [--preflight]
-               [--read-arduino-output] [--arduino-config PATH]
-               [--arduino-contract-timeout SECONDS]
-               [--camera-mode {picam,webcam,opencv}]
-               [--camera-index INDEX]
-               [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
-               [--city-lane-detector {default,blsf-beta}]
-
-Self-driving robot runtime.
-~~~
-
-For the complete option descriptions and practical examples, see [python/README.md](python/README.md).
-
-### Configuration precedence
-
-Configuration is applied in this order:
-
-~~~text
-mode defaults -> city.json/race.json -> explicit CLI flags
-~~~
-
-An explicitly supplied CLI value always wins over JSON. An omitted flag does not overwrite the JSON value.
-
-Camera selection follows the same rule:
-
-~~~bash
-python main.py --mode race --camera-mode webcam --camera-index 0
-~~~
-
-The camera backend and index can also be stored in the active mode JSON file.
-
-### Examples
+**City mode** supports lane following and configurable traffic-sign behavior. The traffic-light crosswalk gate is opt-in:
 
 ```bash
-# Enable diagnostic overlays (logging still defaults to INFO)
-python main.py --mode city --debug
-
-# Show DEBUG-level application logs for troubleshooting
-python main.py --mode city --log-level DEBUG
-
-# Stream without printing every browser poll/request (default)
-python main.py --mode race --stream
-
-# Opt in to per-request logs while debugging the stream
-python main.py --mode race --stream --stream-request-logs
-
-# Run race mode with FPS display and streaming
-python main.py --mode race --fps --stream
-
-# Test without Arduino (vision only)
-python main.py --mode city --without-arduino --debug
+python python/main.py --mode city --traffic-lights
 ```
 
-### Manual Control Testing
+With this gate enabled, crossing requires 8 GREEN observations among the latest 10 distinct fresh frames, and the newest observation must also be GREEN. The optional `--traffic-light-wait-before-check` flag delays the first observation; it does not bypass confirmation.
+
+**Race mode** provides a separate navigation/control path and configurable race phases. Sign-triggered start/finish behavior is controlled by its flags and configuration; see the Python runtime guide before enabling it.
+
+Other useful options:
 
 ```bash
-python test/test_manual_control.py
-```
+# Experimental classical lane detector in City mode
+python python/main.py --mode city --city-lane-detector blsf-beta
 
-### Traffic Light Detection Test
+# Web dashboard / video stream (opt-in)
+python python/main.py --mode race --stream
 
-```bash
-python test/test_traffic_light.py
-```
+# Show stream HTTP request logs while debugging
+python python/main.py --mode race --stream --stream-request-logs
 
----
+# Detailed application logs
+python python/main.py --mode race --log-level DEBUG
 
-## 📡 Communication Protocol
-
-The current Python runtime communicates with the Arduino at **115200 baud** using line-based commands.
-
-### Host commands
-
-The active controller uses commands such as:
-
-```
-motor 200
-servo 90
-stop
-left
-right
-set left <pulse sequence>
-set right <pulse sequence>
-save left
-save right
-status
-heartbeat
-```
-
-A pulse group has the form:
-
-```
-f <speed> <pulses> <angle>
-b <speed> <pulses> <angle>
-```
-
-Multiple pulse groups can be sent in one line.
-
-### Telemetry
-
-The current firmware reports six fields:
-
-```
-<lane> <motion> <right_distance_cm> <left_distance_cm> <loop_hz> <pulse_active>
-```
-
-Example:
-
-```
-R F 25 30 1000 0
-```
-
-Python drains telemetry asynchronously through `ArduinoConnection`; it does not wait for a reply after every control command.
-
-### Host heartbeat / fail-safe
-
-Python sends a `heartbeat` line periodically while the serial connection is active.
-
-The active `main_nonBlocking_v2.ino` firmware uses a 500 ms host-heartbeat watchdog. When host liveness expires while motion or a pulse sequence is active, the firmware clears the pending motion, stops the motors, and centers the steering.
-
-This watchdog is intentionally implemented on the Arduino side because a Python process crash cannot send a final `stop` command.
-
-### Motion history
-
-Python now keeps a bounded in-memory trace of the last **200 commanded individual pulse units** plus a separate semantic event history.
-
-Pulse records include:
-
-- direction
-- speed
-- steering angle
-- pulse index inside the operation
-- event name
-- source
-- timestamp
-- metadata
-
-Semantic events can describe boundaries such as:
-
-```
-hardcode_lane_change_configured
-crosswalk_stop_started
-crosswalk_maneuver_started
-crosswalk_turn_left
-crosswalk_turn_right
-crosswalk_straight
-lane_lost
-```
-
-The history is intentionally passive. It does not make recovery decisions.
-
-The future route-recovery coordinator should be implemented in:
-
-```
-python/controller/motion_recovery.py
-```
-
-It should use the history to identify a verified safe boundary and replay only a bounded portion of the trace. It must not blindly replay all 200 pulses.
-
-The current history represents **Python-issued commanded pulses**, not guaranteed physical encoder-completed pulses. A future protocol revision can add pulse lifecycle telemetry so Python can distinguish commanded, executing, completed, and aborted motion.
-
-## 🛠️ Troubleshooting
-
-### Arduino Connection Issues
-
-**Problem**: "Serial port not found"
-```bash
-# List available ports (Windows)
-python -m serial.tools.list_ports
-
-# Or manually check:
-# Windows: Device Manager → COM ports
-# Linux: ls /dev/ttyUSB*
-```
-
-**Solution**: Update `SERIAL_PORT` in the active mode configuration or JSON configuration.
-
-### Camera Issues
-
-**Problem**: "No camera detected"
-```bash
-# Check camera availability
-python -c "import cv2; print(cv2.getBuildInformation())"
-```
-
-**Problem**: "Distorted video feed"
-- Run camera calibration (see [Setup & Installation](#step-3-camera-calibration-recommended))
-
-### Motor/Servo Not Responding
-
-1. Verify Arduino is receiving commands:
-   - Enable `--debug` mode in Python
-   - Check serial output in Arduino IDE Serial Monitor
-
-2. Test motor pins directly in Arduino:
-   ```cpp
-   pinMode(M1, OUTPUT);
-   digitalWrite(M1, HIGH);
-   delay(1000);
-   digitalWrite(M1, LOW);
-   ```
-
-3. Check power supply to motors and servo
-
-### Vision Processing Lag
-
-- Reduce frame resolution in `camera.py`
-- Disable debug visualization (`--debug` mode)
-- Disable web streaming (`--stream` option)
-
----
-
-## 📚 Additional Resources
-
-- **Arduino Reference**: https://www.arduino.cc/reference/
-- **OpenCV Documentation**: https://docs.opencv.org/
-- **PID Control Theory**: https://en.wikipedia.org/wiki/Proportional%E2%80%93integral%E2%80%93derivative_controller
-
----
-
-## 📝 Contributing
-
-When modifying the code:
-
-1. Test changes in both City and Race modes
-2. Verify Arduino communication works
-3. Update this README if adding new features
-4. Run test suite: `python -m pytest test/`
-
----
-
-## 📄 License
-
-See LICENSE file in the project root.
-
----
-
-## 🤝 Support
-
-For issues or questions:
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review existing test files for usage examples
-3. Use --debug for image overlays or --log-level DEBUG for detailed logs
-
-
-
-## Camera Calibration Web Stream
-
-Camera calibration is organized under `python/calibration/`. The package contains the single calibration implementation and both offline and live entry points.
-
-Start the live calibration stream on a Raspberry Pi:
-
-~~~bash
-cd python
-python -m calibration.stream --host 0.0.0.0 --port 5050 --camera-mode picam --fps 30
-~~~
-
-The web UI continuously detects the chessboard, lets you configure the physical board directly (squares across/down and square size in millimeters), choose Classic/SB/Auto detection, tune quality thresholds, enable automatic capture with a configurable cooldown and duplicate suppression, and browse captured images in a drop-down gallery.
-
-After a successful calibration, **Run with calibration model** toggles live undistortion using the generated calibration file so you can inspect the result immediately.
-
-The calibration UI defaults to a physical 8 × 10 board with 20 mm × 20 mm squares. OpenCV receives the corresponding 7 × 9 inner-corner pattern. Auto-capture of accepted views is enabled by default; changing the board configuration still requires clearing previously captured images first so incompatible calibration views cannot be mixed. Some boards are instead sold by their inner-corner count: a “7 × 9 corners” board has 8 × 10 physical squares, so choose **Inner corners** in the UI and enter 7 × 9. Changing the board configuration requires clearing previously captured images first so incompatible calibration views cannot be mixed.
-
-When the stream is started with --host 0.0.0.0, startup logs print the detected LAN/Wi-Fi IPv4 address(es) and ready-to-open URL(s), instead of leaving 0.0.0.0 as the only visible address. 0.0.0.0 means "bind all interfaces"; it is not the address you open in a browser.
-
-When calibration images already exist, run:
-
-~~~bash
-cd python
-python -m calibration.calibrate --image-dir assets/images --square-size 1.0
-~~~
-
-The saved calibration contains camera intrinsics, distortion coefficients, source resolution, checkerboard metadata, RMS calibration error, reprojection error, and the accepted/rejected image list.
-
-## Classical BLSF Lane Detector — City Beta
-
-The project also includes an experimental classical lane detector based on the 2026 BLSF-style pipeline: BEV/IPM, weighted grayscale, median-local thresholding, LSD, binary line-segment filtering, column projection, sliding windows, and quadratic RANSAC fitting.
-
-It is **City-mode only** and **opt-in**. The existing City lane detector remains the default. The existing Race-mode detector and ML lane detector are unchanged.
-
-Enable the beta implementation explicitly:
-
-```bash
-python main.py --mode city --city-lane-detector blsf-beta
-```
-
-The BLSF beta reuses the existing City BEV settings (`USE_BEV` and `BEV_SRC_*`) rather than introducing a second calibration system. Its tunable values are grouped under the `BLSF_*` settings in `python/modes/city/config_city.py`.
-
-Available City lane-detector choices:
-
-- `default`: existing City vision pipeline
-- `blsf-beta`: experimental classical BLSF pipeline
-
-Do not use `--city-lane-detector` with Race mode; the argument is intentionally restricted to City mode.
-
-## ML Lane Model Benchmarks
-
-The default lane detector is unchanged. ML lane detection is opt-in and disabled unless `--ml-lane-model` is supplied.
-
-List candidates:
-
-```bash
-python python/tools/benchmark_lane_models.py --list
-```
-
-The two candidate ONNX weights are bundled in the repository and materialized automatically on first use.
-
-Benchmark one candidate on a recorded drive:
-
-```bash
-python python/tools/benchmark_lane_models.py \
-  --model unet_depthwise_nano \
-  --input output/videos/video_1.mp4 \
-  --display \
-  --frames 300
-```
-
-Benchmark directly from camera:
-
-```bash
-python python/tools/benchmark_lane_models.py \
-  --model unet_depthwise_nano \
-  --camera \
-  --display
-```
-
-To run Race mode with an ML lane model:
-
-```bash
-python python/main.py --mode race --ml-lane-model unet_depthwise_nano
-```
-
-Available names are:
-
-- `unet_depthwise_nano`
-- `unet_depthwise_small`
-
-ML lane detection is not used in the normal runtime unless explicitly enabled. The Arduino firmware and protocol are unchanged.
-
-## Configurable Arduino Hardware Contract
-
-The new opt-in hardware contract is documented separately:
-
-- [arduino/README.md](arduino/README.md)
-- [python/README.md](python/README.md)
-- Sample profile: [python/arduino_configs/mega2560_default.json](python/arduino_configs/mega2560_default.json)
-
-Start with the contract enabled:
-
-~~~bash
-python python/main.py \
-  --mode race \
-  --arduino-config python/arduino_configs/mega2560_default.json
-~~~
-
-The Python side verifies the Arduino firmware ID, protocol version, board, echoed module configuration, and a shared FNV-1a fingerprint before Race/City startup.
-
-## Operational Diagnostics
-
-The Python runtime includes startup pre-flight checks, rotating logs, runtime health metrics, hardware-free tests, and an offline vision replay tool.
-
-### Pre-flight
-
-Run diagnostics without entering the control loop:
-
-```bash
+# Startup diagnostics without entering the control loop
 python python/main.py --mode race --preflight
-python python/main.py --mode city --preflight
+
+# Vision/runtime testing without opening the Arduino serial connection
+python python/main.py --mode city --without-arduino
 ```
 
-The check covers core Python dependencies, configured sign-model requirements, output storage, camera initialization and frame shape, the configured serial port, the monotonic clock, and the configured stream port.
+The BLSF detector and supported ML lane models are documented in [`python/README.md`](python/README.md). BLSF is experimental; validate detector changes on representative footage and at low speed before physical use.
 
-### Performance and health
+## Configuration
 
-Enable periodic performance diagnostics:
+Runtime configuration is resolved in this order:
 
-```bash
-python python/main.py --mode race --performance
+1. Mode defaults in `python/modes/city/config_city.py` or `python/modes/race/config_race.py`.
+2. The selected mode's JSON file: `python/city.json` or `python/race.json`.
+3. Explicit command-line overrides.
+
+An explicit CLI value takes precedence. The dashboard stream is intentionally opt-in and requires `--stream`.
+
+### Processing FPS vs camera FPS
+
+`--target-fps` limits the desired rate of complete vision-processing cycles; its default is **30**. It does **not** configure the camera's capture rate. Camera settings and the distinction between requested and measured camera FPS are covered in [`python/README.md`](python/README.md).
+
+## Arduino firmware
+
+For the EEPROM/set-based setup used by this project, the selected sketch is:
+
+```text
+arduino/new_main_adaptive_pwm_with_savingPulseInEEPROM
 ```
 
-When streaming is enabled, the dashboard exposes runtime health and performance information, including loop timing, camera/perception/serial timing, hardware state, asynchronous sign-worker status, and recording queue statistics.
+This file is stored without a `.ino` extension. With this firmware, leave `--arduino-config` out: City and Race send their configured pulse sequences through `set left` and `set right`, and Race uses the firmware's `save` command to persist them. The strict `hello`/`cfg` hardware-contract handshake is a separate path for `arduino/main_configurable_v1.ino` and must not be assumed to apply to the selected EEPROM/set-based firmware.
 
-The stream binds to `0.0.0.0:5000` by default and prints the local/LAN dashboard URLs at startup (for example, `http://192.168.x.x:5000`). Dashboard controls are enabled by default; pass `--stream-read-only` to disable mutation endpoints, or `--stream-host 127.0.0.1` to restrict access to the local machine. **Security:** the dashboard does not provide authentication, so only expose it on a trusted LAN; anyone who can reach the port may change runtime settings when controls are enabled.
+The selected sketch's adaptive-PWM and optional encoder-telemetry behavior, sensor validity details, and limitations are described in [`arduino/README-adaptive-features.md`](arduino/README-adaptive-features.md). Firmware variants and general protocol notes are in [`arduino/README.md`](arduino/README.md).
 
-### Hardware-free tests
+## Tests
+
+Run the hardware-free unit tests from the repository root:
 
 ```bash
 PYTHONPATH=python python -m unittest discover -s python/test -p 'test_unit_*.py' -v
 ```
 
-The suite covers the PID controller, configuration validation, runtime metrics, health evaluation, disabled serial transport behavior, and sign-worker failure recovery. GitHub Actions runs compilation and this hardware-free suite.
+Tests do not replace hardware validation. Before a real run, check steering direction, sensor readings, stop behavior, and the selected firmware with the wheels raised or at very low speed.
 
-### Offline vision replay
+## Documentation map
 
-Replay recorded video without constructing the robot controller or opening Arduino serial:
+- [Python runtime, CLI, camera, configuration, stream, and test guide](python/README.md)
+- [Arduino firmware overview and protocol](arduino/README.md)
+- [Selected adaptive-PWM firmware notes](arduino/README-adaptive-features.md)
 
-```bash
-python python/replay.py --mode race --input output/videos/video_1.mp4
-python python/replay.py --mode city --input output/videos/video_1.mp4 --output replay.mp4
-```
+## License
 
-The replay reports frame count, perception-valid ratio, processing rate, and loop/perception timing statistics.
-
-## Traffic-sign dataset collection
-
-The traffic-sign collector now lives under `python/train_sign_detector/`. The canonical training dataset and newly collected data are deliberately separate:
-
-```text
-python/train_sign_detector/
-├── dataset/              # existing canonical training dataset
-├── collected_dataset/    # newly captured samples
-├── dataset_collector.py
-├── classification.py
-├── labels.py
-└── main.py
-```
-
-The authoritative class mapping is numeric and shared by the collector, trainer, and runtime detector:
-
-```text
-0 ERROR
-1 STOP
-2 TURN RIGHT
-3 TURN LEFT
-4 STRAIGHT
-5 PARK
-```
-
-Collect samples without depending on the shell working directory:
-
-```bash
-python python/train_sign_detector/dataset_collector.py --mode race
-```
-
-By default new data is saved under `python/train_sign_detector/collected_dataset/`. To train directly from a collected set, pass it explicitly:
-
-```bash
-python python/train_sign_detector/main.py --train --dataset python/train_sign_detector/collected_dataset --file_name video.mp4
-```
-
-The existing `dataset/` is not overwritten by the collector. The old root `python/dataset_collector.py` wrapper has been removed; use `python/train_sign_detector/dataset_collector.py` directly.
-
-### Camera FPS semantics
-
-The runtime distinguishes requested camera FPS from measured camera delivery FPS. The control/vision loop FPS remains a separate runtime metric, and the HTTP stream consumes the newest published frame instead of acting as the camera producer. For Picamera2, requested frame rate is expressed through `FrameDurationLimits` for the configured camera mode. Requests above the mode's maximum are clamped to the supported maximum and logged as a warning; requests below the minimum are rejected. The reported requested rate reflects the rate actually applied, not an unsupported target.
-
-### Calibration network exposure
-
-`python -m calibration.stream --host 0.0.0.0` exposes operational endpoints that can capture images, clear images, change camera FPS, and start calibration. The calibration stream has no built-in authentication, so use it only on a trusted network.
+See [`LICENSE`](LICENSE) for the project license.
