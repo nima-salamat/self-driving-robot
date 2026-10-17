@@ -1074,10 +1074,13 @@ class WebStreamer:
                         if not lower <= number <= upper:
                             raise ValueError(f"{key} must be between the camera-supported limits {lower:g} and {upper:g}")
                     controls[key] = int(round(number)) if key == "ExposureTime" else number
+            before = self._full_config_snapshot()
             camera.picam.set_controls(controls)
             current = dict(getattr(camera, "_dashboard_image_controls", {}))
             current.update(controls)
             setattr(camera, "_dashboard_image_controls", current)
+            self._record_config_history("before camera settings update", before)
+            self._record_config_history("camera settings updated")
             logger.info("Dashboard applied camera controls: %s", ", ".join(sorted(controls)))
             return jsonify(success=True, camera=self._camera_settings_snapshot(camera))
         except (TypeError, ValueError) as exc:
@@ -1101,9 +1104,13 @@ class WebStreamer:
             fps = float(body.get("target_fps"))
             if not math.isfinite(fps) or not 1.0 <= fps <= 60.0:
                 raise ValueError("target_fps must be between 1 and 60")
+            before = self._full_config_snapshot()
             rate.set_target_fps(fps)
             setattr(self.config, "TARGET_PROCESSING_FPS", fps)
-            return jsonify(success=True, runtime_only=True, target_fps=rate.target_fps, diagnostics=rate.snapshot())
+            self.save_conf_to_json()
+            self._record_config_history("before processing rate update", before)
+            self._record_config_history("processing rate updated")
+            return jsonify(success=True, persisted=True, target_fps=rate.target_fps, diagnostics=rate.snapshot())
         except (TypeError, ValueError) as exc:
             return jsonify(success=False, message=str(exc)), 400
 
