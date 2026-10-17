@@ -32,6 +32,19 @@ class ProcessingRateController:
         self.cycle_starts = 0
         self._starts = deque(maxlen=120)
 
+    def set_target_fps(self, target_fps):
+        """Change the runtime admission rate without scheduling catch-up cycles."""
+        value = float(target_fps)
+        if not math.isfinite(value) or not 1.0 <= value <= 60.0:
+            raise ValueError("target_fps must be between 1 and 60")
+        self.target_fps = value
+        self.interval = 1.0 / value
+        # Reset the deadline to avoid carrying stale scheduling debt across a
+        # deliberate operator rate change.
+        self._next_start = None
+        self.last_wait_seconds = 0.0
+        return self.snapshot()
+
     def wait_for_slot(self, shutdown_event=None):
         """Wait for the next permitted cycle; return False if shutting down."""
         now = self._clock()
