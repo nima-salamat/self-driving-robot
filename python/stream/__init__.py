@@ -1334,6 +1334,10 @@ class WebStreamer:
                 getattr(self.config, "debug_frames_list", [])
             ),
         }
+        processing_rate = getattr(self.config, "processing_rate_controller", None)
+        if processing_rate is not None:
+            payload["processing_rate"] = processing_rate.snapshot()
+
         camera = getattr(self.config, "camera", None)
         if camera is not None:
             payload["camera"] = {
