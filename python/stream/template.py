@@ -297,6 +297,26 @@ canvas {
 @media(max-width:720px){.app-brand{padding-right:3px}.menu-group>summary{padding:5px;font-size:11px}.menu-live{display:none}.workspace-main{grid-template-columns:36px minmax(0,1fr);gap:4px}.left-toolbar{gap:3px}.tool-button{width:29px;height:30px}.bottom-console.console-open{height:155px}.console-entry{grid-template-columns:72px 42px minmax(0,1fr);gap:5px;font-size:10px}.workspace-stage-column .workspace-actionbar .small{display:none}}
 
 </style>
+<style>
+/* Extended CAD/workspace controls */
+:root{--right-pane-width:315px}
+@media(min-width:721px){.container{grid-template-columns:minmax(0,1fr) var(--right-pane-width)!important}}
+@media(max-width:720px){.container{grid-template-columns:minmax(0,1fr)!important}}
+.right-panel{min-width:250px;position:relative}
+.right-panel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;cursor:col-resize;z-index:6}
+.ext-list{display:grid;gap:4px;margin-top:7px}.ext-list-row{display:flex;gap:6px;align-items:center;justify-content:space-between;padding:5px;border:1px solid var(--border);border-radius:5px;font-size:11px}.ext-list-row button{padding:3px 6px}
+.ext-layer-row{display:grid;grid-template-columns:18px minmax(0,1fr) 28px minmax(55px,100px);align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px}.ext-layer-row input[type=color]{width:26px;height:24px;padding:1px}.ext-layer-row input[type=range]{min-width:0;width:100%}
+.ext-pre{background:#07101a;color:#c5d5e5;border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:10px/1.45 ui-monospace,Consolas,monospace;margin:6px 0 0}
+.ext-log-pre{max-height:260px}.ext-charts{display:grid;gap:7px;margin:8px 0}.ext-charts canvas{display:block;width:100%;height:58px;background:#07101a;border:1px solid var(--border);border-radius:4px}
+.ext-gallery{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.ext-gallery-card{border:1px solid var(--border);border-radius:5px;overflow:hidden;min-width:0}.ext-gallery-card img{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#050a11}.ext-gallery-card div{padding:4px;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.ext-stop-btn{background:#b91c1c!important;color:white!important}.ext-mini-label{color:var(--muted);font-size:10px}.ext-feature-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px}
+#ext_precision_overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}
+#ext_command_palette{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;padding-top:12vh}
+#ext_command_palette .palette-box{width:min(620px,92vw);max-height:70vh;overflow:auto;background:#0b1420;border:1px solid var(--accent);border-radius:9px;padding:12px;box-shadow:0 18px 60px #000}
+#ext_command_palette input{width:100%;margin-bottom:8px;padding:10px}
+#ext_command_list{display:grid;gap:4px}#ext_command_list button{text-align:left;background:#101925;border:1px solid var(--border);color:var(--txt);padding:8px;border-radius:5px}
+#ext_command_list button:hover{border-color:var(--accent);background:var(--accent-soft)}
+.ext-tool-active{border-color:var(--accent)!important;color:var(--accent)!important}
+</style>
 </head>
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
@@ -498,6 +518,88 @@ canvas {
       <div class="form-row">
         <button id="stop_all_btn" class="btn" style="background:#ef4444; color:white; width:100%;">Stop All Sync & Requests</button>
       </div>
+    </div></details>
+
+
+    <details class="dock-panel" open id="ext_layers_panel"><summary class="dock-summary"><span>Layers & Opacity</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Layer Manager</div><div class="small-muted">Visibility and color affect the live ROI overlay; opacity is saved with this mode's UI settings.</div>
+      <div id="ext_layer_rows"></div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_editor_panel"><summary class="dock-summary"><span>Precision Editor & Annotations</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Precision Tools</div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
+      <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
+      <div id="ext_annotations_list" class="ext-list"></div>
+      <div class="section-title" style="margin-top:10px">Workspace Profiles</div>
+      <div class="form-row"><input type="text" id="ext_profile_name" placeholder="Profile name" maxlength="48" style="min-width:0;width:100%"></div>
+      <div class="form-row"><select id="ext_profile_select" style="width:100%"><option value="">No saved profiles</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_profile_save">Save Profile</button><button type="button" class="ghost" id="ext_profile_load">Load</button><button type="button" class="ghost" id="ext_profile_delete">Delete</button></div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_config_panel"><summary class="dock-summary"><span>Config, Presets & History</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Full Configuration</div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_export_config">Export Full JSON</button><button type="button" class="ghost" id="ext_import_config">Import JSON</button><input type="file" id="ext_config_file" accept=".json,application/json" hidden></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_undo">↶ Undo</button><button type="button" class="ghost" id="ext_redo">↷ Redo</button><span class="small-muted" id="ext_undo_status">Undo: 0 · Redo: 0</span></div>
+      <div class="section-title" style="margin-top:10px">Configuration Presets</div>
+      <div class="form-row"><input type="text" id="ext_preset_name" placeholder="Preset name" maxlength="48" style="min-width:0;width:100%"></div>
+      <div class="form-row"><select id="ext_preset_select" style="width:100%"><option value="">No saved presets</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_preset_save">Save Preset</button><button type="button" class="ghost" id="ext_preset_apply">Apply</button><button type="button" class="ghost" id="ext_preset_delete">Delete</button></div>
+      <div class="section-title" style="margin-top:10px">Compare Current vs Preset</div>
+      <pre id="ext_config_diff" class="ext-pre">Choose a preset and select Compare.</pre>
+      <div class="form-row"><button type="button" class="ghost" id="ext_compare_preset">Compare</button><button type="button" class="ghost" id="ext_history_refresh">Refresh History</button></div>
+      <div class="section-title" style="margin-top:10px">Persistent History</div>
+      <div class="form-row"><select id="ext_history_select" style="width:100%"><option value="">No history entries</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_history_restore">Restore Selected Snapshot</button></div>
+      <div class="small-muted">History and presets are mode-specific files on the robot. Import is validated against the active mode and supported controls.</div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Runtime Health</div><div id="ext_health_summary" class="small status-line">Waiting for runtime telemetry…</div>
+      <div class="ext-charts"><div><div class="small-muted">Vision FPS</div><canvas id="ext_fps_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Loop latency · ms</div><canvas id="ext_latency_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Perception latency · ms</div><canvas id="ext_perception_chart" width="300" height="58"></canvas></div></div>
+      <pre class="ext-pre" id="ext_runtime_details">Runtime detail is loading…</pre>
+      <div class="section-title" style="margin-top:10px">Sign Detector Worker</div><pre class="ext-pre" id="ext_sign_status">Waiting…</pre>
+      <div class="section-title" style="margin-top:10px">Confidence / Speed Decision</div><pre class="ext-pre" id="ext_confidence_status">Inactive or unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Adaptive Obstacle Avoidance</div><pre class="ext-pre" id="ext_obstacle_status">Inactive or unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Traffic Light · City</div><pre class="ext-pre" id="ext_traffic_status">Not active in this mode / unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Race Lifecycle</div><pre class="ext-pre" id="ext_race_status">Not active in this mode / unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Encoder Odometry</div><div id="ext_encoder_status" class="small-muted">Encoder map is opt-in.</div><div id="ext_encoder_embed" hidden><iframe title="Encoder odometry map" id="ext_encoder_frame" loading="lazy" style="width:100%;height:240px;border:1px solid var(--border);border-radius:6px;background:#080d14"></iframe><button type="button" class="ghost" id="ext_encoder_reset">Reset displayed origin</button></div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_camera_panel"><summary class="dock-summary"><span>Camera & Processing Rate</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Processing Rate Limit</div><div class="small-muted">This changes the live vision-cycle limiter, not the physical camera sensor rate. Runtime-only until separately configured at startup.</div>
+      <div class="form-row"><label class="label" for="ext_target_fps">Target processing FPS</label><input type="number" id="ext_target_fps" min="1" max="60" step="1" value="30" class="counter"></div><div class="form-row"><button type="button" class="btn" id="ext_apply_fps">Apply FPS Limit</button><span class="small-muted" id="ext_fps_status">Loading…</span></div>
+      <div class="section-title" style="margin-top:12px">Camera Runtime Controls</div><div class="small-muted" id="ext_camera_support">Checking camera capabilities…</div>
+      <div class="form-row"><label class="label" for="ext_exposure">Exposure (µs)</label><input type="number" id="ext_exposure" min="1" step="100" value="10000" class="counter"></div>
+      <div class="form-row"><label class="label" for="ext_gain">Analogue gain</label><input type="number" id="ext_gain" min="0.1" step="0.1" value="6" class="counter"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_auto_exposure"> Auto exposure</label><label><input type="checkbox" id="ext_auto_wb"> Auto white balance</label></div>
+      <div class="form-row"><button type="button" class="btn" id="ext_apply_camera">Apply Camera Controls</button></div>
+      <div class="small-muted">Camera controls are runtime-only and are only editable when Picamera2 exposes the requested hardware controls.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_live_features_panel"><summary class="dock-summary"><span>Live Feature Status</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Feature State</div><pre id="ext_feature_status" class="ext-pre">Loading capabilities…</pre>
+      <div class="small-muted">Only features designed for runtime updates are switched live. Features requiring construction/firmware negotiation are reported as restart-required, not toggled deceptively.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_server_logs_panel"><summary class="dock-summary"><span>Python Server Logs</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="form-row"><select id="ext_log_level"><option>ALL</option><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option></select><input type="search" id="ext_log_search" placeholder="Filter logs…" style="width:100%;min-width:0"></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_log_refresh">Refresh Logs</button><button type="button" class="ghost" id="ext_log_export">Export Visible Logs</button></div>
+      <pre id="ext_server_logs" class="ext-pre ext-log-pre">In-memory log buffer is loading…</pre>
+      <div class="small-muted">Only recent allowlisted runtime logger messages are shown; the API does not expose arbitrary log files.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_frame_gallery_panel"><summary class="dock-summary"><span>Frame History & Comparison</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="small-muted">Session-only snapshots from the current dashboard frame. They are not a replacement for recorded video.</div><div id="ext_frame_gallery" class="ext-gallery"></div><button type="button" class="ghost" id="ext_clear_gallery">Clear Frame History</button>
+    </div></details>
+
+    <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Safety & Runtime Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div id="ext_safety_state" class="status-line">Reading software stop state…</div>
+      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Request Software Stop</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
+      <div class="small-muted">Software stop is consumed by the active Python mode loop. This is not a hardware emergency stop and does not replace a physical cutoff. Resume requires explicit confirmation.</div>
     </div></details>
 
   </div>
