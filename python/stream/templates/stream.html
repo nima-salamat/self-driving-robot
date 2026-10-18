@@ -1,0 +1,323 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Interactive ROI & Settings</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+
+
+<script>
+window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, advanced: {{ advanced|tojson }}, streamControl: {{ stream_control|default(false)|tojson }}, mode: {{ mode|tojson }} };
+</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='stream.css') }}">
+</head>
+<body>
+<div class="app-menubar" role="menubar" aria-label="Workspace menu">
+<div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>ROBOY STUDIO</span></div>
+<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
+<details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
+<details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
+<details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
+<details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
+<button type="button" class="ghost" id="ext_open_palette" title="Command Palette · Ctrl+K" style="margin-left:6px;padding:4px 8px">⌘ Commands</button><span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
+<div class="container">
+  <div class="card">
+    <div class="header">
+      <div class="h1">Interactive ROI Editor — {{ mode|capitalize }} Mode</div>
+      <div class="small">Drag to move/resize bounding boxes or BEV corners. Use sliders for Trapezoid shapes. <span id="mode_features" style="color:var(--accent);"></span></div>
+      {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
+      <button id="toggle_dock_btn" type="button" class="ghost">Hide Panels</button>
+    </div>
+    <div class="controls">
+      <label class="small" for="variable_select">Select Object</label>
+      <select id="variable_select">
+        <option value="NONE">-- NONE --</option>
+        {% for var in variables %}
+          <option value="{{ var }}">{{ var }}</option>
+        {% endfor %}
+      </select>
+      <button id="clear_selection" class="ghost">Clear</button>
+      <button id="center_reset" class="ghost">Center Base</button>
+      <div style="flex:1"></div>
+      
+      <label class="small" style="color:var(--accent); font-weight:bold;">
+        View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0" style="width:70px; vertical-align:middle;">
+      </label>
+
+      <label class="small" style="color:var(--accent); font-weight:bold; margin-left: 10px;">Show Overlays <input id="show_rects" type="checkbox" checked></label>
+      <div id="frame_mode" class="small status-line" style="margin-left: 10px;">Mode: Live</div>
+    </div>
+    <div class="workspace-main">
+<aside class="left-toolbar" aria-label="Tools">
+<button type="button" class="tool-button" data-tool="select" aria-pressed="true" title="Select / Edit ROI (V)">↖<span class="tool-tip">Select / Edit ROI · V</span></button>
+<button type="button" class="tool-button" data-tool="pan" aria-pressed="false" title="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="zoom-in" title="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
+<button type="button" class="tool-button" data-action="zoom-out" title="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
+<button type="button" class="tool-button" data-action="fit-view" title="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" title="Toggle overlays (O)">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
+<button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="toggle-console" title="Recent events console">▤<span class="tool-tip">Recent Events · Ctrl+Backtick</span></button></aside>
+<div class="workspace-stage-column">
+    <div id="canvas_stage" class="canvas-stage">
+      <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen">⛶ Fullscreen</button>
+      <canvas id="video_canvas" width="900" height="600"></canvas>
+    </div>
+    <div class="workspace-statusbar" aria-live="off">
+      <span id="cad_cursor_x">X: — px</span>
+      <span id="cad_cursor_y">Y: — px</span>
+      <span id="cad_cursor_u">U: — %</span>
+      <span id="cad_cursor_v">V: — %</span>
+      <span class="cad-help">Drag ROI edges/handles or BEV corner points · coordinates are shown relative to the camera image</span>
+      <span id="cad_selected_area" class="cad-area">Object: NONE</span>
+    </div>
+    <div class="workspace-actionbar" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button id="apply_all" class="btn">Apply Base Settings</button>
+      <button id="refresh_vals" class="ghost">Refresh Feed</button>
+      <button id="download_json" class="ghost">Download JSON</button>
+      <div style="flex:1"></div>
+      <div class="small">Tip: Freeze frame to tune angles accurately</div>
+    </div>
+</div>
+<section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
+<div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
+</section>
+</div>
+</div>
+
+<div class="right-panel">
+<details class="dock-panel properties-panel" open><summary class="dock-summary"><span>Properties</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+<div class="properties-mode" id="properties_mode">RL · ROI bounds</div>
+<label class="property-field" style="margin-bottom:8px;">Object / Point<select id="prop_target"><option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option><option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option><option value="BEV_TL">BEV · Top Left</option><option value="BEV_TR">BEV · Top Right</option><option value="BEV_BR">BEV · Bottom Right</option><option value="BEV_BL">BEV · Bottom Left</option></select></label>
+<div class="properties-grid" id="prop_roi_fields"><label class="property-field">Left (U) <input id="prop_left" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Top (V) <input id="prop_top" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Right (U) <input id="prop_right" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Bottom (V) <input id="prop_bottom" type="number" min="0" max="1" step="0.001"></label></div>
+<div class="properties-grid" id="prop_point_fields" hidden><label class="property-field">X / U <input id="prop_point_x" type="number" min="-5" max="5" step="0.001"></label><label class="property-field">Y / V <input id="prop_point_y" type="number" min="-5" max="5" step="0.001"></label></div>
+<div class="property-actions"><button type="button" class="btn" id="prop_apply_btn">Apply</button><button type="button" class="ghost" id="prop_revert_btn">Reload</button></div><div class="property-hint" id="prop_hint">Normalized camera coordinates (0–1). Select a region to inspect or edit.</div>
+</div></details>
+    <details class="dock-panel"><summary class="dock-summary"><span>Arduino Telemetry</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
+      <div class="section-title">Arduino Telemetry</div>
+      <div id="arduino_status" class="small status-line">Waiting for serial state...</div>
+      <pre id="arduino_output" style="max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;background:#050b15;border-radius:8px;color:var(--txt);font-size:12px;white-space:pre-wrap"></pre>
+    </div></details>
+
+  
+      <details class="dock-panel" open><summary class="dock-summary"><span>Runtime Health</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+        <div class="section-title">Runtime Health</div>
+        <div id="health_state" class="status-line">State: UNKNOWN</div>
+        <div id="health_faults" class="small">Faults: none</div>
+        <div id="health_metrics" class="small" style="margin-top:6px;"></div>
+      </div></details>
+
+    <details class="dock-panel"><summary class="dock-summary"><span>Bird's Eye View (BEV) Config</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Bird's Eye View (BEV) Config</div>
+      <div class="form-row" style="margin-bottom: 10px;">
+        <label class="label" style="color:var(--txt); font-weight:bold;">Enable BEV System</label>
+        <input type="checkbox" id="use_bev_toggle">
+      </div>
+      
+      <div class="inputs" id="bev_inputs_container" style="max-height:160px; overflow-y:auto; font-size:12px;">
+        <div class="input-wrap"><div class="label">TL_X</div><input id="BEV_SRC_TL_X" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">TL_Y</div><input id="BEV_SRC_TL_Y" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">TR_X</div><input id="BEV_SRC_TR_X" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">TR_Y</div><input id="BEV_SRC_TR_Y" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">BR_X</div><input id="BEV_SRC_BR_X" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">BR_Y</div><input id="BEV_SRC_BR_Y" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">BL_X</div><input id="BEV_SRC_BL_X" type="number" step="0.01" class="counter"></div>
+        <div class="input-wrap"><div class="label">BL_Y</div><input id="BEV_SRC_BL_Y" type="number" step="0.01" class="counter"></div>
+      </div>
+      <div style="margin-top:10px">
+         <button id="confirm_bev_inputs" class="btn">Apply BEV Inputs</button>
+      </div>
+    </div></details>
+
+    <details class="dock-panel"><summary class="dock-summary"><span>ROI Shape & Factors</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">ROI Shape & Factors</div>
+      <div class="form-row"><label class="label">Lane Mode</label>
+        <select id="lane_roi_mode" style="width: 140px;">
+          <option value="rectangle">Rectangle</option><option value="trapezoid">Trapezoid</option>
+        </select>
+      </div>
+      <div class="form-row"><label class="label">RL Top factor</label><input id="rl_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="rl_factor_val" class="small" style="width:30px;"></span></div>
+      <div class="form-row"><label class="label">LL Top factor</label><input id="ll_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="ll_factor_val" class="small" style="width:30px;"></span></div>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row"><label class="label">Crosswalk Trapezoid</label><input type="checkbox" id="cw_trap_mode"></div>
+      <div class="form-row"><label class="label">CW Top Factor</label><input id="cw_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="cw_factor_val" class="small" style="width:30px;"></span></div>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row"><label class="label">Sign/Tag Trapezoid</label><input type="checkbox" id="st_trap_mode"></div>
+      <div class="form-row"><label class="label">ST Top Factor</label><input id="st_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="st_factor_val" class="small" style="width:30px;"></span></div>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row"><label class="label">Object Trapezoid</label><input type="checkbox" id="obj_trap_mode"></div>
+      <div class="form-row"><label class="label">OBJ Top Factor</label><input id="obj_factor" type="range" min="0.0" max="1.0" step="0.02" style="width: 100px;"><span id="obj_factor_val" class="small" style="width:30px;"></span></div>
+      <div style="margin-top:10px"><button id="confirm_shape" class="btn">Save Shapes to System</button></div>
+    </div></details>
+
+    <details class="dock-panel"><summary class="dock-summary"><span>Bounding Box Adjustments</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Bounding Box Adjustments</div>
+      <div class="inputs" id="inputs_container">
+        {% for var in variables %}
+        <div class="input-wrap">
+          <div class="label">{{ var }}</div>
+          <input name="{{ var }}" type="number" step="0.01" min="0" max="1" class="counter" value="{{ '%.2f' % values[var] }}">
+          <button type="button" class="ghost btn-inc" data-var="{{ var }}" data-delta="0.05">+0.05</button>
+          <button type="button" class="ghost btn-inc" data-var="{{ var }}" data-delta="-0.05">-0.05</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div></details>
+
+    <details class="dock-panel"><summary class="dock-summary"><span>Display & Colors</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content"> <div class="section-title">Display & Colors</div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_rl" checked> Right Lane</label><input type="color" id="color_rl" value="{{ ui.colors.RL }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_ll" checked> Left Lane</label><input type="color" id="color_ll" value="{{ ui.colors.LL }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_cw" checked> Crosswalk</label><input type="color" id="color_cw" value="{{ ui.colors.CW }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_st" checked> Sign/Tag</label><input type="color" id="color_st" value="{{ ui.colors.ST }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_obj" checked> Object</label><input type="color" id="color_obj" value="{{ ui.colors.OBJ }}"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="vis_bev" checked> BEV Area</label><input type="color" id="color_bev" value="{{ ui.colors.BEV }}"></div>
+    </div></details>
+
+    <details class="dock-panel"><summary class="dock-summary"><span>Vision Advanced Limits</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Vision Advanced Limits</div>
+      <div class="inputs" style="max-height:200px; overflow-y:auto; font-size:12px;">
+        <div class="form-row"><label class="label">LANE_THRESHOLD</label><input id="lane_threshold" type="number" min="0" max="255" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">CW_THRESHOLD</label><input id="cross_thresh" type="number" min="0" max="255" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">CW_SLEEP (s)</label><input id="crosswalk_sleep" type="number" min="0" step="0.1" class="counter"></div>
+        <div class="form-row"><label class="label">CW_THRESH_SPEND</label><input id="crosswalk_thresh_spend" type="number" min="0" step="0.1" class="counter"></div>
+        <div class="form-row"><label class="label">READ_SIGN_THRESH</label><input id="read_sign_threshold" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">TURN_RIGHT Lvl</label><input id="turn_right" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">TURN_LEFT Lvl</label><input id="turn_left" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">STRAIGHT Lvl</label><input id="straight" type="number" min="0" step="1" class="counter"></div>
+        <div class="form-row"><label class="label">STOP Lvl</label><input id="stop_lvl" type="number" min="0" step="1" class="counter"></div>
+        
+        <div class="form-row"><label class="label">RUN_LVL</label>
+          <select id="run_lvl" class="counter"><option value="MOVE">MOVE</option><option value="STOP">STOP</option></select>
+        </div>
+        <div class="form-row"><label class="label">Use Signs Vision</label><input type="checkbox" id="with_sign"></div>
+        <div class="form-row"><label class="label">Use AprilTag</label><input type="checkbox" id="with_apriltag"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px"><button id="confirm_advanced" class="btn">Confirm Advanced Limits</button></div>
+    </div></details>
+
+    <details class="dock-panel"><summary class="dock-summary"><span>Stream Controls</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Stream Controls</div>
+      <div class="form-row">
+        <button id="take_picture_btn" class="btn">Take Picture</button>
+        <button id="toggle_record_btn" class="btn">Start Recording</button>
+        <div id="record_status" class="small-muted status-line" style="margin-left: 10px;">Recording: No</div>
+      </div>
+      <div class="form-row">
+        <button id="freeze_btn" class="ghost">Freeze Frame</button>
+        <button id="unfreeze_btn" class="ghost">Unfreeze Frame</button>
+      </div>
+      <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
+      <div class="form-row">
+        <button id="stop_all_btn" class="btn" style="background:#ef4444; color:white; width:100%;">Stop All Sync & Requests</button>
+      </div>
+    </div></details>
+
+
+    <details class="dock-panel" open id="ext_layers_panel"><summary class="dock-summary"><span>Layers & Opacity</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Layer Manager</div><div class="small-muted">Visibility and color affect the live ROI overlay; opacity is saved with this mode's UI settings.</div>
+      <div id="ext_layer_rows"></div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_editor_panel"><summary class="dock-summary"><span>Precision Editor & Annotations</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Precision Tools</div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
+      <div class="small-muted">Custom ROI preview only: these user-defined shapes do not affect the driving pipeline. Operational controls remain the fixed RL/LL/CW/ST/OBJ regions.</div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_roi_rect_tool">Draw Rectangle ROI</button><button type="button" class="ghost" id="ext_roi_trapezoid_tool">Draw Trapezoid ROI</button></div>
+      <div class="form-row"><label for="ext_roi_top_factor" class="small-muted">Trapezoid top width</label><input type="range" id="ext_roi_top_factor" min="0.1" max="1" step="0.05" value="0.5" style="min-width:70px;flex:1"><span id="ext_roi_top_factor_label" class="small-muted">50%</span></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
+      <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
+      <div id="ext_annotations_list" class="ext-list"></div>
+      <div class="section-title" style="margin-top:10px">Workspace Profiles</div>
+      <div class="form-row"><input type="text" id="ext_profile_name" placeholder="Profile name" maxlength="48" style="min-width:0;width:100%"></div>
+      <div class="form-row"><select id="ext_profile_select" style="width:100%"><option value="">No saved profiles</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_profile_save">Save Profile</button><button type="button" class="ghost" id="ext_profile_load">Load</button><button type="button" class="ghost" id="ext_profile_delete">Delete</button></div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_config_panel"><summary class="dock-summary"><span>Config, Presets & History</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Full Configuration</div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_export_config">Export Full JSON</button><button type="button" class="ghost" id="ext_import_config">Import JSON</button><input type="file" id="ext_config_file" accept=".json,application/json" hidden></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_undo">↶ Undo</button><button type="button" class="ghost" id="ext_redo">↷ Redo</button><span class="small-muted" id="ext_undo_status">Undo: 0 · Redo: 0</span></div>
+      <div class="section-title" style="margin-top:10px">Configuration Presets</div>
+      <div class="form-row"><input type="text" id="ext_preset_name" placeholder="Preset name" maxlength="48" style="min-width:0;width:100%"></div>
+      <div class="form-row"><select id="ext_preset_select" style="width:100%"><option value="">No saved presets</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_preset_save">Save Preset</button><button type="button" class="ghost" id="ext_preset_apply">Apply</button><button type="button" class="ghost" id="ext_preset_delete">Delete</button></div>
+      <div class="section-title" style="margin-top:10px">Compare Current vs Preset</div>
+      <pre id="ext_config_diff" class="ext-pre">Choose a preset and select Compare.</pre>
+      <div class="form-row"><button type="button" class="ghost" id="ext_compare_preset">Compare</button><button type="button" class="ghost" id="ext_history_refresh">Refresh History</button></div>
+      <div class="section-title" style="margin-top:10px">Persistent History</div>
+      <div class="form-row"><select id="ext_history_select" style="width:100%"><option value="">No history entries</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_history_restore">Restore Selected Snapshot</button></div>
+      <div class="small-muted">History and presets are mode-specific files on the robot. Import is validated against the active mode and supported controls.</div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Runtime Health</div><div id="ext_health_summary" class="small status-line">Waiting for runtime telemetry…</div>
+      <div class="ext-charts"><div><div class="small-muted">Processing FPS</div><canvas id="ext_fps_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Loop latency · ms</div><canvas id="ext_latency_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Perception latency · ms</div><canvas id="ext_perception_chart" width="300" height="58"></canvas></div></div>
+      <pre class="ext-pre" id="ext_runtime_details">Runtime detail is loading…</pre>
+      <div class="section-title" style="margin-top:10px">Sign Detector Worker</div><pre class="ext-pre" id="ext_sign_status">Waiting…</pre>
+      <div class="section-title" style="margin-top:10px">Confidence / Speed Decision</div><pre class="ext-pre" id="ext_confidence_status">Inactive or unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Adaptive Obstacle Avoidance</div><pre class="ext-pre" id="ext_obstacle_status">Inactive or unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Traffic Light · City</div><pre class="ext-pre" id="ext_traffic_status">Not active in this mode / unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Race Lifecycle</div><pre class="ext-pre" id="ext_race_status">Not active in this mode / unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Encoder Odometry</div><div id="ext_encoder_status" class="small-muted">Encoder map is opt-in.</div><div id="ext_encoder_embed" hidden><iframe title="Encoder odometry map" id="ext_encoder_frame" loading="lazy" style="width:100%;height:240px;border:1px solid var(--border);border-radius:6px;background:#080d14"></iframe><button type="button" class="ghost" id="ext_encoder_reset">Reset displayed origin</button></div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_camera_panel"><summary class="dock-summary"><span>Camera & Processing Rate</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Processing Rate Limit</div><div class="small-muted">Changes and saves the desired vision-processing cycle rate. This is not the physical camera sensor FPS.</div>
+      <div class="form-row"><label class="label" for="ext_target_fps">Target processing FPS</label><input type="number" id="ext_target_fps" min="1" max="60" step="1" value="30" class="counter"></div><div class="form-row"><button type="button" class="btn" id="ext_apply_fps">Apply FPS Limit</button><span class="small-muted" id="ext_fps_status">Loading…</span></div>
+      <div class="section-title" style="margin-top:12px">Camera Runtime Controls</div><div class="small-muted" id="ext_camera_support">Checking camera capabilities…</div>
+      <div class="form-row"><label class="label" for="ext_exposure">Exposure (µs)</label><input type="number" id="ext_exposure" min="1" step="100" value="10000" class="counter"></div>
+      <div class="form-row"><label class="label" for="ext_gain">Analogue gain</label><input type="number" id="ext_gain" min="0.1" step="0.1" value="6" class="counter"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_auto_exposure"> Auto exposure</label><label><input type="checkbox" id="ext_auto_wb"> Auto white balance</label></div>
+      <div class="form-row"><button type="button" class="btn" id="ext_apply_camera">Apply Camera Controls</button></div>
+      <div class="small-muted">Camera controls are runtime-only and are only editable when Picamera2 exposes the requested hardware controls.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_live_features_panel"><summary class="dock-summary"><span>Live Feature Status</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Live Feature Controls</div><div id="ext_live_feature_rows" class="ext-list">Loading supported controls…</div>
+      <div class="section-title" style="margin-top:10px">Startup-Only / Firmware-Gated Features</div><pre id="ext_feature_status" class="ext-pre">Loading capabilities…</pre>
+      <div class="small-muted">Live controls use the active mode's existing code paths. Traffic lights, confidence limiting, adaptive obstacle planning and encoder telemetry remain startup/firmware gated rather than being enabled unsafely from the browser.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_server_logs_panel"><summary class="dock-summary"><span>Python Server Logs</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="form-row"><select id="ext_log_level"><option>ALL</option><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option></select><input type="search" id="ext_log_search" placeholder="Filter logs…" style="width:100%;min-width:0"></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_log_refresh">Refresh Logs</button><button type="button" class="ghost" id="ext_log_export">Export Visible Logs</button></div>
+      <pre id="ext_server_logs" class="ext-pre ext-log-pre">In-memory log buffer is loading…</pre>
+      <div class="small-muted">Only recent allowlisted runtime logger messages are shown; the API does not expose arbitrary log files.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_frame_gallery_panel"><summary class="dock-summary"><span>Frame History & Comparison</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="small-muted">Session-only snapshots from the current dashboard frame. They are not a replacement for recorded video.</div><div id="ext_frame_gallery" class="ext-gallery"></div><button type="button" class="ghost" id="ext_clear_gallery">Clear Frame History</button>
+    </div></details>
+
+    <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Safety & Runtime Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div id="ext_safety_state" class="status-line">Reading software stop state…</div>
+      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Request Software Stop</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
+      <div class="small-muted">Software stop is consumed by the active Python mode loop. This is not a hardware emergency stop and does not replace a physical cutoff. Resume requires explicit confirmation.</div>
+    </div></details>
+
+  </div>
+</div>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="{{ url_for('static', filename='stream-core.js') }}"></script>
+
+<script src="{{ url_for('static', filename='stream-extensions.js') }}"></script>
+
+<div id="ext_frame_compare" style="display:none;position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.82);align-items:center;justify-content:center;padding:18px">
+  <div style="width:min(1000px,96vw);max-height:92vh;overflow:auto;background:#0b1420;border:1px solid var(--border);border-radius:8px;padding:12px">
+    <div style="display:flex;gap:10px;align-items:center"><strong id="ext_frame_compare_title">Frame comparison</strong><span style="flex:1"></span><button type="button" class="ghost" id="ext_frame_compare_close">Close</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><div><div class="small-muted">Saved snapshot</div><img id="ext_compare_old" alt="Saved frame" style="width:100%;background:#02070c"></div><div><div class="small-muted">Current frame</div><img id="ext_compare_live" alt="Current frame" style="width:100%;background:#02070c"></div></div>
+  </div>
+</div>
+<div id="ext_command_palette"><div class="palette-box"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><strong>Command Palette</strong><span class="small-muted">Ctrl+K · Esc to close</span></div><input type="search" id="ext_command_search" placeholder="Search tools, commands, shortcuts…"><div id="ext_command_list"></div></div></div>
+
+</body>
+</html>
