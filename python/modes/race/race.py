@@ -1192,10 +1192,9 @@ class Robot:
                     else debug_frame.copy() if debug_frame is not None else None
                 )
                 submit_started = time.monotonic()
-                if multiprocess_signs:
-                    submit_options["frame_captured_at"] = getattr(
-                        self.camera, "last_capture_at", None
-                    )
+                submit_options["frame_captured_at"] = getattr(
+                    self.camera, "last_capture_at", None
+                )
                 self.sign_detector.submit(
                     submit_frame, submit_debug, **submit_options,
                 )
