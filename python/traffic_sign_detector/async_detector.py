@@ -21,7 +21,8 @@ class AsyncSignDetector:
         self._last_latency_ms = None
         self._last_error = None
         self._stop = threading.Event()
-        self._paused = False
+        self._paused = False  # phase-owned pause, managed by pause()/resume()
+        self._requests_enabled = True  # operator-owned gate, independent of phase state
         self._active = False
         self._idle_event = threading.Event()
         self._idle_event.set()
@@ -40,7 +41,7 @@ class AsyncSignDetector:
             return None
         submitted_at = time.monotonic()
         with self._lock:
-            if self._paused or self._stop.is_set():
+            if self._paused or not self._requests_enabled or self._stop.is_set():
                 return None
             self._next_id += 1
             request_id = self._next_id
@@ -85,6 +86,26 @@ class AsyncSignDetector:
             if not self._stop.is_set():
                 self._paused = False
 
+    def pause_requests(self):
+        """Reject new inference requests and discard queued frames without changing phase state."""
+        with self._lock:
+            self._requests_enabled = False
+            while True:
+                try:
+                    self._requests.get_nowait()
+                except queue.Empty:
+                    break
+                else:
+                    self._requests.task_done()
+            if not self._active and self._requests.empty():
+                self._idle_event.set()
+
+    def resume_requests(self):
+        """Re-enable operator-gated inference requests; phase pause still takes precedence."""
+        with self._lock:
+            if not self._stop.is_set():
+                self._requests_enabled = True
+
     def wait_until_idle(self, timeout=None):
         """Wait for any inference already in flight to finish."""
         return self._idle_event.wait(timeout)
@@ -110,7 +131,7 @@ class AsyncSignDetector:
                 continue
 
             with self._lock:
-                should_process = not self._paused and not self._stop.is_set()
+                should_process = not self._paused and self._requests_enabled and not self._stop.is_set()
                 if should_process:
                     self._active = True
                     self._idle_event.clear()
@@ -170,6 +191,7 @@ class AsyncSignDetector:
             return {
                 "worker_alive": self._worker.is_alive(),
                 "paused": self._paused,
+                "requests_enabled": self._requests_enabled,
                 "queue_depth": self._requests.qsize(),
                 "submitted": self._submitted,
                 "completed": self._completed,
