@@ -629,7 +629,8 @@ async function refreshSignRequests(){
     if(!data.available){
       state.textContent='Sign inference worker unavailable for this mode';
     }else{
-      state.textContent='Sign requests: '+(data.requests_enabled?'ENABLED':'PAUSED')
+      state.textContent='Request gate: '+(data.requests_enabled?'ENABLED':'PAUSED')
+        +' · phase gate: '+(data.phase_paused?'PAUSED':'open')
         +' · worker '+(data.worker_alive?'alive':'offline')
         +' · queued '+data.queue_depth
         +(data.inference_in_flight?' · inference in flight':'')
@@ -662,7 +663,7 @@ async function safetyAction(action,options){
   if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSignRequests();
+  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard RUN_LVL '+(action==='stop'?'STOP':'MOVE')+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSignRequests();
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -978,8 +979,8 @@ function installExtension(){
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
   $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();enableReadOnlyState();
   document.addEventListener('keydown',function(e){
-    // Fast software-stop hotkey: Ctrl+Shift+Space, with no confirmation dialog.
-    // It still uses /api/safety; the active Python mode loop owns RUN_LVL.
+    // Force Stop hotkey: Ctrl+Shift+Space sets robot RUN_LVL=STOP.
+    // This is separate from /api/sign-requests, which pauses inference submissions.
     if(e.ctrlKey&&e.shiftKey&&(e.code==='Space'||e.key===' ')){
       if(e.repeat)return;
       e.preventDefault();
