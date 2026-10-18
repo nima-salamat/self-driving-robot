@@ -58,6 +58,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     <div id="canvas_stage" class="canvas-stage">
       <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen">⛶ Fullscreen</button>
       <canvas id="video_canvas" width="900" height="600"></canvas>
+      <svg id="ext_precision_overlay" aria-hidden="true" focusable="false"></svg>
     </div>
     <div class="workspace-statusbar" aria-live="off">
       <span id="cad_cursor_x">X: — px</span>
