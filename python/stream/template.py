@@ -836,7 +836,7 @@ function isCameraStageFullscreen(){
   const stage=document.getElementById('canvas_stage');
   return !!stage && (document.fullscreenElement===stage || document.webkitFullscreenElement===stage);
 }
-function syncCameraFullscreenCanvasSize(){
+function syncCameraCanvasSize(){
   const stage=document.getElementById('canvas_stage');
   const button=document.getElementById('camera_fullscreen_btn');
   if(!stage || !canvas)return;
@@ -847,15 +847,18 @@ function syncCameraFullscreenCanvasSize(){
     button.setAttribute('aria-label',active?'Exit camera fullscreen':'Expand camera frame to fullscreen');
     button.title=active?'Exit camera fullscreen (Esc)':'Expand camera frame to fullscreen';
   }
-  if(!active){
-    canvas.style.removeProperty('width');
-    canvas.style.removeProperty('height');
-    return;
-  }
+  /* Fit in the available stage in normal and fullscreen modes.
+     max-width/max-height alone only shrink oversized frames; they never
+     enlarge a low-resolution frame to use the available preview space. */
   const bounds=stage.getBoundingClientRect();
+  const style=window.getComputedStyle(stage);
+  const paddingX=(parseFloat(style.paddingLeft)||0)+(parseFloat(style.paddingRight)||0);
+  const paddingY=(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0);
+  const availableWidth=Math.max(1,stage.clientWidth-paddingX);
+  const availableHeight=Math.max(1,stage.clientHeight-paddingY);
   const frameWidth=Math.max(1,canvas.width),frameHeight=Math.max(1,canvas.height);
-  const scale=Math.min(bounds.width/frameWidth,bounds.height/frameHeight);
-  if(!Number.isFinite(scale)||scale<=0)return;
+  const scale=Math.min(availableWidth/frameWidth,availableHeight/frameHeight);
+  if(!Number.isFinite(scale)||scale<=0||!bounds.width||!bounds.height)return;
   canvas.style.width=Math.max(1,Math.floor(frameWidth*scale))+'px';
   canvas.style.height=Math.max(1,Math.floor(frameHeight*scale))+'px';
 }
@@ -877,15 +880,23 @@ async function toggleCameraFullscreen(){
 }
 function handleCameraFullscreenChange(){
   window.requestAnimationFrame(function(){
-    syncCameraFullscreenCanvasSize();
+    syncCameraCanvasSize();
     renderWorkspaceCanvas();
   });
 }
 document.addEventListener('fullscreenchange',handleCameraFullscreenChange);
 document.addEventListener('webkitfullscreenchange',handleCameraFullscreenChange);
 window.addEventListener('resize',function(){
-  if(isCameraStageFullscreen())syncCameraFullscreenCanvasSize();
+  syncCameraCanvasSize();
 });
+/* Refit if the settings dock or event console changes the stage dimensions. */
+const cameraStage=document.getElementById('canvas_stage');
+if(cameraStage&&typeof ResizeObserver!=='undefined'){
+  const cameraStageObserver=new ResizeObserver(function(){
+    window.requestAnimationFrame(syncCameraCanvasSize);
+  });
+  cameraStageObserver.observe(cameraStage);
+}
 
 /* ---------- Utilities & Math ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
@@ -1021,7 +1032,7 @@ function fetchFrameOnce(){
 
             lastFrameImage=img;
             renderWorkspaceCanvas();
-            if(isCameraStageFullscreen())syncCameraFullscreenCanvasSize();
+            syncCameraCanvasSize();
 
             hasRenderedFrame = true;
             frameRequestFailures = 0;
