@@ -227,7 +227,8 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       </div>
       <hr style="border-color: rgba(255,255,255,0.05); margin: 8px 0;">
       <div class="form-row">
-        <button id="stop_all_btn" class="btn" style="background:#ef4444; color:white; width:100%;">Stop All Sync & Requests</button>
+        <button id="stop_all_btn" class="btn" style="background:#ef4444; color:white; width:100%;">Pause Dashboard Requests</button>
+        <div class="small-muted" style="margin-top:8px;">Pauses camera-frame, configuration, health and Arduino dashboard polling to reduce dashboard requests. It does not stop the robot or change RUN_LVL; use Force Stop for robot motion.</div>
       </div>
     </div></details>
 
@@ -354,6 +355,8 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     <div class="settings-section"><h3>Stream Display Performance</h3>
       <label>Stream display FPS <span id="roi_setting_stream_fps_value">8.3 FPS target</span><input id="roi_setting_stream_fps" type="number" min="1" max="30" step="0.5" value="8.3" aria-label="Stream display refresh rate in frames per second"></label>
       <p class="settings-note">Controls how often this page requests a new frame. It is separate from target processing FPS and the camera sensor FPS; the actual display rate can be lower when frames, network, or browser rendering are slower.</p>
+      <label>JPEG image quality <span id="roi_setting_jpeg_quality_value">85 / 100</span><input id="roi_setting_jpeg_quality" type="range" min="30" max="100" step="5" value="85" aria-label="Stream JPEG image quality" {% if not stream_control %}disabled{% endif %}></label>
+      <p class="settings-note">Lower quality generally reduces image size and network bandwidth; higher quality preserves more detail. This only changes JPEG encoding for dashboard frames—not camera resolution, sensor FPS, or the robot's vision/control processing. Changing it requires dashboard controls to be enabled.</p>
     </div>
     <div class="settings-section"><h3>ROI Appearance</h3>
       <label>Label font size <span id="roi_setting_label_size_value">12 px at 100%</span><input id="roi_setting_label_size" type="range" min="6" max="32" step="1" value="12"></label>
