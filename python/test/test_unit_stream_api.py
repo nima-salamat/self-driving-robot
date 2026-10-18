@@ -14,6 +14,15 @@ from stream import WebStreamer, publish_debug_frame
 
 
 class StreamApiTests(unittest.TestCase):
+    def setUp(self):
+        import stream
+
+        self._stream_test_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._stream_test_directory.cleanup)
+        base_dir_patch = patch.object(stream, "BASE_DIR", self._stream_test_directory.name)
+        base_dir_patch.start()
+        self.addCleanup(base_dir_patch.stop)
+
     def make_config(self):
         return types.SimpleNamespace(
             MODE="city",
@@ -1115,6 +1124,27 @@ class StreamApiTests(unittest.TestCase):
         denied = client.post("/api/stream/quality", json={"quality": 50})
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(getattr(config, "STREAM_JPEG_QUALITY", 85), 85)
+
+    def test_mjpeg_encoder_uses_active_jpeg_quality(self):
+        import cv2
+
+        config = self.make_config()
+        config.STREAM_JPEG_QUALITY = 45
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with patch("stream.media_api.cv2.imencode", wraps=cv2.imencode) as encode:
+            response = client.get("/video_feed", buffered=False)
+            try:
+                next(iter(response.response))
+            finally:
+                response.close()
+
+        self.assertGreaterEqual(encode.call_count, 1)
+        self.assertEqual(
+            encode.call_args_list[0].args[2],
+            [cv2.IMWRITE_JPEG_QUALITY, 45],
+        )
 
     def test_dashboard_request_pause_is_distinct_from_robot_stop(self):
         stream_dir = PYTHON_ROOT / "stream"
