@@ -1134,7 +1134,17 @@ function updateArduinoOutput(){
         .catch(()=>{});
 }
 
-function fetchValuesLoop(){if(!syncActive)return;fetchDashboardJson('/get_values').then(j=>{if(j&&j.values){values=j.values;updateInputsFromValues();if(window.syncPropertiesSelection)window.syncPropertiesSelection(document.getElementById('prop_target').value);drawOverlays();}});}
+function fetchValuesLoop(){
+ if(!syncActive)return;
+ fetchDashboardJson('/get_values').then(j=>{
+  if(!j||!j.values)return;
+  values=j.values;updateInputsFromValues();
+  const active=document.activeElement;
+  const editingProperty=active&&['prop_left','prop_top','prop_right','prop_bottom','prop_point_x','prop_point_y'].includes(active.id);
+  if(!editingProperty&&window.syncPropertiesSelection)window.syncPropertiesSelection(document.getElementById('prop_target').value);
+  drawOverlays();
+ });
+}
 
 function loadModeFeatures(){
     fetchDashboardJson('/api/mode').then(j=>{
