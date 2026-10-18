@@ -396,6 +396,11 @@ class StreamApiTests(unittest.TestCase):
         import tempfile
 
         config = self.make_config()
+        config.apply_marker_mode = lambda mode: (
+            setattr(config, "WITH_SIGN", mode == "sign"),
+            setattr(config, "WITH_APRILTAG", mode == "apriltag"),
+            setattr(config, "USE_SIGN", mode == "sign"),
+        )
         client = WebStreamer(config).app.test_client()
 
         before = client.get("/api/features")
