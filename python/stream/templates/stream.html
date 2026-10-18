@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Interactive ROI & Settings</title>
+<title>Editor Self Driving Robot</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 
@@ -15,7 +15,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 </head>
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
-<div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>ROBOY STUDIO</span></div>
+<div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Editor Self Driving Robot</span></div>
 <details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
 <details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
@@ -24,30 +24,24 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <button type="button" class="ghost" id="ext_open_palette" title="Command Palette · Ctrl+K" style="margin-left:6px;padding:4px 8px">⌘ Commands</button><span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
 <div class="container">
   <div class="card">
-    <div class="header">
-      <div class="h1">Interactive ROI Editor — {{ mode|capitalize }} Mode</div>
-      <div class="small">Drag to move/resize bounding boxes or BEV corners. Use sliders for Trapezoid shapes. <span id="mode_features" style="color:var(--accent);"></span></div>
-      {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
-      <button id="toggle_dock_btn" type="button" class="ghost">Hide Panels</button>
-    </div>
-    <div class="controls">
+    <div class="controls editor-controls" aria-label="Editor controls">
       <label class="small" for="variable_select">Select Object</label>
-      <select id="variable_select">
-        <option value="NONE">-- NONE --</option>
-        {% for var in variables %}
-          <option value="{{ var }}">{{ var }}</option>
-        {% endfor %}
+      <select id="variable_select" aria-label="Select logical object">
+        <option value="NONE">No object selected</option>
+        <option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option>
+        <option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option>
+        <option value="BEV_TL">BEV Control Point · Top Left</option><option value="BEV_TR">BEV Control Point · Top Right</option>
+        <option value="BEV_BR">BEV Control Point · Bottom Right</option><option value="BEV_BL">BEV Control Point · Bottom Left</option>
       </select>
-      <button id="clear_selection" class="ghost">Clear</button>
-      <button id="center_reset" class="ghost">Center Base</button>
-      <div style="flex:1"></div>
-      
-      <label class="small" style="color:var(--accent); font-weight:bold;">
-        View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0" style="width:70px; vertical-align:middle;">
-      </label>
-
-      <label class="small" style="color:var(--accent); font-weight:bold; margin-left: 10px;">Show Overlays <input id="show_rects" type="checkbox" checked></label>
-      <div id="frame_mode" class="small status-line" style="margin-left: 10px;">Mode: Live</div>
+      <button id="clear_selection" class="ghost" type="button">Clear</button>
+      <button id="center_reset" class="ghost" type="button">Fit View</button>
+      <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
+      <output id="workspace_zoom_percent" class="zoom-percent" aria-live="off">100%</output>
+      <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
+      <button id="toggle_dock_btn" type="button" class="ghost">Hide Panels</button>
+      <button id="roi_settings_open" type="button" class="ghost" title="Grid, snap and ROI appearance">Settings</button>
+      <div id="frame_mode" class="small status-line">Mode: Live</div>
+      {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
     </div>
     <div class="workspace-main">
 <aside class="left-toolbar" aria-label="Tools">
@@ -69,7 +63,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <span id="cad_cursor_y">Y: — px</span>
       <span id="cad_cursor_u">U: — %</span>
       <span id="cad_cursor_v">V: — %</span>
-      <span class="cad-help">Drag ROI edges/handles or BEV corner points · coordinates are shown relative to the camera image</span>
+      
       <span id="cad_selected_area" class="cad-area">Object: NONE</span>
     </div>
     <div class="workspace-actionbar" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -77,7 +71,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <button id="refresh_vals" class="ghost">Refresh Feed</button>
       <button id="download_json" class="ghost">Download JSON</button>
       <div style="flex:1"></div>
-      <div class="small">Tip: Freeze frame to tune angles accurately</div>
+      
     </div>
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
@@ -91,10 +85,10 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <div class="right-panel">
 <details class="dock-panel properties-panel" open><summary class="dock-summary"><span>Properties</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
 <div class="properties-mode" id="properties_mode">RL · ROI bounds</div>
-<label class="property-field" style="margin-bottom:8px;">Object / Point<select id="prop_target"><option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option><option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option><option value="BEV_TL">BEV · Top Left</option><option value="BEV_TR">BEV · Top Right</option><option value="BEV_BR">BEV · Bottom Right</option><option value="BEV_BL">BEV · Bottom Left</option></select></label>
+<label class="property-field" style="margin-bottom:8px;">Object / Point<select id="prop_target"><option value="NONE">No object selected</option><option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option><option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option><option value="BEV_TL">BEV · Top Left</option><option value="BEV_TR">BEV · Top Right</option><option value="BEV_BR">BEV · Bottom Right</option><option value="BEV_BL">BEV · Bottom Left</option></select></label>
 <div class="properties-grid" id="prop_roi_fields"><label class="property-field">Left (U) <input id="prop_left" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Top (V) <input id="prop_top" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Right (U) <input id="prop_right" type="number" min="0" max="1" step="0.001"></label><label class="property-field">Bottom (V) <input id="prop_bottom" type="number" min="0" max="1" step="0.001"></label></div>
 <div class="properties-grid" id="prop_point_fields" hidden><label class="property-field">X / U <input id="prop_point_x" type="number" min="-5" max="5" step="0.001"></label><label class="property-field">Y / V <input id="prop_point_y" type="number" min="-5" max="5" step="0.001"></label></div>
-<div class="property-actions"><button type="button" class="btn" id="prop_apply_btn">Apply</button><button type="button" class="ghost" id="prop_revert_btn">Reload</button></div><div class="property-hint" id="prop_hint">Normalized camera coordinates (0–1). Select a region to inspect or edit.</div>
+<div class="property-actions"><button type="button" class="btn" id="prop_apply_btn">Apply</button><button type="button" class="ghost" id="prop_revert_btn">Reload</button></div><div class="mirror-actions" id="roi_mirror_actions" hidden><button type="button" class="ghost" id="mirror_left_to_right">Mirror Left → Right</button><button type="button" class="ghost" id="mirror_right_to_left">Mirror Right → Left</button></div><div class="property-hint" id="prop_hint">Normalized camera coordinates (0–1). Select a region to inspect or edit.</div>
 </div></details>
     <details class="dock-panel"><summary class="dock-summary"><span>Arduino Telemetry</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
@@ -305,6 +299,27 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
   </div>
 </div>
 
+<div id="roi_settings_dialog" class="settings-modal" aria-hidden="true">
+  <section class="settings-card" role="dialog" aria-modal="true" aria-labelledby="roi_settings_title">
+    <header class="settings-header"><div><h2 id="roi_settings_title">Editor Settings</h2><p>Grid, snapping, and ROI appearance</p></div><button type="button" class="ghost" id="roi_settings_close" aria-label="Close settings">×</button></header>
+    <div class="settings-section"><h3>Grid & Snap</h3>
+      <label>Overlay mode<select id="roi_setting_grid_mode"><option value="off">Off</option><option value="grid">Grid</option><option value="dots">Dots</option></select></label>
+      <label>Spacing <span id="roi_setting_grid_spacing_value">5%</span><input id="roi_setting_grid_spacing" type="range" min="0.025" max="0.25" step="0.025" value="0.05"></label>
+      <label>Grid opacity<input id="roi_setting_grid_opacity" type="range" min="0.05" max="1" step="0.05" value="0.35"></label>
+      <label>Grid line thickness<input id="roi_setting_grid_thickness" type="range" min="0.5" max="3" step="0.5" value="1"></label>
+      <label>Dot size<input id="roi_setting_grid_dot_size" type="range" min="1" max="6" step="0.5" value="2"></label>
+      <label class="settings-check"><input id="roi_setting_snap" type="checkbox"> Snap moves and resize handles to grid spacing</label>
+    </div>
+    <div class="settings-section"><h3>ROI Appearance</h3>
+      <label>Label font size <span id="roi_setting_label_size_value">12 px at 100%</span><input id="roi_setting_label_size" type="range" min="6" max="32" step="1" value="12"></label>
+      <label>Label weight<select id="roi_setting_label_weight"><option value="400">Normal</option><option value="500">Medium</option><option value="600">Semi-bold</option><option value="700" selected>Bold</option></select></label>
+      <label>Outline thickness<input id="roi_setting_outline_thickness" type="range" min="0.5" max="6" step="0.5" value="2"></label>
+      <label>Corner / handle size<input id="roi_setting_handle_size" type="range" min="4" max="24" step="1" value="10"></label>
+      <p class="settings-note">Appearance values are base sizes at 100% zoom; overlays scale with the camera image.</p>
+    </div>
+    <footer class="settings-footer"><button type="button" class="ghost" id="roi_settings_reset">Reset defaults</button><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="roi_settings_cancel">Cancel</button><button type="button" class="btn" id="roi_settings_apply">Apply</button></footer>
+  </section>
+</div>
 <div id="toast" class="toast" style="display:none"></div>
 
 <script src="{{ url_for('static', filename='stream-core.js') }}"></script>
