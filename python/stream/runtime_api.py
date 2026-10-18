@@ -239,7 +239,10 @@ class StreamRuntimeMixin:
         def schedule_shutdown_after_response():
             try:
                 threading.Thread(
-                    target=stop_stream,
+                    # stop_stream is defined later in stream/__init__.py, after
+                    # this mixin module is imported. Resolve it from the live
+                    # module instead of relying on the import-time global copy.
+                    target=_stream_module.stop_stream,
                     args=(self.config,),
                     daemon=True,
                     name="stream-http-shutdown",
