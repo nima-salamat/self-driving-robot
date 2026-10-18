@@ -364,6 +364,34 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(queried.status_code, 200)
             self.assertIn("config", queried.get_json())
 
+    def test_custom_preview_roi_geometry_and_drawing_tool_are_validated(self):
+        import tempfile
+
+        client = WebStreamer(self.make_config()).app.test_client()
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            valid = client.post(
+                "/api/workspace",
+                json={"action": "save_workspace", "workspace": {
+                    "view": {"tool": "roi_trapezoid", "rightPaneWidth": 380},
+                    "annotations": [{
+                        "kind": "roi_trapezoid", "x": 0.1, "y": 0.2,
+                        "w": 0.5, "h": 0.4, "topFactor": 0.45,
+                        "label": "Preview-only region"
+                    }],
+                }},
+            )
+            self.assertEqual(valid.status_code, 200, valid.get_data(as_text=True))
+            bad = client.post(
+                "/api/workspace",
+                json={"action": "save_workspace", "workspace": {
+                    "annotations": [{
+                        "kind": "roi_rect", "x": 0.8, "y": 0.2,
+                        "w": 0.4, "h": 0.2
+                    }],
+                }},
+            )
+            self.assertEqual(bad.status_code, 400)
+
     def test_live_feature_controls_are_gated_and_persisted(self):
         import tempfile
 
