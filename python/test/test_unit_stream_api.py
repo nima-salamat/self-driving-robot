@@ -193,7 +193,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
 
-        canvas_css = re.search(r"(?m)^canvas\\s*\\{([^}]*)\\}", html)
+        canvas_css = re.search(r"(?m)^canvas\s*\{([^}]*)\}", html)
         self.assertIsNotNone(canvas_css, "Expected a canvas CSS rule")
         self.assertIn("width: auto;", canvas_css.group(1))
         self.assertIn("height: auto;", canvas_css.group(1))
