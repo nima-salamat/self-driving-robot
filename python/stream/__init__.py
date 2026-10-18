@@ -144,6 +144,23 @@ class WebStreamer:
             else: res[k] = str(val)
         return res
 
+    def _restore_advanced_values(self, snapshot):
+        """Roll back an in-memory dashboard mutation to a known-good snapshot."""
+        if not isinstance(snapshot, dict):
+            return
+        for key, value in snapshot.items():
+            if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
+                setattr(self.config, key, value)
+        try:
+            set_marker_mode(
+                self.config,
+                "sign" if snapshot.get("WITH_SIGN", False)
+                else "apriltag" if snapshot.get("WITH_APRILTAG", False)
+                else "none",
+            )
+        except Exception:
+            logger.exception("Could not restore the prior marker-detector mode")
+
     def ui_filename(self):
         mode = getattr(self.config, "MODE", "mode")
         return os.path.join(str(BASE_DIR), f"{mode}_ui.json")
@@ -308,11 +325,9 @@ class WebStreamer:
             if data is None:
                 data = request.form.to_dict()
             if not isinstance(data, dict):
-                return jsonify(
-                    success=False,
-                    message="request body must be an object",
-                ), 400
-            before = self._full_config_snapshot()
+                return jsonify(success=False, message="request body must be an object"), 400
+
+            # Validate the entire request before changing any runtime value.
             updated = {}
             for var in VARIABLES:
                 if var not in data:
@@ -320,19 +335,19 @@ class WebStreamer:
                 try:
                     val = float(data[var])
                 except (TypeError, ValueError):
-                    return jsonify(
-                        success=False,
-                        message=f"{var} must be numeric",
-                    ), 400
-                if not 0.0 <= val <= 1.0:
-                    return jsonify(
-                        success=False,
-                        message=f"{var} must be between 0 and 1",
-                    ), 400
-                setattr(self.config, var, val)
+                    return jsonify(success=False, message=f"{var} must be numeric"), 400
+                if not math.isfinite(val) or not 0.0 <= val <= 1.0:
+                    return jsonify(success=False, message=f"{var} must be finite and between 0 and 1"), 400
                 updated[var] = val
+
             if updated:
-                self.save_conf_to_json()
+                before = self._full_config_snapshot()
+                for var, val in updated.items():
+                    setattr(self.config, var, val)
+                if not self.save_conf_to_json():
+                    for var, val in before.get("values", {}).items():
+                        setattr(self.config, var, val)
+                    return jsonify(success=False, message="could not persist ROI settings; previous values restored"), 500
                 self._record_config_history("before ROI update", before)
                 self._record_config_history("ROI settings updated")
             return jsonify(
@@ -444,9 +459,12 @@ class WebStreamer:
             
         except Exception as e:
             logger.exception("Invalid advanced payload")
-            return jsonify(success=False), 400
-            
-        self.save_conf_to_json()
+            self._restore_advanced_values(before.get("advanced", {}))
+            return jsonify(success=False, message=str(e)), 400
+
+        if not self.save_conf_to_json():
+            self._restore_advanced_values(before.get("advanced", {}))
+            return jsonify(success=False, message="could not persist advanced settings; previous values restored"), 500
         self._record_config_history("before advanced settings update", before)
         self._record_config_history("advanced settings updated")
         return jsonify(success=True, advanced=self.get_all_advanced())
@@ -1317,16 +1335,20 @@ class WebStreamer:
                 set_marker_mode(self.config, value)
             else:
                 return jsonify(success=False, message="feature is not runtime-controllable; check restart_required status"), 400
-            self.save_conf_to_json()
+            if not self.save_conf_to_json():
+                self._restore_advanced_values(before.get("advanced", {}))
+                return jsonify(success=False, message="could not persist feature change; previous state restored"), 500
             self._record_config_history("before feature change " + feature, before)
             self._record_config_history("feature changed: " + feature)
             logger.info("Dashboard live feature change: %s=%s", feature, value)
             return jsonify(success=True, feature=feature, value=value, state=self._feature_snapshot())
         except (TypeError, ValueError) as exc:
+            self._restore_advanced_values(before.get("advanced", {}))
             return jsonify(success=False, message=str(exc)), 400
         except Exception:
             logger.exception("Failed to apply live feature change")
-            return jsonify(success=False, message="feature change failed"), 500
+            self._restore_advanced_values(before.get("advanced", {}))
+            return jsonify(success=False, message="feature change failed; previous state restored"), 500
 
     def video_feed_frame(self):
         with self._frame_lock:
@@ -1568,7 +1590,9 @@ class WebStreamer:
         current = getattr(self.config, "RECORD_VIDEO", False)
         new_val = not current
         setattr(self.config, "RECORD_VIDEO", new_val)
-        self.save_conf_to_json()
+        if not self.save_conf_to_json():
+            setattr(self.config, "RECORD_VIDEO", current)
+            return jsonify(success=False, message="could not persist recording state; previous value restored"), 500
         return jsonify(success=True, recording=new_val)
 
     def freeze_frame(self):
