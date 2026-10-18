@@ -110,6 +110,9 @@ The CAD-style workspace includes:
 - Full mode-specific configuration JSON import/export, preset save/apply/compare, configuration history, and undo/redo.
 - Runtime-health charts/details, Arduino telemetry, sign-worker status, confidence/obstacle diagnostics, City traffic-light or Race lifecycle status, and an embedded encoder map when `--encoder-map` is enabled.
 - Picamera2-supported exposure/gain/auto-control settings, live processing-cycle FPS limiting, session-only frame snapshots/comparison, console filters/export, runtime log search, workspace profiles, and a command palette (`Ctrl+K`).
+- `File → Exit · Stop Stream Server…` opens a custom confirmation dialog and then shuts down only the Stream HTTP server and its serving thread; it does not stop the City/Race runtime loop or robot motion.
+
+After confirmation, the active process sets `STREAM=False` so dashboard-only frame generation stops too. The current browser page disconnects; restarting the dashboard requires launching the program again with `--stream`. This runtime action is disabled when launched with `--stream-read-only`.
 
 The dashboard control endpoints respect `STREAM_ALLOW_CONTROL` and the CLI's
 `--stream-read-only` option. Use the read-only option when users should inspect
