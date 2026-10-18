@@ -13,6 +13,7 @@ let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSa
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
 let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
 const nativeFetch = window.fetch.bind(window);
+let motionHotkeyActionInFlight=false;
 
 function normalizedConfig(snapshot){
   if(!snapshot || typeof snapshot!=='object') return null;
@@ -676,6 +677,19 @@ async function safetyAction(action,options){
   if($('run_lvl'))$('run_lvl').value=String(data.run_level|| (action==='stop'?'STOP':'MOVE'));
   showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard RUN_LVL '+(action==='stop'?'STOP':'MOVE')+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await Promise.all([refreshSafety(),refreshSignRequests()]);
 }
+async function toggleMotionSafetyFromKeyboard(){
+  if(motionHotkeyActionInFlight)return;
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  motionHotkeyActionInFlight=true;
+  try{
+    const response=await nativeFetch('/api/safety',{cache:'no-store'});
+    const state=await response.json();
+    if(!response.ok)throw new Error(state.message||('HTTP '+response.status));
+    if(!state.controls_enabled)throw new Error('Dashboard is read-only.');
+    const action=state.software_stop_active?'resume':'stop';
+    await safetyAction(action,{skipConfirm:action==='stop',source:'keyboard'});
+  }finally{motionHotkeyActionInFlight=false;}
+}
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const fps=Number($('ext_target_fps').value);const data=await nativeFetch('/api/processing-rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_fps:fps})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
@@ -835,7 +849,7 @@ function buildCommandPalette(){
     ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],
     ['Save workspace profile','profile',''],['Save configuration preset','preset',''],
     ['Capture frame snapshot','snapshot',''],['Refresh runtime diagnostics','health',''],['Refresh server logs','logs',''],
-    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Force Stop (RUN_LVL → STOP)','stop','Ctrl+Shift+Space'],['Resume motion (confirmation)','resume','']
+    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Toggle Robot Motion (RUN_LVL)','toggle-motion','Ctrl+Shift+Space'],['Force Stop (RUN_LVL → STOP)','stop',''],['Resume motion (confirmation)','resume','']
   ];
   const commandList=$('ext_command_list'),settingsList=$('ext_settings_results'),search=$('ext_command_search');
   function renderResults(){
@@ -898,6 +912,7 @@ function executeCommand(name){
     logs:refreshServerLogs,
     camera:function(){$('ext_camera_panel').open=true;$('ext_camera_panel').scrollIntoView({behavior:'smooth',block:'nearest'});},
     encoder:function(){if($('ext_encoder_embed').hidden)showToast('Encoder map requires --encoder-map and compatible firmware restart.');else $('ext_encoder_frame').scrollIntoView({behavior:'smooth'});},
+    'toggle-motion':toggleMotionSafetyFromKeyboard,
     stop:function(){safetyAction('stop',{skipConfirm:true,source:'command-palette'}).catch(function(e){showToast(e.message);});},
     resume:function(){safetyAction('resume').catch(function(e){showToast(e.message);});}
   };
@@ -991,12 +1006,12 @@ function installExtension(){
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
   $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();enableReadOnlyState();
   document.addEventListener('keydown',function(e){
-    // Force Stop hotkey: Ctrl+Shift+Space sets robot RUN_LVL=STOP.
-    // This is separate from /api/sign-requests, which pauses inference submissions.
+    // Toggle robot motion with Ctrl+Shift+Space: stop while moving; resume while stopped.
+    // Resume still requires confirmation. This is separate from /api/sign-requests.
     if(e.ctrlKey&&e.shiftKey&&(e.code==='Space'||e.key===' ')){
       if(e.repeat)return;
       e.preventDefault();
-      safetyAction('stop',{skipConfirm:true,source:'keyboard'}).catch(function(err){showToast('Force Stop failed: '+err.message);});
+      toggleMotionSafetyFromKeyboard().catch(function(err){showToast('Motion toggle failed: '+err.message);});
       return;
     }
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyK'){e.preventDefault();openCommandPalette();return;}
