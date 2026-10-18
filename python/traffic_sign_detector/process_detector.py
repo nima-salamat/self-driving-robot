@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import multiprocessing as mp
 import queue
 import signal
@@ -74,9 +75,10 @@ def _sign_worker(method, detector_factory, requests, results, ready, ready_paylo
 
     while not stop_event.is_set():
         try:
-            request_id, frame, submitted_at, confidence_threshold, target_sign_types = (
-                requests.get(timeout=0.1)
-            )
+            (
+                request_id, frame, submitted_at, frame_captured_at,
+                confidence_threshold, target_sign_types,
+            ) = requests.get(timeout=0.1)
         except queue.Empty:
             continue
 
@@ -110,7 +112,7 @@ def _sign_worker(method, detector_factory, requests, results, ready, ready_paylo
             completed_at = time.monotonic()
             payload = (
                 "ok", request_id, result, submitted_at, completed_at,
-                (completed_at - started) * 1000.0, None,
+                (completed_at - started) * 1000.0, None, frame_captured_at,
             )
             _replace_queue_item(results, payload)
         except Exception as exc:
@@ -120,7 +122,7 @@ def _sign_worker(method, detector_factory, requests, results, ready, ready_paylo
             _replace_queue_item(
                 results,
                 ("error", request_id, None, submitted_at, completed_at,
-                 (completed_at - started) * 1000.0, detail),
+                 (completed_at - started) * 1000.0, detail, frame_captured_at),
             )
         finally:
             active_event.clear()
@@ -202,13 +204,19 @@ class ProcessSignDetector:
         )
 
     def submit(self, frame, debug_frame=None, confidence_threshold=None,
-               target_sign_types=None):
+               target_sign_types=None, frame_captured_at=None):
         if frame is None or self._closed:
             return None
         if self._paused.is_set() or not self._requests_enabled.is_set() or self._stop.is_set():
             return None
 
         submitted_at = time.monotonic()
+        try:
+            frame_captured_at = float(frame_captured_at)
+            if not math.isfinite(frame_captured_at) or frame_captured_at <= 0:
+                frame_captured_at = submitted_at
+        except (TypeError, ValueError):
+            frame_captured_at = submitted_at
         with self._lock:
             self._next_id += 1
             request_id = self._next_id
@@ -219,6 +227,7 @@ class ProcessSignDetector:
             request_id,
             np.array(frame, copy=True, order="C"),
             submitted_at,
+            frame_captured_at,
             confidence_threshold,
             tuple(target_sign_types) if target_sign_types is not None else None,
         )
@@ -251,14 +260,19 @@ class ProcessSignDetector:
 
         if newest is None:
             return
-        kind, request_id, result, submitted_at, completed_at, latency_ms, error = newest
+        (
+            kind, request_id, result, submitted_at, completed_at,
+            latency_ms, error, frame_captured_at,
+        ) = newest
         with self._lock:
             if kind == "error":
                 self._failures += 1
                 self._last_error = error
                 self._last_latency_ms = latency_ms
                 return
-            self._latest = (request_id, result, submitted_at, completed_at)
+            self._latest = (
+                request_id, result, submitted_at, completed_at, frame_captured_at
+            )
             self._completed += 1
             self._last_result_at = completed_at
             self._last_latency_ms = latency_ms
@@ -271,7 +285,8 @@ class ProcessSignDetector:
         if latest is None or max_age_s is None:
             return latest
         max_age_s = max(0.0, float(max_age_s))
-        input_age_s = max(0.0, time.monotonic() - latest[2])
+        frame_captured_at = latest[4] if len(latest) >= 5 else latest[2]
+        input_age_s = max(0.0, time.monotonic() - frame_captured_at)
         return latest if input_age_s < max_age_s else None
 
     def pause(self):
@@ -333,7 +348,10 @@ class ProcessSignDetector:
                 max(0.0, now - last_result_at) if last_result_at is not None else None
             ),
             "last_result_input_age_s": (
-                max(0.0, now - latest[2]) if latest is not None else None
+                max(
+                    0.0,
+                    now - (latest[4] if len(latest) >= 5 else latest[2]),
+                ) if latest is not None else None
             ),
             "last_submit_age_s": (
                 max(0.0, now - last_submit_at) if last_submit_at is not None else None
