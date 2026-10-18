@@ -309,7 +309,7 @@ canvas {
 .ext-pre{background:#07101a;color:#c5d5e5;border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:10px/1.45 ui-monospace,Consolas,monospace;margin:6px 0 0}
 .ext-log-pre{max-height:260px}.ext-charts{display:grid;gap:7px;margin:8px 0}.ext-charts canvas{display:block;width:100%;height:58px;background:#07101a;border:1px solid var(--border);border-radius:4px}
 .ext-gallery{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.ext-gallery-card{border:1px solid var(--border);border-radius:5px;overflow:hidden;min-width:0}.ext-gallery-card img{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#050a11}.ext-gallery-card div{padding:4px;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.ext-stop-btn{background:#b91c1c!important;color:white!important}.ext-mini-label{color:var(--muted);font-size:10px}.ext-feature-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px}
-#ext_precision_overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}
+#ext_precision_overlay{position:absolute;left:0;top:0;width:1px;height:1px;pointer-events:none;z-index:2;overflow:hidden}
 #ext_command_palette{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;padding-top:12vh}
 #ext_command_palette .palette-box{width:min(620px,92vw);max-height:70vh;overflow:auto;background:#0b1420;border:1px solid var(--accent);border-radius:9px;padding:12px;box-shadow:0 18px 60px #000}
 #ext_command_palette input{width:100%;margin-bottom:8px;padding:10px}
@@ -1861,7 +1861,13 @@ function extImageBounds(){
   try{return getImgBounds();}catch(_){return {ix:0,iy:0,iw:canvas.width,ih:canvas.height};}
 }
 function drawPrecisionOverlay(){
-  const svg=$('ext_precision_overlay');if(!svg||!canvas)return;
+  const svg=$('ext_precision_overlay'),stage=$('canvas_stage');if(!svg||!canvas||!stage)return;
+  const canvasRect=canvas.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();
+  const contentLeft=stageRect.left+stage.clientLeft,contentTop=stageRect.top+stage.clientTop;
+  svg.style.left=(canvasRect.left-contentLeft)+'px';
+  svg.style.top=(canvasRect.top-contentTop)+'px';
+  svg.style.width=Math.max(1,canvasRect.width)+'px';
+  svg.style.height=Math.max(1,canvasRect.height)+'px';
   svg.setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);
   svg.replaceChildren();
   const b=extImageBounds();
