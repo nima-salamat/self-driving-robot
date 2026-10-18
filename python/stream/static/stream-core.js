@@ -26,6 +26,7 @@ let gridMode = 'off', gridSpacing = 0.05, gridOpacity = 0.35, gridThickness = 1,
 function isEditorSnapEnabled(){return typeof window.__isEditorSnapEnabled === 'function' && window.__isEditorSnapEnabled();}
 function snapNormalized(value, spacing){const step=Math.max(0.001,Math.min(1,Number(spacing==null?gridSpacing:spacing)||0.05));return round01(Math.round(Number(value)/step)*step);}
 let fetchFrameTimer = null;
+let streamDisplayFps = 8.3; // Matches the previous 120 ms browser refresh cadence.
 let valUpdateTimer = null;
 let healthUpdateTimer = null;
 let arduinoUpdateTimer = null;
@@ -309,9 +310,22 @@ function computeRects(){
     };
 }
 
+function getStreamDisplayFps(){return streamDisplayFps;}
+function setStreamDisplayFps(value){
+    const fps=Number(value);
+    if(!Number.isFinite(fps)||fps<1||fps>30)throw new RangeError('Stream display FPS must be between 1 and 30.');
+    streamDisplayFps=Math.round(fps*10)/10;
+    if(fetchFrameTimer){
+        clearInterval(fetchFrameTimer);
+        fetchFrameTimer=setInterval(fetchFrameOnce,Math.max(33,Math.round(1000/streamDisplayFps)));
+    }
+    return streamDisplayFps;
+}
+window.getStreamDisplayFps=getStreamDisplayFps;
+window.setStreamDisplayFps=setStreamDisplayFps;
 function startFrameLoop(){
     if(fetchFrameTimer) clearInterval(fetchFrameTimer);
-    fetchFrameTimer = setInterval(fetchFrameOnce, 120);
+    fetchFrameTimer = setInterval(fetchFrameOnce, Math.max(33,Math.round(1000/streamDisplayFps)));
     fetchFrameOnce();
 }
 
@@ -1210,6 +1224,7 @@ function setDock(open){
   if(menuDockToggle)menuDockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
   window.requestAnimationFrame(()=>{syncCameraCanvasSize();renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();});
 }
+window.ensureStreamDockVisible=()=>setDock(true);
 dockToggle.addEventListener('click',()=>{
   const open=!dockIsOpen;
   setDock(open);
