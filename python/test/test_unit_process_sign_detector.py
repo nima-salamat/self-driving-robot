@@ -31,9 +31,14 @@ class ProcessSignDetectorTests(unittest.TestCase):
         detector = ProcessSignDetector("yolo", detector_factory=_FakeSignDetector)
         latest_request_id = None
         try:
+            final_frame_captured_at = time.monotonic() - 0.1
             for value in range(8):
+                frame_captured_at = (
+                    final_frame_captured_at if value == 7 else time.monotonic()
+                )
                 latest_request_id = detector.submit(
-                    np.full((8, 10, 3), value, dtype=np.uint8)
+                    np.full((8, 10, 3), value, dtype=np.uint8),
+                    frame_captured_at=frame_captured_at,
                 )
                 self.assertIsNotNone(latest_request_id)
 
@@ -48,6 +53,10 @@ class ProcessSignDetectorTests(unittest.TestCase):
             self.assertIsNotNone(result)
             self.assertEqual(result[0], latest_request_id)
             self.assertEqual(result[1]["text"], "7")
+            self.assertEqual(result[4], final_frame_captured_at)
+            # Age limits are evaluated from the source frame, not when the
+            # request was enqueued or when inference started.
+            self.assertIsNone(detector.latest(max_age_s=0.01))
             self.assertNotIn("binary_mask", result[1])
             self.assertNotIn("debug_frame", result[1])
             status = detector.status()
