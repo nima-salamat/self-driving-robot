@@ -121,11 +121,12 @@ button:disabled, input:disabled, select:disabled { opacity: .45; cursor: not-all
   background-size: 24px 24px;
 }
 canvas {
-  width: 100%;
+  /* Keep the canvas's intrinsic dimensions aligned with the camera frame.
+     max-size constraints scale it down without changing its aspect ratio. */
+  width: auto;
   height: auto;
   max-width: 100%;
   max-height: 100%;
-  aspect-ratio: 3 / 2;
   border-radius: 3px;
   display: block;
   background: #000;
@@ -870,15 +871,17 @@ function fetchFrameOnce(){
         try {
             if(!syncActive) return;
 
-            const rect = canvas.getBoundingClientRect();
-            const dispW = Math.floor(rect.width);
-            const dispH = Math.floor(rect.height);
-            if(dispW <= 0 || dispH <= 0) return;
+            // Match the canvas backing dimensions to the source frame so
+            // non-3:2 cameras (for example 4:3) are never stretched.
+            const frameWidth = img.naturalWidth || img.width;
+            const frameHeight = img.naturalHeight || img.height;
+            if(frameWidth <= 0 || frameHeight <= 0) return;
 
-            if(canvas.width !== dispW || canvas.height !== dispH) {
-                canvas.width = dispW;
-                canvas.height = dispH;
-            }
+            if(canvas.width !== frameWidth) canvas.width = frameWidth;
+            if(canvas.height !== frameHeight) canvas.height = frameHeight;
+
+            const rect = canvas.getBoundingClientRect();
+            if(rect.width <= 0 || rect.height <= 0) return;
 
             lastFrameImage=img;
             renderWorkspaceCanvas();

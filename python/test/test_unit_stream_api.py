@@ -186,6 +186,26 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("let frameRetryAt = 0;", html)
         self.assertIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", html)
 
+    def test_camera_canvas_preserves_source_frame_aspect_ratio(self):
+        import re
+
+        response = WebStreamer(self.make_config()).app.test_client().get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+
+        canvas_css = re.search(r"(?m)^canvas\s*\{([^}]*)\}", html)
+        self.assertIsNotNone(canvas_css, "Expected a canvas CSS rule")
+        self.assertIn("width: auto;", canvas_css.group(1))
+        self.assertIn("height: auto;", canvas_css.group(1))
+        self.assertNotIn("aspect-ratio: 3 / 2", canvas_css.group(1))
+
+        # The drawing buffer tracks each frame's true dimensions rather than
+        # the display box dimensions, preserving the source aspect ratio.
+        self.assertIn("const frameWidth = img.naturalWidth || img.width;", html)
+        self.assertIn("const frameHeight = img.naturalHeight || img.height;", html)
+        self.assertNotIn("canvas.width !== dispW", html)
+        self.assertNotIn("canvas.height !== dispH", html)
+
     def test_rendered_inline_javascript_passes_node_syntax_check(self):
         import re
         import shutil
