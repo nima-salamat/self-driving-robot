@@ -687,7 +687,7 @@ class Robot:
                     self.metrics.record_stage(
                         "lane", (time.monotonic() - lane_started) * 1000.0
                     )
-                observation_at = getattr(self.camera, "last_capture_at", None)
+                observation_at = getattr(getattr(self, "camera", None), "last_capture_at", None)
                 confidence = None
                 if getattr(self, "confidence_estimator", None) is not None:
                     confidence_started = time.monotonic()
