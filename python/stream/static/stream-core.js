@@ -137,7 +137,7 @@ function renderWorkspaceEventLog(channel='events'){
 }
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return;const b=getImgBounds(),base=getBaseImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;const nw=base.iw*z,nh=base.ih*z,scale=Math.max(0.0001,base.scale||1);viewPanX=(ax-u*nw-(canvas.width-nw)/2)/scale;viewPanY=(ay-v*nh-(canvas.height-nh)/2)/scale;document.getElementById('workspace_zoom').value=String(z);renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');}
-function fitWorkspaceView(log=true){workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
+function fitWorkspaceView(log=true){syncCameraCanvasSize();workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
 function updateZoomStatus(){
   const el=document.getElementById('menu_live_status');
   if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String(window.STREAM_BOOTSTRAP.mode||'mode').toUpperCase();
@@ -525,6 +525,7 @@ function drawOverlays(){
 
 /* ---------- Hit testing & Drag Bounding Box ---------- */
 function hitTest(px, py){
+    if(!showRectsCheckbox.checked)return {type:'none'};
     const scale=getOverlayScale();const size = Math.max(4,(Number(roiAppearance.handleSize)||10)*scale/2+3*scale);
     
     if(ui.visible['BEV'] && advanced.USE_BEV !== false) {
@@ -1194,6 +1195,20 @@ function loadModeFeatures(){
 }
 
 
+function openStreamShortcuts(){
+  const dialog=document.getElementById('shortcut_dialog');if(!dialog)return;
+  window.__streamShortcutReturnFocus=document.activeElement;
+  dialog.classList.add('is-open');dialog.setAttribute('aria-hidden','false');
+  const close=document.getElementById('shortcut_close');if(close)close.focus();
+}
+function closeStreamShortcuts(){
+  const dialog=document.getElementById('shortcut_dialog');if(!dialog)return;
+  dialog.classList.remove('is-open');dialog.setAttribute('aria-hidden','true');
+  const target=window.__streamShortcutReturnFocus;window.__streamShortcutReturnFocus=null;
+  if(target&&typeof target.focus==='function')target.focus();
+}
+window.openStreamShortcuts=openStreamShortcuts;
+window.closeStreamShortcuts=closeStreamShortcuts;
 function setupCadWorkspace(){
 const workspace=document.querySelector('.container'),dockToggle=document.getElementById('toggle_dock_btn'),consoleDock=document.getElementById('bottom_console'),consoleToggle=document.getElementById('console_toggle_btn'),consoleClear=document.getElementById('console_clear_btn'),propTarget=document.getElementById('prop_target');let consoleTab='events';
 const narrow=()=>window.matchMedia('(max-width:720px)').matches;
@@ -1209,15 +1224,20 @@ function setDock(open){
   dockToggle.setAttribute('aria-label',dockIsOpen?'Hide settings panels':'Show settings panels');
   const menuDockToggle=document.querySelector('[data-action="toggle-properties"]');
   if(menuDockToggle)menuDockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
+  window.requestAnimationFrame(()=>{syncCameraCanvasSize();renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();});
 }
 dockToggle.addEventListener('click',()=>{
   const open=!dockIsOpen;
   setDock(open);
   noteWorkspaceEvent('info','Settings dock '+(open?'shown':'hidden'));
 });
+const shortcutDialog=document.getElementById('shortcut_dialog'),shortcutClose=document.getElementById('shortcut_close'),shortcutDone=document.getElementById('shortcut_done');
+if(shortcutClose)shortcutClose.addEventListener('click',closeStreamShortcuts);
+if(shortcutDone)shortcutDone.addEventListener('click',closeStreamShortcuts);
+if(shortcutDialog)shortcutDialog.addEventListener('click',e=>{if(e.target===shortcutDialog)closeStreamShortcuts();});
 window.addEventListener('resize',()=>setDock(dockIsOpen));
 setDock(dockIsOpen);
-function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));consoleToggle.textContent=(open?'⌄':'⌃')+' EVENT CONSOLE';}
+function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));}
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
 consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared',consoleTab);});
 document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{consoleTab=b.dataset.consoleTab;document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));document.getElementById('console_events').hidden=consoleTab!=='events';document.getElementById('console_api').hidden=consoleTab!=='api';renderWorkspaceEventLog(consoleTab);}));
@@ -1232,9 +1252,22 @@ case 'export-config':if(window.exportFullConfig)window.exportFullConfig().catch(
 case 'take-picture':document.getElementById('take_picture_btn').click();break;case 'clear-selection':document.getElementById('clear_selection').click();break;case 'apply-base':document.getElementById('apply_all').click();break;case 'properties':toggleProperties();break;case 'toggle-properties':document.getElementById('toggle_dock_btn').click();break;
 case 'zoom-in':zoomBy(1.2);break;case 'zoom-out':zoomBy(1/1.2);break;case 'fit-view':fitWorkspaceView();break;case 'toggle-fullscreen':toggleCameraFullscreen();break;case 'toggle-overlays':toggleOverlays();break;case 'toggle-console':setConsoleOpen(!consoleDock.classList.contains('console-open'));break;
 case 'tool-select':setTool('select');break;case 'tool-pan':setTool('pan');break;case 'freeze':document.getElementById('freeze_btn').click();break;case 'unfreeze':document.getElementById('unfreeze_btn').click();break;
-case 'help':showToast('Wheel: zoom at cursor · Middle mouse: pan · H: hand · V: select · F: fullscreen · 0: fit · O: overlays · Ctrl+Backtick: console · Ctrl+Shift+Space: software STOP',7000);break;}if(b.closest('.menu-group'))b.closest('.menu-group').open=false;}));
+case 'help':openStreamShortcuts();break;}if(b.closest('.menu-group'))b.closest('.menu-group').open=false;}));
 document.getElementById('center_reset').addEventListener('click',()=>fitWorkspaceView());document.getElementById('camera_fullscreen_btn').addEventListener('click',toggleCameraFullscreen);document.getElementById('tool_overlays_btn').addEventListener('click',toggleOverlays);
-document.addEventListener('keydown',e=>{const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():'';if((e.ctrlKey||e.metaKey)&&e.code==='Backquote'){e.preventDefault();setConsoleOpen(!consoleDock.classList.contains('console-open'));return;}if(['input','textarea','select'].includes(tag)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;const k=e.key.toLowerCase();if(k==='h')setTool('pan');else if(k==='v')setTool('select');else if(k==='0')fitWorkspaceView();else if(k==='o')toggleOverlays();else if(k==='f')toggleCameraFullscreen();else if(k==='+'||k==='=')zoomBy(1.2);else if(k==='-')zoomBy(1/1.2);else if(k==='escape')document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
+document.addEventListener('keydown',e=>{
+  const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():'';
+  if(e.key==='F1'){e.preventDefault();openStreamShortcuts();return;}
+  if((e.ctrlKey||e.metaKey)&&e.code==='Backquote'){e.preventDefault();setConsoleOpen(!consoleDock.classList.contains('console-open'));return;}
+  if(['input','textarea','select'].includes(tag)||e.target?.isContentEditable)return;
+  if(e.key==='?'&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();openStreamShortcuts();return;}
+  if(e.key==='Escape'){
+    if(document.getElementById('shortcut_dialog')?.classList.contains('is-open')){closeStreamShortcuts();return;}
+    document.querySelectorAll('.menu-group').forEach(m=>m.open=false);return;
+  }
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const k=e.key.toLowerCase();
+  if(k==='h')setTool('pan');else if(k==='v')setTool('select');else if(k==='0')fitWorkspaceView();else if(k==='o')toggleOverlays();else if(k==='f')toggleCameraFullscreen();else if(k==='+'||k==='=')zoomBy(1.2);else if(k==='-')zoomBy(1/1.2);
+ });
 function names(g){const p=g+'_';return{top:p+'TOP_ROI',bottom:p+'BOTTOM_ROI',left:p+'LEFT_ROI',right:p+'RIGHT_ROI'};}
 function info(){if(propTarget.value==='NONE')return{kind:'none'};return propTarget.value.startsWith('BEV_')?{kind:'point',corner:propTarget.value.slice(4)}:{kind:'roi',group:propTarget.value};}
 function syncPropertiesSelection(target){
