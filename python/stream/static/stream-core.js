@@ -150,6 +150,7 @@ function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){
 function updateWorkspaceViewLockUI(){
   const button=document.getElementById('workspace_view_lock');
   const slider=document.getElementById('workspace_zoom');
+  const zoomPercent=document.getElementById('workspace_zoom_percent');
   const shackle=document.getElementById('workspace_lock_shackle');
   const label=document.getElementById('workspace_view_lock_label');
   const message=workspaceViewLocked?'Unlock view (allow zoom and pan)':'Lock zoom and camera position';
@@ -157,6 +158,7 @@ function updateWorkspaceViewLockUI(){
   if(shackle)shackle.setAttribute('d',workspaceViewLocked?'M7 10V7a5 5 0 0 1 10 0v3':'M7 10V7a5 5 0 0 1 9.5-2');
   if(label)label.textContent=workspaceViewLocked?'View Locked':'Lock View';
   if(slider)slider.disabled=workspaceViewLocked;
+  if(zoomPercent)zoomPercent.disabled=workspaceViewLocked;
   document.querySelectorAll('[data-action="zoom-in"],[data-action="zoom-out"],[data-action="fit-view"]').forEach(function(control){control.disabled=workspaceViewLocked;control.setAttribute('aria-disabled',String(workspaceViewLocked));});
   const fitButton=document.getElementById('center_reset');if(fitButton){fitButton.disabled=workspaceViewLocked;fitButton.setAttribute('aria-disabled',String(workspaceViewLocked));}
   document.querySelectorAll('[data-tool="pan"]').forEach(function(control){control.disabled=workspaceViewLocked;control.setAttribute('aria-disabled',String(workspaceViewLocked));});
@@ -182,7 +184,31 @@ function updateZoomStatus(){
   const el=document.getElementById('menu_live_status');
   if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String(window.STREAM_BOOTSTRAP.mode||'mode').toUpperCase();
   const pct=document.getElementById('workspace_zoom_percent');
-  if(pct)pct.textContent=Math.round(workspaceZoom*100)+'%';
+  // Preserve an in-progress edit while other UI events refresh the zoom state.
+  if(pct&&document.activeElement!==pct)pct.value=Math.round(workspaceZoom*100)+'%';
+}
+function applyWorkspaceZoomPercent(){
+  const input=document.getElementById('workspace_zoom_percent');
+  if(!input)return false;
+  const raw=String(input.value||'').trim();
+  const match=raw.match(/^(?:([0-9]+(?:\\.[0-9]*)?)|(\\.[0-9]+))\\s*%?$/);
+  const currentLabel=Math.round(workspaceZoom*100)+'%';
+  if(!match){input.value=currentLabel;showToast('Enter a zoom percentage from 30% to 400%.');return false;}
+  const percent=Number(match[1]!==undefined?match[1]:match[2]);
+  if(!Number.isFinite(percent)||percent<30||percent>400){input.value=currentLabel;showToast('Zoom must be between 30% and 400%.');return false;}
+  const applied=setWorkspaceZoom(percent/100,canvas.width/2,canvas.height/2);
+  if(!applied){input.value=currentLabel;showToast('Unlock the view before changing zoom.');return false;}
+  input.value=Math.round(workspaceZoom*100)+'%';
+  return true;
+}
+const zoomPercentInput=document.getElementById('workspace_zoom_percent');
+if(zoomPercentInput){
+  zoomPercentInput.addEventListener('focus',function(){this.select();});
+  zoomPercentInput.addEventListener('keydown',function(event){
+    if(event.key==='Enter'){event.preventDefault();if(applyWorkspaceZoomPercent())this.blur();}
+    else if(event.key==='Escape'){event.preventDefault();this.value=Math.round(workspaceZoom*100)+'%';this.blur();}
+  });
+  zoomPercentInput.addEventListener('blur',applyWorkspaceZoomPercent);
 }
 document.getElementById('workspace_zoom').addEventListener('input',e=>setWorkspaceZoom(parseFloat(e.target.value),canvas.width/2,canvas.height/2));
 document.getElementById('workspace_view_lock').addEventListener('click',()=>setWorkspaceViewLocked(!workspaceViewLocked));
