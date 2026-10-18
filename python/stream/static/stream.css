@@ -390,7 +390,7 @@ canvas {
 .editor-controls #variable_select{width:190px;max-width:24vw}
 .editor-zoom-label{display:flex;align-items:center;gap:6px;margin:0!important;white-space:nowrap}
 .editor-zoom-label input{width:86px;vertical-align:middle}
-.zoom-percent{min-width:44px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;color:var(--accent);font:11px ui-monospace,Consolas,monospace;text-align:center}
+.zoom-percent{width:62px;min-width:62px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:#0b1420;color:var(--accent);font:11px ui-monospace,Consolas,monospace;text-align:center;cursor:text;outline:none}.zoom-percent:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}.zoom-percent:disabled{cursor:not-allowed;opacity:.45}
 .editor-overlay-toggle{display:flex;align-items:center;gap:4px;margin:0!important;white-space:nowrap}
 .editor-controls #frame_mode{margin:0!important;white-space:nowrap;font-size:10px}
 .properties-panel[open]{display:flex;flex:0 0 310px;flex-direction:column;height:min(310px,42vh);min-height:210px;max-height:46vh}
