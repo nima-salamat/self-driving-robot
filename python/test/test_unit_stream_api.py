@@ -246,6 +246,32 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(config.RL_TOP_ROI if hasattr(config, "RL_TOP_ROI") else 0.0, 0.0)
 
+    def test_saving_dashboard_settings_preserves_unrelated_mode_config(self):
+        import json
+        import tempfile
+
+        config = self.make_config()
+        streamer = WebStreamer(config)
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            filename = Path(tmp_dir) / "city.json"
+            original = {
+                "SPEED": 220,
+                "SIGN_AREA_MIN_PX2": 1234,
+                "WITH_SIGN": True,
+                "CUSTOM_MODE_SETTING": {"enabled": True},
+                "RL_TOP_ROI": 0.2,
+            }
+            filename.write_text(json.dumps(original), encoding="utf-8")
+            config.RL_TOP_ROI = 0.35
+
+            self.assertTrue(streamer.save_conf_to_json())
+            saved = json.loads(filename.read_text(encoding="utf-8"))
+
+        self.assertEqual(saved["SPEED"], 220)
+        self.assertEqual(saved["SIGN_AREA_MIN_PX2"], 1234)
+        self.assertEqual(saved["CUSTOM_MODE_SETTING"], {"enabled": True})
+        self.assertEqual(saved["RL_TOP_ROI"], 0.35)
+
     def test_full_config_round_trip_and_history_are_persisted_atomically(self):
         import tempfile
 
