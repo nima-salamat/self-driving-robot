@@ -1011,11 +1011,13 @@ stopAllBtn.addEventListener('click', () => {
         healthUpdateTimer = null;
         clearInterval(arduinoUpdateTimer);
         arduinoUpdateTimer = null;
+        if(typeof window.setStreamExtensionPollingEnabled==='function')window.setStreamExtensionPollingEnabled(false);
         updateFrameModeText();
         showToast('Dashboard polling paused; robot motion is unchanged');
     } else {
         stopAllBtn.textContent = 'Pause Dashboard Requests';
-        stopAllBtn.style.background = '#ef4444'; // Red for stop
+        stopAllBtn.style.background = '#ef4444'; // Red for pause
+        if(typeof window.setStreamExtensionPollingEnabled==='function')window.setStreamExtensionPollingEnabled(true);
         startFrameLoop();
         if(!valUpdateTimer) valUpdateTimer = setInterval(fetchValuesLoop, 4000);
         if(!healthUpdateTimer) healthUpdateTimer = setInterval(updateHealth, 1000);
