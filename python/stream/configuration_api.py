@@ -505,7 +505,7 @@ class StreamConfigurationMixin:
             if view["gridMode"] not in {"off", "grid", "dots"}:
                 raise ValueError("view.gridMode must be off, grid, or dots")
             clean_view["gridMode"] = view["gridMode"]
-        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0)):
+        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0), ("keyboardNudgePx", 1.0, 100.0)):
             if key in view:
                 if isinstance(view[key], bool):
                     raise ValueError(f"view.{key} must be numeric")
@@ -513,6 +513,11 @@ class StreamConfigurationMixin:
                 if not math.isfinite(value) or not minimum <= value <= maximum:
                     raise ValueError(f"view.{key} is out of range")
                 clean_view[key] = value
+        if "gridColor" in view:
+            color = view["gridColor"]
+            if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                raise ValueError("view.gridColor must be a six-digit hex color")
+            clean_view["gridColor"] = color.lower()
         if "tool" in view:
             if view["tool"] not in {"select", "pan", "annotate", "ruler", "roi", "roi_rect", "roi_trapezoid"}:
                 raise ValueError("view.tool is invalid")
