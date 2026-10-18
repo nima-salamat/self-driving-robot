@@ -2380,9 +2380,12 @@ async function applyCameraControls(){
 }
 function buildCommandPalette(){
   const commands=[
-    ['Export full configuration','export', 'Ctrl+Shift+E'],['Import full configuration','import',''],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y'],
-    ['Fit camera frame','fit','0'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],['Use annotation tool','annotate','N'],['Use ruler tool','ruler','R'],
-    ['Take frame snapshot','snapshot',''],['Save workspace','workspace',''],['Refresh server logs','logs',''],['Open encoder map','encoder',''],['Request software stop','stop','']
+    ['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y'],
+    ['Fit camera frame','fit','0'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],
+    ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],['Draw rectangle ROI preview','roi_rect',''],['Draw trapezoid ROI preview','roi_trapezoid',''],
+    ['Save workspace layout','workspace',''],['Save workspace profile','profile',''],['Save configuration preset','preset',''],
+    ['Capture frame snapshot','snapshot',''],['Refresh runtime diagnostics','health',''],['Refresh server logs','logs',''],
+    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Request software stop','stop',''],['Resume motion (confirmation)','resume','']
   ];
   const list=$('ext_command_list');list.replaceChildren();
   commands.forEach(function(entry){const b=document.createElement('button');b.type='button';b.dataset.command=entry[1];b.textContent=entry[0]+(entry[2]?' · '+entry[2]:'');b.onclick=function(){closeCommandPalette();executeCommand(entry[1]);};list.appendChild(b);});
@@ -2391,7 +2394,21 @@ function buildCommandPalette(){
 function openCommandPalette(){const m=$('ext_command_palette');m.style.display='flex';$('ext_command_search').value='';$('ext_command_search').focus();$('ext_command_search').dispatchEvent(new Event('input'));}
 function closeCommandPalette(){$('ext_command_palette').style.display='none';}
 function executeCommand(name){
-  const actions={export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,fit:function(){fitWorkspaceView();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},annotate:function(){setEditorTool('annotate');},ruler:function(){$('ext_ruler').click();},snapshot:addFrameSnapshot,workspace:function(){saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(e){showToast(e.message);});},logs:refreshServerLogs,encoder:function(){if($('ext_encoder_embed').hidden)showToast('Encoder map requires --encoder-map and a restart.');else $('ext_encoder_frame').scrollIntoView({behavior:'smooth'});},stop:function(){safetyAction('stop').catch(function(e){showToast(e.message);});}};
+  const actions={
+    export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,
+    fit:function(){fitWorkspaceView();},overlays:function(){$('ext_overlays').click();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},
+    annotate:function(){setEditorTool('annotate');},ruler:function(){$('ext_ruler').click();},
+    roi_rect:function(){setEditorTool('roi_rect');},roi_trapezoid:function(){setEditorTool('roi_trapezoid');},
+    snapshot:addFrameSnapshot,workspace:function(){saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(e){showToast(e.message);});},
+    profile:function(){$('ext_profile_panel').open=true;$('ext_profile_name').focus();},
+    preset:function(){$('ext_config_panel').open=true;$('ext_preset_name').focus();},
+    health:function(){refreshRuntime().then(function(){showToast('Runtime diagnostics refreshed');});},
+    logs:refreshServerLogs,
+    camera:function(){$('ext_camera_panel').open=true;$('ext_camera_panel').scrollIntoView({behavior:'smooth',block:'nearest'});},
+    encoder:function(){if($('ext_encoder_embed').hidden)showToast('Encoder map requires --encoder-map and compatible firmware restart.');else $('ext_encoder_frame').scrollIntoView({behavior:'smooth'});},
+    stop:function(){safetyAction('stop').catch(function(e){showToast(e.message);});},
+    resume:function(){safetyAction('resume').catch(function(e){showToast(e.message);});}
+  };
   if(actions[name])Promise.resolve(actions[name]()).catch(function(err){showToast(err.message||String(err));});
 }
 function enableReadOnlyState(){
