@@ -131,6 +131,10 @@ class FPS:
                 source_items.extend((
                     f"sign_worker={kind}",
                     f"sign_alive={bool(sign.get('worker_alive', False))}",
+                    *(
+                        [f"sign_intra_threads={int(sign['intra_op_num_threads'])}"]
+                        if sign.get("intra_op_num_threads") is not None else []
+                    ),
                     f"sign_queue={int(sign.get('queue_depth', 0) or 0)}",
                     f"sign_submitted={int(sign.get('submitted', 0) or 0)}",
                     f"sign_completed={int(sign.get('completed', 0) or 0)}",
