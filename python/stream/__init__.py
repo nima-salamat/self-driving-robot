@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 import threading
 import time
 from collections import deque
-from flask import Flask, Response, request, render_template_string, jsonify
+from flask import Flask, Response, request, render_template, render_template_string, jsonify
 from werkzeug.serving import WSGIRequestHandler, make_server
 from .template import HTML_TEMPLATE
 from .capabilities import mode_capabilities, marker_mode, set_marker_mode
@@ -284,8 +284,8 @@ class WebStreamer:
         values = {var: self.get_base_var(var) for var in VARIABLES}
         advanced_current = self.get_all_advanced()
         response = Response(
-            render_template_string(
-                HTML_TEMPLATE,
+            render_template(
+                "stream.html",
                 variables=VARIABLES,
                 values=values,
                 ui=self.ui_settings,
@@ -1041,11 +1041,41 @@ class WebStreamer:
                 if not isinstance(view[key], bool):
                     raise ValueError(f"view.{key} must be boolean")
                 clean_view[key] = view[key]
+        if "gridMode" in view:
+            if view["gridMode"] not in {"off", "grid", "dots"}:
+                raise ValueError("view.gridMode must be off, grid, or dots")
+            clean_view["gridMode"] = view["gridMode"]
+        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0)):
+            if key in view:
+                if isinstance(view[key], bool):
+                    raise ValueError(f"view.{key} must be numeric")
+                value = float(view[key])
+                if not math.isfinite(value) or not minimum <= value <= maximum:
+                    raise ValueError(f"view.{key} is out of range")
+                clean_view[key] = value
         if "tool" in view:
             if view["tool"] not in {"select", "pan", "annotate", "ruler", "roi", "roi_rect", "roi_trapezoid"}:
                 raise ValueError("view.tool is invalid")
             clean_view["tool"] = view["tool"]
         clean["view"] = clean_view
+        appearance = workspace.get("roiAppearance", {})
+        if not isinstance(appearance, dict):
+            raise ValueError("roiAppearance must be an object")
+        clean_appearance = {}
+        for key, minimum, maximum in (("labelFontSize", 6.0, 32.0), ("outlineThickness", 0.5, 6.0), ("handleSize", 4.0, 24.0)):
+            if key in appearance:
+                if isinstance(appearance[key], bool):
+                    raise ValueError(f"roiAppearance.{key} must be numeric")
+                value = float(appearance[key])
+                if not math.isfinite(value) or not minimum <= value <= maximum:
+                    raise ValueError(f"roiAppearance.{key} is out of range")
+                clean_appearance[key] = value
+        if "labelFontWeight" in appearance:
+            weight = str(appearance["labelFontWeight"])
+            if weight not in {"400", "500", "600", "700"}:
+                raise ValueError("roiAppearance.labelFontWeight is invalid")
+            clean_appearance["labelFontWeight"] = weight
+        clean["roiAppearance"] = clean_appearance
         panels = workspace.get("panels", {})
         if not isinstance(panels, dict):
             raise ValueError("panels must be an object")
