@@ -16,7 +16,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
 <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Editor Self Driving Robot</span></div>
-<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
+<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button><div class="menu-separator"></div><button type="button" class="menu-danger" data-action="exit-stream">Exit · Stop Stream Server…</button></div></details>
 <details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
@@ -308,6 +308,18 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     </div></details>
 
   </div>
+</div>
+
+<div id="ext_stream_exit_dialog" class="settings-modal" aria-hidden="true">
+  <section class="settings-card stream-exit-card" role="dialog" aria-modal="true" aria-labelledby="ext_stream_exit_title" aria-describedby="ext_stream_exit_message">
+    <header class="settings-header"><div><h2 id="ext_stream_exit_title">Exit Stream?</h2><p>Stop the web dashboard server</p></div><button type="button" class="ghost" id="ext_stream_exit_close" aria-label="Close dialog">×</button></header>
+    <div class="settings-section">
+      <p id="ext_stream_exit_message" class="stream-exit-message">This stops the Stream HTTP server and sets STREAM=False in the current process, like running without --stream. The robot’s main City/Race loop, perception, and motion control keep running. This does not stop the robot.</p>
+      <p class="settings-note">Once stopped, this dashboard will disconnect. To open it again, restart the program with --stream.</p>
+      <p id="ext_stream_exit_error" class="stream-exit-error" role="alert" hidden></p>
+    </div>
+    <footer class="settings-footer"><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="ext_stream_exit_cancel">Cancel</button><button type="button" class="btn stream-exit-danger" id="ext_stream_exit_confirm">Stop Stream</button></footer>
+  </section>
 </div>
 
 <div id="roi_settings_dialog" class="settings-modal" aria-hidden="true">
