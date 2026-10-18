@@ -141,13 +141,13 @@ class StreamAuthTests(unittest.TestCase):
             streamer = WebStreamer(self.make_config())
 
         client = streamer.app.test_client()
-        for index in range(4):
+        for index in range(5):
             response = client.post(
                 "/login",
                 data={"username": "robot-user", "password": f"wrong-{index}"},
                 headers={"Origin": "http://localhost"},
             )
-            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.status_code, 401 if index < 4 else 429)
         blocked = client.post(
             "/login",
             data={"username": "robot-user", "password": "unique-secret"},
