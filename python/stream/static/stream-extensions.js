@@ -115,9 +115,9 @@ function drawPrecisionOverlay(){
     const x2=b.ix+rulerHoverPoint.u*b.iw,y2=b.iy+rulerHoverPoint.v*b.ih;
     const distance=Math.hypot((rulerHoverPoint.u-rulerStart.u)*(frameSourceWidth||canvas.width),(rulerHoverPoint.v-rulerStart.v)*(frameSourceHeight||canvas.height));
     addSVG('line',{x1:x1,y1:y1,x2:x2,y2:y2,stroke:'#22d3ee','stroke-width':Math.max(1,2*z),'stroke-dasharray':(6*z)+' '+(3*z)});
-    addSVG('circle',{cx:x1,cy:y1,r:Math.max(3,baseHandle*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
+    addSVG('circle',{cx:x1,cy:y1,r:Math.max(3,(Number(roiAppearance.handleSize)||10)*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
     addSVG('circle',{cx:x2,cy:y2,r:Math.max(3,baseHandle*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
-    const distanceLabel=addSVG('text',{x:(x1+x2)/2+7*z,y:(y1+y2)/2-7*z,fill:'#e0faff','font-size':Math.max(10,baseLabel*z),'font-weight':'700','paint-order':'stroke',stroke:'#07101a','stroke-width':3*z});
+    const distanceLabel=addSVG('text',{x:(x1+x2)/2+7*z,y:(y1+y2)/2-7*z,fill:'#e0faff','font-size':Math.max(10,(Number(roiAppearance.labelFontSize)||12)*z),'font-weight':'700','paint-order':'stroke',stroke:'#07101a','stroke-width':3*z});
     distanceLabel.textContent=distance.toFixed(1)+' px';
   }
   if(!extAnnotationsVisible)return;
