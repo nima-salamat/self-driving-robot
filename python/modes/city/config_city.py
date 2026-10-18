@@ -118,6 +118,13 @@ CROSSWALK_THRESH_SPEND = 8  # [JSON] crosswalk re-detection cooldown window, in 
 # Stream (enable/disable) 
 STREAM = False
 ENCODER_MAP_ENABLED = False
+# Optional hardware calibration for --encoder-map / host-adaptive features.
+# Fill these with measurements for this specific mode/robot. CLI values override them.
+ENCODER_PULSE_DISTANCE_CM = None
+ENCODER_WHEELBASE_CM = None
+ENCODER_ROAD_ANGLE_MIN_DEG = None
+ENCODER_ROAD_ANGLE_MAX_DEG = None
+
 CONFIDENCE_AWARE_ENABLED = False
 ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED = False
 debug_frames_list = [] # global stream frame variable
