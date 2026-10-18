@@ -57,6 +57,13 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
 <button type="button" class="tool-button" data-action="toggle-console" aria-label="Toggle Event Console" title="Recent events console (Ctrl+Backtick)"><svg class="toolbar-icon toolbar-icon-console" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span class="tool-tip">Event Console · Ctrl+Backtick</span></button></aside>
 <div class="workspace-stage-column">
+    <div id="active_tool_banner" class="active-tool-banner" hidden role="status" aria-live="polite">
+      <span class="active-tool-dot" aria-hidden="true"></span>
+      <span id="active_tool_label">Tool mode active</span>
+      <span class="active-tool-spacer"></span>
+      <span class="active-tool-hint">Esc to exit</span>
+      <button type="button" id="active_tool_cancel" title="Exit active tool" aria-label="Exit active tool">×</button>
+    </div>
     <div id="canvas_stage" class="canvas-stage">
       <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen">⛶ Fullscreen</button>
       <canvas id="video_canvas" width="900" height="600"></canvas>
@@ -219,9 +226,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
-      <div class="small-muted">Custom ROI preview only: these user-defined shapes do not affect the driving pipeline. Operational controls remain the fixed RL/LL/CW/ST/OBJ regions.</div>
-      <div class="form-row"><button type="button" class="ghost" id="ext_roi_rect_tool">Draw Rectangle ROI</button><button type="button" class="ghost" id="ext_roi_trapezoid_tool">Draw Trapezoid ROI</button></div>
-      <div class="form-row"><label for="ext_roi_top_factor" class="small-muted">Trapezoid top width</label><input type="range" id="ext_roi_top_factor" min="0.1" max="1" step="0.05" value="0.5" style="min-width:70px;flex:1"><span id="ext_roi_top_factor_label" class="small-muted">50%</span></div>
+      <div class="small-muted">Operational ROI regions are edited through Properties. Notes and ruler measurements are workspace annotations only.</div>
       <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
       <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
       <div id="ext_annotations_list" class="ext-list"></div>
