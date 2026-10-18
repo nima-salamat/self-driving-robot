@@ -5,6 +5,7 @@ import logging
 import multiprocessing as mp
 import queue
 import signal
+import threading
 import time
 
 import numpy as np
@@ -156,7 +157,7 @@ class ProcessSignDetector:
         self._idle = self._context.Event()
         self._idle.set()
         self._active = self._context.Event()
-        self._lock = __import__("threading").Lock()
+        self._lock = threading.Lock()
         self._next_id = 0
         self._submitted = 0
         self._completed = 0
@@ -212,7 +213,7 @@ class ProcessSignDetector:
         # only need the ROI crop and metadata; the caller keeps its own full frame.
         request = (
             request_id,
-            np.ascontiguousarray(frame).copy(),
+            np.array(frame, copy=True, order="C"),
             submitted_at,
             confidence_threshold,
             tuple(target_sign_types) if target_sign_types is not None else None,
@@ -221,16 +222,18 @@ class ProcessSignDetector:
             replacing_waiting_frame = self._requests.full()
         except (NotImplementedError, OSError):
             replacing_waiting_frame = False
+        self._idle.clear()
         if not _replace_queue_item(self._requests, request):
             with self._lock:
                 self._dropped += 1
+            if not self._active.is_set():
+                self._idle.set()
             return None
 
         with self._lock:
             self._submitted += 1
             if replacing_waiting_frame:
                 self._replaced += 1
-        self._idle.clear()
         return request_id
 
     def _collect_results(self):
