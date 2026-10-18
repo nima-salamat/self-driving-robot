@@ -1,4 +1,6 @@
 import sys
+import os
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -32,6 +34,17 @@ class FakeConnection:
 
 
 class OptInFeatureTests(unittest.TestCase):
+    def setUp(self):
+        import stream
+
+        self._stream_test_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._stream_test_directory.cleanup)
+        base_dir_patch = patch.object(stream, "BASE_DIR", self._stream_test_directory.name)
+        base_dir_patch.start()
+        self.addCleanup(base_dir_patch.stop)
+        env_patch = patch.dict(os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
     def test_cli_features_are_disabled_even_if_old_json_set_them(self):
         config = types.SimpleNamespace(ENCODER_MAP_ENABLED=True,
                                        CONFIDENCE_AWARE_ENABLED=True,
