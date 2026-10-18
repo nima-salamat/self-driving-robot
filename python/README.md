@@ -95,7 +95,7 @@ Example (do not actuate Arduino during an initial performance comparison):
 python main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
 ```
 
-Compare against the same command without `--multiprocess`. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
+Compare against the same command without `--multiprocess`. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait, synchronous AprilTag detection, and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
 
 See [Multiprocessing Camera and Sign Inference Experiment](../docs/MULTIPROCESSING_EXPERIMENT.md) for design details and the current limitations.
 
