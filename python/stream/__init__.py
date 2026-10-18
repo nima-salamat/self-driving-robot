@@ -948,7 +948,7 @@ class WebStreamer:
             raise ValueError("annotations must be a list of at most 250 items")
         clean_annotations = []
         for item in annotations:
-            if not isinstance(item, dict) or item.get("kind") not in {"marker", "note", "ruler", "roi"}:
+            if not isinstance(item, dict) or item.get("kind") not in {"marker", "note", "ruler", "roi", "roi_rect", "roi_trapezoid"}:
                 raise ValueError("annotation has an unsupported kind")
             entry = {"kind": item["kind"]}
             for key in ("u", "v", "u2", "v2"):
@@ -957,6 +957,21 @@ class WebStreamer:
                     if not math.isfinite(val) or not 0 <= val <= 1:
                         raise ValueError("annotation coordinates must be normalized between 0 and 1")
                     entry[key] = val
+            if item["kind"] in {"roi_rect", "roi_trapezoid"}:
+                for key in ("x", "y", "w", "h"):
+                    if key not in item or isinstance(item[key], bool):
+                        raise ValueError(f"custom ROI requires numeric {key}")
+                    val = float(item[key])
+                    if not math.isfinite(val) or not 0 <= val <= 1:
+                        raise ValueError("custom ROI coordinates and dimensions must be normalized between 0 and 1")
+                    entry[key] = val
+                if entry["w"] <= 0 or entry["h"] <= 0 or entry["x"] + entry["w"] > 1 or entry["y"] + entry["h"] > 1:
+                    raise ValueError("custom ROI must have a non-empty area entirely inside the frame")
+                if item["kind"] == "roi_trapezoid":
+                    factor = float(item.get("topFactor", 0.5))
+                    if not math.isfinite(factor) or not 0 <= factor <= 1:
+                        raise ValueError("custom ROI topFactor must be between 0 and 1")
+                    entry["topFactor"] = factor
             if "label" in item:
                 entry["label"] = str(item["label"])[:80]
             if "color" in item and isinstance(item["color"], str) and re.fullmatch(r"#[0-9a-fA-F]{6}", item["color"]):
