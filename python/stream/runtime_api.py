@@ -192,6 +192,64 @@ class StreamRuntimeMixin:
         return jsonify(success=True, action=action, run_level=getattr(self.config, "RUN_LVL"),
                        software_stop_active=action == "stop", hardware_emergency_stop=False)
 
+    def stop_stream_api(self):
+        """Stop only the Stream HTTP server; leave the City/Race runtime alive."""
+        if not self._control_allowed():
+            return self._control_denied()
+
+        server = getattr(self.config, "stream_server", None)
+        if server is None:
+            setattr(self.config, "STREAM", False)
+            return jsonify(
+                success=True,
+                stream_enabled=False,
+                already_stopped=True,
+                shutdown_started=False,
+                robot_runtime_continues=True,
+                message="Stream server is already stopped.",
+            )
+
+        if bool(getattr(self.config, "stream_shutdown_requested", False)):
+            return jsonify(
+                success=True,
+                stream_enabled=False,
+                already_stopping=True,
+                shutdown_started=True,
+                robot_runtime_continues=True,
+                message="Stream shutdown is already in progress.",
+            )
+
+        # Match running without --stream: disable Stream in the active config,
+        # so City/Race stops generating dashboard-only frames as well.
+        setattr(self.config, "STREAM", False)
+        setattr(self.config, "stream_shutdown_requested", True)
+        response = jsonify(
+            success=True,
+            stream_enabled=False,
+            already_stopped=False,
+            already_stopping=False,
+            shutdown_started=True,
+            robot_runtime_continues=True,
+            message="Stream server shutdown has been scheduled.",
+        )
+
+        # Do not stop the serving socket until this acknowledgement has been
+        # sent to the browser. The actual shutdown must run off the request
+        # thread because BaseServer.shutdown() waits for serve_forever().
+        def schedule_shutdown_after_response():
+            try:
+                threading.Thread(
+                    target=stop_stream,
+                    args=(self.config,),
+                    daemon=True,
+                    name="stream-http-shutdown",
+                ).start()
+            except Exception:
+                logger.exception("Could not start Stream shutdown worker")
+
+        response.call_on_close(schedule_shutdown_after_response)
+        return response
+
     def sign_requests_api(self):
         """Pause/resume sign-inference submissions without changing robot motion state."""
         robot = getattr(self.config, "runtime_robot", None)
@@ -500,4 +558,5 @@ def register_runtime_routes(app, streamer):
     app.add_url_rule("/api/processing-rate", "processing_rate_api", streamer.processing_rate_api, methods=["GET","POST"])
     app.add_url_rule("/api/safety", "safety_api", streamer.safety_api, methods=["GET","POST"])
     app.add_url_rule("/api/sign-requests", "sign_requests_api", streamer.sign_requests_api, methods=["GET","POST"])
+    app.add_url_rule("/api/stream-control/stop", "stop_stream_api", streamer.stop_stream_api, methods=["POST"])
     app.add_url_rule("/api/features", "features_api", streamer.features_api, methods=["GET","POST"])
