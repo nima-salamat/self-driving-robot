@@ -1021,7 +1021,7 @@ function fetchFrameOnce(){
 
             lastFrameImage=img;
             renderWorkspaceCanvas();
-            syncCameraFullscreenCanvasSize();
+            if(isCameraStageFullscreen())syncCameraFullscreenCanvasSize();
 
             hasRenderedFrame = true;
             frameRequestFailures = 0;
