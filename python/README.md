@@ -115,12 +115,20 @@ The CAD-style workspace includes:
 After confirmation, the active process sets `STREAM=False` so dashboard-only frame generation stops too. The current browser page disconnects; restarting the dashboard requires launching the program again with `--stream`. This runtime action is disabled when launched with `--stream-read-only`.
 
 The dashboard control endpoints respect `STREAM_ALLOW_CONTROL` and the CLI's
-`--stream-read-only` option. Use the read-only option when users should inspect
-telemetry but must not change live settings:
+`--stream-read-only` option. Either `--stream-read-only` or
+`--stream-control` is also sufficient to start the dashboard; you do not have
+to pass `--stream` separately:
 
 ~~~bash
-python main.py --mode city --stream --stream-read-only
+# Start the dashboard with mutation endpoints disabled
+python main.py --mode city --stream-read-only
+
+# Start the dashboard with runtime controls enabled
+python main.py --mode city --stream-control
 ~~~
+
+For compatibility, `--stream --stream-read-only` is also valid. The two
+control-mode flags are mutually exclusive.
 
 **Network and safety:** the stream binds to all interfaces by default and has no
 built-in user authentication. Only expose it on a trusted network; choose
