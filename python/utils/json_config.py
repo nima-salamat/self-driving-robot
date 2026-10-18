@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -63,6 +64,20 @@ INT_KEYS = {
 
 
 def _validate(name, value):
+    if name in {"ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM"}:
+        if value is None:
+            return value
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or value <= 0):
+            raise ValueError(f"{name} must be null or a positive finite number")
+
+    if name in {"ENCODER_ROAD_ANGLE_MIN_DEG", "ENCODER_ROAD_ANGLE_MAX_DEG"}:
+        if value is None:
+            return value
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or not -45.0 <= value <= 45.0):
+            raise ValueError(f"{name} must be null or a finite angle between -45 and 45 degrees")
+
     if name in {
         "SIGN_AREA_FILTER_ENABLED",
         "SIGN_AREA_FILTER_TARGETS",
