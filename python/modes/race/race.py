@@ -1090,6 +1090,7 @@ class Robot:
             return
         self.control.set_speed(decision["speed"])
 
+    @_measure_stage("sign_consume")
     def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False, phase_only=None):
         # A latched STOP keeps using the detector that originally found it,
         # even if the dashboard's marker-mode toggle changes during the hold.
