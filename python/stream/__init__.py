@@ -916,7 +916,7 @@ class WebStreamer:
                     raise ValueError(f"view.{key} must be boolean")
                 clean_view[key] = view[key]
         if "tool" in view:
-            if view["tool"] not in {"select", "pan", "annotate", "ruler"}:
+            if view["tool"] not in {"select", "pan", "annotate", "ruler", "roi"}:
                 raise ValueError("view.tool is invalid")
             clean_view["tool"] = view["tool"]
         clean["view"] = clean_view
@@ -948,7 +948,7 @@ class WebStreamer:
             raise ValueError("annotations must be a list of at most 250 items")
         clean_annotations = []
         for item in annotations:
-            if not isinstance(item, dict) or item.get("kind") not in {"marker", "note", "ruler"}:
+            if not isinstance(item, dict) or item.get("kind") not in {"marker", "note", "ruler", "roi"}:
                 raise ValueError("annotation has an unsupported kind")
             entry = {"kind": item["kind"]}
             for key in ("u", "v", "u2", "v2"):
