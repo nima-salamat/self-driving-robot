@@ -505,7 +505,7 @@ class StreamConfigurationMixin:
             if view["gridMode"] not in {"off", "grid", "dots"}:
                 raise ValueError("view.gridMode must be off, grid, or dots")
             clean_view["gridMode"] = view["gridMode"]
-        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0), ("keyboardNudgePx", 1.0, 100.0)):
+        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0), ("keyboardNudgePx", 1.0, 100.0), ("streamFps", 1.0, 30.0)):
             if key in view:
                 if isinstance(view[key], bool):
                     raise ValueError(f"view.{key} must be numeric")
