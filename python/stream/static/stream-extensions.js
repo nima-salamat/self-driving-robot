@@ -13,18 +13,20 @@ let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSa
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
 let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
 const nativeFetch = window.fetch.bind(window);
-let motionHotkeyActionInFlight=false, streamShutdownRequestedLocally=false;
+let motionHotkeyActionInFlight=false, streamShutdownRequestedLocally=false, extensionPollingEnabled=true;
 function stopExtensionPolling(){
+  extensionPollingEnabled=false;
   if(extHealthTimer){clearInterval(extHealthTimer);extHealthTimer=null;}
   if(extSettingsTimer){clearInterval(extSettingsTimer);extSettingsTimer=null;}
 }
 function startExtensionPolling(){
-  if(streamShutdownRequestedLocally)return;
+  if(!extensionPollingEnabled||streamShutdownRequestedLocally)return;
   if(!extHealthTimer)extHealthTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
   if(!extSettingsTimer)extSettingsTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshCameraSettings();refreshProcessingRate();},8000);
 }
 window.setStreamExtensionPollingEnabled=function(enabled){
-  if(!enabled){stopExtensionPolling();return;}
+  extensionPollingEnabled=!!enabled;
+  if(!extensionPollingEnabled){stopExtensionPolling();return;}
   if(streamShutdownRequestedLocally)return;
   startExtensionPolling();
   refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
@@ -1118,11 +1120,13 @@ function installExtension(){
 async function initializeExtension(){
   try{currentConfig=await readConfig();if(currentConfig.ui&&currentConfig.ui.opacity)ui.opacity=currentConfig.ui.opacity;}catch(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Extended config API unavailable: '+err.message);}
   syncLayerControls();syncLegacyLayerControls();installExtension();refreshAnnotationList();drawPrecisionOverlay();
-  refreshWorkspaceProfiles().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace load failed: '+err.message);});
-  refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
-  refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
-  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
-  startExtensionPolling();
+  if(extensionPollingEnabled){
+    refreshWorkspaceProfiles().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace load failed: '+err.message);});
+    refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
+    refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
+    refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
+    startExtensionPolling();
+  }
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeExtension,{once:true});else initializeExtension();
 })();
