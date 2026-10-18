@@ -92,8 +92,8 @@ class FPS:
         # Stage timers show where wall time is actually spent. Keep this
         # separate from the headline line so it remains readable on the Pi.
         stage_names = (
-            "lane", "confidence", "sign_submit", "sign_latency",
-            "sign_input_age", "object", "traffic_light", "debug_stream",
+            "lane", "confidence", "sign_submit", "sign_consume",
+            "sign_latency", "sign_input_age", "object", "traffic_light", "debug_stream",
             "camera_wait", "frame_age", "rate_wait",
         )
         stage_items = [
