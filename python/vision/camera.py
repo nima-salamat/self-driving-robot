@@ -39,6 +39,38 @@ class Camera:
         self.requested_frame_rate = None
         self.measured_frame_rate = None
         self._capture_timestamps = deque(maxlen=120)
+        self.last_capture_duration_ms = None
+        self.frame_sequence = 0
+        self._shared_capture = None
+        self.picam = None
+        self.cap = None
+
+        if bool(getattr(self.config, "MULTIPROCESS_CAMERA", False)):
+            from vision.shared_memory_capture import SharedMemoryCapture
+
+            self._shared_capture = SharedMemoryCapture(
+                width=self.width,
+                height=self.height,
+                resize_width=self.resize_width,
+                resize_height=self.resize_height,
+                mode=self.mode,
+                camera_index=self.usbcam_addr,
+                camera_fallback=self.allow_picam_fallback,
+                camera_fps=getattr(self.config, "CAMERA_FPS", None),
+                apply_calibration=bool(
+                    getattr(self.config, "APPLY_CAMERA_CALIBRATION", True)
+                ),
+                runtime_mode=getattr(self.config, "MODE", None),
+            )
+            self.pi_mode = self._shared_capture.pi_mode
+            self.picam = self._shared_capture if self.pi_mode else None
+            self.camera_initialized = True
+            self.requested_frame_rate = getattr(self.config, "CAMERA_FPS", None)
+            logger.info(
+                "Using multiprocessing camera capture with a shared-memory latest-frame slot"
+            )
+            return
+
         self.camera_calibration = CameraCalibration(
             enabled=bool(getattr(self.config, "APPLY_CAMERA_CALIBRATION", True))
         )
@@ -176,6 +208,8 @@ class Camera:
                 raise RuntimeError("Webcam not functioning properly")
     
     def get_frame_rate_limits(self):
+        if self._shared_capture is not None:
+            return self._shared_capture.get_frame_rate_limits()
         if not self.pi_mode:
             return None
         controls = getattr(self.picam, "camera_controls", {})
@@ -196,6 +230,15 @@ class Camera:
         fps = float(fps)
         if fps <= 0:
             raise ValueError("fps must be greater than zero")
+
+        if self._shared_capture is not None:
+            actual = self._shared_capture.set_frame_rate(fps)
+            self.requested_frame_rate = actual
+            if getattr(self, "config", None) is not None:
+                setattr(self.config, "CAMERA_FPS", actual)
+            self._capture_timestamps.clear()
+            self.measured_frame_rate = None
+            return
 
         if self.pi_mode:
             limits = self.get_frame_rate_limits()
@@ -271,6 +314,25 @@ class Camera:
             return None
 
     def capture_frame(self, with_resize=True):
+        if self._shared_capture is not None:
+            frame, frame_resized, state = self._shared_capture.capture_frame(
+                with_resize=with_resize
+            )
+            self.last_capture_valid = bool(state.get("valid") and frame is not None)
+            self.last_capture_at = state.get("capture_at")
+            self.last_capture_duration_ms = float(state.get("duration_ms") or 0.0)
+            self.measured_frame_rate = state.get("fps")
+            self.consecutive_failures = int(state.get("failures") or 0)
+            self.frame_sequence = int(state.get("sequence") or 0)
+            self.pi_mode = bool(state.get("pi_mode", self.pi_mode))
+            metrics = getattr(self.config, "runtime_metrics", None)
+            if metrics is not None:
+                metrics.record_camera(
+                    self.last_capture_duration_ms, self.last_capture_valid
+                )
+            if not self.last_capture_valid:
+                return None, None
+            return frame, frame_resized
 
         started = time.monotonic()
         frame = None
@@ -279,12 +341,13 @@ class Camera:
 
         def finish(result_frame, result_resized, valid):
             self.last_capture_at = time.monotonic()
+            self.last_capture_duration_ms = max(
+                0.0, (self.last_capture_at - started) * 1000.0
+            )
+            self.frame_sequence += 1
             metrics = getattr(self.config, "runtime_metrics", None)
             if metrics is not None:
-                metrics.record_camera(
-                    (time.monotonic() - started) * 1000.0,
-                    valid,
-                )
+                metrics.record_camera(self.last_capture_duration_ms, valid)
             return result_frame, result_resized
 
         if not self.camera_initialized:
@@ -340,6 +403,12 @@ class Camera:
     def release(self):
         self.camera_initialized = False
         self.last_capture_valid = False
+        if self._shared_capture is not None:
+            capture = self._shared_capture
+            self._shared_capture = None
+            self.picam = None
+            capture.close()
+            return
         if self.pi_mode:
             try:
                 self.picam.stop()

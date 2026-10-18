@@ -72,6 +72,9 @@ python python/main.py --mode race --preflight
 
 # Vision/runtime testing without opening the Arduino serial connection
 python python/main.py --mode city --without-arduino
+
+# Experimental camera process with shared-memory frame handoff
+python python/main.py --mode race --without-arduino --performance --multiprocess-camera
 ```
 
 The BLSF detector and supported ML lane models are documented in [`python/README.md`](python/README.md). BLSF is experimental; validate detector changes on representative footage and at low speed before physical use.

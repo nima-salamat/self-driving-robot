@@ -217,6 +217,16 @@ def parse_args(argv=None):
     )
 
     parser.add_argument(
+        "--multiprocess-camera",
+        action="store_true",
+        default=False,
+        help=(
+            "Experimental: run camera capture in a separate process and hand off "
+            "latest frames through shared memory. Disabled by default."
+        ),
+    )
+
+    parser.add_argument(
         "--camera-mode",
         choices=["picam", "webcam", "opencv"],
         default=None,

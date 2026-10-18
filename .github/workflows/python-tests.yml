@@ -2,7 +2,7 @@ name: Python tests
 
 on:
   push:
-    branches: [main, system-hardening]
+    branches: [main, system-hardening, multiprocessing]
   pull_request:
     branches: [main]
 

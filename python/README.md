@@ -250,6 +250,31 @@ Other optional settings, such as camera mode, continue to use the normal configu
 python main.py --mode race --camera-mode webcam
 ~~~
 
+## Experimental multiprocessing camera capture
+
+The optional --multiprocess-camera flag starts one child process that owns the camera,
+performs the existing capture/calibration/resize path, and publishes the latest raw
+and resized frame pair through multiprocessing.shared_memory. City/Race perception,
+steering and stop decisions, Arduino communications, and the main control loop remain
+in the existing process. The shared slot is protected by a short lock; stale frames
+are skipped instead of building an unbounded queue. Small camera-setting commands use
+a multiprocessing queue, but frame bytes never do. Picamera2 runtime controls are
+forwarded to the camera-owning child process.
+
+The feature is off by default. It is an experiment for reducing camera-I/O stalls,
+not a guarantee that total perception FPS will increase. Compare the same mode,
+resolution, target FPS, lane model, and debug/stream settings with and without it.
+Start with Arduino communication disabled so no motor commands are sent:
+
+```bash
+python python/main.py --mode race --without-arduino --performance --target-fps 40
+python python/main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess-camera
+```
+
+Repeat each run for the same duration and compare measured camera FPS, complete-loop
+FPS, and camera/perception p95 latency. Hardware-free tests cannot validate a physical
+camera backend; test on the target Raspberry Pi before considering a merge.
+
 ## Camera configuration
 
 Camera settings are available in both JSON configuration and CLI overrides.

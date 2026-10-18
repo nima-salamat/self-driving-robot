@@ -23,6 +23,19 @@ class CliConfigPrecedenceTests(unittest.TestCase):
             _apply_cli_overrides(config, args)
             self.assertEqual(config.TARGET_PROCESSING_FPS, float(target))
 
+    def test_multiprocess_camera_is_strictly_opt_in(self):
+        config = types.SimpleNamespace(MULTIPROCESS_CAMERA=True)
+
+        args = parse_args([])
+        self.assertFalse(args.multiprocess_camera)
+        _apply_cli_overrides(config, args)
+        self.assertFalse(config.MULTIPROCESS_CAMERA)
+
+        args = parse_args(["--multiprocess-camera"])
+        self.assertTrue(args.multiprocess_camera)
+        _apply_cli_overrides(config, args)
+        self.assertTrue(config.MULTIPROCESS_CAMERA)
+
     def test_target_fps_rejects_invalid_values(self):
         for target in ("0", "-1", "nan", "inf", "-inf", "bad"):
             with self.subTest(target=target), self.assertRaises(SystemExit):
