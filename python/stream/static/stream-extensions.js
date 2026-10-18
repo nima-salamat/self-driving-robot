@@ -621,11 +621,33 @@ async function refreshProcessingRate(){
     $('ext_target_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;$('ext_apply_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;
   }catch(err){$('ext_fps_status').textContent=err.message;}
 }
-async function refreshSafety(){
-  try{const data=await nativeFetch('/api/safety',{cache:'no-store'}).then(function(r){return r.json();});
-    $('ext_safety_state').textContent='Software stop: '+(data.software_stop_active?'ACTIVE':'inactive')+' · RUN_LVL='+data.run_level;
-    $('ext_software_stop').disabled=!data.controls_enabled;$('ext_software_resume').disabled=!data.controls_enabled;
-  }catch(err){$('ext_safety_state').textContent='Safety status read failed: '+err.message;}
+async function refreshSignRequests(){
+  try{
+    const response=await nativeFetch('/api/sign-requests',{cache:'no-store'});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+    const state=$('ext_sign_requests_state');
+    if(!data.available){
+      state.textContent='Sign inference worker unavailable for this mode';
+    }else{
+      state.textContent='Sign requests: '+(data.requests_enabled?'ENABLED':'PAUSED')
+        +' · worker '+(data.worker_alive?'alive':'offline')
+        +' · queued '+data.queue_depth
+        +(data.inference_in_flight?' · inference in flight':'')
+        +' · RUN_LVL='+data.run_level+' (independent)';
+    }
+    $('ext_sign_requests_pause').disabled=!data.controls_enabled||!data.available||!data.requests_enabled;
+    $('ext_sign_requests_resume').disabled=!data.controls_enabled||!data.available||data.requests_enabled;
+  }catch(err){$('ext_sign_requests_state').textContent='Sign request status unavailable: '+err.message;}
+}
+async function signRequestsAction(action){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const response=await nativeFetch('/api/sign-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})});
+  const data=await response.json().catch(function(){return {};});
+  if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  const label=action==='pause'?'Sign detection requests paused':'Sign detection requests resumed';
+  showToast(label+' · RUN_LVL unchanged ('+data.run_level+')');
+  noteWorkspaceEvent(action==='pause'?'warn':'info',label+'; robot RUN_LVL unchanged: '+data.run_level);
+  await refreshSignRequests();
 }
 async function refreshServerLogs(){
   const level=encodeURIComponent($('ext_log_level').value||'ALL'),q=encodeURIComponent($('ext_log_search').value||'');
@@ -640,7 +662,7 @@ async function safetyAction(action,options){
   if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSafety();
+  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSignRequests();
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -871,7 +893,7 @@ function executeCommand(name){
 }
 function enableReadOnlyState(){
   if(STREAM_CONTROL_ALLOWED)return;
-  ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_software_stop','ext_software_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
+  ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_sign_requests_pause','ext_sign_requests_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
 }
 function initializeResize(){
   const container=document.querySelector('.container'),panel=document.querySelector('.right-panel');if(!container||!panel)return;
@@ -939,7 +961,7 @@ function installExtension(){
   $('ext_preset_delete').onclick=function(){presetAction('delete').catch(function(e){showToast(e.message);});};
   $('ext_compare_preset').onclick=function(){comparePreset().catch(function(e){showToast(e.message);});};$('ext_history_refresh').onclick=function(){refreshHistory().catch(function(e){showToast(e.message);});};$('ext_history_restore').onclick=function(){restoreHistory().catch(function(e){showToast(e.message);});};
   $('ext_apply_fps').onclick=function(){applyProcessingRate().catch(function(e){showToast(e.message);});};$('ext_apply_camera').onclick=function(){applyCameraControls().catch(function(e){showToast(e.message);});};
-  $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
+  $('ext_sign_requests_pause').onclick=function(){signRequestsAction('pause').catch(function(e){showToast(e.message);});};$('ext_sign_requests_resume').onclick=function(){signRequestsAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
   $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
@@ -961,7 +983,7 @@ function installExtension(){
     if(e.ctrlKey&&e.shiftKey&&(e.code==='Space'||e.key===' ')){
       if(e.repeat)return;
       e.preventDefault();
-      safetyAction('stop',{skipConfirm:true,source:'keyboard'}).catch(function(err){showToast('Software STOP failed: '+err.message);});
+      safetyAction('stop',{skipConfirm:true,source:'keyboard'}).catch(function(err){showToast('Force Stop failed: '+err.message);});
       return;
     }
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyK'){e.preventDefault();openCommandPalette();return;}
@@ -988,8 +1010,8 @@ async function initializeExtension(){
   refreshWorkspaceProfiles().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace load failed: '+err.message);});
   refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
   refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
-  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshServerLogs();
-  extHealthTimer=setInterval(function(){refreshRuntime();refreshTrafficAndRace();refreshSafety();},1800);
+  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSignRequests();refreshServerLogs();
+  extHealthTimer=setInterval(function(){refreshRuntime();refreshTrafficAndRace();refreshSignRequests();},1800);
   setInterval(function(){refreshCameraSettings();refreshProcessingRate();},8000);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeExtension,{once:true});else initializeExtension();
