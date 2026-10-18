@@ -309,7 +309,7 @@ function varColorByKey(key){
   return 'rgba(' + parseInt(parts[1],16) + ',' + parseInt(parts[2],16) + ',' + parseInt(parts[3],16) + ',' + Math.max(0,Math.min(1,opacity)) + ')';
 }
 function updateFrameModeText(){
-    frameModeDisplay.textContent = !syncActive ? 'Mode: STOPPED' : (isFrozen ? 'Mode: Frozen (for precise tuning)' : 'Mode: Live');
+    frameModeDisplay.textContent = !syncActive ? 'Dashboard requests: PAUSED' : (isFrozen ? 'Camera frame: Frozen (for precise tuning)' : 'Camera frame: Live');
 }
 function sendAdvanced(payload) {
     if(!syncActive) return showToast('Requests are stopped!');
@@ -996,12 +996,12 @@ document.getElementById('refresh_vals').addEventListener('click', ()=>{
 });
 document.getElementById('clear_selection').addEventListener('click',()=>{select.value='NONE';selectedVar='NONE';markerHighlight=null;document.getElementById('prop_target').value='NONE';if(window.syncPropertiesSelection)window.syncPropertiesSelection('NONE');renderWorkspaceCanvas();});
 
-/* ---------- Stop All Sync Button Logic ---------- */
+/* ---------- Pause Dashboard Requests Logic (robot RUN_LVL is unchanged) ---------- */
 const stopAllBtn = document.getElementById('stop_all_btn');
 stopAllBtn.addEventListener('click', () => {
     syncActive = !syncActive;
     if(!syncActive) {
-        stopAllBtn.textContent = 'Resume All Sync & Requests';
+        stopAllBtn.textContent = 'Resume Dashboard Requests';
         stopAllBtn.style.background = '#22c55e'; // Green when resuming
         clearInterval(fetchFrameTimer);
         fetchFrameTimer = null;
@@ -1012,9 +1012,9 @@ stopAllBtn.addEventListener('click', () => {
         clearInterval(arduinoUpdateTimer);
         arduinoUpdateTimer = null;
         updateFrameModeText();
-        showToast('All Sync Stopped');
+        showToast('Dashboard polling paused; robot motion is unchanged');
     } else {
-        stopAllBtn.textContent = 'Stop All Sync & Requests';
+        stopAllBtn.textContent = 'Pause Dashboard Requests';
         stopAllBtn.style.background = '#ef4444'; // Red for stop
         startFrameLoop();
         if(!valUpdateTimer) valUpdateTimer = setInterval(fetchValuesLoop, 4000);
@@ -1024,7 +1024,7 @@ stopAllBtn.addEventListener('click', () => {
         updateHealth();
         updateArduinoOutput();
         updateFrameModeText();
-        showToast('Sync Resumed');
+        showToast('Dashboard polling resumed; robot run state is unchanged');
     }
 });
 
