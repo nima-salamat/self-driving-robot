@@ -881,5 +881,29 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("no-store", response.headers["Cache-Control"])
 
 
+    def test_manual_controller_angle_limit_accepts_numeric_entry(self):
+        manual_ui = (PYTHON_ROOT / "test" / "test_manual_control.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'id="angle_limit_number" class="angle-limit-number" type="number" min="10" max="90"',
+            manual_ui,
+        )
+        self.assertIn("angleLimitSlider.value=String(value)", manual_ui)
+        self.assertIn(
+            "angleLimitNumber.addEventListener('change',()=>syncAngleLimitNumber(true))",
+            manual_ui,
+        )
+        self.assertIn(
+            "socket.emit('set_setting',{key:'angle_limit_deg',value:value})",
+            manual_ui,
+        )
+        self.assertIn(
+            "document.activeElement.id !== 'angle_limit_number'",
+            manual_ui,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
