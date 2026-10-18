@@ -1912,7 +1912,7 @@ document.getElementById('prop_revert_btn').addEventListener('click',()=>syncProp
 const readout={x:document.getElementById('cad_cursor_x'),y:document.getElementById('cad_cursor_y'),u:document.getElementById('cad_cursor_u'),v:document.getElementById('cad_cursor_v'),area:document.getElementById('cad_selected_area')};
 function updateCadReadout(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;readout.x.textContent='X: '+Math.round(u*canvas.width)+' px';readout.y.textContent='Y: '+Math.round(v*canvas.height)+' px';readout.u.textContent='U: '+(u*100).toFixed(1)+' %';readout.v.textContent='V: '+(v*100).toFixed(1)+' %';}
 canvas.addEventListener('mousemove',updateCadReadout,{passive:true});canvas.addEventListener('mouseleave',()=>{if(!viewPanState){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';}},{passive:true});
-select.addEventListener('change',()=>{selectedVar=select.value;readout.area.textContent='Object: '(select.value||'NONE');if(selectedVar.endsWith('_TOP_ROI'))window.syncPropertiesSelection(selectedVar.split('_')[0]);});
+select.addEventListener('change',()=>{selectedVar=select.value;readout.area.textContent='Object: '+(select.value||'NONE');if(selectedVar.endsWith('_TOP_ROI'))window.syncPropertiesSelection(selectedVar.split('_')[0]);});
 noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('RL');updateZoomStatus();
 }
 
