@@ -1043,7 +1043,7 @@ class Robot:
                 )
                 submit_started = time.monotonic()
                 submit_options = {
-                    "frame_captured_at": getattr(self.camera, "last_capture_at", None)
+                    "frame_captured_at": getattr(getattr(self, "camera", None), "last_capture_at", None)
                 }
                 self.sign_detector.submit(
                     submit_frame, submit_debug, **submit_options
