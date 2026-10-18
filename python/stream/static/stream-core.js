@@ -1199,7 +1199,7 @@ function setDock(open){
   const isNarrow=narrow();
   workspace.classList.toggle('show-dock',isNarrow&&dockIsOpen);
   workspace.classList.toggle('dock-hidden',!isNarrow&&!dockIsOpen);
-  dockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
+  const dockLabel=dockToggle.querySelector('#toggle_dock_label');if(dockLabel)dockLabel.textContent=dockIsOpen?'Hide Panels':'Show Panels';else dockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
   dockToggle.setAttribute('aria-expanded',String(dockIsOpen));
   dockToggle.setAttribute('aria-label',dockIsOpen?'Hide settings panels':'Show settings panels');
   const menuDockToggle=document.querySelector('[data-action="toggle-properties"]');
