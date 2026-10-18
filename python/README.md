@@ -146,6 +146,41 @@ firmware are displayed as restart-required rather
 than being enabled through an unsafe generic toggle. Runtime camera tuning is
 available only when the active Picamera2 camera reports support for each control.
 
+### Optional Stream login
+
+The dashboard can optionally require a username and password. The Stream server reads
+`python/.env` automatically when it starts; process environment variables take precedence.
+No extra Python package is required.
+
+~~~bash
+cd python
+cp .env.example .env
+# Edit .env and replace both placeholder values with unique credentials.
+chmod 600 .env
+python main.py --mode race --stream
+~~~
+
+Set both variables in `python/.env` (or in the process environment):
+
+~~~dotenv
+STREAM_USERNAME=your-dashboard-username
+STREAM_PASSWORD=use-a-long-unique-password
+~~~
+
+If both variables are absent or empty, Stream keeps its existing no-login behavior.
+If only one is set, Stream startup reports a configuration error rather than silently
+disabling authentication. Credentials are not committed: `.env` files are ignored by
+Git, while `.env.example` is only a template. The login is rate-limited, uses a
+server-side-verified signed session cookie, expires after 12 hours, and rejects
+cross-origin state-changing requests. Restarting the Stream process invalidates
+existing sessions.
+
+**Transport warning:** the built-in server uses HTTP, not HTTPS. Login credentials and
+session cookies are therefore not encrypted on the network. Use it only on a trusted
+network, or put it behind an HTTPS reverse proxy; for local-only access, bind to
+`127.0.0.1`. An optional `STREAM_COOKIE_SECURE=1` environment setting marks the
+session cookie Secure when HTTPS is available.
+
 ## Log verbosity
 
 Logging defaults to `INFO`, so `DEBUG` records are hidden from both the terminal
