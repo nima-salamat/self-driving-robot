@@ -334,6 +334,23 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(resumed.status_code, 200)
             self.assertEqual(config.RUN_LVL, "MOVE")
 
+    def test_server_log_endpoint_redacts_bearer_credentials(self):
+        import logging
+
+        config = self.make_config()
+        client = WebStreamer(config).app.test_client()
+        secret = "super-secret-token-123"
+        logging.getLogger("stream.redaction_test").warning(
+            "Authorization: Bearer %s", secret
+        )
+
+        response = client.get("/api/logs?level=WARNING&q=authorization&limit=10")
+
+        self.assertEqual(response.status_code, 200)
+        serialized = response.get_data(as_text=True)
+        self.assertNotIn(secret, serialized)
+        self.assertIn("[REDACTED]", serialized)
+
     def test_layer_settings_roll_back_when_atomic_persistence_fails(self):
         import json
 
