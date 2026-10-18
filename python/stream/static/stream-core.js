@@ -21,6 +21,10 @@ if (controlNotice) {
 
 let selectedVar = 'NONE';
 let markerHighlight = null;
+let roiAppearance = {labelFontSize:12, labelFontWeight:'700', outlineThickness:2, handleSize:10};
+let gridMode = 'off', gridSpacing = 0.05, gridOpacity = 0.35, gridThickness = 1, gridDotSize = 2;
+function isEditorSnapEnabled(){return typeof window.__isEditorSnapEnabled === 'function' && window.__isEditorSnapEnabled();}
+function snapNormalized(value){const step=Math.max(0.025,Math.min(0.25,Number(gridSpacing)||0.05));return round01(Math.round(Number(value)/step)*step);}
 let fetchFrameTimer = null;
 let valUpdateTimer = null;
 let healthUpdateTimer = null;
@@ -134,7 +138,12 @@ function renderWorkspaceEventLog(channel='events'){
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return;const b=getImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;const nw=canvas.width*z,nh=canvas.height*z;viewPanX=ax-u*nw-(canvas.width-nw)/2;viewPanY=ay-v*nh-(canvas.height-nh)/2;document.getElementById('workspace_zoom').value=String(z);renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');}
 function fitWorkspaceView(log=true){workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
-function updateZoomStatus(){const el=document.getElementById('menu_live_status');if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String(window.STREAM_BOOTSTRAP.mode || 'mode').toUpperCase()+' · '+Math.round(workspaceZoom*100)+'%';}
+function updateZoomStatus(){
+  const el=document.getElementById('menu_live_status');
+  if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String(window.STREAM_BOOTSTRAP.mode||'mode').toUpperCase();
+  const pct=document.getElementById('workspace_zoom_percent');
+  if(pct)pct.textContent=Math.round(workspaceZoom*100)+'%';
+}
 document.getElementById('workspace_zoom').addEventListener('input',e=>setWorkspaceZoom(parseFloat(e.target.value),canvas.width/2,canvas.height/2));
 
 /* Camera frame fullscreen: scale the canvas bitmap to the viewport while
