@@ -191,7 +191,7 @@ function applyWorkspaceZoomPercent(){
   const input=document.getElementById('workspace_zoom_percent');
   if(!input)return false;
   const raw=String(input.value||'').trim();
-  const match=raw.match(/^(?:([0-9]+(?:\\.[0-9]*)?)|(\\.[0-9]+))\\s*%?$/);
+  const match=raw.match(/^(?:([0-9]+(?:\.[0-9]*)?)|(\.[0-9]+))\s*%?$/);
   const currentLabel=Math.round(workspaceZoom*100)+'%';
   if(!match){input.value=currentLabel;showToast('Enter a zoom percentage from 30% to 400%.');return false;}
   const percent=Number(match[1]!==undefined?match[1]:match[2]);
