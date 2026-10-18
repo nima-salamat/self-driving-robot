@@ -334,6 +334,36 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(resumed.status_code, 200)
             self.assertEqual(config.RUN_LVL, "MOVE")
 
+    def test_layer_settings_roll_back_when_atomic_persistence_fails(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+        before = json.loads(json.dumps(streamer.ui_settings))
+
+        with patch.object(streamer, "save_ui_settings", return_value=False):
+            response = client.post("/set_ui", json={"visible": {"RL": False}})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(streamer.ui_settings, before)
+
+    def test_software_stop_is_retained_when_persistence_fails(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with patch.object(streamer, "save_conf_to_json", return_value=False):
+            stopped = client.post("/api/safety", json={"action": "stop"})
+            self.assertEqual(stopped.status_code, 500)
+            self.assertEqual(config.RUN_LVL, "STOP")
+            self.assertTrue(stopped.get_json()["software_stop_active"])
+
+            resumed = client.post("/api/safety", json={"action": "resume"})
+            self.assertEqual(resumed.status_code, 500)
+            self.assertEqual(config.RUN_LVL, "STOP")
+            self.assertTrue(resumed.get_json()["software_stop_active"])
+
     def test_camera_and_processing_rate_report_unavailable_capabilities_cleanly(self):
         streamer = WebStreamer(self.make_config())
         client = streamer.app.test_client()
