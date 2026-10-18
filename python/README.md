@@ -388,6 +388,26 @@ python main.py --mode race --performance
 python main.py --mode race --read-arduino-output
 ~~~
 
+## Encoder map and odometry calibration
+
+The separate `/encoder-map` page uses cumulative encoder telemetry from Arduino and the **final servo command** applied by the controller. When `USE_PID=True`, this is the command produced after the PID correction—not the unprocessed angle proposed by vision. The page reports a calibrated road-wheel-angle estimate and uses it to integrate a 2D path; Arduino does not provide physical servo-angle feedback, so this remains an estimate.
+
+Calibration may be configured independently for each active mode in `modes/city/config_city.py` / `city.json` and `modes/race/config_race.py` / `race.json`:
+
+- `ENCODER_PULSE_DISTANCE_CM`: measured travel per encoder pulse.
+- `ENCODER_WHEELBASE_CM`: measured wheelbase.
+- `ENCODER_ROAD_ANGLE_MIN_DEG` and `ENCODER_ROAD_ANGLE_MAX_DEG`: measured road-wheel angles at that mode's minimum and maximum servo commands.
+
+The pulse-distance value is required. Wheelbase and both road-angle values are needed for 2D path estimation; without them, the map can still show pulse/distance telemetry but does not fabricate X/Y coordinates. No generic values are pre-filled because these measurements depend on the physical robot. Explicit `--encoder-*` CLI values override the active mode's JSON/config values.
+
+Enable the map and Stream server with:
+
+~~~bash
+python main.py --mode race --stream --encoder-map
+~~~
+
+The selected mode's Arduino telemetry must support the explicit `encoder telemetry on` command. In this repository, `arduino/new_main_adaptive_pwm_with_savingPulseInEEPROM_FIX` already emits the `ODOM1` extension when requested.
+
 ## Classical BLSF lane detection — City beta
 
 The repository includes an experimental classical lane detector following the BLSF-style pipeline: existing City BEV/IPM, weighted grayscale, median-local thresholding, LSD line segments, binary line-segment filtering, column projection, sliding windows, and quadratic RANSAC fitting.
