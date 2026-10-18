@@ -107,7 +107,7 @@ async function fetchDashboardJson(url, options = {}) {
 }
 
 // Workspace Zoom Variable
-let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,frameSourceWidth=0,frameSourceHeight=0,workspaceTool='select';
+let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,frameSourceWidth=0,frameSourceHeight=0,workspaceTool='select',workspaceViewLocked=false;
 const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
 let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
 function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
@@ -137,8 +137,47 @@ function renderWorkspaceEventLog(channel='events'){
   const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';
 }
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
-function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return;const b=getImgBounds(),base=getBaseImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;const nw=base.iw*z,nh=base.ih*z,scale=Math.max(0.0001,base.scale||1);viewPanX=(ax-u*nw-(canvas.width-nw)/2)/scale;viewPanY=(ay-v*nh-(canvas.height-nh)/2)/scale;document.getElementById('workspace_zoom').value=String(z);renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');}
-function fitWorkspaceView(log=true){syncCameraCanvasSize();workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
+function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){
+  const slider=document.getElementById('workspace_zoom');
+  if(workspaceViewLocked){if(slider)slider.value=String(workspaceZoom);return false;}
+  const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return true;
+  const b=getImgBounds(),base=getBaseImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;
+  const nw=base.iw*z,nh=base.ih*z,scale=Math.max(0.0001,base.scale||1);
+  viewPanX=(ax-u*nw-(canvas.width-nw)/2)/scale;viewPanY=(ay-v*nh-(canvas.height-nh)/2)/scale;
+  if(slider)slider.value=String(z);renderWorkspaceCanvas();updateZoomStatus();
+  if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');return true;
+}
+function updateWorkspaceViewLockUI(){
+  const button=document.getElementById('workspace_view_lock');
+  const slider=document.getElementById('workspace_zoom');
+  const shackle=document.getElementById('workspace_lock_shackle');
+  const label=document.getElementById('workspace_view_lock_label');
+  const message=workspaceViewLocked?'Unlock view (allow zoom and pan)':'Lock zoom and camera position';
+  if(button){button.setAttribute('aria-pressed',String(workspaceViewLocked));button.setAttribute('aria-label',message);button.title=message;button.classList.toggle('is-locked',workspaceViewLocked);}
+  if(shackle)shackle.setAttribute('d',workspaceViewLocked?'M7 10V7a5 5 0 0 1 10 0v3':'M7 10V7a5 5 0 0 1 9.5-2');
+  if(label)label.textContent=workspaceViewLocked?'View Locked':'Lock View';
+  if(slider)slider.disabled=workspaceViewLocked;
+  document.querySelectorAll('[data-action="zoom-in"],[data-action="zoom-out"],[data-action="fit-view"]').forEach(function(control){control.disabled=workspaceViewLocked;control.setAttribute('aria-disabled',String(workspaceViewLocked));});
+  const fitButton=document.getElementById('center_reset');if(fitButton){fitButton.disabled=workspaceViewLocked;fitButton.setAttribute('aria-disabled',String(workspaceViewLocked));}
+  document.querySelectorAll('[data-tool="pan"]').forEach(function(control){control.disabled=workspaceViewLocked;control.setAttribute('aria-disabled',String(workspaceViewLocked));});
+}
+function setWorkspaceViewLocked(locked,log=true,persist=true){
+  const next=!!locked;if(next===workspaceViewLocked){updateWorkspaceViewLockUI();return workspaceViewLocked;}
+  workspaceViewLocked=next;
+  if(workspaceViewLocked)viewPanState=null;
+  updateWorkspaceViewLockUI();
+  if(log)noteWorkspaceEvent('info',workspaceViewLocked?'View locked: zoom and camera position are fixed':'View unlocked: zoom and pan are available');
+  if(persist&&typeof window.onWorkspaceViewLockChanged==='function')window.onWorkspaceViewLockChanged(workspaceViewLocked);
+  return workspaceViewLocked;
+}
+window.isWorkspaceViewLocked=()=>workspaceViewLocked;
+window.setWorkspaceViewLocked=setWorkspaceViewLocked;
+function fitWorkspaceView(log=true){
+  if(workspaceViewLocked)return false;
+  syncCameraCanvasSize();workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';
+  renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();updateZoomStatus();
+  if(log)noteWorkspaceEvent('info','View reset to fit camera frame');return true;
+}
 function updateZoomStatus(){
   const el=document.getElementById('menu_live_status');
   if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String(window.STREAM_BOOTSTRAP.mode||'mode').toUpperCase();
@@ -146,6 +185,8 @@ function updateZoomStatus(){
   if(pct)pct.textContent=Math.round(workspaceZoom*100)+'%';
 }
 document.getElementById('workspace_zoom').addEventListener('input',e=>setWorkspaceZoom(parseFloat(e.target.value),canvas.width/2,canvas.height/2));
+document.getElementById('workspace_view_lock').addEventListener('click',()=>setWorkspaceViewLocked(!workspaceViewLocked));
+updateWorkspaceViewLockUI();
 
 /* Camera frame fullscreen: scale the canvas bitmap to the viewport while
    preserving the source frame aspect ratio and native coordinate system. */
@@ -582,7 +623,7 @@ function hitTest(px, py){
 canvas.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('wheel',e=>{e.preventDefault();const p=canvasPointFromEvent(e);setWorkspaceZoom(workspaceZoom*(e.deltaY<0?1.12:1/1.12),p.x,p.y);},{passive:false});
 canvas.addEventListener('mousedown',e=>{
-    if(e.button===1||(e.button===0&&workspaceTool==='pan')){e.preventDefault();const p=canvasPointFromEvent(e);viewPanState={startX:p.x,startY:p.y,originalX:viewPanX,originalY:viewPanY,imageScale:Math.max(0.0001,getBaseImgBounds().scale||1)};dragState=null;canvas.style.cursor='grabbing';noteWorkspaceEvent('info','Pan started (middle mouse / hand tool)');return;}
+    if(e.button===1||(e.button===0&&workspaceTool==='pan')){e.preventDefault();if(workspaceViewLocked){showToast('View is locked. Unlock it to zoom or pan.');return;}const p=canvasPointFromEvent(e);viewPanState={startX:p.x,startY:p.y,originalX:viewPanX,originalY:viewPanY,imageScale:Math.max(0.0001,getBaseImgBounds().scale||1)};dragState=null;canvas.style.cursor='grabbing';noteWorkspaceEvent('info','Pan started (middle mouse / hand tool)');return;}
     if(e.button!==0||!syncActive||workspaceTool!=='select')return;
     const p=canvasPointFromEvent(e),px=p.x,py=p.y;
     const hit = hitTest(px, py);
@@ -1241,7 +1282,7 @@ consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList
 consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared',consoleTab);});
 document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{consoleTab=b.dataset.consoleTab;document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));document.getElementById('console_events').hidden=consoleTab!=='events';document.getElementById('console_api').hidden=consoleTab!=='api';renderWorkspaceEventLog(consoleTab);}));
 document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
-function setTool(tool){workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');if(typeof window.onStreamWorkspaceToolChanged==='function')window.onStreamWorkspaceToolChanged(workspaceTool);}
+function setTool(tool){if(tool==='pan'&&workspaceViewLocked){showToast('View is locked. Unlock it to pan.');tool='select';}workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');if(typeof window.onStreamWorkspaceToolChanged==='function')window.onStreamWorkspaceToolChanged(workspaceTool);}
 window.setStreamWorkspaceTool=setTool;
 function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}
 function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;document.getElementById('tool_overlays_btn').setAttribute('aria-pressed',String(showRectsCheckbox.checked));renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
