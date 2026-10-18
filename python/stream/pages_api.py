@@ -26,6 +26,7 @@ class StreamPagesMixin:
                 ),
                 capabilities=mode_capabilities(self.config),
                 encoder_map_enabled=bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)),
+                auth_enabled=bool(self.auth_enabled),
             ),
             mimetype="text/html",
         )
