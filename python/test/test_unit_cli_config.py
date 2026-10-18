@@ -83,6 +83,20 @@ class CliConfigPrecedenceTests(unittest.TestCase):
         self.assertEqual(args.camera_index, 2)
         self.assertEqual(args.arduino_config, "profile.json")
 
+    def test_multiprocess_alias_enables_camera_and_sign_worker(self):
+        for flag in ("--multiprocess-camera", "--multiprocess"):
+            with self.subTest(flag=flag):
+                with patch.object(sys, "argv", ["main.py", flag]):
+                    args = parse_args()
+                config = types.SimpleNamespace(
+                    MULTIPROCESS_CAMERA=False,
+                    MULTIPROCESS_SIGN_DETECTOR=False,
+                )
+                _apply_cli_overrides(config, args)
+                self.assertTrue(args.multiprocess_camera)
+                self.assertTrue(config.MULTIPROCESS_CAMERA)
+                self.assertTrue(config.MULTIPROCESS_SIGN_DETECTOR)
+
     def test_stream_is_disabled_unless_flag_is_supplied(self):
         for mode in ("city", "race"):
             with self.subTest(mode=mode):
