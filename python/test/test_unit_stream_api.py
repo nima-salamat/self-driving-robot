@@ -335,6 +335,8 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(config.RUN_LVL, "MOVE")
 
     def test_layer_settings_roll_back_when_atomic_persistence_fails(self):
+        import json
+
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
         streamer = WebStreamer(config)
