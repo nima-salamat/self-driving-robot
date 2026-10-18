@@ -96,6 +96,25 @@ class CliConfigPrecedenceTests(unittest.TestCase):
                 self.assertTrue(args.multiprocess_camera)
                 self.assertTrue(config.MULTIPROCESS_CAMERA)
                 self.assertTrue(config.MULTIPROCESS_SIGN_DETECTOR)
+                self.assertEqual(config.MULTIPROCESS_SIGN_INTRA_OP_THREADS, 2)
+
+    def test_sign_threads_are_opt_in_and_require_multiprocessing(self):
+        from main import _validate_opt_in_features
+
+        args = parse_args(["--multiprocess", "--sign-intra-op-threads", "1"])
+        config = types.SimpleNamespace()
+        _apply_cli_overrides(config, args)
+        self.assertEqual(config.MULTIPROCESS_SIGN_INTRA_OP_THREADS, 1)
+        _validate_opt_in_features(config, args)
+
+        with self.assertRaises(SystemExit):
+            _validate_opt_in_features(
+                config, parse_args(["--sign-intra-op-threads", "1"])
+            )
+        with self.assertRaises(SystemExit):
+            _validate_opt_in_features(
+                config, parse_args(["--multiprocess", "--sign-intra-op-threads", "0"])
+            )
 
     def test_multiprocess_is_strictly_opt_in_even_if_config_is_true(self):
         with patch.object(sys, "argv", ["main.py"]):
