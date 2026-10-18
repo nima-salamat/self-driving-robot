@@ -1944,6 +1944,7 @@ function refreshAnnotationList(){
     const label=document.createElement('span');label.textContent=(index+1)+'. '+(item.kind||'marker')+(item.label?': '+item.label:'');row.appendChild(label);
     const remove=document.createElement('button');remove.type='button';remove.className='ghost';remove.textContent='Delete';remove.onclick=function(){extAnnotations.splice(index,1);refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();};row.appendChild(remove);root.appendChild(row);
   });
+  syncLayerControls();
 }
 function onCustomPointerDown(event){
   if(!['annotate','ruler','roi_rect','roi_trapezoid'].includes(editorTool)||event.button!==0)return;
