@@ -90,6 +90,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("function setStreamDisplayFps(value)", core)
         self.assertIn("Math.round(1000/streamDisplayFps)", core)
         self.assertIn("window.ensureStreamDockVisible=()=>setDock(true)", core)
+        self.assertIn("window.setStreamWorkspaceTool=setTool", core)
         self.assertIn("function openStreamShortcuts()", core)
         self.assertIn("e.code==='F1'", core)
         self.assertIn("e.code==='KeyH'", core)
