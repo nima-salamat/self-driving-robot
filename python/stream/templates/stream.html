@@ -11,6 +11,21 @@
 <script>
 window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, advanced: {{ advanced|tojson }}, streamControl: {{ stream_control|default(false)|tojson }}, mode: {{ mode|tojson }} };
 </script>
+{% if auth_enabled %}
+<script>
+(function(){
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function(input, init) {
+    return originalFetch(input, init).then(function(response) {
+      if (response.status === 401 && window.location.pathname !== "/login") {
+        window.location.replace("/login");
+      }
+      return response;
+    });
+  };
+})();
+</script>
+{% endif %}
 <link rel="stylesheet" href="{{ url_for('static', filename='stream.css') }}">
 </head>
 <body>
