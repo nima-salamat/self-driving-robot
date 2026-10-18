@@ -2255,23 +2255,29 @@ async function refreshFeatureStatus(){
     ];
     const newline=String.fromCharCode(10);
     $('ext_feature_status').textContent=rows.map(function(r){const meta=r[1]||{};return r[0]+': '+(meta.enabled?'enabled':'disabled')+' — '+(meta.reason||'startup configuration');}).join(newline)+newline+newline+'Lane detector: '+(f.lane_detector||'unknown')+newline+'ML lane detector: '+String(!!f.ml_lane_detector)+newline+'Mode capabilities:'+newline+JSON.stringify(c,null,2);
-    if(f.encoder_map_enabled){$('ext_encoder_embed').hidden=false;$('ext_encoder_status').textContent='Encoder odometry is active.';if(!$('ext_encoder_frame').src||!$('ext_encoder_frame').src.endsWith('/encoder-map'))$('ext_encoder_frame').src='/encoder-map';}
+    if(f.encoder_map){$('ext_encoder_embed').hidden=false;$('ext_encoder_status').textContent='Encoder odometry is active.';if(!$('ext_encoder_frame').src||!$('ext_encoder_frame').src.endsWith('/encoder-map'))$('ext_encoder_frame').src='/encoder-map';}
     else{$('ext_encoder_embed').hidden=true;$('ext_encoder_status').textContent='Encoder map is disabled (enable with --encoder-map and compatible firmware, then restart).';}
     const setStatusSectionVisible=function(element,visible){if(!element)return;element.style.display=visible?'':'none';if(element.previousElementSibling)element.previousElementSibling.style.display=visible?'':'none';};
-    setStatusSectionVisible($('ext_traffic_status'),f.mode==='city');
-    setStatusSectionVisible($('ext_race_status'),f.mode==='race');
-    window.extActiveMode=f.mode;
+    setStatusSectionVisible($('ext_traffic_status'),mode.mode==='city');
+    setStatusSectionVisible($('ext_race_status'),mode.mode==='race');
+    window.extActiveMode=mode.mode;
   }catch(err){$('ext_feature_status').textContent='Feature query failed: '+err.message;}
 }
 async function refreshTrafficAndRace(){
-  try{
-    const light=await nativeFetch('/api/traffic-lights',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.reason||j.message||('HTTP '+r.status));return j;});
-    $('ext_traffic_status').textContent=JSON.stringify(light,null,2);
-  }catch(err){if(window.extActiveMode==='city')$('ext_traffic_status').textContent='Traffic-light status unavailable: '+err.message;}
-  try{
-    const race=await nativeFetch('/api/race',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.reason||j.message||('HTTP '+r.status));return j;});
-    $('ext_race_status').textContent=JSON.stringify(race,null,2);
-  }catch(err){if(window.extActiveMode==='race')$('ext_race_status').textContent='Race lifecycle unavailable: '+err.message;}
+  const mode=window.extActiveMode;
+  if(mode==='city'){
+    try{
+      const light=await nativeFetch('/api/traffic-lights',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.reason||j.message||('HTTP '+r.status));return j;});
+      $('ext_traffic_status').textContent=JSON.stringify(light,null,2);
+    }catch(err){$('ext_traffic_status').textContent='Traffic-light status unavailable: '+err.message;}
+    return;
+  }
+  if(mode==='race'){
+    try{
+      const race=await nativeFetch('/api/race',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.reason||j.message||('HTTP '+r.status));return j;});
+      $('ext_race_status').textContent=JSON.stringify(race,null,2);
+    }catch(err){$('ext_race_status').textContent='Race lifecycle unavailable: '+err.message;}
+  }
 }
 async function refreshCameraSettings(){
   try{
