@@ -2090,8 +2090,12 @@ function applyConfigToUI(snapshot){
   const advancedInputs={lane_threshold:'LANE_THRESHOLD',cross_thresh:'CROSSWALK_THRESHOLD',crosswalk_sleep:'CROSSWALK_SLEEP',crosswalk_thresh_spend:'CROSSWALK_THRESH_SPEND',read_sign_threshold:'READ_SIGN_THRESHOLD',turn_right:'TURN_RIGHT',turn_left:'TURN_LEFT',straight:'STRAIGHT',stop_lvl:'STOP'};
   Object.keys(advancedInputs).forEach(function(id){if($(id)&&advanced[advancedInputs[id]]!=null)$(id).value=String(advanced[advancedInputs[id]]);});
   if($('run_lvl'))$('run_lvl').value=advanced.RUN_LVL||'MOVE';if($('with_sign'))$('with_sign').checked=!!advanced.WITH_SIGN;if($('with_apriltag'))$('with_apriltag').checked=!!advanced.WITH_APRILTAG;
+  if(typeof updateInputsFromValues==='function')updateInputsFromValues();
+  if(typeof updateShapeUIFromData==='function')updateShapeUIFromData();
   const runtime=cfg.runtime||{};if(runtime.target_processing_fps!=null&&$('ext_target_fps'))$('ext_target_fps').value=String(runtime.target_processing_fps);
-  syncLegacyLayerControls();syncLayerControls();renderWorkspaceCanvas();drawPrecisionOverlay();
+  syncLegacyLayerControls();syncLayerControls();
+  if(typeof window.syncPropertiesSelection==='function'&&$('prop_target'))window.syncPropertiesSelection($('prop_target').value);
+  renderWorkspaceCanvas();drawPrecisionOverlay();
 }
 async function applyFullConfig(snapshot,label,trackForUndo){
   if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
