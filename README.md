@@ -73,8 +73,8 @@ python python/main.py --mode race --preflight
 # Vision/runtime testing without opening the Arduino serial connection
 python python/main.py --mode city --without-arduino
 
-# Experimental camera process with shared-memory frame handoff
-python python/main.py --mode race --without-arduino --performance --multiprocess-camera
+# Experimental camera + sign-inference processes with latest-frame handoff
+python python/main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
 ```
 
 The BLSF detector and supported ML lane models are documented in [`python/README.md`](python/README.md). BLSF is experimental; validate detector changes on representative footage and at low speed before physical use.
@@ -88,6 +88,14 @@ Runtime configuration is resolved in this order:
 3. Explicit command-line overrides.
 
 An explicit CLI value takes precedence. The dashboard stream is intentionally opt-in and requires `--stream`.
+
+### Multiprocess latest-frame pipeline
+
+`--multiprocess` (alias: `--multiprocess-camera`) opts into process-isolated camera capture and traffic-sign inference. The camera shares only its latest raw/resized frame with the main process; the sign worker keeps only one pending ROI frame and replaces it with newer submissions. This avoids growing backlogs, while the main process continues to own lane perception, STOP/phase decisions, steering and speed control. Only the sign-submission cadence gate `READ_SIGN_THRESHOLD` is bypassed; model confidence and sign safety checks are preserved.
+
+With `--performance`, the runtime reports stage percentiles for lane detection, confidence evaluation, sign submission/inference/input age, camera handoff and frame age, control, serial I/O, processing-rate wait and optional debug/object/traffic-light work. This is experimental: compare against a same-settings baseline and use `--without-arduino` before any physical test. A target FPS is a requested processing rate, not a guarantee.
+
+See [the full multiprocessing experiment notes](docs/MULTIPROCESSING_EXPERIMENT.md).
 
 ### Processing FPS vs camera FPS
 
