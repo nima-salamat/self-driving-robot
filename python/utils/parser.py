@@ -231,6 +231,17 @@ def parse_args(argv=None):
     )
 
     parser.add_argument(
+        "--sign-intra-op-threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "CPU thread budget for ONNX traffic-sign inference in multiprocessing "
+            "mode (default: 2); requires --multiprocess."
+        ),
+    )
+
+    parser.add_argument(
         "--camera-mode",
         choices=["picam", "webcam", "opencv"],
         default=None,
