@@ -573,3 +573,19 @@ canvas {
 @media(max-width:760px){.command-launch-button{gap:4px;padding:3px 5px;font-size:10px}.command-launch-button kbd{display:none}#ext_command_palette{padding:14px 7px}#ext_command_palette .palette-box{width:100%;max-height:94vh;max-height:94dvh;padding:10px}.palette-results-grid{grid-template-columns:minmax(0,1fr);gap:8px;overflow:auto}.palette-results-section{min-height:140px;max-height:38vh;max-height:38dvh}.settings-results{min-height:175px}}
 @media(prefers-reduced-motion:reduce){.palette-setting-highlight{animation:none;background-color:rgba(34,211,238,.22)!important}}
 
+/* Active workspace mode remains visible above the frame and can be dismissed. */
+.active-tool-banner{display:flex;align-items:center;gap:8px;min-height:31px;flex:0 0 auto;padding:5px 8px;border:1px solid #2c7f65;border-radius:6px;background:linear-gradient(90deg,rgba(22,101,75,.28),rgba(8,24,29,.9));color:#d1fae5;font-size:11px}
+.active-tool-banner[hidden]{display:none!important}
+.active-tool-dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.12)}
+#active_tool_label{min-width:0;line-height:1.4}
+.active-tool-spacer{flex:1}
+.active-tool-hint{color:#8bb8a8;font:10px ui-monospace,Consolas,monospace;white-space:nowrap}
+#active_tool_cancel{width:23px;height:23px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 23px;padding:0;border:1px solid #397762;border-radius:5px;background:rgba(6,36,28,.8);color:#a7f3d0;font-size:18px;line-height:1;cursor:pointer}
+#active_tool_cancel:hover{background:#145c45;color:#fff;border-color:#4ade80}
+.palette-active-indicator{display:inline-flex;flex:0 0 20px;align-items:center;justify-content:center;width:20px;height:20px;margin-left:4px;border-radius:50%;color:#34d399;background:rgba(16,185,129,.14);border:1px solid rgba(52,211,153,.36);font-size:14px;font-weight:900;line-height:1}
+.palette-active-indicator[hidden]{display:none!important}
+.annotation-row{gap:8px}
+.annotation-row>span{min-width:0;overflow-wrap:anywhere}
+.annotation-delete{flex:0 0 auto;border-color:rgba(251,113,133,.32)!important;color:#fda4af!important;background:rgba(127,29,29,.12)!important;padding:4px 7px!important;font-size:10px}
+.annotation-delete:hover{border-color:#fb7185!important;background:rgba(127,29,29,.35)!important;color:#fff!important}
+
