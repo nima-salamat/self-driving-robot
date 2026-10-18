@@ -1310,7 +1310,7 @@ document.addEventListener('keydown',function(e){
  const pixelStep=(typeof window.__getStreamKeyboardNudgePx==='function'?window.__getStreamKeyboardNudgePx():5)*(e.shiftKey?5:1);
  const stepX=pixelStep/source.width,stepY=pixelStep/source.height,w=r-l,h=b-t;
  let nl=l+d[0]*stepX,nt=t+d[1]*stepY;
- if(isEditorSnapEnabled()){nl=snapNormalized(nl,getGridStepX());nt=snapNormalized(nt,gridSpacing);}
+ // Arrow-key nudging stays pixel-accurate even when mouse drag snapping is enabled.
  nl=Math.max(0,Math.min(1-w,nl));nt=Math.max(0,Math.min(1-h,nt));
  values[n.left]=round01(nl);values[n.right]=round01(nl+w);values[n.top]=round01(nt);values[n.bottom]=round01(nt+h);
  selectedVar=g;select.value=g;propTarget.value=g;markerHighlight=g;updateInputsFromValues();syncPropertiesSelection(g);renderWorkspaceCanvas();scheduleKeyboardRoiMove(g);
