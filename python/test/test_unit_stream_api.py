@@ -351,6 +351,27 @@ class StreamApiTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertIn("[REDACTED]", serialized)
 
+    def test_config_import_and_advanced_edit_cannot_bypass_software_stop(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RUN_LVL = "STOP"
+        client = WebStreamer(config).app.test_client()
+
+        payload = client.get("/api/config/full").get_json()
+        payload["advanced"]["RUN_LVL"] = "MOVE"
+        imported = client.post("/api/config/full", json=payload)
+        self.assertEqual(imported.status_code, 400)
+        self.assertEqual(config.RUN_LVL, "STOP")
+
+        edited = client.post("/set_advanced", json={"RUN_LVL": "MOVE"})
+        self.assertEqual(edited.status_code, 409)
+        self.assertEqual(config.RUN_LVL, "STOP")
+
+        # The dedicated software-safety action remains the explicit resume path.
+        resumed = client.post("/api/safety", json={"action": "resume"})
+        self.assertEqual(resumed.status_code, 200)
+        self.assertEqual(config.RUN_LVL, "MOVE")
+
     def test_roi_batch_validation_does_not_apply_a_partial_update(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
