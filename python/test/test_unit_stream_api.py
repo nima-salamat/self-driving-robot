@@ -351,6 +351,51 @@ class StreamApiTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertIn("[REDACTED]", serialized)
 
+    def test_roi_batch_validation_does_not_apply_a_partial_update(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RL_TOP_ROI = 0.15
+        config.RL_BOTTOM_ROI = 0.85
+        response = WebStreamer(config).app.test_client().post(
+            "/update_conf",
+            json={"RL_TOP_ROI": 0.25, "RL_BOTTOM_ROI": "not-a-number"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(config.RL_TOP_ROI, 0.15)
+        self.assertEqual(config.RL_BOTTOM_ROI, 0.85)
+
+    def test_advanced_batch_rolls_back_when_a_later_value_is_invalid(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.LANE_THRESHOLD = 125
+        config.WITH_SIGN = False
+        config.WITH_APRILTAG = False
+        response = WebStreamer(config).app.test_client().post(
+            "/set_advanced",
+            json={"LANE_THRESHOLD": 160, "WITH_SIGN": True, "WITH_APRILTAG": True},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(config.LANE_THRESHOLD, 125)
+        self.assertFalse(config.WITH_SIGN)
+        self.assertFalse(config.WITH_APRILTAG)
+
+    def test_live_feature_rolls_back_when_config_persistence_fails(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with patch.object(streamer, "save_conf_to_json", return_value=False):
+            response = client.post(
+                "/api/features",
+                json={"feature": "DETECT_OBJECT", "value": True},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertFalse(getattr(config, "DETECT_OBJECT", False))
+
     def test_layer_settings_roll_back_when_atomic_persistence_fails(self):
         import json
 
