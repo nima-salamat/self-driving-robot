@@ -22,6 +22,9 @@ class StreamApiTests(unittest.TestCase):
         base_dir_patch = patch.object(stream, "BASE_DIR", self._stream_test_directory.name)
         base_dir_patch.start()
         self.addCleanup(base_dir_patch.stop)
+        env_patch = patch.dict(os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
 
     def make_config(self):
         return types.SimpleNamespace(
@@ -431,6 +434,9 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("Pause Dashboard Requests", html)
         self.assertIn('id="roi_setting_jpeg_quality"', html)
         self.assertIn("This only changes JPEG encoding for dashboard frames", html)
+        extensions = (PYTHON_ROOT / "stream" / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        self.assertIn("refreshStreamJpegQualityFromServer()", extensions)
+        self.assertIn("nativeFetch('/api/stream/quality'", extensions)
 
         # HTML_TEMPLATE is a Python triple-quoted string. The rendered
         # JavaScript must contain a backslash+n escape, not a literal newline
