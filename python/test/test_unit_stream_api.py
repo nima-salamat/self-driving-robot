@@ -91,6 +91,9 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("Math.round(1000/streamDisplayFps)", core)
         self.assertIn("window.ensureStreamDockVisible=()=>setDock(true)", core)
         self.assertIn("window.setStreamWorkspaceTool=setTool", core)
+        self.assertIn("function setWorkspaceViewLocked(locked,log=true,persist=true)", core)
+        self.assertIn("if(workspaceViewLocked)return false", core)
+        self.assertIn("if(workspaceViewLocked){showToast('View is locked. Unlock it to zoom or pan.')", core)
         self.assertIn("function openStreamShortcuts()", core)
         self.assertIn("e.code==='F1'", core)
         self.assertIn("e.code==='KeyH'", core)
@@ -107,6 +110,9 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("gridColor", extensions)
         self.assertIn("keyboardNudgePx", extensions)
         self.assertIn("streamFps:streamFps", extensions)
+        self.assertIn("viewLocked:typeof window.isWorkspaceViewLocked", extensions)
+        self.assertIn("window.onWorkspaceViewLockChanged=function()", extensions)
+        self.assertIn("Toggle view lock", extensions)
         self.assertIn("function settingSearchEntries()", extensions)
         self.assertIn("function navigateToPaletteSetting(entry)", extensions)
         self.assertIn("function updateActiveToolBanner()", extensions)
@@ -132,6 +138,10 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn('id="ext_settings_results"', template)
         self.assertIn('id="ext_command_count"', template)
         self.assertIn('id="roi_setting_stream_fps"', template)
+        self.assertIn('id="workspace_view_lock"', template)
+        self.assertIn('id="workspace_lock_shackle"', template)
+        self.assertIn(".view-lock-button.is-locked", css)
+        self.assertGreater(template.index('id="workspace_view_lock"'), template.index('id="workspace_zoom_percent"'))
         self.assertGreater(template.index('id="ext_open_palette"'), template.index('id="menu_live_status"'))
         self.assertIn("@keyframes paletteSettingFlash", css)
         self.assertIn('id="shortcut_dialog"', template)
@@ -153,11 +163,13 @@ class StreamApiTests(unittest.TestCase):
                 "gridColor": "#A1B2C3",
                 "keyboardNudgePx": 7,
                 "streamFps": 15,
+                "viewLocked": True,
             }
         })
         self.assertEqual(clean["view"]["gridColor"], "#a1b2c3")
         self.assertEqual(clean["view"]["keyboardNudgePx"], 7.0)
         self.assertEqual(clean["view"]["streamFps"], 15.0)
+        self.assertIs(clean["view"]["viewLocked"], True)
 
         with self.assertRaises(ValueError):
             streamer._sanitize_workspace({"view": {"gridColor": "steelblue"}})
@@ -165,6 +177,8 @@ class StreamApiTests(unittest.TestCase):
             streamer._sanitize_workspace({"view": {"keyboardNudgePx": 101}})
         with self.assertRaises(ValueError):
             streamer._sanitize_workspace({"view": {"streamFps": 31}})
+        with self.assertRaises(ValueError):
+            streamer._sanitize_workspace({"view": {"viewLocked": "true"}})
 
     def test_wildcard_bind_discovers_private_lan_address(self):
         from unittest.mock import patch
