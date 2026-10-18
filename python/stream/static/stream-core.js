@@ -265,7 +265,7 @@ function sendAdvanced(payload) {
 // Convert image norm coords (0-1) to physical canvas coords, honoring workspace zoom
 function getImgBounds(){const w=canvas.width,h=canvas.height,iw=w*workspaceZoom,ih=h*workspaceZoom;return{ix:(w-iw)/2+viewPanX,iy:(h-ih)/2+viewPanY,iw,ih};}
 function canvasPointFromEvent(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return{x:0,y:0};return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height};}
-function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();if(typeof drawPrecisionOverlay==='function')drawPrecisionOverlay();}
+function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();}
 
 function toCanvas(nx, ny) {
     const b = getImgBounds();
