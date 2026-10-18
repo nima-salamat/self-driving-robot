@@ -13,7 +13,7 @@ let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSa
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
 let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
 const nativeFetch = window.fetch.bind(window);
-let motionHotkeyActionInFlight=false;
+let motionHotkeyActionInFlight=false, streamShutdownRequestedLocally=false;
 
 function normalizedConfig(snapshot){
   if(!snapshot || typeof snapshot!=='object') return null;
@@ -690,6 +690,66 @@ async function toggleMotionSafetyFromKeyboard(){
     await safetyAction(action,{skipConfirm:action==='stop',source:'keyboard'});
   }finally{motionHotkeyActionInFlight=false;}
 }
+function openStreamExitDialog(){
+  const dialog=$('ext_stream_exit_dialog');
+  const confirmButton=$('ext_stream_exit_confirm');
+  const error=$('ext_stream_exit_error');
+  if(streamShutdownRequestedLocally)return;
+  $('ext_stream_exit_title').textContent='Exit Stream?';
+  $('ext_stream_exit_message').textContent=STREAM_CONTROL_ALLOWED
+    ? 'This stops the Stream HTTP server and sets STREAM=False in the current process, like running without --stream. The robot’s main City/Race loop, perception, and motion control keep running. This does not stop the robot.'
+    : 'Stream shutdown is disabled because this dashboard is running in read-only mode. Restart without --stream-read-only to enable runtime controls.';
+  error.hidden=true;error.textContent='';
+  confirmButton.textContent='Stop Stream';
+  confirmButton.disabled=!STREAM_CONTROL_ALLOWED;
+  $('ext_stream_exit_cancel').hidden=false;
+  $('ext_stream_exit_close').disabled=false;
+  dialog.classList.add('is-open');dialog.setAttribute('aria-hidden','false');
+  $('ext_stream_exit_cancel').focus();
+}
+window.openStreamExitDialog=openStreamExitDialog;
+function closeStreamExitDialog(){
+  if(streamShutdownRequestedLocally)return;
+  const dialog=$('ext_stream_exit_dialog');
+  dialog.classList.remove('is-open');dialog.setAttribute('aria-hidden','true');
+}
+async function requestStreamShutdown(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Stream shutdown is disabled in read-only mode.');
+  if(streamShutdownRequestedLocally)return;
+  const confirmButton=$('ext_stream_exit_confirm');
+  const cancelButton=$('ext_stream_exit_cancel');
+  const closeButton=$('ext_stream_exit_close');
+  const message=$('ext_stream_exit_message');
+  const error=$('ext_stream_exit_error');
+  confirmButton.disabled=true;cancelButton.disabled=true;closeButton.disabled=true;
+  confirmButton.textContent='Stopping…';error.hidden=true;error.textContent='';
+  try{
+    const response=await nativeFetch('/api/stream-control/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'stop'}),cache:'no-store'});
+    const data=await response.json().catch(function(){return {};});
+    if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+    if(!data.success)throw new Error(data.message||'Stream shutdown was not accepted.');
+    streamShutdownRequestedLocally=true;
+    $('ext_stream_exit_title').textContent='Stream is shutting down';
+    message.textContent=data.already_stopped
+      ? 'The Stream HTTP server is already stopped. The robot runtime remains independent.'
+      : 'Shutdown accepted. The Stream HTTP server is closing and STREAM is now false in this running process. City/Race, perception, and the robot motion loop continue running. This dashboard is leaving; restart with --stream to open it again.';
+    confirmButton.textContent='Stream stopping…';
+    cancelButton.hidden=true;
+    $('menu_live_status').textContent='STREAM STOPPING';
+    if(extHealthTimer){clearInterval(extHealthTimer);extHealthTimer=null;}
+    noteWorkspaceEvent('warn','Stream shutdown requested from File → Exit; robot runtime remains active.');
+    showToast('Stream shutdown requested; robot runtime remains active.');
+    // Leave enough time for the confirmation to be read, then exit this
+    // now-disconnected dashboard page and stop its browser-side polling loops.
+    window.setTimeout(function(){window.location.replace('about:blank');},1500);
+  }catch(err){
+    confirmButton.disabled=false;cancelButton.disabled=false;closeButton.disabled=false;
+    confirmButton.textContent='Stop Stream';
+    error.textContent='Could not stop Stream: '+err.message;error.hidden=false;
+    showToast('Stream shutdown failed: '+err.message);
+    throw err;
+  }
+}
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const fps=Number($('ext_target_fps').value);const data=await nativeFetch('/api/processing-rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_fps:fps})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
@@ -1000,6 +1060,11 @@ function installExtension(){
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String(window.STREAM_BOOTSTRAP.mode || 'mode').toLowerCase()+'-annotations.json','application/json');};
   $('ext_open_palette').onclick=openCommandPalette;
+  $('ext_stream_exit_close').onclick=closeStreamExitDialog;
+  $('ext_stream_exit_cancel').onclick=closeStreamExitDialog;
+  $('ext_stream_exit_confirm').onclick=function(){requestStreamShutdown().catch(function(){});};
+  $('ext_stream_exit_dialog').addEventListener('click',function(e){if(e.target===this)closeStreamExitDialog();});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&$('ext_stream_exit_dialog').classList.contains('is-open')){e.preventDefault();closeStreamExitDialog();}});
   $('active_tool_cancel').onclick=function(){setEditorTool('select');};
   $('ext_encoder_reset').onclick=async function(){if(!confirm('Reset only the displayed odometry origin? Hardware counters will not be reset.'))return;const r=await nativeFetch('/api/encoder-map/reset-origin',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));showToast('Displayed odometry origin reset');};
   $('ext_frame_compare_close').onclick=function(){$('ext_frame_compare').style.display='none';};
@@ -1039,8 +1104,8 @@ async function initializeExtension(){
   refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
   refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
   refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
-  extHealthTimer=setInterval(function(){refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
-  setInterval(function(){refreshCameraSettings();refreshProcessingRate();},8000);
+  extHealthTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
+  setInterval(function(){if(streamShutdownRequestedLocally)return;refreshCameraSettings();refreshProcessingRate();},8000);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeExtension,{once:true});else initializeExtension();
 })();
