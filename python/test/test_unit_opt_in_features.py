@@ -13,7 +13,8 @@ from controller.adaptive_obstacle import AdaptiveObstaclePlanner
 from controller.controller import RobotController
 from controller.odometry import EncoderOdometry
 from controller.perception_confidence import ConfidenceSpeedLimiter, PerceptionConfidenceEstimator
-from main import _apply_cli_overrides
+from main import _apply_cli_overrides, _validate_opt_in_features
+from utils.parser import parse_args
 from stream import WebStreamer
 
 
@@ -79,6 +80,51 @@ class OptInFeatureTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_encoder_calibration_uses_active_mode_config_and_cli_overrides_it(self):
+        config = types.SimpleNamespace(
+            ENCODER_MAP_ENABLED=False, CONFIDENCE_AWARE_ENABLED=False,
+            ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED=False,
+            ENCODER_PULSE_DISTANCE_CM=0.42, ENCODER_WHEELBASE_CM=21.0,
+            ENCODER_ROAD_ANGLE_MIN_DEG=-18.0, ENCODER_ROAD_ANGLE_MAX_DEG=18.0,
+            MIN_SERVO_ANGLE=55.0, MAX_SERVO_ANGLE=125.0, SERVO_CENTER=95.0,
+            WITHOUT_ARDUINO=False, STREAM=False,
+        )
+        args = parse_args(["--mode", "city", "--stream", "--encoder-map"])
+        _apply_cli_overrides(config, args)
+        self.assertEqual(config.ENCODER_PULSE_DISTANCE_CM, 0.42)
+        self.assertEqual(config.ENCODER_WHEELBASE_CM, 21.0)
+        self.assertEqual(config.ENCODER_ROAD_ANGLE_MIN_DEG, -18.0)
+        self.assertEqual(config.ENCODER_ROAD_ANGLE_MAX_DEG, 18.0)
+        _validate_opt_in_features(config, args)
+
+        override_args = parse_args([
+            "--mode", "city", "--stream", "--encoder-map",
+            "--encoder-pulse-distance-cm", "0.5",
+            "--encoder-wheelbase-cm", "22",
+            "--encoder-road-wheel-angle-at-servo-min-deg", "-20",
+            "--encoder-road-wheel-angle-at-servo-max-deg", "20",
+        ])
+        _apply_cli_overrides(config, override_args)
+        self.assertEqual(config.ENCODER_PULSE_DISTANCE_CM, 0.5)
+        self.assertEqual(config.ENCODER_WHEELBASE_CM, 22.0)
+        self.assertEqual(config.ENCODER_ROAD_ANGLE_MIN_DEG, -20.0)
+        self.assertEqual(config.ENCODER_ROAD_ANGLE_MAX_DEG, 20.0)
+        _validate_opt_in_features(config, override_args)
+
+    def test_selected_fix_firmware_reports_cumulative_pulses_and_servo_command(self):
+        firmware = (ROOT.parent / "arduino" /
+                    "new_main_adaptive_pwm_with_savingPulseInEEPROM_FIX").read_text(encoding="utf-8")
+        for required in (
+            'work == "encoder telemetry on"',
+            'if (encoderTelemetryEnabled)',
+            'Serial.print(" ODOM1 ")',
+            'Serial.print(cumulativeSignedPulses)',
+            'Serial.print(getPulseCount())',
+            'Serial.print(servoCurrent)',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, firmware)
+
     def test_old_and_extended_status_contract(self):
         old = RobotController.parse_status_line("R F 25 -1 30 1000 0")
         self.assertEqual(old["right_ultrasonic_dist"], 25)
@@ -107,6 +153,20 @@ class OptInFeatureTests(unittest.TestCase):
         self.assertFalse(odom.ingest({"extended": True, "valid": True,
                                       "epoch": 2, "signed_pulses": 0, "servo": 95}, 1.2))
         self.assertTrue(odom.snapshot(1.2)["history"][-1]["gap"])
+
+    def test_odometry_exposes_calibrated_road_wheel_angle_from_servo_command(self):
+        odom = EncoderOdometry(0.5, wheelbase_cm=20, servo_center=95,
+            servo_min=55, servo_max=125, road_angle_min_deg=-20,
+            road_angle_max_deg=20)
+        self.assertTrue(odom.ingest({"extended": True, "valid": True,
+            "epoch": 1, "signed_pulses": 0, "servo": 95}, 1.0))
+        self.assertTrue(odom.ingest({"extended": True, "valid": True,
+            "epoch": 1, "signed_pulses": 4, "servo": 112.5}, 1.1))
+        snapshot = odom.snapshot(1.1)
+        self.assertEqual(snapshot["servo_command"], 112.5)
+        self.assertEqual(snapshot["steering_angle_source"], "arduino_servo_command")
+        self.assertAlmostEqual(snapshot["road_wheel_angle_deg"], 12.8571428571, places=5)
+        self.assertGreater(snapshot["heading_rad"], 0.0)
 
     def test_odometry_ignores_replayed_and_out_of_order_records(self):
         odom = EncoderOdometry(0.5)
