@@ -87,13 +87,45 @@ class StreamApiTests(unittest.TestCase):
 
         self.assertIn("if(!showRectsCheckbox.checked)return {type:'none'}", core)
         self.assertIn("function openStreamShortcuts()", core)
-        self.assertIn("e.key==='F1'", core)
+        self.assertIn("e.code==='F1'", core)
+        self.assertIn("e.code==='KeyH'", core)
+        self.assertIn("pixelStep/source.width", core)
+        self.assertIn("function getGridStepX()", core)
         self.assertIn("copyCoordinateText(coordinateText)", extensions)
         self.assertIn("function installCoordinatePairPaste()", extensions)
         self.assertIn("extCrosshair=false", extensions)
+        self.assertIn("e.code==='KeyK'", extensions)
+        self.assertIn("e.code==='KeyS'", extensions)
+        self.assertIn("getGridStepX()", extensions)
+        self.assertIn("gridColor", extensions)
+        self.assertIn("keyboardNudgePx", extensions)
         self.assertIn('id="shortcut_dialog"', template)
+        self.assertIn('id="roi_setting_grid_color"', template)
+        self.assertIn('id="roi_setting_keyboard_nudge"', template)
+        self.assertIn('id="refresh_vals"', template)
+        self.assertNotIn('id="apply_all"', template)
+        self.assertNotIn('id="download_json"', template)
+        self.assertNotIn('class="workspace-actionbar"', template)
+        self.assertIn("physical key positions", template)
         self.assertIn(".container.dock-hidden { grid-template-columns:minmax(0,1fr) !important; }", css)
         self.assertIn("#video_canvas.crosshair-active { cursor: crosshair !important; }", css)
+
+    def test_workspace_sanitizes_grid_color_and_pixel_nudge_settings(self):
+        streamer = WebStreamer(self.make_config())
+
+        clean = streamer._sanitize_workspace({
+            "view": {
+                "gridColor": "#A1B2C3",
+                "keyboardNudgePx": 7,
+            }
+        })
+        self.assertEqual(clean["view"]["gridColor"], "#a1b2c3")
+        self.assertEqual(clean["view"]["keyboardNudgePx"], 7.0)
+
+        with self.assertRaises(ValueError):
+            streamer._sanitize_workspace({"view": {"gridColor": "steelblue"}})
+        with self.assertRaises(ValueError):
+            streamer._sanitize_workspace({"view": {"keyboardNudgePx": 101}})
 
     def test_wildcard_bind_discovers_private_lan_address(self):
         from unittest.mock import patch
