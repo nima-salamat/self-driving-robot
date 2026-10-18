@@ -129,6 +129,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("This does not change RUN_LVL", template)
         self.assertIn('id="ext_safety_panel"', template)
         self.assertIn('id="ext_software_stop"', template)
+        self.assertIn('id="ext_software_stop">Force Stop (RUN_LVL → STOP)</button>', template)
         self.assertIn('id="ext_software_resume"', template)
         self.assertIn("$('ext_software_stop').onclick=function(){safetyAction('stop')", extensions)
         self.assertIn("$('ext_software_resume').onclick=function(){safetyAction('resume')", extensions)
