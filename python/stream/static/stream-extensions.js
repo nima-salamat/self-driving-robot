@@ -648,21 +648,173 @@ async function applyCameraControls(){
   const response=await nativeFetch('/api/camera/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));await refreshCameraSettings();currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Runtime camera controls applied');
 }
+function paletteNormalize(value){
+  const raw=String(value==null?'':value);
+  return (typeof raw.normalize==='function'?raw.normalize('NFKC'):raw).toLocaleLowerCase();
+}
+function palettePanelTrail(detail){
+  const parts=[];let current=detail;
+  while(current&&current.matches&&current.matches('details.dock-panel')){
+    const summary=current.querySelector(':scope > summary');
+    const name=summary?summary.textContent.replace(/\s+/g,' ').trim():'Panel';
+    if(name)parts.push(name);
+    current=current.parentElement?current.parentElement.closest('details.dock-panel'):null;
+  }
+  return parts.reverse().join(' › ')||'Settings';
+}
+function settingSearchEntries(){
+  const entries=[],seen=new Set();
+  function add(label,panelTitle,detail,target,focusTarget,modal,kind){
+    const name=String(label||'').replace(/\s+/g,' ').trim();
+    if(name.length<2)return;
+    const node=target||detail||focusTarget;if(!node)return;
+    const identity=(panelTitle+'|'+name+'|'+(node.id||node.tagName||'item')).toLocaleLowerCase();
+    if(seen.has(identity))return;seen.add(identity);
+    const extra=[node.id,node.title,node.getAttribute&&node.getAttribute('aria-label'),focusTarget&&focusTarget.id,focusTarget&&focusTarget.placeholder].filter(Boolean).join(' ');
+    entries.push({label:name,panelTitle:panelTitle,detail:detail,target:node,focusTarget:focusTarget||node,modal:!!modal,kind:kind||'SETTING',
+      searchable:paletteNormalize(name+' '+panelTitle+' '+extra+' '+(kind||'setting'))});
+  }
+  document.querySelectorAll('.right-panel details.dock-panel').forEach(function(detail){
+    const summary=detail.querySelector(':scope > summary');
+    const panelTitle=palettePanelTrail(detail);
+    if(summary)add('Open panel: '+summary.textContent,panelTitle,detail,summary,summary,false,'PANEL');
+    detail.querySelectorAll('.dock-content label,.dock-content .section-title,.dock-content h3,.dock-content button,.dock-content .small-muted,.dock-content .settings-note').forEach(function(node){
+      let focus=node.control||null;
+      if(node.tagName==='LABEL'){
+        if(!focus&&node.htmlFor)focus=document.getElementById(node.htmlFor);
+        if(!focus)focus=node.querySelector('input,select,textarea,button');
+      }
+      const kind=node.matches('button')?'ACTION':node.matches('label')?'SETTING':'SECTION';
+      add(node.textContent,panelTitle,detail,node,focus||node,false,kind);
+    });
+    detail.querySelectorAll('.dock-content input,.dock-content select,.dock-content textarea').forEach(function(control){
+      const labels=control.labels?Array.from(control.labels):[];
+      const label=labels.map(function(x){return x.textContent;}).join(' ').trim()||control.getAttribute('aria-label')||control.title||control.placeholder||control.name||control.id;
+      if(!label)return;
+      if(labels.length)return;
+      add(label,panelTitle,detail,control,control,false,'SETTING');
+    });
+    detail.querySelectorAll('.dock-content select').forEach(function(control){
+      Array.from(control.options||[]).forEach(function(option){
+        if(!option.textContent.trim())return;
+        const label=(control.labels&&control.labels.length?Array.from(control.labels).map(function(x){return x.textContent;}).join(' '):control.getAttribute('aria-label')||control.id)+' · '+option.textContent.trim();
+        add(label,panelTitle,detail,control,control,false,'OPTION');
+      });
+    });
+  });
+  const editorSettings=document.getElementById('roi_settings_dialog');
+  if(editorSettings){
+    editorSettings.querySelectorAll('.settings-section h3').forEach(function(node){
+      add(node.textContent,'Editor Settings',null,node,node,true,'SECTION');
+    });
+    editorSettings.querySelectorAll('.settings-section label').forEach(function(node){
+      const focus=node.control||(node.htmlFor?document.getElementById(node.htmlFor):node.querySelector('input,select,textarea'));
+      add(node.textContent,'Editor Settings',null,node,focus||node,true,'SETTING');
+    });
+    editorSettings.querySelectorAll('.settings-section select').forEach(function(control){
+      Array.from(control.options||[]).forEach(function(option){
+        add((control.labels&&control.labels.length?Array.from(control.labels).map(function(x){return x.textContent;}).join(' '):'Editor setting')+' · '+option.textContent,'Editor Settings',null,control,control,true,'OPTION');
+      });
+    });
+    editorSettings.querySelectorAll('.settings-note').forEach(function(node){
+      add(node.textContent,'Editor Settings',null,node,node,true,'HELP');
+    });
+  }
+  return entries;
+}
+function navigateToPaletteSetting(entry){
+  closeCommandPalette();
+  function revealAndFocus(){
+    if(entry.modal){
+      const modal=$('roi_settings_dialog');
+      if(modal&&!modal.classList.contains('is-open'))$('roi_settings_open').click();
+    }else if(typeof window.ensureStreamDockVisible==='function'){
+      window.ensureStreamDockVisible();
+    }
+    if(entry.detail){
+      const ancestors=[];let detail=entry.detail;
+      while(detail&&detail.matches&&detail.matches('details.dock-panel')){
+        ancestors.push(detail);
+        detail=detail.parentElement?detail.parentElement.closest('details.dock-panel'):null;
+      }
+      ancestors.reverse().forEach(function(panel){panel.open=true;});
+    }
+    window.requestAnimationFrame(function(){
+      window.requestAnimationFrame(function(){
+        const target=entry.target;
+        if(!target||!target.isConnected)return;
+        target.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
+        const focus=entry.focusTarget;
+        if(focus&&typeof focus.focus==='function'&&!focus.disabled){
+          try{focus.focus({preventScroll:true});}catch(_){focus.focus();}
+        }
+        if(target.__paletteHighlightTimer)clearTimeout(target.__paletteHighlightTimer);
+        target.classList.remove('palette-setting-highlight');
+        void target.offsetWidth;
+        target.classList.add('palette-setting-highlight');
+        target.__paletteHighlightTimer=setTimeout(function(){
+          target.classList.remove('palette-setting-highlight');
+          target.__paletteHighlightTimer=null;
+        },2100);
+      });
+    });
+  }
+  revealAndFocus();
+}
 function buildCommandPalette(){
   const commands=[
     ['Keyboard shortcuts','shortcuts','F1'],['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Save workspace layout','workspace','Ctrl+S'],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y / Ctrl+Shift+Z'],
     ['Fit camera frame','fit','0'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],
     ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],['Draw rectangle ROI preview','roi_rect',''],['Draw trapezoid ROI preview','roi_trapezoid',''],
-    ['Save workspace layout','workspace',''],['Save workspace profile','profile',''],['Save configuration preset','preset',''],
+    ['Save workspace profile','profile',''],['Save configuration preset','preset',''],
     ['Capture frame snapshot','snapshot',''],['Refresh runtime diagnostics','health',''],['Refresh server logs','logs',''],
-    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Request software stop','stop',''],['Resume motion (confirmation)','resume','']
+    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Request software stop','stop','Ctrl+Shift+Space'],['Resume motion (confirmation)','resume','']
   ];
-  const list=$('ext_command_list');list.replaceChildren();
-  commands.forEach(function(entry){const b=document.createElement('button');b.type='button';b.dataset.command=entry[1];b.textContent=entry[0]+(entry[2]?' · '+entry[2]:'');b.onclick=function(){closeCommandPalette();executeCommand(entry[1]);};list.appendChild(b);});
-  $('ext_command_search').addEventListener('input',function(){const q=this.value.toLowerCase();list.querySelectorAll('button').forEach(function(b){b.hidden=!b.textContent.toLowerCase().includes(q);});});
+  const commandList=$('ext_command_list'),settingsList=$('ext_settings_results'),search=$('ext_command_search');
+  function renderResults(){
+    const query=paletteNormalize(search.value.trim());
+    commandList.replaceChildren();settingsList.replaceChildren();
+    const matchedCommands=commands.filter(function(entry){return !query||paletteNormalize(entry[0]+' '+entry[2]).includes(query);});
+    matchedCommands.forEach(function(entry){
+      const button=document.createElement('button');button.type='button';button.className='palette-command-result';
+      const badge=document.createElement('span');badge.className='palette-kind-badge command-kind';badge.textContent='COMMAND';
+      const label=document.createElement('span');label.className='palette-result-label';label.textContent=entry[0];
+      const shortcut=document.createElement('span');shortcut.className='palette-result-shortcut';shortcut.textContent=entry[2]||'Run';
+      button.append(badge,label,shortcut);button.onclick=function(){closeCommandPalette();executeCommand(entry[1]);};commandList.appendChild(button);
+    });
+    $('ext_command_count').textContent=String(matchedCommands.length);
+    if(!query){
+      const empty=document.createElement('div');empty.className='palette-empty';empty.textContent='Type a keyword to search setting names, values, and panel options.';settingsList.appendChild(empty);
+      $('ext_settings_count').textContent='Search';return;
+    }
+    const matchedSettings=settingSearchEntries().filter(function(entry){return entry.searchable.includes(query);});
+    matchedSettings.sort(function(a,b){
+      const aExact=paletteNormalize(a.label).startsWith(query)?0:1,bExact=paletteNormalize(b.label).startsWith(query)?0:1;
+      return aExact-bExact||a.label.localeCompare(b.label);
+    });
+    matchedSettings.slice(0,60).forEach(function(entry){
+      const button=document.createElement('button');button.type='button';button.className='palette-setting-result';
+      const badge=document.createElement('span');badge.className='palette-kind-badge '+(entry.kind==='PANEL'?'panel-kind':entry.kind==='OPTION'?'option-kind':'setting-kind');badge.textContent=entry.kind;
+      const textBox=document.createElement('span');textBox.className='palette-setting-copy';
+      const label=document.createElement('span');label.className='palette-result-label';label.textContent=entry.label;
+      const crumb=document.createElement('span');crumb.className='palette-setting-crumb';crumb.textContent=entry.panelTitle;
+      textBox.append(label,crumb);button.append(badge,textBox);
+      button.onclick=function(){navigateToPaletteSetting(entry);};settingsList.appendChild(button);
+    });
+    if(!matchedSettings.length){
+      const empty=document.createElement('div');empty.className='palette-empty';empty.textContent='No matching settings or panel options.';settingsList.appendChild(empty);
+    }
+    $('ext_settings_count').textContent=String(matchedSettings.length);
+  }
+  search.oninput=renderResults;renderResults();
 }
-function openCommandPalette(){const m=$('ext_command_palette');m.style.display='flex';$('ext_command_search').value='';$('ext_command_search').focus();$('ext_command_search').dispatchEvent(new Event('input'));}
-function closeCommandPalette(){$('ext_command_palette').style.display='none';}
+function openCommandPalette(){
+  const modal=$('ext_command_palette');modal.style.display='flex';modal.setAttribute('aria-hidden','false');
+  $('ext_command_search').value='';$('ext_command_search').focus();$('ext_command_search').dispatchEvent(new Event('input'));
+}
+function closeCommandPalette(){
+  const modal=$('ext_command_palette');modal.style.display='none';modal.setAttribute('aria-hidden','true');
+}
 function executeCommand(name){
   const actions={
     shortcuts:function(){if(window.openStreamShortcuts)window.openStreamShortcuts();},
