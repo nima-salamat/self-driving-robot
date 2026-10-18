@@ -679,6 +679,7 @@ function settingSearchEntries(){
     const panelTitle=palettePanelTrail(detail);
     if(summary)add('Open panel: '+summary.textContent,panelTitle,detail,summary,summary,false,'PANEL');
     detail.querySelectorAll('.dock-content label,.dock-content .section-title,.dock-content h3,.dock-content button,.dock-content .small-muted,.dock-content .settings-note').forEach(function(node){
+      if(node.closest('details.dock-panel')!==detail)return;
       let focus=node.control||null;
       if(node.tagName==='LABEL'){
         if(!focus&&node.htmlFor)focus=document.getElementById(node.htmlFor);
@@ -688,6 +689,7 @@ function settingSearchEntries(){
       add(node.textContent,panelTitle,detail,node,focus||node,false,kind);
     });
     detail.querySelectorAll('.dock-content input,.dock-content select,.dock-content textarea').forEach(function(control){
+      if(control.closest('details.dock-panel')!==detail)return;
       const labels=control.labels?Array.from(control.labels):[];
       const label=labels.map(function(x){return x.textContent;}).join(' ').trim()||control.getAttribute('aria-label')||control.title||control.placeholder||control.name||control.id;
       if(!label)return;
@@ -695,6 +697,7 @@ function settingSearchEntries(){
       add(label,panelTitle,detail,control,control,false,'SETTING');
     });
     detail.querySelectorAll('.dock-content select').forEach(function(control){
+      if(control.closest('details.dock-panel')!==detail)return;
       Array.from(control.options||[]).forEach(function(option){
         if(!option.textContent.trim())return;
         const label=(control.labels&&control.labels.length?Array.from(control.labels).map(function(x){return x.textContent;}).join(' '):control.getAttribute('aria-label')||control.id)+' · '+option.textContent.trim();
