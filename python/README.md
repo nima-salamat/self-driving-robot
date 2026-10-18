@@ -121,11 +121,12 @@ python main.py --mode city --stream --stream-read-only
 
 **Network and safety:** the stream binds to all interfaces by default and has no
 built-in user authentication. Only expose it on a trusted network; choose
-`--stream-host 127.0.0.1` for loopback-only access. **Force Stop** (also
-`Ctrl+Shift+Space`) sets the robot's `RUN_LVL=STOP` through the active Python
-mode loop. It is not a hardware emergency stop or a substitute for a physical
-power cutoff. Resuming motion requires explicit confirmation. This is separate
-from **Pause Sign Requests** in the dashboard: that control blocks new frames
+`--stream-host 127.0.0.1` for loopback-only access. **Force Stop** sets the robot's
+`RUN_LVL=STOP` through the active Python mode loop. `Ctrl+Shift+Space` toggles
+motion: when the robot is moving it requests STOP; when already stopped it
+requests MOVE after explicit confirmation that the track is clear. Neither is a
+hardware emergency stop or a substitute for a physical power cutoff. This is
+separate from **Pause Sign Requests** in the dashboard: that control blocks new frames
 from being submitted to the asynchronous sign-inference worker and clears its
 queued frame, reducing perception compute without changing `RUN_LVL`. An
 inference already in progress may finish, and sign-based detection is unavailable
