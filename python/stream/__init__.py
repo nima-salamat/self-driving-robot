@@ -153,6 +153,9 @@ class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin
             setattr(config, "stream_frame_lock", self._frame_lock)
         self._jpeg_cache_frame_id = None
         self._jpeg_cache = None
+        self._jpeg_cache_quality = None
+        if not hasattr(config, "STREAM_JPEG_QUALITY"):
+            config.STREAM_JPEG_QUALITY = 85
         self._setup_routes()
 
     def _setup_routes(self):
