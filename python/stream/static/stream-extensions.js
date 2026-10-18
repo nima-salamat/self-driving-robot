@@ -125,6 +125,8 @@ function drawPrecisionOverlay(){
     }
   });
 }
+window.drawPrecisionOverlay=drawPrecisionOverlay;
+
 function updateEditorStatus(text){if($('ext_editor_status'))$('ext_editor_status').textContent=text;}
 function setEditorTool(tool){
   editorTool=tool;
@@ -645,7 +647,7 @@ function initializeResize(){
 }
 function installExtension(){
   const stage=$('canvas_stage');if(stage&&canvas){
-    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);
+    let svg=$('ext_precision_overlay');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);}
     canvas.addEventListener('pointerdown',onCustomPointerDown,true);
     canvas.addEventListener('pointermove',function(e){const rect=canvas.getBoundingClientRect();const x=(e.clientX-rect.left)*(canvas.width/rect.width),y=(e.clientY-rect.top)*(canvas.height/rect.height);extCrosshairPoint={x:x,y:y};if(extCrosshair)drawPrecisionOverlay();});
   }
