@@ -163,6 +163,8 @@ class EncoderOdometry:
             return {"label": "Estimated Odometry", "valid": valid,
                     "reason": reason, "trajectory_available": self.calibrated,
                     "signed_pulses": self._pulses,
+                    "steering_angle_source": "arduino_servo_command",
+                    "road_wheel_angle_deg": self._road_wheel_angle(self._servo) if self.calibrated else None,
                     "travel_cm": self._travel_distance,
                     "signed_distance_cm": self._total_distance,
                     "x_cm": self._x if self.calibrated else None,
