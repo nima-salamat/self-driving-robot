@@ -318,13 +318,91 @@ canvas {
 #ext_command_list button:hover{border-color:var(--accent);background:var(--accent-soft)}
 .ext-tool-active{border-color:var(--accent)!important;color:var(--accent)!important}
 </style>
+<style>
+/* Stable, compact stream workspace and a real camera-only fullscreen view. */
+.container { padding:6px; gap:6px; }
+.container > .card { padding:7px 8px; }
+.header { min-height:28px; margin-bottom:5px; gap:7px; }
+.header > .small { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2; }
+.controls { min-height:28px; margin-bottom:5px; gap:5px; }
+.controls select, .controls input { max-height:28px; }
+.workspace-stage-column { min-width:0; min-height:0; }
+.canvas-stage { position:relative; }
+.canvas-fullscreen-btn {
+  position:absolute; top:8px; right:8px; z-index:5;
+  padding:5px 8px; border:1px solid #3b5268; border-radius:5px;
+  color:#e6edf5; background:rgba(8,15,24,.88); font-size:11px;
+  font-weight:650; line-height:1.2; cursor:pointer;
+  box-shadow:0 2px 9px rgba(0,0,0,.28);
+}
+.canvas-fullscreen-btn:hover { border-color:var(--accent); background:#142536; }
+.canvas-fullscreen-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+#canvas_stage:fullscreen, #canvas_stage:-webkit-full-screen {
+  position:fixed; inset:0; z-index:99980;
+  display:flex !important; align-items:center; justify-content:center;
+  width:100vw !important; height:100vh !important; height:100dvh !important;
+  min-width:0; min-height:0; max-width:none; max-height:none;
+  margin:0; padding:0; border:0; border-radius:0; background:#05090f;
+}
+#canvas_stage:fullscreen #video_canvas, #canvas_stage:-webkit-full-screen #video_canvas {
+  max-width:none; max-height:none; flex:0 0 auto;
+}
+#canvas_stage:fullscreen .canvas-fullscreen-btn,
+#canvas_stage:-webkit-full-screen .canvas-fullscreen-btn { top:12px; right:12px; }
+.right-panel { gap:5px; }
+.dock-summary { min-height:31px; padding:6px 9px; font-size:11px; }
+.dock-content { padding:7px; }
+.properties-mode {
+  height:18px; min-height:18px; margin-bottom:5px; line-height:18px;
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:10px;
+}
+.properties-grid { grid-auto-rows:44px; gap:5px; }
+.property-field {
+  height:44px; min-height:44px; gap:3px; line-height:12px;
+  overflow:hidden; white-space:nowrap;
+}
+.property-field input, .property-field select {
+  height:26px; min-height:26px; padding:3px 5px; font-size:11px;
+}
+.property-actions { gap:5px; margin-top:5px; }
+.property-actions > button { height:28px; min-height:28px; padding:4px 7px; font-size:11px; }
+.property-hint {
+  height:27px; min-height:27px; max-height:27px; margin-top:5px;
+  overflow:hidden; font-size:10px; line-height:13px;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+}
+.form-row { min-height:26px; gap:5px; margin:3px 0; }
+.input-wrap { min-height:28px; height:28px; gap:5px; margin-bottom:3px; }
+#inputs_container { height:220px; max-height:220px; }
+#inputs_container .label { flex:0 0 118px; width:118px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#inputs_container .counter { width:58px; min-width:58px; height:25px; padding:3px 5px; }
+#inputs_container .btn-inc { height:25px; padding:3px 5px; font-size:10px; white-space:nowrap; }
+#bev_inputs_container { height:160px; max-height:160px; }
+.ext-layer-row { padding:3px 0; }
+@media (max-width:720px) {
+  .header { min-height:26px; }
+  .right-panel {
+    position:fixed !important; z-index:450; top:42px; right:5px; bottom:5px;
+    width:min(350px,calc(100vw - 10px)); min-width:0; max-width:calc(100vw - 10px);
+    height:auto; padding:5px; background:#0b1119;
+    border:1px solid var(--border); border-radius:7px;
+    box-shadow:0 14px 45px rgba(0,0,0,.6);
+  }
+  .container.show-dock .right-panel { display:flex !important; position:fixed !important; }
+  .container:not(.show-dock) .right-panel { display:none !important; }
+  .right-panel:before { display:none; }
+  .property-field { height:42px; min-height:42px; }
+  .properties-grid { grid-auto-rows:42px; }
+  .canvas-fullscreen-btn { top:5px; right:5px; padding:4px 6px; font-size:10px; }
+}
+</style>
 </head>
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
 <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>ROBOY STUDIO</span></div>
 <details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
 <details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
-<details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
+<details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
 <details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
 <button type="button" class="ghost" id="ext_open_palette" title="Command Palette · Ctrl+K" style="margin-left:6px;padding:4px 8px">⌘ Commands</button><span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
@@ -337,7 +415,7 @@ canvas {
       <button id="toggle_dock_btn" type="button" class="ghost">Hide Panels</button>
     </div>
     <div class="controls">
-      <label class="small" for="variable_select">Select Area</label>
+      <label class="small" for="variable_select">Select Object</label>
       <select id="variable_select">
         <option value="NONE">-- NONE --</option>
         {% for var in variables %}
@@ -367,6 +445,7 @@ canvas {
 <button type="button" class="tool-button" data-action="toggle-console" title="Recent events console">▤<span class="tool-tip">Recent Events · Ctrl+Backtick</span></button></aside>
 <div class="workspace-stage-column">
     <div id="canvas_stage" class="canvas-stage">
+      <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen">⛶ Fullscreen</button>
       <canvas id="video_canvas" width="900" height="600"></canvas>
     </div>
     <div class="workspace-statusbar" aria-live="off">
@@ -375,7 +454,7 @@ canvas {
       <span id="cad_cursor_u">U: — %</span>
       <span id="cad_cursor_v">V: — %</span>
       <span class="cad-help">Drag ROI edges/handles or BEV corner points · coordinates are shown relative to the camera image</span>
-      <span id="cad_selected_area" class="cad-area">Area: NONE</span>
+      <span id="cad_selected_area" class="cad-area">Object: NONE</span>
     </div>
     <div class="workspace-actionbar" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button id="apply_all" class="btn">Apply Base Settings</button>
@@ -751,6 +830,63 @@ function fitWorkspaceView(log=true){workspaceZoom=1;viewPanX=0;viewPanY=0;docume
 function updateZoomStatus(){const el=document.getElementById('menu_live_status');if(el)el.textContent=(isFrozen?'FROZEN':'LIVE')+' · '+String('{{ mode|capitalize }}').toUpperCase()+' · '+Math.round(workspaceZoom*100)+'%';}
 document.getElementById('workspace_zoom').addEventListener('input',e=>setWorkspaceZoom(parseFloat(e.target.value),canvas.width/2,canvas.height/2));
 
+/* Camera frame fullscreen: scale the canvas bitmap to the viewport while
+   preserving the source frame aspect ratio and native coordinate system. */
+function isCameraStageFullscreen(){
+  const stage=document.getElementById('canvas_stage');
+  return !!stage && (document.fullscreenElement===stage || document.webkitFullscreenElement===stage);
+}
+function syncCameraFullscreenCanvasSize(){
+  const stage=document.getElementById('canvas_stage');
+  const button=document.getElementById('camera_fullscreen_btn');
+  if(!stage || !canvas)return;
+  const active=isCameraStageFullscreen();
+  if(button){
+    button.textContent=active?'⤢ Exit Fullscreen':'⛶ Fullscreen';
+    button.setAttribute('aria-pressed',String(active));
+    button.setAttribute('aria-label',active?'Exit camera fullscreen':'Expand camera frame to fullscreen');
+    button.title=active?'Exit camera fullscreen (Esc)':'Expand camera frame to fullscreen';
+  }
+  if(!active){
+    canvas.style.removeProperty('width');
+    canvas.style.removeProperty('height');
+    return;
+  }
+  const bounds=stage.getBoundingClientRect();
+  const frameWidth=Math.max(1,canvas.width),frameHeight=Math.max(1,canvas.height);
+  const scale=Math.min(bounds.width/frameWidth,bounds.height/frameHeight);
+  if(!Number.isFinite(scale)||scale<=0)return;
+  canvas.style.width=Math.max(1,Math.floor(frameWidth*scale))+'px';
+  canvas.style.height=Math.max(1,Math.floor(frameHeight*scale))+'px';
+}
+async function toggleCameraFullscreen(){
+  const stage=document.getElementById('canvas_stage');
+  if(!stage)return;
+  try{
+    if(isCameraStageFullscreen()){
+      if(document.exitFullscreen)await document.exitFullscreen();
+      else if(document.webkitExitFullscreen)document.webkitExitFullscreen();
+      return;
+    }
+    if(stage.requestFullscreen)await stage.requestFullscreen();
+    else if(stage.webkitRequestFullscreen)stage.webkitRequestFullscreen();
+    else {showToast('Fullscreen is not supported by this browser.');return;}
+  }catch(error){
+    showToast('Could not change camera fullscreen: '+(error&&error.message?error.message:'request denied'));
+  }
+}
+function handleCameraFullscreenChange(){
+  window.requestAnimationFrame(function(){
+    syncCameraFullscreenCanvasSize();
+    renderWorkspaceCanvas();
+  });
+}
+document.addEventListener('fullscreenchange',handleCameraFullscreenChange);
+document.addEventListener('webkitfullscreenchange',handleCameraFullscreenChange);
+window.addEventListener('resize',function(){
+  if(isCameraStageFullscreen())syncCameraFullscreenCanvasSize();
+});
+
 /* ---------- Utilities & Math ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 function round01(v){ return Math.round(v*1000)/1000; } 
@@ -885,6 +1021,7 @@ function fetchFrameOnce(){
 
             lastFrameImage=img;
             renderWorkspaceCanvas();
+            if(isCameraStageFullscreen())syncCameraFullscreenCanvasSize();
 
             hasRenderedFrame = true;
             frameRequestFailures = 0;
@@ -1712,7 +1849,7 @@ function loadModeFeatures(){
         controls.forEach(item=>disable(item[0], item[1], item[2]));
         if(!STREAM_CONTROL_ALLOWED){
             document.querySelectorAll('button,input,select').forEach(el=>{
-                if(!['download_json','toggle_dock_btn','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
+                if(!['download_json','toggle_dock_btn','camera_fullscreen_btn','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
             });
         }
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
@@ -1723,9 +1860,27 @@ function loadModeFeatures(){
 
 function setupCadWorkspace(){
 const workspace=document.querySelector('.container'),dockToggle=document.getElementById('toggle_dock_btn'),consoleDock=document.getElementById('bottom_console'),consoleToggle=document.getElementById('console_toggle_btn'),consoleClear=document.getElementById('console_clear_btn'),propTarget=document.getElementById('prop_target');let consoleTab='events';
-const narrow=()=>window.matchMedia('(max-width:720px)').matches,dockVisible=()=>narrow()?workspace.classList.contains('show-dock'):!workspace.classList.contains('dock-hidden');
-function setDock(open){if(narrow()){workspace.classList.toggle('show-dock',open);workspace.classList.remove('dock-hidden');}else{workspace.classList.toggle('dock-hidden',!open);workspace.classList.remove('show-dock');}dockToggle.textContent=open?'Hide Panels':'Show Panels';dockToggle.setAttribute('aria-expanded',String(open));}
-dockToggle.addEventListener('click',()=>{setDock(!dockVisible());noteWorkspaceEvent('info','Settings dock '+(dockVisible()?'shown':'hidden'));});window.addEventListener('resize',()=>setDock(dockVisible()));setDock(!narrow());
+const narrow=()=>window.matchMedia('(max-width:720px)').matches;
+let dockIsOpen=!narrow();
+const dockVisible=()=>dockIsOpen;
+function setDock(open){
+  dockIsOpen=Boolean(open);
+  const isNarrow=narrow();
+  workspace.classList.toggle('show-dock',isNarrow&&dockIsOpen);
+  workspace.classList.toggle('dock-hidden',!isNarrow&&!dockIsOpen);
+  dockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
+  dockToggle.setAttribute('aria-expanded',String(dockIsOpen));
+  dockToggle.setAttribute('aria-label',dockIsOpen?'Hide settings panels':'Show settings panels');
+  const menuDockToggle=document.querySelector('[data-action="toggle-properties"]');
+  if(menuDockToggle)menuDockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
+}
+dockToggle.addEventListener('click',()=>{
+  const open=!dockIsOpen;
+  setDock(open);
+  noteWorkspaceEvent('info','Settings dock '+(open?'shown':'hidden'));
+});
+window.addEventListener('resize',()=>setDock(dockIsOpen));
+setDock(dockIsOpen);
 function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));consoleToggle.textContent=(open?'⌄':'⌃')+' EVENT CONSOLE';}
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
 consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared',consoleTab);});
@@ -1734,21 +1889,21 @@ document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',
 function setTool(tool){workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');}
 function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}
 function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;document.getElementById('tool_overlays_btn').setAttribute('aria-pressed',String(showRectsCheckbox.checked));renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
-function toggleProperties(){const p=document.querySelector('.properties-panel');if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
+function toggleProperties(){const p=document.querySelector('.properties-panel');if(!dockVisible()){setDock(true);if(p)p.open=true;noteWorkspaceEvent('info','Properties panel shown');return;}if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{switch(b.dataset.action){
 case 'export-config':if(window.exportFullConfig)window.exportFullConfig().catch(err=>showToast('Export failed: '+err.message));else document.getElementById('download_json').click();break;case 'refresh-config':if(window.reloadFullConfig)window.reloadFullConfig().catch(err=>showToast('Reload failed: '+err.message));else document.getElementById('refresh_vals').click();noteWorkspaceEvent('info','Full configuration refresh requested');break;
 case 'take-picture':document.getElementById('take_picture_btn').click();break;case 'clear-selection':document.getElementById('clear_selection').click();break;case 'apply-base':document.getElementById('apply_all').click();break;case 'properties':toggleProperties();break;case 'toggle-properties':document.getElementById('toggle_dock_btn').click();break;
-case 'zoom-in':zoomBy(1.2);break;case 'zoom-out':zoomBy(1/1.2);break;case 'fit-view':fitWorkspaceView();break;case 'toggle-overlays':toggleOverlays();break;case 'toggle-console':setConsoleOpen(!consoleDock.classList.contains('console-open'));break;
+case 'zoom-in':zoomBy(1.2);break;case 'zoom-out':zoomBy(1/1.2);break;case 'fit-view':fitWorkspaceView();break;case 'toggle-fullscreen':toggleCameraFullscreen();break;case 'toggle-overlays':toggleOverlays();break;case 'toggle-console':setConsoleOpen(!consoleDock.classList.contains('console-open'));break;
 case 'tool-select':setTool('select');break;case 'tool-pan':setTool('pan');break;case 'freeze':document.getElementById('freeze_btn').click();break;case 'unfreeze':document.getElementById('unfreeze_btn').click();break;
-case 'help':showToast('Wheel: zoom at cursor · Middle mouse: pan · H: hand · V: select · 0: fit · O: overlays · Ctrl+Backtick: console',6500);break;}if(b.closest('.menu-group'))b.closest('.menu-group').open=false;}));
-document.getElementById('center_reset').addEventListener('click',()=>fitWorkspaceView());document.getElementById('tool_overlays_btn').addEventListener('click',toggleOverlays);
-document.addEventListener('keydown',e=>{const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():'';if((e.ctrlKey||e.metaKey)&&e.code==='Backquote'){e.preventDefault();setConsoleOpen(!consoleDock.classList.contains('console-open'));return;}if(['input','textarea','select'].includes(tag)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;const k=e.key.toLowerCase();if(k==='h')setTool('pan');else if(k==='v')setTool('select');else if(k==='0')fitWorkspaceView();else if(k==='o')toggleOverlays();else if(k==='+'||k==='=')zoomBy(1.2);else if(k==='-')zoomBy(1/1.2);else if(k==='escape')document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
+case 'help':showToast('Wheel: zoom at cursor · Middle mouse: pan · H: hand · V: select · F: fullscreen · 0: fit · O: overlays · Ctrl+Backtick: console',6500);break;}if(b.closest('.menu-group'))b.closest('.menu-group').open=false;}));
+document.getElementById('center_reset').addEventListener('click',()=>fitWorkspaceView());document.getElementById('camera_fullscreen_btn').addEventListener('click',toggleCameraFullscreen);document.getElementById('tool_overlays_btn').addEventListener('click',toggleOverlays);
+document.addEventListener('keydown',e=>{const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():'';if((e.ctrlKey||e.metaKey)&&e.code==='Backquote'){e.preventDefault();setConsoleOpen(!consoleDock.classList.contains('console-open'));return;}if(['input','textarea','select'].includes(tag)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;const k=e.key.toLowerCase();if(k==='h')setTool('pan');else if(k==='v')setTool('select');else if(k==='0')fitWorkspaceView();else if(k==='o')toggleOverlays();else if(k==='f')toggleCameraFullscreen();else if(k==='+'||k==='=')zoomBy(1.2);else if(k==='-')zoomBy(1/1.2);else if(k==='escape')document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
 function names(g){const p=g+'_';return{top:p+'TOP_ROI',bottom:p+'BOTTOM_ROI',left:p+'LEFT_ROI',right:p+'RIGHT_ROI'};}
 function info(){return propTarget.value.startsWith('BEV_')?{kind:'point',corner:propTarget.value.slice(4)}:{kind:'roi',group:propTarget.value};}
 function syncPropertiesSelection(target){if(!target)return;if(target.startsWith('BEV_'))propTarget.value=target;else if(['RL','LL','CW','ST','OBJ'].includes(target))propTarget.value=target;const s=info();document.getElementById('prop_roi_fields').hidden=s.kind!=='roi';document.getElementById('prop_point_fields').hidden=s.kind!=='point';
-if(s.kind==='roi'){const n=names(s.group);document.getElementById('properties_mode').textContent=s.group+' · ROI bounds';document.getElementById('prop_left').value=values[n.left]??'';document.getElementById('prop_top').value=values[n.top]??'';document.getElementById('prop_right').value=values[n.right]??'';document.getElementById('prop_bottom').value=values[n.bottom]??'';document.getElementById('prop_hint').textContent='Normalized camera coordinates (0–1). Drag this ROI or edit fields, then Apply.';document.getElementById('cad_selected_area').textContent='Area: '+s.group;}
-else{const c=s.corner;document.getElementById('properties_mode').textContent='BEV · '+c+' control point';document.getElementById('prop_point_x').value=advanced['BEV_SRC_'+c+'_X']??'';document.getElementById('prop_point_y').value=advanced['BEV_SRC_'+c+'_Y']??'';document.getElementById('prop_hint').textContent='BEV point coordinates range from -5 to 5. Drag the corner or edit X/Y, then Apply.';document.getElementById('cad_selected_area').textContent='Area: BEV '+c;}}
+if(s.kind==='roi'){const n=names(s.group);document.getElementById('properties_mode').textContent=s.group+' · ROI bounds';document.getElementById('prop_left').value=values[n.left]??'';document.getElementById('prop_top').value=values[n.top]??'';document.getElementById('prop_right').value=values[n.right]??'';document.getElementById('prop_bottom').value=values[n.bottom]??'';document.getElementById('prop_hint').textContent='Normalized camera coordinates (0–1). Drag this ROI or edit fields, then Apply.';document.getElementById('cad_selected_area').textContent='Object: '+s.group;}
+else{const c=s.corner;document.getElementById('properties_mode').textContent='BEV · '+c+' control point';document.getElementById('prop_point_x').value=advanced['BEV_SRC_'+c+'_X']??'';document.getElementById('prop_point_y').value=advanced['BEV_SRC_'+c+'_Y']??'';document.getElementById('prop_hint').textContent='BEV point coordinates range from -5 to 5. Drag the corner or edit X/Y, then Apply.';document.getElementById('cad_selected_area').textContent='Object: BEV '+c;}}
 window.syncPropertiesSelection=syncPropertiesSelection;
 propTarget.addEventListener('change',()=>{const s=info();markerHighlight=s.kind==='point'?'BEV':s.group;if(s.kind==='roi'){selectedVar=mapGroupToDefaultVar(s.group);select.value=selectedVar;}syncPropertiesSelection(propTarget.value);renderWorkspaceCanvas();noteWorkspaceEvent('info','Properties target selected: '+propTarget.value);});
 document.getElementById('prop_apply_btn').addEventListener('click',()=>{if(!syncActive)return showToast('Requests are stopped!');const s=info();if(s.kind==='roi'){const n=names(s.group);let l=Number(document.getElementById('prop_left').value),t=Number(document.getElementById('prop_top').value),r=Number(document.getElementById('prop_right').value),b=Number(document.getElementById('prop_bottom').value);if(![l,t,r,b].every(Number.isFinite))return showToast('Enter valid numeric ROI coordinates');l=clamp01(l);t=clamp01(t);r=clamp01(r);b=clamp01(b);if(r-l<.01||b-t<.01)return showToast('ROI requires right > left and bottom > top');values[n.left]=round01(l);values[n.top]=round01(t);values[n.right]=round01(r);values[n.bottom]=round01(b);updateInputsFromValues();renderWorkspaceCanvas();sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});syncPropertiesSelection(s.group);noteWorkspaceEvent('info',s.group+' ROI properties applied');}
@@ -1757,7 +1912,7 @@ document.getElementById('prop_revert_btn').addEventListener('click',()=>syncProp
 const readout={x:document.getElementById('cad_cursor_x'),y:document.getElementById('cad_cursor_y'),u:document.getElementById('cad_cursor_u'),v:document.getElementById('cad_cursor_v'),area:document.getElementById('cad_selected_area')};
 function updateCadReadout(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;readout.x.textContent='X: '+Math.round(u*canvas.width)+' px';readout.y.textContent='Y: '+Math.round(v*canvas.height)+' px';readout.u.textContent='U: '+(u*100).toFixed(1)+' %';readout.v.textContent='V: '+(v*100).toFixed(1)+' %';}
 canvas.addEventListener('mousemove',updateCadReadout,{passive:true});canvas.addEventListener('mouseleave',()=>{if(!viewPanState){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';}},{passive:true});
-select.addEventListener('change',()=>{selectedVar=select.value;readout.area.textContent='Area: '+(select.value||'NONE');if(selectedVar.endsWith('_TOP_ROI'))window.syncPropertiesSelection(selectedVar.split('_')[0]);});
+select.addEventListener('change',()=>{selectedVar=select.value;readout.area.textContent='Object: '+(select.value||'NONE');if(selectedVar.endsWith('_TOP_ROI'))window.syncPropertiesSelection(selectedVar.split('_')[0]);});
 noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('RL');updateZoomStatus();
 }
 
