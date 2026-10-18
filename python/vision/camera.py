@@ -315,21 +315,35 @@ class Camera:
 
     def capture_frame(self, with_resize=True):
         if getattr(self, "_shared_capture", None) is not None:
+            handoff_started = time.monotonic()
             frame, frame_resized, state = self._shared_capture.capture_frame(
                 with_resize=with_resize
             )
+            handoff_duration_ms = (time.monotonic() - handoff_started) * 1000.0
             self.last_capture_valid = bool(state.get("valid") and frame is not None)
             self.last_capture_at = state.get("capture_at")
             self.last_capture_duration_ms = float(state.get("duration_ms") or 0.0)
             self.measured_frame_rate = state.get("fps")
             self.consecutive_failures = int(state.get("failures") or 0)
             self.frame_sequence = int(state.get("sequence") or 0)
+            self.dropped_camera_frames = int(
+                getattr(self._shared_capture, "frames_skipped", 0)
+            )
             self.pi_mode = bool(state.get("pi_mode", self.pi_mode))
             metrics = getattr(self.config, "runtime_metrics", None)
             if metrics is not None:
+                # camera is time spent inside the capture worker (capture,
+                # undistort and resize); camera_wait is the parent-side wait
+                # and shared-memory copy cost. frame_age shows staleness at use.
                 metrics.record_camera(
                     self.last_capture_duration_ms, self.last_capture_valid
                 )
+                metrics.record_stage("camera_wait", handoff_duration_ms)
+                if self.last_capture_at is not None:
+                    metrics.record_stage(
+                        "frame_age",
+                        max(0.0, (time.monotonic() - self.last_capture_at) * 1000.0),
+                    )
             if not self.last_capture_valid:
                 return None, None
             return frame, frame_resized
