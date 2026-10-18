@@ -173,13 +173,12 @@ class WebStreamer:
         return default_ui
 
     def save_ui_settings(self):
-        fname = self.ui_filename()
         try:
-            os.makedirs(os.path.dirname(fname), exist_ok=True)
-            with open(fname, "w", encoding="utf-8") as f:
-                json.dump(self.ui_settings, f, indent=2, allow_nan=False)
+            self._write_json_atomic(self.ui_filename(), self.ui_settings)
+            return True
         except Exception:
             logger.exception("Failed writing UI settings")
+            return False
 
     def config_filename(self):
         mode = getattr(self.config, "MODE", "mode")
@@ -193,10 +192,11 @@ class WebStreamer:
         if target_rate is not None:
             data["TARGET_PROCESSING_FPS"] = float(target_rate.target_fps)
         try:
-            with open(filename, "w") as f:
-                json.dump(data, f, indent=2, allow_nan=False)
+            self._write_json_atomic(filename, data)
+            return True
         except Exception:
             logger.exception("Failed writing config JSON")
+            return False
 
 
     def _setup_routes(self):
@@ -497,10 +497,21 @@ class WebStreamer:
     def _write_json_atomic(filename, data):
         directory = os.path.dirname(filename) or "."
         os.makedirs(directory, exist_ok=True)
-        temporary = filename + ".tmp"
-        with open(temporary, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2, ensure_ascii=False, allow_nan=False)
-        os.replace(temporary, filename)
+        # Separate temporary files prevent simultaneous dashboard requests
+        # from writing through the same .tmp path before the atomic replace.
+        temporary = f"{filename}.{os.getpid()}.{threading.get_ident()}.tmp"
+        try:
+            with open(temporary, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, ensure_ascii=False, allow_nan=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, filename)
+        finally:
+            try:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+            except OSError:
+                logger.warning("Could not remove temporary dashboard state file")
 
     @staticmethod
     def _read_json_file(filename, default):
@@ -752,7 +763,8 @@ class WebStreamer:
                 tag = normalized["advanced"].get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False))
                 set_marker_mode(self.config, "sign" if sign else "apriltag" if tag else "none")
             self.ui_settings = normalized["ui"]
-            self.save_ui_settings()
+            if not self.save_ui_settings():
+                raise RuntimeError("failed to persist UI settings")
             if "target_processing_fps" in normalized["runtime"]:
                 fps = normalized["runtime"]["target_processing_fps"]
                 self.config.processing_rate_controller.set_target_fps(fps)
@@ -763,7 +775,8 @@ class WebStreamer:
                 current = dict(getattr(camera, "_dashboard_image_controls", {}))
                 current.update(normalized["runtime"]["camera_controls"])
                 setattr(camera, "_dashboard_image_controls", current)
-            self.save_conf_to_json()
+            if not self.save_conf_to_json():
+                raise RuntimeError("failed to persist runtime configuration")
             self._record_config_history("before " + label, before)
             self._record_config_history(label, self._full_config_snapshot())
             return self._full_config_snapshot()
@@ -797,6 +810,7 @@ class WebStreamer:
                     logger.exception("Could not roll back camera controls after failed import")
             self.ui_settings = before["ui"]
             self.save_ui_settings()
+            self.save_conf_to_json()
             raise
 
     def full_config(self):
