@@ -1166,6 +1166,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("clearInterval(extHealthTimer)", extensions)
         self.assertIn("clearInterval(extSettingsTimer)", extensions)
         self.assertIn("extSettingsTimer=setInterval", extensions)
+        self.assertIn("if(extensionPollingEnabled){", extensions)
         # The polling button must never send a RUN_LVL/safety mutation.
         stop_handler = core.split("Pause Dashboard Requests Logic", 1)[1].split(
             "Advanced API Sync", 1
