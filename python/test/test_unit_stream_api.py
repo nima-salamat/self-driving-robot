@@ -28,6 +28,73 @@ class StreamApiTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def test_stream_api_handlers_are_split_into_modules_without_changing_routes(self):
+        streamer = WebStreamer(self.make_config())
+
+        self.assertEqual(WebStreamer.update_conf.__module__, "stream.controls_api")
+        self.assertEqual(WebStreamer.full_config.__module__, "stream.configuration_api")
+        self.assertEqual(WebStreamer.mode.__module__, "stream.runtime_api")
+        self.assertEqual(WebStreamer.index.__module__, "stream.pages_api")
+        self.assertEqual(WebStreamer.video_feed.__module__, "stream.media_api")
+
+        registered = {(rule.rule, rule.endpoint) for rule in streamer.app.url_map.iter_rules()}
+        expected = {
+            ("/", "index"),
+            ("/update_conf", "update_conf"),
+            ("/get_values", "get_values"),
+            ("/get_advanced", "get_advanced"),
+            ("/set_advanced", "set_advanced"),
+            ("/get_ui", "get_ui"),
+            ("/set_ui", "set_ui"),
+            ("/video_feed_frame", "video_feed_frame"),
+            ("/video_feed", "video_feed"),
+            ("/api/mode", "mode"),
+            ("/api/arduino-output", "arduino_output"),
+            ("/api/health", "health"),
+            ("/api/config/full", "full_config"),
+            ("/api/config/history", "config_history"),
+            ("/api/config/presets", "config_presets"),
+            ("/api/workspace", "workspace_api"),
+            ("/api/logs", "server_logs"),
+            ("/api/traffic-lights", "traffic_lights_api"),
+            ("/api/race", "race_status_api"),
+            ("/api/camera/settings", "camera_settings_api"),
+            ("/api/processing-rate", "processing_rate_api"),
+            ("/api/safety", "safety_api"),
+            ("/api/features", "features_api"),
+            ("/encoder-map", "encoder_map_page"),
+            ("/api/encoder-map", "encoder_map_api"),
+            ("/api/encoder-map/reset-origin", "encoder_map_reset_origin"),
+            ("/take_picture", "take_picture"),
+            ("/toggle_record", "toggle_record"),
+            ("/freeze_frame", "freeze_frame"),
+            ("/unfreeze_frame", "unfreeze_frame"),
+        }
+        self.assertTrue(expected.issubset(registered))
+
+        config = self.make_config()
+        config.ENCODER_MAP_ENABLED = True
+        response = WebStreamer(config).app.test_client().get("/encoder-map")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Estimated Odometry", response.get_data(as_text=True))
+
+    def test_stream_editor_precision_and_layout_hooks_are_present(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        self.assertIn("if(!showRectsCheckbox.checked)return {type:'none'}", core)
+        self.assertIn("function openStreamShortcuts()", core)
+        self.assertIn("e.key==='F1'", core)
+        self.assertIn("copyCoordinateText(coordinateText)", extensions)
+        self.assertIn("function installCoordinatePairPaste()", extensions)
+        self.assertIn("extCrosshair=false", extensions)
+        self.assertIn('id="shortcut_dialog"', template)
+        self.assertIn(".container.dock-hidden { grid-template-columns:minmax(0,1fr) !important; }", css)
+        self.assertIn("#video_canvas.crosshair-active { cursor: crosshair !important; }", css)
+
     def test_wildcard_bind_discovers_private_lan_address(self):
         from unittest.mock import patch
         import socket
@@ -221,10 +288,14 @@ class StreamApiTests(unittest.TestCase):
         html = response.get_data(as_text=True)
         scripts = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
         self.assertGreaterEqual(len(scripts), 2, "Expected dashboard and extension inline scripts")
+        scripts.extend(
+            (PYTHON_ROOT / "stream" / "static" / filename).read_text(encoding="utf-8")
+            for filename in ("stream-core.js", "stream-extensions.js")
+        )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             for index, script in enumerate(scripts):
-                with self.subTest(inline_script=index):
+                with self.subTest(javascript_source=index):
                     script_path = Path(tmp_dir) / f"stream-dashboard-{index}.js"
                     script_path.write_text(script, encoding="utf-8")
                     result = subprocess.run(
