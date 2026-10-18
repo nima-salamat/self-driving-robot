@@ -23,8 +23,10 @@ STREAM_LOG_LIMIT = 500
 _STREAM_LOG_LOCK = threading.RLock()
 _STREAM_LOGS = deque(maxlen=STREAM_LOG_LIMIT)
 _SECRET_PATTERNS = (
-    re.compile(r"(?i)(token|password|passwd|secret|api[_-]?key|authorization)(\s*[:=]\s*)([^\s,;]+)"),
+    # Redact bearer credentials first; otherwise the authorization-key rule
+    # can replace only the word "Bearer" and leave the credential behind.
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/-]+=*"),
+    re.compile(r"(?i)(token|password|passwd|secret|api[_-]?key|authorization)(\s*[:=]\s*)([^\s,;]+)"),
 )
 
 
