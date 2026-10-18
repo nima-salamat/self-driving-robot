@@ -413,6 +413,12 @@ class WebStreamer:
                 message="unsupported controls for active mode",
                 unsupported=unsupported,
             ), 409
+        if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
+                and data.get("RUN_LVL") == "MOVE"):
+            return jsonify(
+                success=False,
+                message="motion is software-stopped; use the explicit /api/safety resume action",
+            ), 409
         try:
             for k, default_v in ADVANCED_VARS.items():
                 if k in data:
@@ -701,6 +707,11 @@ class WebStreamer:
             if key.startswith("BEV_SRC_") and not -5.0 <= normalized <= 5.0:
                 raise ValueError(f"{key} must be between -5 and 5")
             advanced[key] = normalized
+        if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
+                and advanced.get("RUN_LVL", "STOP") == "MOVE"):
+            raise ValueError(
+                "motion is software-stopped; use the explicit /api/safety resume action"
+            )
         if advanced.get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False)) and advanced.get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False)):
             raise ValueError("WITH_SIGN and WITH_APRILTAG cannot both be enabled")
 
