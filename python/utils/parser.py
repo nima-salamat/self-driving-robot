@@ -104,13 +104,13 @@ def parse_args(argv=None):
     parser.add_argument("--encoder-map", action="store_true", default=False,
                         help="Enable opt-in encoder odometry and the /encoder-map page (requires --stream).")
     parser.add_argument("--encoder-pulse-distance-cm", type=float, default=None, metavar="FLOAT",
-                        help="Measured travel in cm per FALLING encoder pulse; does not enable odometry.")
+                        help="Measured travel in cm per FALLING encoder pulse; overrides active mode config.")
     parser.add_argument("--encoder-wheelbase-cm", type=float, default=None, metavar="FLOAT",
-                        help="Measured wheelbase in cm for calibrated odometry.")
+                        help="Measured wheelbase in cm; overrides active mode config for calibrated odometry.")
     parser.add_argument("--encoder-road-wheel-angle-at-servo-min-deg", type=float, default=None, metavar="FLOAT",
-                        help="Measured signed road-wheel angle at configured minimum servo command.")
+                        help="Measured signed road-wheel angle at configured minimum servo command; overrides active mode config.")
     parser.add_argument("--encoder-road-wheel-angle-at-servo-max-deg", type=float, default=None, metavar="FLOAT",
-                        help="Measured signed road-wheel angle at configured maximum servo command.")
+                        help="Measured signed road-wheel angle at configured maximum servo command; overrides active mode config.")
 
     parser.add_argument("--confidence-aware", action="store_true", default=False,
                         help="Enable heuristic confidence-aware speed limiting.")
