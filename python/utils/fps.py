@@ -131,8 +131,11 @@ class FPS:
                     f"sign_worker={kind}",
                     f"sign_alive={bool(sign.get('worker_alive', False))}",
                     f"sign_queue={int(sign.get('queue_depth', 0) or 0)}",
+                    f"sign_submitted={int(sign.get('submitted', 0) or 0)}",
                     f"sign_completed={int(sign.get('completed', 0) or 0)}",
                     f"sign_replaced={int(sign.get('replaced', 0) or 0)}",
+                    f"sign_dropped={int(sign.get('dropped', 0) or 0)}",
+                    f"sign_failures={int(sign.get('failures', 0) or 0)}",
                 ))
                 latency = sign.get("last_latency_ms")
                 input_age = sign.get("last_result_input_age_s")
