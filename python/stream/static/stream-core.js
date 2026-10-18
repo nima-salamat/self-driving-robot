@@ -221,7 +221,8 @@ if(cameraStage&&typeof ResizeObserver!=='undefined'){
 
 /* ---------- Utilities & Math ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
-function round01(v){ return Math.round(v*1000)/1000; } 
+function round01(v){ return Math.round(v*1000)/1000; }
+function roundPixelNormalized(v){return Math.round(Number(v)*1000000)/1000000;} 
 function showToast(text, timeout=2500){
     const t = document.getElementById('toast');
     t.textContent = text;
@@ -1312,7 +1313,7 @@ document.addEventListener('keydown',function(e){
  let nl=l+d[0]*stepX,nt=t+d[1]*stepY;
  // Arrow-key nudging stays pixel-accurate even when mouse drag snapping is enabled.
  nl=Math.max(0,Math.min(1-w,nl));nt=Math.max(0,Math.min(1-h,nt));
- values[n.left]=round01(nl);values[n.right]=round01(nl+w);values[n.top]=round01(nt);values[n.bottom]=round01(nt+h);
+ values[n.left]=roundPixelNormalized(nl);values[n.right]=roundPixelNormalized(nl+w);values[n.top]=roundPixelNormalized(nt);values[n.bottom]=roundPixelNormalized(nt+h);
  selectedVar=g;select.value=g;propTarget.value=g;markerHighlight=g;updateInputsFromValues();syncPropertiesSelection(g);renderWorkspaceCanvas();scheduleKeyboardRoiMove(g);
 });
 document.addEventListener('keyup',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)||['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))flushKeyboardRoiMove();});window.addEventListener('blur',flushKeyboardRoiMove);
