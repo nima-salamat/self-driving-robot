@@ -1799,7 +1799,7 @@ function mapGroupToDefaultVar(g){
 const $ = function(id){return document.getElementById(id)};
 const jsonClone = function(value){return JSON.parse(JSON.stringify(value));};
 const EXT_LAYERS = ['RL','LL','CW','ST','OBJ','BEV'];
-let extGrid=false, extSnap=false, extCrosshair=false, extCrosshairPoint=null;
+let extGrid=false, extSnap=false, extCrosshair=false, extAnnotationsVisible=true, extCrosshairPoint=null;
 let editorTool='select', rulerStart=null, extAnnotations=[], extFrameGallery=[], extRuntimeSample=[];
 let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null;
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
@@ -1880,7 +1880,7 @@ function drawPrecisionOverlay(){
     const label=addSVG('text',{x:extCrosshairPoint.x+8,y:extCrosshairPoint.y-8,fill:'#fff','font-size':11,'paint-order':'stroke','stroke':'#07101a','stroke-width':3});
     label.textContent='U '+(((extCrosshairPoint.x-b.ix)/b.iw)*100).toFixed(1)+'% · V '+(((extCrosshairPoint.y-b.iy)/b.ih)*100).toFixed(1)+'%';
   }
-  if(currentConfig&&currentConfig.ui&&currentConfig.ui.visible&&currentConfig.ui.visible.ANNOTATIONS===false)return;
+  if(!extAnnotationsVisible)return;
   extAnnotations.forEach(function(item,index){
     const color=item.color||'#fbbf24';
     if(item.kind==='roi_rect'||item.kind==='roi_trapezoid'){
@@ -1955,7 +1955,7 @@ function onCustomPointerDown(event){
     label=String(label).trim().slice(0,80);
     extAnnotations.push({kind:label?'note':'marker',u:point.u,v:point.v,label:label,color:'#fbbf24'});
     if(extAnnotations.length>250)extAnnotations.shift();
-    refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();
+    refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();
     updateEditorStatus('Annotation placed at U '+(point.u*100).toFixed(1)+'%, V '+(point.v*100).toFixed(1)+'%.');
   }else if(!rulerStart){
     rulerStart=point;updateEditorStatus(editorTool==='ruler'?'Ruler start marked. Click the second point.':'ROI first corner marked. Click the opposite corner.');drawPrecisionOverlay();
@@ -1964,7 +1964,7 @@ function onCustomPointerDown(event){
     if(editorTool==='ruler'){
       const distance=Math.hypot((point.u-start.u)*extImageBounds().iw,(point.v-start.v)*extImageBounds().ih);
       extAnnotations.push({kind:'ruler',u:start.u,v:start.v,u2:point.u,v2:point.v,label:distance.toFixed(1)+' px',color:'#22d3ee'});
-      updateEditorStatus('Ruler saved: '+distance.toFixed(1)+' image pixels.');
+      updateEditorStatus('Ruler saved: '+distance.toFixed(1)+' image pixels.');syncLayerControls();
     }else{
       const x=Math.min(start.u,point.u),y=Math.min(start.v,point.v),w=Math.abs(point.u-start.u),h=Math.abs(point.v-start.v);
       if(w<0.005||h<0.005){updateEditorStatus('Custom ROI is too small; draw it again with a larger area.');return;}
@@ -2020,7 +2020,7 @@ function downloadText(data,filename,mime){
 function collectWorkspace(){
   const layers={};
   EXT_LAYERS.forEach(function(key){layers[key]={visible:!!(ui.visible||{})[key],opacity:Number((ui.opacity||{})[key]==null?1:(ui.opacity||{})[key])};});
-  layers.ANNOTATIONS={visible:true,opacity:1};layers.GRID={visible:extGrid,opacity:1};
+  layers.ANNOTATIONS={visible:extAnnotationsVisible,opacity:1};layers.GRID={visible:extGrid,opacity:1};
   const panels={};document.querySelectorAll('.right-panel details.dock-panel').forEach(function(panel){if(panel.id)panels[panel.id]=panel.open;});
   const rect=document.querySelector('.right-panel').getBoundingClientRect();
   const paneWidth=parseFloat(getComputedStyle(document.querySelector('.container')).getPropertyValue('--right-pane-width'))||rect.width||315;
@@ -2044,9 +2044,12 @@ function applyWorkspace(workspace){
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;
   if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
   editorTool=['select','pan','annotate','ruler','roi_rect','roi_trapezoid'].includes(view.tool)?view.tool:'select';
+  const savedLayers=workspace.layers||{};
+  extAnnotationsVisible=!savedLayers.ANNOTATIONS||savedLayers.ANNOTATIONS.visible!==false;
   if(typeof view.rightPaneWidth==='number'&&view.rightPaneWidth>=250&&view.rightPaneWidth<=700)document.querySelector('.container').style.setProperty('--right-pane-width',view.rightPaneWidth+'px');
   Object.keys(workspace.panels||{}).forEach(function(id){const panel=$(id);if(panel&&panel.tagName==='DETAILS')panel.open=!!workspace.panels[id];});
   Object.keys(workspace.layers||{}).forEach(function(key){const layer=workspace.layers[key];if(!layer)return;if(EXT_LAYERS.includes(key)){ui.visible[key]=layer.visible!==false;ui.opacity[key]=Number(layer.opacity==null?1:layer.opacity);}});
+  extGrid=extGrid&&(!savedLayers.GRID||savedLayers.GRID.visible!==false);
   extAnnotations=Array.isArray(workspace.annotations)?jsonClone(workspace.annotations).slice(0,250):[];
   syncLayerControls();syncLegacyLayerControls();refreshAnnotationList();renderWorkspaceCanvas();drawPrecisionOverlay();scheduleWorkspaceSave();
 }
@@ -2064,6 +2067,13 @@ function syncLayerControls(){
     const opacity=document.createElement('input');opacity.type='range';opacity.min='0';opacity.max='1';opacity.step='.05';opacity.value=String((ui.opacity||{})[key]==null?1:ui.opacity[key]);opacity.title='Layer opacity';opacity.oninput=function(){ui.opacity=ui.opacity||{};ui.opacity[key]=Number(opacity.value);renderWorkspaceCanvas();drawPrecisionOverlay();scheduleUILayerSave();};row.appendChild(opacity);
     root.appendChild(row);
   });
+  const annotationRow=document.createElement('div');annotationRow.className='ext-layer-row';annotationRow.style.gridTemplateColumns='18px minmax(0,1fr) auto';
+  const annotationCheck=document.createElement('input');annotationCheck.type='checkbox';annotationCheck.checked=extAnnotationsVisible;annotationCheck.title='Show/hide user annotations and custom ROI previews';
+  annotationCheck.onchange=function(){extAnnotationsVisible=annotationCheck.checked;drawPrecisionOverlay();scheduleWorkspaceSave();};
+  annotationRow.appendChild(annotationCheck);
+  const annotationLabel=document.createElement('span');annotationLabel.textContent='Annotations / custom ROI previews';annotationRow.appendChild(annotationLabel);
+  const annotationNote=document.createElement('span');annotationNote.className='small-muted';annotationNote.textContent=String(extAnnotations.length);annotationRow.appendChild(annotationNote);
+  root.appendChild(annotationRow);
 }
 let uiLayerSaveTimer=null;
 function scheduleUILayerSave(){if(uiLayerSaveTimer)clearTimeout(uiLayerSaveTimer);uiLayerSaveTimer=setTimeout(function(){saveUILayers().catch(function(err){showToast('Layer save failed: '+err.message);});},250);}
@@ -2376,7 +2386,7 @@ function installExtension(){
   $('ext_roi_rect_tool').onclick=function(){setEditorTool(editorTool==='roi_rect'?'select':'roi_rect');};
   $('ext_roi_trapezoid_tool').onclick=function(){setEditorTool(editorTool==='roi_trapezoid'?'select':'roi_trapezoid');};
   $('ext_roi_top_factor').addEventListener('input',function(){$('ext_roi_top_factor_label').textContent=Math.round(Number(this.value)*100)+'%';});
-  $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all custom annotations from the workspace?')){extAnnotations=[];refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();}};
+  $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all custom annotations from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
   $('ext_save_workspace').onclick=function(){saveWorkspace().then(function(){showToast('Workspace layout saved');}).catch(function(err){showToast(err.message);});};
   $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
   $('ext_profile_save').onclick=function(){profileAction('save').catch(function(e){showToast(e.message);});};$('ext_profile_load').onclick=function(){profileAction('load').catch(function(e){showToast(e.message);});};$('ext_profile_delete').onclick=function(){profileAction('delete').catch(function(e){showToast(e.message);});};
