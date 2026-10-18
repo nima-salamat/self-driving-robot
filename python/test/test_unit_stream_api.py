@@ -90,6 +90,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("e.code==='F1'", core)
         self.assertIn("e.code==='KeyH'", core)
         self.assertIn("pixelStep/source.width", core)
+        self.assertIn("function roundPixelNormalized(v)", core)
+        self.assertIn("values[n.left]=roundPixelNormalized(nl)", core)
         self.assertIn("function getGridStepX()", core)
         self.assertIn("copyCoordinateText(coordinateText)", extensions)
         self.assertIn("function installCoordinatePairPaste()", extensions)
