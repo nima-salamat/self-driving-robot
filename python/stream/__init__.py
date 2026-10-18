@@ -725,9 +725,14 @@ class WebStreamer:
                         if not math.isfinite(number):
                             raise ValueError(f"{key} must be finite")
                         bounds = supported.get(key)
-                        if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 and not float(bounds[0]) <= number <= float(bounds[1]):
+                        lower = float(bounds[0]) if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 else getattr(bounds, "min", None)
+                        upper = float(bounds[1]) if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 else getattr(bounds, "max", None)
+                        if lower is not None and upper is not None and not float(lower) <= number <= float(upper):
                             raise ValueError(f"{key} is outside this camera's supported range")
                         normalized_controls[key] = int(round(number)) if key == "ExposureTime" else number
+                if normalized_controls.get("AeEnable") is True:
+                    normalized_controls.pop("ExposureTime", None)
+                    normalized_controls.pop("AnalogueGain", None)
                 if normalized_controls:
                     normalized_runtime["camera_controls"] = normalized_controls
         return {"schema_version": 1, "mode": self._mode_slug(), "values": values,
@@ -1104,10 +1109,10 @@ class WebStreamer:
                     if not math.isfinite(number):
                         raise ValueError(f"{key} must be finite")
                     bounds = supported.get(key)
-                    if isinstance(bounds, (tuple, list)) and len(bounds) >= 2:
-                        lower, upper = float(bounds[0]), float(bounds[1])
-                        if not lower <= number <= upper:
-                            raise ValueError(f"{key} must be between the camera-supported limits {lower:g} and {upper:g}")
+                    lower = float(bounds[0]) if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 else getattr(bounds, "min", None)
+                    upper = float(bounds[1]) if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 else getattr(bounds, "max", None)
+                    if lower is not None and upper is not None and not float(lower) <= number <= float(upper):
+                        raise ValueError(f"{key} must be between the camera-supported limits {float(lower):g} and {float(upper):g}")
                     controls[key] = int(round(number)) if key == "ExposureTime" else number
             before = self._full_config_snapshot()
             camera.picam.set_controls(controls)
