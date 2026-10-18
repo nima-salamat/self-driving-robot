@@ -1,6 +1,8 @@
 import queue
 import time
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -21,6 +23,35 @@ class _FakeSignDetector:
 
 
 class ProcessSignDetectorTests(unittest.TestCase):
+    def test_yolo_detector_uses_explicit_onnx_thread_budget(self):
+        from traffic_sign_detector import yolo_detector
+
+        fake_session = SimpleNamespace(
+            get_inputs=lambda: [
+                SimpleNamespace(name="images", shape=[1, 3, 640, 640])
+            ]
+        )
+        with patch.object(
+            yolo_detector.ort, "InferenceSession", return_value=fake_session
+        ) as create_session, patch.object(yolo_detector.os, "makedirs"):
+            yolo_detector.TrafficSignDetector(
+                model_path="fake.onnx", intra_op_num_threads=2
+            )
+
+        kwargs = create_session.call_args.kwargs
+        self.assertEqual(kwargs["providers"], ["CPUExecutionProvider"])
+        self.assertEqual(kwargs["sess_options"].intra_op_num_threads, 2)
+        self.assertEqual(kwargs["sess_options"].inter_op_num_threads, 1)
+
+    def test_yolo_detector_rejects_invalid_thread_budget(self):
+        from traffic_sign_detector.yolo_detector import TrafficSignDetector
+
+        for threads in (0, -1):
+            with self.subTest(threads=threads), self.assertRaises(ValueError):
+                TrafficSignDetector(
+                    model_path="fake.onnx", intra_op_num_threads=threads
+                )
+
     def test_replace_queue_item_keeps_latest_waiting_request(self):
         requests = queue.Queue(maxsize=1)
         self.assertTrue(_replace_queue_item(requests, "old"))
