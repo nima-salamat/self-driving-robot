@@ -395,6 +395,8 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 .form-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .range{width:100%}
 .value-badge{min-width:66px;text-align:center;background:rgba(255,255,255,0.03);padding:6px;border-radius:8px;color:var(--muted)}
+.angle-limit-number{width:78px;min-width:78px;padding:6px 5px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(0,0,0,.24);color:var(--text);font:700 13px Inter,system-ui,sans-serif;text-align:center;font-variant-numeric:tabular-nums}
+.angle-limit-number:focus{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
 
 /* small screens */
 @media(max-width:820px){
@@ -450,7 +452,7 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
     </div>
     <div style="width:12px"></div>
     <div style="flex:1">
-      <div class="form-row"><label class="label">Angle limit</label><div class="value-badge" id="angle_limit_lbl">60°</div></div>
+      <div class="form-row"><label class="label" for="angle_limit_number">Angle limit (°)</label><input id="angle_limit_number" class="angle-limit-number" type="number" min="10" max="90" step="1" value="60" inputmode="numeric" aria-label="Angle limit in degrees"></div>
       <input id="angle_limit" class="range" type="range" min="10" max="90" value="60">
     </div>
   </div>
@@ -778,7 +780,7 @@ setInterval(()=>{
   document.getElementById('hud_speed').textContent = hwSpeed;
   document.getElementById('hud_angle').textContent = hwAngle;
   document.getElementById('speed_limit_lbl').textContent = speedLimit;
-  document.getElementById('angle_limit_lbl').textContent = angleLimit + '°';
+  document.getElementById('angle_limit_number').value = String(angleLimit);
 
   // send normalized forward/steer (-1..1) and speed_scale (speedLimit / max_speed)
   const speedScale = speedLimit / (Number(document.getElementById('max_speed').value || settings.max_speed) || 1);
@@ -853,12 +855,43 @@ estopBtn.addEventListener('click', ()=>{
   setTimeout(()=> socket.emit('set_setting', { key:'max_speed', value: Number(document.getElementById('max_speed').value || settings.max_speed) }), 800);
 });
 
+/* Typed angle limit stays synchronized with the slider and is applied to the controller. */
+const angleLimitNumber = document.getElementById('angle_limit_number');
+const angleLimitSlider = document.getElementById('angle_limit');
+function syncAngleLimitNumber(commit=false){
+  if(!angleLimitNumber||!angleLimitSlider)return;
+  const raw=angleLimitNumber.value.trim();
+  if(raw===''||!Number.isFinite(Number(raw))){
+    if(commit)angleLimitNumber.value=angleLimitSlider.value;
+    return;
+  }
+  const parsed=Number(raw);
+  if(!commit&&(parsed<10||parsed>90))return; // Keep partial edits possible while typing.
+  const value=Math.round(clamp(parsed,10,90));
+  angleLimitNumber.value=String(value);
+  angleLimitSlider.value=String(value);
+  settings.angle_limit=value;
+  lsSet('angle_limit',value);
+  if(commit)socket.emit('set_setting',{key:'angle_limit_deg',value:value});
+}
+angleLimitNumber.addEventListener('input',()=>syncAngleLimitNumber(false));
+angleLimitNumber.addEventListener('change',()=>syncAngleLimitNumber(true));
+angleLimitNumber.addEventListener('blur',()=>syncAngleLimitNumber(true));
+angleLimitSlider.addEventListener('change',()=>{
+  const value=clamp(Math.round(Number(angleLimitSlider.value)||60),10,90);
+  angleLimitSlider.value=String(value);
+  angleLimitNumber.value=String(value);
+  settings.angle_limit=value;
+  lsSet('angle_limit',value);
+  socket.emit('set_setting',{key:'angle_limit_deg',value:value});
+});
+
 /* Live UI bindings for modal sliders */
 ['speed_limit','angle_limit','alpha','jsize','jdead','pdead'].forEach(id=>{
   const el = document.getElementById(id);
   if(!el) return;
   el.addEventListener('input', ()=> {
-    if(id==='angle_limit') document.getElementById('angle_limit_lbl').textContent = el.value + '°';
+    if(id==='angle_limit') document.getElementById('angle_limit_number').value = el.value;
     if(id==='speed_limit') document.getElementById('speed_limit_lbl').textContent = el.value;
     if(id==='alpha') document.getElementById('alpha_val').textContent = el.value;
     if(id==='jsize') document.getElementById('jsize_val').textContent = el.value;
@@ -885,7 +918,7 @@ function loadSettingsToUI(){
     }
   });
   document.getElementById('speed_limit_lbl').textContent = document.getElementById('speed_limit').value;
-  document.getElementById('angle_limit_lbl').textContent = document.getElementById('angle_limit').value + '°';
+  document.getElementById('angle_limit_number').value = document.getElementById('angle_limit').value;
   document.getElementById('alpha_val').textContent = document.getElementById('alpha').value;
 }
 
