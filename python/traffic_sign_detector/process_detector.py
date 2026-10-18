@@ -196,6 +196,10 @@ class ProcessSignDetector:
         if not success:
             self.close()
             raise RuntimeError(f"Sign detector process initialization failed: {detail}")
+        logger.info(
+            "Using multiprocessing traffic-sign inference (method=%s, latest-frame queue)",
+            self.method,
+        )
 
     def submit(self, frame, debug_frame=None, confidence_threshold=None,
                target_sign_types=None):
