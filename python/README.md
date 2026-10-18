@@ -121,11 +121,16 @@ python main.py --mode city --stream --stream-read-only
 
 **Network and safety:** the stream binds to all interfaces by default and has no
 built-in user authentication. Only expose it on a trusted network; choose
-`--stream-host 127.0.0.1` for loopback-only access. The dashboard's **Software
-Stop** requests the active Python mode loop to set its existing software stop
-latch. It is not a hardware emergency stop or a substitute for a physical
-power cutoff. Resume requires explicit confirmation. Features that need startup
-construction or compatible firmware are displayed as restart-required rather
+`--stream-host 127.0.0.1` for loopback-only access. **Force Stop** (also
+`Ctrl+Shift+Space`) sets the robot's `RUN_LVL=STOP` through the active Python
+mode loop. It is not a hardware emergency stop or a substitute for a physical
+power cutoff. Resuming motion requires explicit confirmation. This is separate
+from **Pause Sign Requests** in the dashboard: that control blocks new frames
+from being submitted to the asynchronous sign-inference worker and clears its
+queued frame, reducing perception compute without changing `RUN_LVL`. An
+inference already in progress may finish, and sign-based detection is unavailable
+while requests are paused. Features that need startup construction or compatible
+firmware are displayed as restart-required rather
 than being enabled through an unsafe generic toggle. Runtime camera tuning is
 available only when the active Picamera2 camera reports support for each control.
 
