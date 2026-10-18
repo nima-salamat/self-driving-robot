@@ -584,11 +584,29 @@ class WebStreamer:
         saved = getattr(camera, "_dashboard_image_controls", {"ExposureTime": 10000, "AnalogueGain": 6.0, "AeEnable": False, "AwbEnable": False})
         allowed_controls = {"ExposureTime", "AnalogueGain", "AeEnable", "AwbEnable"}
         current = {key: value for key, value in saved.items() if key in controls and key in allowed_controls}
+        control_ranges = {}
+        for key in ("ExposureTime", "AnalogueGain"):
+            if key not in controls:
+                continue
+            bounds = controls[key]
+            try:
+                lower = bounds[0] if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 else getattr(bounds, "min", None)
+                upper = bounds[1] if isinstance(bounds, (tuple, list)) and len(bounds) >= 2 else getattr(bounds, "max", None)
+                entry = {}
+                if lower is not None and math.isfinite(float(lower)):
+                    entry["min"] = float(lower)
+                if upper is not None and math.isfinite(float(upper)):
+                    entry["max"] = float(upper)
+                if entry:
+                    control_ranges[key] = entry
+            except (TypeError, ValueError):
+                logger.debug("Camera control bounds unavailable for %s", key)
         return {"available": picam is not None, "supported": picam is not None, "mode": "picam",
                 "requested_fps": getattr(camera, "requested_frame_rate", None),
                 "measured_fps": getattr(camera, "measured_frame_rate", None),
                 "hardware_limits": camera.get_frame_rate_limits() if hasattr(camera, "get_frame_rate_limits") else None,
                 "control_names": sorted(str(key) for key in controls.keys()),
+                "control_ranges": control_ranges,
                 "controls": current}
 
     def _full_config_snapshot(self):
