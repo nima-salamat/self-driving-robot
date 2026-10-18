@@ -93,7 +93,7 @@ An explicit CLI value takes precedence. The dashboard stream is intentionally op
 
 `--multiprocess` (alias: `--multiprocess-camera`) opts into process-isolated camera capture and traffic-sign inference. The camera shares only its latest raw/resized frame with the main process; the sign worker keeps only one pending ROI frame and replaces it with newer submissions. This avoids growing backlogs, while the main process continues to own lane perception, STOP/phase decisions, steering and speed control. Only the sign-submission cadence gate `READ_SIGN_THRESHOLD` is bypassed; model confidence and sign safety checks are preserved.
 
-With `--performance`, the runtime reports stage percentiles for lane detection, confidence evaluation, sign submission/inference/input age, camera handoff and frame age, control, serial I/O, processing-rate wait and optional debug/object/traffic-light work. This is experimental: compare against a same-settings baseline and use `--without-arduino` before any physical test. A target FPS is a requested processing rate, not a guarantee.
+With `--performance`, the runtime reports stage percentiles for lane detection, confidence evaluation, sign submission/inference/input age, camera handoff and frame age, control, serial I/O, processing-rate wait, synchronous AprilTag inference and optional debug/object/traffic-light work. This is experimental: compare against a same-settings baseline and use `--without-arduino` before any physical test. A target FPS is a requested processing rate, not a guarantee.
 
 See [the full multiprocessing experiment notes](docs/MULTIPROCESSING_EXPERIMENT.md).
 
