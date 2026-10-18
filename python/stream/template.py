@@ -297,16 +297,36 @@ canvas {
 @media(max-width:720px){.app-brand{padding-right:3px}.menu-group>summary{padding:5px;font-size:11px}.menu-live{display:none}.workspace-main{grid-template-columns:36px minmax(0,1fr);gap:4px}.left-toolbar{gap:3px}.tool-button{width:29px;height:30px}.bottom-console.console-open{height:155px}.console-entry{grid-template-columns:72px 42px minmax(0,1fr);gap:5px;font-size:10px}.workspace-stage-column .workspace-actionbar .small{display:none}}
 
 </style>
+<style>
+/* Extended CAD/workspace controls */
+:root{--right-pane-width:315px}
+@media(min-width:721px){.container{grid-template-columns:minmax(0,1fr) var(--right-pane-width)!important}}
+@media(max-width:720px){.container{grid-template-columns:minmax(0,1fr)!important}}
+.right-panel{min-width:250px;position:relative}
+.right-panel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;cursor:col-resize;z-index:6}
+.ext-list{display:grid;gap:4px;margin-top:7px}.ext-list-row{display:flex;gap:6px;align-items:center;justify-content:space-between;padding:5px;border:1px solid var(--border);border-radius:5px;font-size:11px}.ext-list-row button{padding:3px 6px}
+.ext-layer-row{display:grid;grid-template-columns:18px minmax(0,1fr) 28px minmax(55px,100px);align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px}.ext-layer-row input[type=color]{width:26px;height:24px;padding:1px}.ext-layer-row input[type=range]{min-width:0;width:100%}
+.ext-pre{background:#07101a;color:#c5d5e5;border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:10px/1.45 ui-monospace,Consolas,monospace;margin:6px 0 0}
+.ext-log-pre{max-height:260px}.ext-charts{display:grid;gap:7px;margin:8px 0}.ext-charts canvas{display:block;width:100%;height:58px;background:#07101a;border:1px solid var(--border);border-radius:4px}
+.ext-gallery{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.ext-gallery-card{border:1px solid var(--border);border-radius:5px;overflow:hidden;min-width:0}.ext-gallery-card img{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#050a11}.ext-gallery-card div{padding:4px;font-size:10px;color:var(--muted);overflow-wrap:anywhere}.ext-stop-btn{background:#b91c1c!important;color:white!important}.ext-mini-label{color:var(--muted);font-size:10px}.ext-feature-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px}
+#ext_precision_overlay{position:absolute;left:0;top:0;width:1px;height:1px;pointer-events:none;z-index:2;overflow:hidden}
+#ext_command_palette{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;padding-top:12vh}
+#ext_command_palette .palette-box{width:min(620px,92vw);max-height:70vh;overflow:auto;background:#0b1420;border:1px solid var(--accent);border-radius:9px;padding:12px;box-shadow:0 18px 60px #000}
+#ext_command_palette input{width:100%;margin-bottom:8px;padding:10px}
+#ext_command_list{display:grid;gap:4px}#ext_command_list button{text-align:left;background:#101925;border:1px solid var(--border);color:var(--txt);padding:8px;border-radius:5px}
+#ext_command_list button:hover{border-color:var(--accent);background:var(--accent-soft)}
+.ext-tool-active{border-color:var(--accent)!important;color:var(--accent)!important}
+</style>
 </head>
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
 <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>ROBOY STUDIO</span></div>
-<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
+<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
 <details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
 <details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
-<span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
+<button type="button" class="ghost" id="ext_open_palette" title="Command Palette · Ctrl+K" style="margin-left:6px;padding:4px 8px">⌘ Commands</button><span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
 <div class="container">
   <div class="card">
     <div class="header">
@@ -365,7 +385,7 @@ canvas {
     </div>
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
-<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
 <div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
 <div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
 </section>
@@ -500,6 +520,92 @@ canvas {
       </div>
     </div></details>
 
+
+    <details class="dock-panel" open id="ext_layers_panel"><summary class="dock-summary"><span>Layers & Opacity</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Layer Manager</div><div class="small-muted">Visibility and color affect the live ROI overlay; opacity is saved with this mode's UI settings.</div>
+      <div id="ext_layer_rows"></div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_editor_panel"><summary class="dock-summary"><span>Precision Editor & Annotations</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Precision Tools</div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
+      <div class="small-muted">Custom ROI preview only: these user-defined shapes do not affect the driving pipeline. Operational controls remain the fixed RL/LL/CW/ST/OBJ regions.</div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_roi_rect_tool">Draw Rectangle ROI</button><button type="button" class="ghost" id="ext_roi_trapezoid_tool">Draw Trapezoid ROI</button></div>
+      <div class="form-row"><label for="ext_roi_top_factor" class="small-muted">Trapezoid top width</label><input type="range" id="ext_roi_top_factor" min="0.1" max="1" step="0.05" value="0.5" style="min-width:70px;flex:1"><span id="ext_roi_top_factor_label" class="small-muted">50%</span></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
+      <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
+      <div id="ext_annotations_list" class="ext-list"></div>
+      <div class="section-title" style="margin-top:10px">Workspace Profiles</div>
+      <div class="form-row"><input type="text" id="ext_profile_name" placeholder="Profile name" maxlength="48" style="min-width:0;width:100%"></div>
+      <div class="form-row"><select id="ext_profile_select" style="width:100%"><option value="">No saved profiles</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_profile_save">Save Profile</button><button type="button" class="ghost" id="ext_profile_load">Load</button><button type="button" class="ghost" id="ext_profile_delete">Delete</button></div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_config_panel"><summary class="dock-summary"><span>Config, Presets & History</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Full Configuration</div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_export_config">Export Full JSON</button><button type="button" class="ghost" id="ext_import_config">Import JSON</button><input type="file" id="ext_config_file" accept=".json,application/json" hidden></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_undo">↶ Undo</button><button type="button" class="ghost" id="ext_redo">↷ Redo</button><span class="small-muted" id="ext_undo_status">Undo: 0 · Redo: 0</span></div>
+      <div class="section-title" style="margin-top:10px">Configuration Presets</div>
+      <div class="form-row"><input type="text" id="ext_preset_name" placeholder="Preset name" maxlength="48" style="min-width:0;width:100%"></div>
+      <div class="form-row"><select id="ext_preset_select" style="width:100%"><option value="">No saved presets</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_preset_save">Save Preset</button><button type="button" class="ghost" id="ext_preset_apply">Apply</button><button type="button" class="ghost" id="ext_preset_delete">Delete</button></div>
+      <div class="section-title" style="margin-top:10px">Compare Current vs Preset</div>
+      <pre id="ext_config_diff" class="ext-pre">Choose a preset and select Compare.</pre>
+      <div class="form-row"><button type="button" class="ghost" id="ext_compare_preset">Compare</button><button type="button" class="ghost" id="ext_history_refresh">Refresh History</button></div>
+      <div class="section-title" style="margin-top:10px">Persistent History</div>
+      <div class="form-row"><select id="ext_history_select" style="width:100%"><option value="">No history entries</option></select></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_history_restore">Restore Selected Snapshot</button></div>
+      <div class="small-muted">History and presets are mode-specific files on the robot. Import is validated against the active mode and supported controls.</div>
+    </div></details>
+
+    <details class="dock-panel" open id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Runtime Health</div><div id="ext_health_summary" class="small status-line">Waiting for runtime telemetry…</div>
+      <div class="ext-charts"><div><div class="small-muted">Processing FPS</div><canvas id="ext_fps_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Loop latency · ms</div><canvas id="ext_latency_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Perception latency · ms</div><canvas id="ext_perception_chart" width="300" height="58"></canvas></div></div>
+      <pre class="ext-pre" id="ext_runtime_details">Runtime detail is loading…</pre>
+      <div class="section-title" style="margin-top:10px">Sign Detector Worker</div><pre class="ext-pre" id="ext_sign_status">Waiting…</pre>
+      <div class="section-title" style="margin-top:10px">Confidence / Speed Decision</div><pre class="ext-pre" id="ext_confidence_status">Inactive or unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Adaptive Obstacle Avoidance</div><pre class="ext-pre" id="ext_obstacle_status">Inactive or unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Traffic Light · City</div><pre class="ext-pre" id="ext_traffic_status">Not active in this mode / unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Race Lifecycle</div><pre class="ext-pre" id="ext_race_status">Not active in this mode / unavailable</pre>
+      <div class="section-title" style="margin-top:10px">Encoder Odometry</div><div id="ext_encoder_status" class="small-muted">Encoder map is opt-in.</div><div id="ext_encoder_embed" hidden><iframe title="Encoder odometry map" id="ext_encoder_frame" loading="lazy" style="width:100%;height:240px;border:1px solid var(--border);border-radius:6px;background:#080d14"></iframe><button type="button" class="ghost" id="ext_encoder_reset">Reset displayed origin</button></div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_camera_panel"><summary class="dock-summary"><span>Camera & Processing Rate</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Processing Rate Limit</div><div class="small-muted">Changes and saves the desired vision-processing cycle rate. This is not the physical camera sensor FPS.</div>
+      <div class="form-row"><label class="label" for="ext_target_fps">Target processing FPS</label><input type="number" id="ext_target_fps" min="1" max="60" step="1" value="30" class="counter"></div><div class="form-row"><button type="button" class="btn" id="ext_apply_fps">Apply FPS Limit</button><span class="small-muted" id="ext_fps_status">Loading…</span></div>
+      <div class="section-title" style="margin-top:12px">Camera Runtime Controls</div><div class="small-muted" id="ext_camera_support">Checking camera capabilities…</div>
+      <div class="form-row"><label class="label" for="ext_exposure">Exposure (µs)</label><input type="number" id="ext_exposure" min="1" step="100" value="10000" class="counter"></div>
+      <div class="form-row"><label class="label" for="ext_gain">Analogue gain</label><input type="number" id="ext_gain" min="0.1" step="0.1" value="6" class="counter"></div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_auto_exposure"> Auto exposure</label><label><input type="checkbox" id="ext_auto_wb"> Auto white balance</label></div>
+      <div class="form-row"><button type="button" class="btn" id="ext_apply_camera">Apply Camera Controls</button></div>
+      <div class="small-muted">Camera controls are runtime-only and are only editable when Picamera2 exposes the requested hardware controls.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_live_features_panel"><summary class="dock-summary"><span>Live Feature Status</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Live Feature Controls</div><div id="ext_live_feature_rows" class="ext-list">Loading supported controls…</div>
+      <div class="section-title" style="margin-top:10px">Startup-Only / Firmware-Gated Features</div><pre id="ext_feature_status" class="ext-pre">Loading capabilities…</pre>
+      <div class="small-muted">Live controls use the active mode's existing code paths. Traffic lights, confidence limiting, adaptive obstacle planning and encoder telemetry remain startup/firmware gated rather than being enabled unsafely from the browser.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_server_logs_panel"><summary class="dock-summary"><span>Python Server Logs</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="form-row"><select id="ext_log_level"><option>ALL</option><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option></select><input type="search" id="ext_log_search" placeholder="Filter logs…" style="width:100%;min-width:0"></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_log_refresh">Refresh Logs</button><button type="button" class="ghost" id="ext_log_export">Export Visible Logs</button></div>
+      <pre id="ext_server_logs" class="ext-pre ext-log-pre">In-memory log buffer is loading…</pre>
+      <div class="small-muted">Only recent allowlisted runtime logger messages are shown; the API does not expose arbitrary log files.</div>
+    </div></details>
+
+    <details class="dock-panel" id="ext_frame_gallery_panel"><summary class="dock-summary"><span>Frame History & Comparison</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="small-muted">Session-only snapshots from the current dashboard frame. They are not a replacement for recorded video.</div><div id="ext_frame_gallery" class="ext-gallery"></div><button type="button" class="ghost" id="ext_clear_gallery">Clear Frame History</button>
+    </div></details>
+
+    <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Safety & Runtime Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div id="ext_safety_state" class="status-line">Reading software stop state…</div>
+      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Request Software Stop</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
+      <div class="small-muted">Software stop is consumed by the active Python mode loop. This is not a hardware emergency stop and does not replace a physical cutoff. Resume requires explicit confirmation.</div>
+    </div></details>
+
   </div>
 </div>
 
@@ -613,7 +719,31 @@ let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,
 const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
 let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
 function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
-function renderWorkspaceEventLog(channel='events'){const store=channel==='api'?workspaceApiEvents:workspaceEvents,root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;root.replaceChildren();if(!store.length){const e=document.createElement('div');e.className='console-empty';e.textContent=channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}else for(const entry of store.slice().reverse()){const row=document.createElement('div');row.className='console-entry';const stamp=document.createElement('span');stamp.className='console-time';stamp.textContent=entry.time.toLocaleTimeString([],{hour12:false})+'.'+String(entry.time.getMilliseconds()).padStart(3,'0');const level=document.createElement('span');level.className='console-level '+(entry.level==='error'?'error':entry.level==='warn'?'warn':'');level.textContent=entry.level.toUpperCase();const msg=document.createElement('span');msg.className='console-message';msg.textContent=entry.message;row.append(stamp,level,msg);root.appendChild(row);}const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';}
+let workspaceConsolePaused=false,workspaceConsoleAutoScroll=true,workspaceConsoleQuery='',workspaceConsoleLevel='ALL';
+function renderWorkspaceEventLog(channel='events'){
+  if(workspaceConsolePaused)return;
+  const store=channel==='api'?workspaceApiEvents:workspaceEvents;
+  const root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;
+  root.replaceChildren();
+  const query=workspaceConsoleQuery.trim().toLowerCase();
+  const selected=store.slice().reverse().filter(function(entry){
+    const level=String(entry.level||'info').toUpperCase();
+    return (workspaceConsoleLevel==='ALL'||level===workspaceConsoleLevel)&&(!query||(String(entry.message||'')+' '+level).toLowerCase().includes(query));
+  });
+  if(!selected.length){const e=document.createElement('div');e.className='console-empty';e.textContent=store.length?'No matching console entries.':channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}
+  else for(const entry of selected){
+    const row=document.createElement('div');row.className='console-entry';
+    const stamp=document.createElement('span');stamp.className='console-time';
+    const time=entry.time instanceof Date?entry.time:new Date(entry.time||Date.now());
+    stamp.textContent=time.toLocaleTimeString([],{hour12:false})+'.'+String(time.getMilliseconds()).padStart(3,'0');
+    const levelName=String(entry.level||'info').toUpperCase();
+    const level=document.createElement('span');level.className='console-level '+(levelName==='ERROR'?'error':levelName==='WARN'?'warn':'');level.textContent=levelName;
+    const msg=document.createElement('span');msg.className='console-message';msg.textContent=entry.message;
+    row.append(stamp,level,msg);root.appendChild(row);
+  }
+  if(workspaceConsoleAutoScroll)root.scrollTop=0;
+  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';
+}
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return;const b=getImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;const nw=canvas.width*z,nh=canvas.height*z;viewPanX=ax-u*nw-(canvas.width-nw)/2;viewPanY=ay-v*nh-(canvas.height-nh)/2;document.getElementById('workspace_zoom').value=String(z);renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');}
 function fitWorkspaceView(log=true){workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
@@ -631,13 +761,14 @@ function showToast(text, timeout=2500){
     setTimeout(()=> t.style.display='none', timeout);
 }
 function varColorByKey(key){
-  if(key==='RL') return ui.colors.RL;
-  if(key==='LL') return ui.colors.LL;
-  if(key==='CW') return ui.colors.CW;
-  if(key==='ST') return ui.colors.ST || '#bf7bff';
-  if(key==='OBJ') return ui.colors.OBJ || '#ff5757';
-  if(key==='BEV') return ui.colors.BEV || '#d946ef';
-  return '#9ad0ff';
+  let hex = key==='RL' ? ui.colors.RL : key==='LL' ? ui.colors.LL : key==='CW' ? ui.colors.CW :
+    key==='ST' ? (ui.colors.ST || '#bf7bff') : key==='OBJ' ? (ui.colors.OBJ || '#ff5757') :
+    key==='BEV' ? (ui.colors.BEV || '#d946ef') : '#9ad0ff';
+  const opacity = Number((ui.opacity || {})[key] == null ? 1 : (ui.opacity || {})[key]);
+  if(!hex || opacity >= 0.999) return hex || '#9ad0ff';
+  const parts = String(hex).match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if(!parts) return hex;
+  return 'rgba(' + parseInt(parts[1],16) + ',' + parseInt(parts[2],16) + ',' + parseInt(parts[3],16) + ',' + Math.max(0,Math.min(1,opacity)) + ')';
 }
 function updateFrameModeText(){
     frameModeDisplay.textContent = !syncActive ? 'Mode: STOPPED' : (isFrozen ? 'Mode: Frozen (for precise tuning)' : 'Mode: Live');
@@ -670,7 +801,7 @@ function sendAdvanced(payload) {
 // Convert image norm coords (0-1) to physical canvas coords, honoring workspace zoom
 function getImgBounds(){const w=canvas.width,h=canvas.height,iw=w*workspaceZoom,ih=h*workspaceZoom;return{ix:(w-iw)/2+viewPanX,iy:(h-ih)/2+viewPanY,iw,ih};}
 function canvasPointFromEvent(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return{x:0,y:0};return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height};}
-function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();}
+function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();if(typeof drawPrecisionOverlay==='function')drawPrecisionOverlay();}
 
 function toCanvas(nx, ny) {
     const b = getImgBounds();
@@ -1603,7 +1734,7 @@ function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;d
 function toggleProperties(){const p=document.querySelector('.properties-panel');if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{switch(b.dataset.action){
-case 'export-config':document.getElementById('download_json').click();break;case 'refresh-config':document.getElementById('refresh_vals').click();noteWorkspaceEvent('info','Configuration refresh requested');break;
+case 'export-config':if(window.exportFullConfig)window.exportFullConfig().catch(err=>showToast('Export failed: '+err.message));else document.getElementById('download_json').click();break;case 'refresh-config':if(window.reloadFullConfig)window.reloadFullConfig().catch(err=>showToast('Reload failed: '+err.message));else document.getElementById('refresh_vals').click();noteWorkspaceEvent('info','Full configuration refresh requested');break;
 case 'take-picture':document.getElementById('take_picture_btn').click();break;case 'clear-selection':document.getElementById('clear_selection').click();break;case 'apply-base':document.getElementById('apply_all').click();break;case 'properties':toggleProperties();break;case 'toggle-properties':document.getElementById('toggle_dock_btn').click();break;
 case 'zoom-in':zoomBy(1.2);break;case 'zoom-out':zoomBy(1/1.2);break;case 'fit-view':fitWorkspaceView();break;case 'toggle-overlays':toggleOverlays();break;case 'toggle-console':setConsoleOpen(!consoleDock.classList.contains('console-open'));break;
 case 'tool-select':setTool('select');break;case 'tool-pan':setTool('pan');break;case 'freeze':document.getElementById('freeze_btn').click();break;case 'unfreeze':document.getElementById('unfreeze_btn').click();break;
@@ -1661,6 +1792,719 @@ function mapGroupToDefaultVar(g){
     return 'RL_TOP_ROI'; 
 }
 </script>
+
+<script>
+(function(){
+'use strict';
+const $ = function(id){return document.getElementById(id)};
+const jsonClone = function(value){return JSON.parse(JSON.stringify(value));};
+const EXT_LAYERS = ['RL','LL','CW','ST','OBJ','BEV'];
+let extGrid=false, extSnap=false, extCrosshair=false, extAnnotationsVisible=true, extCrosshairPoint=null;
+let editorTool='select', rulerStart=null, extAnnotations=[], extFrameGallery=[], extRuntimeSample=[];
+let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null;
+let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
+let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
+const nativeFetch = window.fetch.bind(window);
+
+function normalizedConfig(snapshot){
+  if(!snapshot || typeof snapshot!=='object') return null;
+  const copy=jsonClone(snapshot);
+  delete copy.exported_at; delete copy.controls_enabled; delete copy.success;
+  return copy.config && copy.config.schema_version ? normalizedConfig(copy.config) : copy;
+}
+function sameConfig(a,b){try{return JSON.stringify(normalizedConfig(a))===JSON.stringify(normalizedConfig(b));}catch(_){return false;}}
+async function readConfig(){
+  const response=await nativeFetch('/api/config/full',{cache:'no-store'});
+  if(!response.ok) throw new Error('Config API returned HTTP '+response.status);
+  return normalizedConfig(await response.json());
+}
+function updateUndoButtons(){
+  if($('ext_undo')) $('ext_undo').disabled=!STREAM_CONTROL_ALLOWED||undoStack.length===0;
+  if($('ext_redo')) $('ext_redo').disabled=!STREAM_CONTROL_ALLOWED||redoStack.length===0;
+  if($('ext_undo_status')) $('ext_undo_status').textContent='Undo: '+undoStack.length+' · Redo: '+redoStack.length;
+}
+function rememberUndo(before,after){
+  if(before&&!sameConfig(before,after)){
+    undoStack.push(jsonClone(before));undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();
+  }
+}
+function restoreTrackingStack(){
+  undoStack=undoStack.slice(-40);redoStack=redoStack.slice(-40);updateUndoButtons();
+}
+function isTrackedMutation(url,method){
+  if(method!=='POST')return false;
+  return ['/update_conf','/set_advanced','/set_ui','/api/config/full','/api/processing-rate','/api/camera/settings','/api/safety','/api/features','/toggle_record'].some(function(path){return url.split('?')[0].endsWith(path);});
+}
+window.fetch=async function(input,init){
+  const url=typeof input==='string'?input:(input&&input.url)||'';
+  const method=String((init&&init.method)||(input&&input.method)||'GET').toUpperCase();
+  const track=isTrackedMutation(url,method)&&internalConfigWrite===0;
+  const before=currentConfig?jsonClone(currentConfig):null;
+  let response;
+  try{response=await nativeFetch(input,init);}catch(err){throw err;}
+  if(track&&response&&response.ok){
+    try{
+      const next=await readConfig();
+      rememberUndo(before,next);
+      currentConfig=next;updateUndoButtons();
+    }catch(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Configuration tracker refresh failed: '+err.message);}
+  }
+  return response;
+};
+
+function addSVG(name,attrs,parent){
+  const node=document.createElementNS('http://www.w3.org/2000/svg',name);
+  Object.keys(attrs||{}).forEach(function(key){node.setAttribute(key,String(attrs[key]));});
+  (parent||$('ext_precision_overlay')).appendChild(node);return node;
+}
+function extImageBounds(){
+  try{return getImgBounds();}catch(_){return {ix:0,iy:0,iw:canvas.width,ih:canvas.height};}
+}
+function drawPrecisionOverlay(){
+  const svg=$('ext_precision_overlay'),stage=$('canvas_stage');if(!svg||!canvas||!stage)return;
+  const canvasRect=canvas.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();
+  const contentLeft=stageRect.left+stage.clientLeft,contentTop=stageRect.top+stage.clientTop;
+  svg.style.left=(canvasRect.left-contentLeft)+'px';
+  svg.style.top=(canvasRect.top-contentTop)+'px';
+  svg.style.width=Math.max(1,canvasRect.width)+'px';
+  svg.style.height=Math.max(1,canvasRect.height)+'px';
+  svg.setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);
+  svg.replaceChildren();
+  const b=extImageBounds();
+  const gridOn=extGrid&&(!currentConfig||!currentConfig.ui||currentConfig.ui.visible.GRID!==false);
+  if(gridOn){
+    for(let i=1;i<20;i++){
+      const x=b.ix+b.iw*i/20, y=b.iy+b.ih*i/20;
+      addSVG('line',{x1:x,y1:b.iy,x2:x,y2:b.iy+b.ih,stroke:'rgba(105,190,210,.25)','stroke-width':1,'stroke-dasharray':i%2===0?'3 4':'1 5'});
+      addSVG('line',{x1:b.ix,y1:y,x2:b.ix+b.iw,y2:y,stroke:'rgba(105,190,210,.25)','stroke-width':1,'stroke-dasharray':i%2===0?'3 4':'1 5'});
+    }
+    addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:'rgba(105,190,210,.5)','stroke-width':1});
+  }
+  if(extCrosshair&&extCrosshairPoint){
+    addSVG('line',{x1:b.ix,y1:extCrosshairPoint.y,x2:b.ix+b.iw,y2:extCrosshairPoint.y,stroke:'#f8fafc','stroke-width':1,'stroke-dasharray':'6 4'});
+    addSVG('line',{x1:extCrosshairPoint.x,y1:b.iy,x2:extCrosshairPoint.x,y2:b.iy+b.ih,stroke:'#f8fafc','stroke-width':1,'stroke-dasharray':'6 4'});
+    const label=addSVG('text',{x:extCrosshairPoint.x+8,y:extCrosshairPoint.y-8,fill:'#fff','font-size':11,'paint-order':'stroke','stroke':'#07101a','stroke-width':3});
+    label.textContent='U '+(((extCrosshairPoint.x-b.ix)/b.iw)*100).toFixed(1)+'% · V '+(((extCrosshairPoint.y-b.iy)/b.ih)*100).toFixed(1)+'%';
+  }
+  if(!extAnnotationsVisible)return;
+  extAnnotations.forEach(function(item,index){
+    const color=item.color||'#fbbf24';
+    if(item.kind==='roi_rect'||item.kind==='roi_trapezoid'){
+      const x=b.ix+Number(item.x||0)*b.iw,y=b.iy+Number(item.y||0)*b.ih,w=Number(item.w||0)*b.iw,h=Number(item.h||0)*b.ih;
+      if(item.kind==='roi_rect'){
+        addSVG('rect',{x:x,y:y,width:w,height:h,fill:'rgba(34,211,238,.10)',stroke:color,'stroke-width':2,'stroke-dasharray':'5 3'});
+      }else{
+        const top=Math.max(0,Math.min(1,Number(item.topFactor==null?0.5:item.topFactor))),inset=(w*(1-top))/2;
+        addSVG('polygon',{points:(x+inset)+','+y+' '+(x+w-inset)+','+y+' '+(x+w)+','+(y+h)+' '+x+','+(y+h),fill:'rgba(34,211,238,.10)',stroke:color,'stroke-width':2,'stroke-dasharray':'5 3'});
+      }
+      const label=addSVG('text',{x:x+4,y:y+13,fill:color,'font-size':12,'paint-order':'stroke',stroke:'#07101a','stroke-width':3});
+      label.textContent=item.label||('Preview ROI '+(index+1));
+      return;
+    }
+    const x=b.ix+Number(item.u||0)*b.iw,y=b.iy+Number(item.v||0)*b.ih;
+    if(item.kind==='ruler'&&item.u2!=null&&item.v2!=null){
+      const x2=b.ix+item.u2*b.iw,y2=b.iy+item.v2*b.ih;
+      addSVG('line',{x1:x,y1:y,x2:x2,y2:y2,stroke:color,'stroke-width':2});
+      addSVG('circle',{cx:x,cy:y,r:3,fill:color});addSVG('circle',{cx:x2,cy:y2,r:3,fill:color});
+      const t=addSVG('text',{x:(x+x2)/2+5,y:(y+y2)/2-5,fill:color,'font-size':12,'paint-order':'stroke',stroke:'#07101a','stroke-width':3});
+      t.textContent=item.label||Math.hypot((item.u2-item.u)*b.iw,(item.v2-item.v)*b.ih).toFixed(1)+' px';
+    }else{
+      addSVG('circle',{cx:x,cy:y,r:6,fill:'rgba(251,191,36,.2)',stroke:color,'stroke-width':2});
+      addSVG('line',{x1:x-9,y1:y,x2:x+9,y2:y,stroke:color,'stroke-width':1});
+      addSVG('line',{x1:x,y1:y-9,x2:x,y2:y+9,stroke:color,'stroke-width':1});
+      if(item.label){const t=addSVG('text',{x:x+10,y:y-8,fill:color,'font-size':12,'paint-order':'stroke',stroke:'#07101a','stroke-width':3});t.textContent=item.label;}
+    }
+  });
+}
+function updateEditorStatus(text){if($('ext_editor_status'))$('ext_editor_status').textContent=text;}
+function setEditorTool(tool){
+  editorTool=tool;
+  rulerStart=null;
+  if($('ext_ruler'))$('ext_ruler').checked=tool==='ruler';
+  ['ext_annotate_btn','ext_ruler','ext_roi_rect_tool','ext_roi_trapezoid_tool'].forEach(function(id){
+    if($(id))$(id).classList.toggle('ext-tool-active',
+      (id==='ext_ruler'&&tool==='ruler')||(id==='ext_annotate_btn'&&tool==='annotate')||
+      (id==='ext_roi_rect_tool'&&tool==='roi_rect')||(id==='ext_roi_trapezoid_tool'&&tool==='roi_trapezoid'));
+  });
+  if(typeof setTool==='function')setTool(tool==='pan'?'pan':'select');
+  if(canvas)canvas.style.cursor=tool==='pan'?'grab':(['annotate','ruler','roi_rect','roi_trapezoid'].includes(tool)?'crosshair':'default');
+  const messages={ruler:'Ruler active: click two points inside the image.',annotate:'Annotation active: click in the image to add a note marker.',roi_rect:'Rectangle ROI preview: click two opposite corners.',roi_trapezoid:'Trapezoid ROI preview: click two opposite corners.'};
+  updateEditorStatus(messages[tool]||('Tool: '+tool));
+  scheduleWorkspaceSave();drawPrecisionOverlay();
+}
+function pointFromEvent(event){
+  const rect=canvas.getBoundingClientRect();
+  const x=(event.clientX-rect.left)*(canvas.width/rect.width),y=(event.clientY-rect.top)*(canvas.height/rect.height);
+  const b=extImageBounds();
+  if(x<b.ix||x>b.ix+b.iw||y<b.iy||y>b.iy+b.ih)return null;
+  let u=(x-b.ix)/b.iw,v=(y-b.iy)/b.ih;
+  if(extSnap){u=Math.round(u*20)/20;v=Math.round(v*20)/20;}
+  u=Math.max(0,Math.min(1,u));v=Math.max(0,Math.min(1,v));
+  return {x:b.ix+u*b.iw,y:b.iy+v*b.ih,u:u,v:v};
+}
+function refreshAnnotationList(){
+  const root=$('ext_annotations_list');if(!root)return;root.replaceChildren();
+  if(!extAnnotations.length){const empty=document.createElement('div');empty.className='small-muted';empty.textContent='No custom annotations.';root.appendChild(empty);return;}
+  extAnnotations.forEach(function(item,index){
+    const row=document.createElement('div');row.className='ext-list-row';
+    const label=document.createElement('span');label.textContent=(index+1)+'. '+(item.kind||'marker')+(item.label?': '+item.label:'');row.appendChild(label);
+    const remove=document.createElement('button');remove.type='button';remove.className='ghost';remove.textContent='Delete';remove.onclick=function(){extAnnotations.splice(index,1);refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();};row.appendChild(remove);root.appendChild(row);
+  });
+  syncLayerControls();
+}
+function onCustomPointerDown(event){
+  if(!['annotate','ruler','roi_rect','roi_trapezoid'].includes(editorTool)||event.button!==0)return;
+  const point=pointFromEvent(event);if(!point)return;
+  event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+  if(editorTool==='annotate'){
+    let label=window.prompt('Annotation label (optional):','');
+    if(label===null)return;
+    label=String(label).trim().slice(0,80);
+    extAnnotations.push({kind:label?'note':'marker',u:point.u,v:point.v,label:label,color:'#fbbf24'});
+    if(extAnnotations.length>250)extAnnotations.shift();
+    refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();
+    updateEditorStatus('Annotation placed at U '+(point.u*100).toFixed(1)+'%, V '+(point.v*100).toFixed(1)+'%.');
+  }else if(!rulerStart){
+    rulerStart=point;updateEditorStatus(editorTool==='ruler'?'Ruler start marked. Click the second point.':'ROI first corner marked. Click the opposite corner.');drawPrecisionOverlay();
+  }else{
+    const start=rulerStart;rulerStart=null;
+    if(editorTool==='ruler'){
+      const distance=Math.hypot((point.u-start.u)*extImageBounds().iw,(point.v-start.v)*extImageBounds().ih);
+      extAnnotations.push({kind:'ruler',u:start.u,v:start.v,u2:point.u,v2:point.v,label:distance.toFixed(1)+' px',color:'#22d3ee'});
+      updateEditorStatus('Ruler saved: '+distance.toFixed(1)+' image pixels.');syncLayerControls();
+    }else{
+      const x=Math.min(start.u,point.u),y=Math.min(start.v,point.v),w=Math.abs(point.u-start.u),h=Math.abs(point.v-start.v);
+      if(w<0.005||h<0.005){updateEditorStatus('Custom ROI is too small; draw it again with a larger area.');return;}
+      const kind=editorTool;
+      const generatedName='Preview ROI '+(extAnnotations.length+1);
+      const typedLabel=window.prompt('Custom ROI label:',generatedName);
+      if(typedLabel===null){drawPrecisionOverlay();return;}
+      const item={kind:kind,x:x,y:y,w:w,h:h,label:String(typedLabel||generatedName).trim().slice(0,80),color:'#22d3ee'};
+      if(kind==='roi_trapezoid')item.topFactor=Number($('ext_roi_top_factor').value)||0.5;
+      extAnnotations.push(item);updateEditorStatus('Preview ROI added. This shape does not alter robot perception or control.');
+    }
+    if(extAnnotations.length>250)extAnnotations.shift();
+    refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();
+  }
+}
+function drawSparkline(id,values){
+  const c=$(id);if(!c)return;const w=c.width,h=c.height,ctx=c.getContext('2d');ctx.clearRect(0,0,w,h);ctx.strokeStyle='rgba(148,163,184,.18)';ctx.lineWidth=1;
+  for(let y=1;y<4;y++){ctx.beginPath();ctx.moveTo(0,h*y/4);ctx.lineTo(w,h*y/4);ctx.stroke();}
+  const valid=values.filter(function(v){return Number.isFinite(v);});if(valid.length<2)return;
+  let min=Math.min.apply(null,valid),max=Math.max.apply(null,valid);if(max-min<0.001){max=min+1;}
+  ctx.beginPath();ctx.strokeStyle='#22d3ee';ctx.lineWidth=2;
+  valid.forEach(function(v,i){const x=i*(w-8)/(valid.length-1)+4,y=h-5-(v-min)/(max-min)*(h-12);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);});ctx.stroke();
+  ctx.fillStyle='#9fb3c8';ctx.font='10px sans-serif';ctx.fillText(max.toFixed(1),4,11);ctx.fillText(min.toFixed(1),4,h-3);
+}
+function addFrameSnapshot(){
+  if(!lastFrameImage||!lastFrameImage.complete||!lastFrameImage.naturalWidth){showToast('No decoded camera frame is available yet');return;}
+  try{
+    const temp=document.createElement('canvas');const maxW=640;const scale=Math.min(1,maxW/lastFrameImage.naturalWidth);temp.width=Math.max(1,Math.round(lastFrameImage.naturalWidth*scale));temp.height=Math.max(1,Math.round(lastFrameImage.naturalHeight*scale));
+    temp.getContext('2d').drawImage(lastFrameImage,0,0,temp.width,temp.height);
+    const item={timestamp:new Date().toISOString(),src:temp.toDataURL('image/jpeg',.85),width:temp.width,height:temp.height};extFrameGallery.unshift(item);extFrameGallery=extFrameGallery.slice(0,20);renderFrameGallery();showToast('Frame snapshot added to session history');
+  }catch(err){showToast('Frame snapshot failed: '+err.message);}
+}
+function renderFrameGallery(){
+  const root=$('ext_frame_gallery');if(!root)return;root.replaceChildren();
+  extFrameGallery.forEach(function(item,index){
+    const card=document.createElement('div');card.className='ext-gallery-card';const img=document.createElement('img');img.src=item.src;img.alt='Frame snapshot '+(index+1);card.appendChild(img);
+    const info=document.createElement('div');info.textContent=new Date(item.timestamp).toLocaleTimeString()+' · '+item.width+'×'+item.height;card.appendChild(info);
+    const row=document.createElement('div');row.style.display='flex';row.style.gap='3px';row.style.padding='4px';
+    const cmp=document.createElement('button');cmp.type='button';cmp.className='ghost';cmp.textContent='Compare';cmp.style.flex='1';cmp.onclick=function(){showFrameComparison(item);};row.appendChild(cmp);
+    const save=document.createElement('a');save.className='ghost';save.textContent='Save';save.href=item.src;save.download='frame-snapshot-'+(index+1)+'.jpg';save.style.textDecoration='none';save.style.fontSize='11px';row.appendChild(save);card.appendChild(row);root.appendChild(card);
+  });
+}
+function showFrameComparison(item){
+  const modal=$('ext_frame_compare');if(!modal)return;
+  $('ext_compare_old').src=item.src;
+  if(lastFrameImage&&lastFrameImage.complete&&lastFrameImage.naturalWidth){const c=document.createElement('canvas');c.width=lastFrameImage.naturalWidth;c.height=lastFrameImage.naturalHeight;c.getContext('2d').drawImage(lastFrameImage,0,0);$('ext_compare_live').src=c.toDataURL('image/jpeg',.85);}
+  $('ext_frame_compare_title').textContent='Snapshot '+new Date(item.timestamp).toLocaleString()+' vs current frame';
+  modal.style.display='flex';
+}
+function downloadText(data,filename,mime){
+  const blob=new Blob([data],{type:mime||'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(function(){URL.revokeObjectURL(url);},500);
+}
+function collectWorkspace(){
+  const layers={};
+  EXT_LAYERS.forEach(function(key){layers[key]={visible:!!(ui.visible||{})[key],opacity:Number((ui.opacity||{})[key]==null?1:(ui.opacity||{})[key])};});
+  layers.ANNOTATIONS={visible:extAnnotationsVisible,opacity:1};layers.GRID={visible:extGrid,opacity:1};
+  const panels={};document.querySelectorAll('.right-panel details.dock-panel').forEach(function(panel){if(panel.id)panels[panel.id]=panel.open;});
+  const rect=document.querySelector('.right-panel').getBoundingClientRect();
+  const paneWidth=parseFloat(getComputedStyle(document.querySelector('.container')).getPropertyValue('--right-pane-width'))||rect.width||315;
+  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,grid:extGrid,snap:extSnap,crosshair:extCrosshair,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
+    panels:panels,layers:layers,annotations:extAnnotations};
+}
+async function saveWorkspace(){
+  const response=await nativeFetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_workspace',workspace:collectWorkspace()})});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));return data;
+}
+function scheduleWorkspaceSave(){
+  if(extSaveTimer)clearTimeout(extSaveTimer);
+  extSaveTimer=setTimeout(function(){saveWorkspace().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace persistence failed: '+err.message);});},450);
+}
+function applyWorkspace(workspace){
+  if(!workspace||typeof workspace!=='object')return;
+  const view=workspace.view||{};
+  if(typeof view.zoom==='number'&&typeof setWorkspaceZoom==='function'){workspaceZoom=Math.max(.3,Math.min(4,view.zoom));viewPanX=Number(view.panX)||0;viewPanY=Number(view.panY)||0;$('workspace_zoom').value=String(workspaceZoom);}
+  extGrid=!!view.grid;extSnap=!!view.snap;extCrosshair=!!view.crosshair;
+  if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
+  if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;
+  if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
+  editorTool=['select','pan','annotate','ruler','roi_rect','roi_trapezoid'].includes(view.tool)?view.tool:'select';
+  const savedLayers=workspace.layers||{};
+  extAnnotationsVisible=!savedLayers.ANNOTATIONS||savedLayers.ANNOTATIONS.visible!==false;
+  if(typeof view.rightPaneWidth==='number'&&view.rightPaneWidth>=250&&view.rightPaneWidth<=700)document.querySelector('.container').style.setProperty('--right-pane-width',view.rightPaneWidth+'px');
+  Object.keys(workspace.panels||{}).forEach(function(id){const panel=$(id);if(panel&&panel.tagName==='DETAILS')panel.open=!!workspace.panels[id];});
+  Object.keys(workspace.layers||{}).forEach(function(key){const layer=workspace.layers[key];if(!layer)return;if(EXT_LAYERS.includes(key)){ui.visible[key]=layer.visible!==false;ui.opacity[key]=Number(layer.opacity==null?1:layer.opacity);}});
+  extGrid=extGrid&&(!savedLayers.GRID||savedLayers.GRID.visible!==false);
+  extAnnotations=Array.isArray(workspace.annotations)?jsonClone(workspace.annotations).slice(0,250):[];
+  syncLayerControls();syncLegacyLayerControls();refreshAnnotationList();renderWorkspaceCanvas();drawPrecisionOverlay();scheduleWorkspaceSave();
+}
+function syncLegacyLayerControls(){
+  const map={RL:'rl',LL:'ll',CW:'cw',ST:'st',OBJ:'obj',BEV:'bev'};
+  Object.keys(map).forEach(function(key){const vis=$('vis_'+map[key]),color=$('color_'+map[key]);if(vis)vis.checked=ui.visible[key]!==false;if(color)color.value=(ui.colors||{})[key]||'#ffffff';});
+}
+function syncLayerControls(){
+  const root=$('ext_layer_rows');if(!root)return;root.replaceChildren();
+  EXT_LAYERS.forEach(function(key){
+    const row=document.createElement('div');row.className='ext-layer-row';
+    const check=document.createElement('input');check.type='checkbox';check.checked=ui.visible[key]!==false;check.title='Show/hide '+key;check.onchange=function(){ui.visible[key]=check.checked;syncLegacyLayerControls();saveUILayers();};row.appendChild(check);
+    const label=document.createElement('span');label.textContent=({RL:'Right lane',LL:'Left lane',CW:'Crosswalk',ST:'Sign / tag',OBJ:'Object region',BEV:'Bird eye view'})[key]||key;row.appendChild(label);
+    const color=document.createElement('input');color.type='color';color.value=(ui.colors||{})[key]||'#ffffff';color.title='Layer color';color.oninput=function(){ui.colors[key]=color.value;syncLegacyLayerControls();renderWorkspaceCanvas();scheduleUILayerSave();};row.appendChild(color);
+    const opacity=document.createElement('input');opacity.type='range';opacity.min='0';opacity.max='1';opacity.step='.05';opacity.value=String((ui.opacity||{})[key]==null?1:ui.opacity[key]);opacity.title='Layer opacity';opacity.oninput=function(){ui.opacity=ui.opacity||{};ui.opacity[key]=Number(opacity.value);renderWorkspaceCanvas();drawPrecisionOverlay();scheduleUILayerSave();};row.appendChild(opacity);
+    root.appendChild(row);
+  });
+  const annotationRow=document.createElement('div');annotationRow.className='ext-layer-row';annotationRow.style.gridTemplateColumns='18px minmax(0,1fr) auto';
+  const annotationCheck=document.createElement('input');annotationCheck.type='checkbox';annotationCheck.checked=extAnnotationsVisible;annotationCheck.title='Show/hide user annotations and custom ROI previews';
+  annotationCheck.onchange=function(){extAnnotationsVisible=annotationCheck.checked;drawPrecisionOverlay();scheduleWorkspaceSave();};
+  annotationRow.appendChild(annotationCheck);
+  const annotationLabel=document.createElement('span');annotationLabel.textContent='Annotations / custom ROI previews';annotationRow.appendChild(annotationLabel);
+  const annotationNote=document.createElement('span');annotationNote.className='small-muted';annotationNote.textContent=String(extAnnotations.length);annotationRow.appendChild(annotationNote);
+  root.appendChild(annotationRow);
+}
+let uiLayerSaveTimer=null;
+function scheduleUILayerSave(){if(uiLayerSaveTimer)clearTimeout(uiLayerSaveTimer);uiLayerSaveTimer=setTimeout(function(){saveUILayers().catch(function(err){showToast('Layer save failed: '+err.message);});},250);}
+async function saveUILayers(){
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  const response=await nativeFetch('/set_ui',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({colors:ui.colors,visible:ui.visible,opacity:ui.opacity||{}})});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  const after=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,after);currentConfig=after;drawPrecisionOverlay();scheduleWorkspaceSave();return data;
+}
+function applyConfigToUI(snapshot){
+  const cfg=normalizedConfig(snapshot);if(!cfg)return;
+  currentConfig=cfg;values=jsonClone(cfg.values||values);advanced=jsonClone(cfg.advanced||advanced);ui=jsonClone(cfg.ui||ui);
+  document.querySelectorAll('#inputs_container input[name]').forEach(function(input){if(Object.prototype.hasOwnProperty.call(values,input.name))input.value=String(values[input.name]);});
+  const advancedInputs={lane_threshold:'LANE_THRESHOLD',cross_thresh:'CROSSWALK_THRESHOLD',crosswalk_sleep:'CROSSWALK_SLEEP',crosswalk_thresh_spend:'CROSSWALK_THRESH_SPEND',read_sign_threshold:'READ_SIGN_THRESHOLD',turn_right:'TURN_RIGHT',turn_left:'TURN_LEFT',straight:'STRAIGHT',stop_lvl:'STOP'};
+  Object.keys(advancedInputs).forEach(function(id){if($(id)&&advanced[advancedInputs[id]]!=null)$(id).value=String(advanced[advancedInputs[id]]);});
+  if($('run_lvl'))$('run_lvl').value=advanced.RUN_LVL||'MOVE';if($('with_sign'))$('with_sign').checked=!!advanced.WITH_SIGN;if($('with_apriltag'))$('with_apriltag').checked=!!advanced.WITH_APRILTAG;
+  if(typeof updateInputsFromValues==='function')updateInputsFromValues();
+  if(typeof updateShapeUIFromData==='function')updateShapeUIFromData();
+  const runtime=cfg.runtime||{};if(runtime.target_processing_fps!=null&&$('ext_target_fps'))$('ext_target_fps').value=String(runtime.target_processing_fps);
+  syncLegacyLayerControls();syncLayerControls();
+  if(typeof window.syncPropertiesSelection==='function'&&$('prop_target'))window.syncPropertiesSelection($('prop_target').value);
+  renderWorkspaceCanvas();drawPrecisionOverlay();
+}
+async function applyFullConfig(snapshot,label,trackForUndo){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const body=normalizedConfig(snapshot);if(!body)throw new Error('Configuration snapshot is invalid.');
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  internalConfigWrite++;
+  try{
+    const response=await nativeFetch('/api/config/full',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+    applyConfigToUI(data.config);
+    const after=normalizedConfig(data.config);
+    if(trackForUndo)rememberUndo(before,after);
+    noteWorkspaceEvent('info',label||'Configuration restored');return data.config;
+  }finally{internalConfigWrite--;}
+}
+async function doUndo(){
+  if(!undoStack.length)return;const target=undoStack.pop(),previous=currentConfig?jsonClone(currentConfig):null;
+  if(previous)redoStack.push(previous);
+  try{const result=await applyFullConfig(target,'Undo configuration change');currentConfig=normalizedConfig(result);restoreTrackingStack();}
+  catch(err){undoStack.push(target);if(previous&&redoStack.length)redoStack.pop();restoreTrackingStack();showToast('Undo failed: '+err.message);}
+}
+async function doRedo(){
+  if(!redoStack.length)return;const target=redoStack.pop(),previous=currentConfig?jsonClone(currentConfig):null;
+  if(previous)undoStack.push(previous);
+  try{const result=await applyFullConfig(target,'Redo configuration change');currentConfig=normalizedConfig(result);restoreTrackingStack();}
+  catch(err){redoStack.push(target);if(previous&&undoStack.length)undoStack.pop();restoreTrackingStack();showToast('Redo failed: '+err.message);}
+}
+async function refreshWorkspaceProfiles(){
+  const data=await nativeFetch('/api/workspace',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+  workspaceProfileNames=data.profiles||[];const select=$('ext_profile_select');select.replaceChildren();
+  if(!workspaceProfileNames.length){const o=document.createElement('option');o.value='';o.textContent='No saved profiles';select.appendChild(o);}
+  workspaceProfileNames.forEach(function(name){const o=document.createElement('option');o.value=name;o.textContent=name;select.appendChild(o);});
+  if(data.workspace&&Object.keys(data.workspace).length)applyWorkspace(data.workspace);
+}
+async function profileAction(action){
+  const name=String($('ext_profile_name').value||$('ext_profile_select').value||'').trim();if(!name)throw new Error('Enter or select a workspace profile name.');
+  if(action==='delete'&&!confirm('Delete workspace profile "'+name+'"?'))return;
+  const response=await nativeFetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action==='save'?'save_profile':action==='load'?'load_profile':'delete_profile',name:name,workspace:collectWorkspace()})});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  if(action==='load')applyWorkspace(data.workspace);await refreshWorkspaceProfileNamesOnly();showToast('Workspace profile '+action+': '+name);
+}
+async function refreshWorkspaceProfileNamesOnly(){
+  const d=await nativeFetch('/api/workspace',{cache:'no-store'}).then(function(r){return r.json();});
+  workspaceProfileNames=d.profiles||[];const s=$('ext_profile_select');s.replaceChildren();if(!workspaceProfileNames.length){const o=document.createElement('option');o.value='';o.textContent='No saved profiles';s.appendChild(o);}
+  workspaceProfileNames.forEach(function(n){const o=document.createElement('option');o.value=n;o.textContent=n;s.appendChild(o);});
+}
+async function refreshPresets(){
+  const data=await nativeFetch('/api/config/presets',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+  presetNames=data.presets||[];const select=$('ext_preset_select');select.replaceChildren();
+  if(!presetNames.length){const o=document.createElement('option');o.value='';o.textContent='No saved presets';select.appendChild(o);}
+  presetNames.forEach(function(item){const o=document.createElement('option');o.value=item.name;o.textContent=item.name+' · '+item.mode;select.appendChild(o);});
+}
+async function presetAction(action){
+  const name=String($('ext_preset_name').value||$('ext_preset_select').value||'').trim();if(!name)throw new Error('Enter or select a preset name.');
+  if(action==='delete'&&!confirm('Delete configuration preset "'+name+'"?'))return;
+  if(action==='apply'&&!confirm('Apply preset "'+name+'"? This changes live robot configuration.'))return;
+  const before=action==='apply'?(currentConfig?jsonClone(currentConfig):await readConfig()):null;
+  const response=await nativeFetch('/api/config/presets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,name:name})});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  if(action==='apply'){applyConfigToUI(data.config);const after=normalizedConfig(data.config);if(!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}showToast('Preset applied: '+name);}
+  await refreshPresets();if(action==='save')noteWorkspaceEvent('info','Saved configuration preset: '+name);
+}
+function renderConfigDiff(current,saved){
+  const sections=[['ROI values','values'],['Advanced controls','advanced'],['UI settings','ui'],['Runtime settings','runtime']];const lines=[];
+  sections.forEach(function(section){const key=section[1],a=current[key]||{},b=saved[key]||{},names=Array.from(new Set(Object.keys(a).concat(Object.keys(b)))).sort(),changes=[];
+    names.forEach(function(name){if(JSON.stringify(a[name])!==JSON.stringify(b[name]))changes.push(name+': current='+JSON.stringify(a[name])+' → preset='+JSON.stringify(b[name]));});
+    if(changes.length)lines.push('['+section[0]+']',...changes);
+  });
+  $('ext_config_diff').textContent=lines.join(String.fromCharCode(10))||'No differences between the current configuration and this preset.';
+}
+async function comparePreset(){
+  const name=$('ext_preset_select').value;if(!name)throw new Error('Choose a preset to compare.');
+  const response=await nativeFetch('/api/config/presets?name='+encodeURIComponent(name),{cache:'no-store'});
+  const data=await response.json();if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  renderConfigDiff(currentConfig||await readConfig(),data.config);
+}
+async function refreshHistory(){
+  const data=await nativeFetch('/api/config/history',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+  historyItems=data.items||[];const select=$('ext_history_select');select.replaceChildren();
+  if(!historyItems.length){const o=document.createElement('option');o.value='';o.textContent='No saved history';select.appendChild(o);}
+  historyItems.slice().reverse().forEach(function(item){const o=document.createElement('option');o.value=String(item.index);o.textContent=new Date(item.timestamp*1000).toLocaleString()+' · '+item.label;select.appendChild(o);});
+}
+async function restoreHistory(){
+  const index=$('ext_history_select').value;if(index==='')throw new Error('Choose a history snapshot first.');
+  if(!confirm('Restore the selected configuration snapshot?'))return;
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  const response=await nativeFetch('/api/config/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'restore',index:Number(index)})});
+  const data=await response.json();if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  applyConfigToUI(data.config);const after=normalizedConfig(data.config);
+  if(!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}
+  showToast('Configuration history restored');await refreshHistory();
+}
+function importFullConfigFile(file){
+  const reader=new FileReader();reader.onload=async function(){try{
+    const parsed=JSON.parse(String(reader.result||''));const normalized=normalizedConfig(parsed);
+    if(!normalized||!normalized.values||!normalized.advanced||!normalized.ui)throw new Error('JSON is missing required full configuration sections.');
+    if(normalized.mode!==String('{{ mode }}').toLowerCase())throw new Error('File mode does not match this dashboard.');
+    if(!confirm('Import this full configuration into the live robot runtime?'))return;
+    const result=await applyFullConfig(normalized,'Imported full configuration',true);showToast('Full configuration imported');currentConfig=normalizedConfig(result);await refreshHistory();
+  }catch(err){showToast('Import failed: '+err.message);}};reader.onerror=function(){showToast('Could not read the selected file');};reader.readAsText(file);
+}
+async function exportFullConfig(){
+  const config=await readConfig();config.exported_at=new Date().toISOString();downloadText(JSON.stringify(config,null,2),'roboy-'+String('{{ mode }}').toLowerCase()+'-full-config.json','application/json');noteWorkspaceEvent('info','Exported full configuration');
+}
+window.exportFullConfig=exportFullConfig;
+window.reloadFullConfig=async function(){
+  const config=await readConfig();
+  currentConfig=config;
+  applyConfigToUI(config);
+  undoStack=[];redoStack=[];updateUndoButtons();
+  showToast('Reloaded active configuration from the robot');
+  noteWorkspaceEvent('info','Reloaded full configuration from runtime');
+  return config;
+};
+async function refreshRuntime(){
+  try{
+    const health=await nativeFetch('/api/health',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+    const h=health.health||{},m=health.metrics||{},timing=m.timing||{},camera=timing.camera||{},perception=timing.perception||{},loop=timing.loop||{},rate=health.processing_rate||{};
+    const fps=Number(rate.achieved_fps)||Number(m.avg_fps)||0;extRuntimeSample.push({fps:fps,loop:Number(loop.mean_ms)||0,perception:Number(perception.mean_ms)||0});extRuntimeSample=extRuntimeSample.slice(-60);
+    drawSparkline('ext_fps_chart',extRuntimeSample.map(function(v){return v.fps;}));drawSparkline('ext_latency_chart',extRuntimeSample.map(function(v){return v.loop;}));drawSparkline('ext_perception_chart',extRuntimeSample.map(function(v){return v.perception;}));
+    const faults=h.faults||{};const faultNames=Object.keys(faults);$('ext_health_summary').textContent='State: '+(h.state||h.lifecycle||'UNKNOWN')+' · FPS: '+fps.toFixed(1)+' · Faults: '+faultNames.length;
+    $('ext_runtime_details').textContent=JSON.stringify({health:h,metrics:m,processing_rate:rate,control:health.control,camera:health.camera,stream:health.stream},null,2);
+    $('ext_sign_status').textContent=JSON.stringify(health.sign_detector||((h.resources||{}).sign_detector)||{active:false},null,2);
+    $('ext_confidence_status').textContent=JSON.stringify({perception_confidence:health.perception_confidence,speed_decision:health.speed_decision},null,2);
+    $('ext_obstacle_status').textContent=JSON.stringify(health.obstacle_diagnostics||null,null,2);
+  }catch(err){$('ext_health_summary').textContent='Runtime telemetry unavailable: '+err.message;}
+}
+function renderLiveFeatureControls(snapshot){
+  const root=$('ext_live_feature_rows');if(!root)return;root.replaceChildren();
+  const live=snapshot.live||{},canControl=!!snapshot.controls_enabled&&STREAM_CONTROL_ALLOWED;
+  const checks=[
+    ['DETECT_OBJECT','Object detection',live.DETECT_OBJECT],
+    ['USE_BEV','Bird’s-eye transform',live.USE_BEV],
+    ['RECORD_VIDEO','Video recording',live.RECORD_VIDEO]
+  ];
+  checks.forEach(function(item){
+    const feature=item[0],meta=item[2]||{},row=document.createElement('div');row.className='ext-list-row';
+    const left=document.createElement('div');left.style.display='grid';left.style.gap='2px';left.style.minWidth='0';
+    const title=document.createElement('strong');title.textContent=item[1];left.appendChild(title);
+    const note=document.createElement('span');note.className='small-muted';note.textContent=meta.description||'';left.appendChild(note);row.appendChild(left);
+    const control=document.createElement('input');control.type='checkbox';control.checked=!!meta.enabled;control.disabled=!canControl||!meta.available;control.title=meta.available?'Live control':'Unsupported by active mode/lane pipeline';
+    control.onchange=function(){applyLiveFeature(feature,control.checked).catch(function(err){showToast(err.message);refreshFeatureStatus();});};row.appendChild(control);root.appendChild(row);
+  });
+  const marker=live.marker_mode||{},row=document.createElement('div');row.className='ext-list-row';
+  const label=document.createElement('label');label.textContent='Marker detector';label.style.flex='1';row.appendChild(label);
+  const select=document.createElement('select');[['none','Off'],['sign','Traffic signs'],['apriltag','AprilTag']].forEach(function(pair){const opt=document.createElement('option');opt.value=pair[0];opt.textContent=pair[1];select.appendChild(opt);});
+  select.value=marker.value||'none';select.disabled=!canControl||!marker.available;select.onchange=function(){applyLiveFeature('marker_mode',select.value).catch(function(err){showToast(err.message);refreshFeatureStatus();});};row.appendChild(select);root.appendChild(row);
+  if(!canControl){const note=document.createElement('div');note.className='small-muted';note.textContent='Read-only mode: live feature changes are disabled.';root.appendChild(note);}
+}
+async function applyLiveFeature(feature,value){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const descriptions={DETECT_OBJECT:'Change object detection for live frames?',USE_BEV:'Change the bird’s-eye transform live? Re-check lane overlays before moving.',RECORD_VIDEO:'Change video recording state?',marker_mode:'Change the active sign/AprilTag detector?'};
+  if(!confirm((descriptions[feature]||'Apply this live feature change?')+' This update is saved to the active mode config.'))return;
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  const response=await nativeFetch('/api/features',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature:feature,value:value})});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  const after=await readConfig();
+  rememberUndo(before,after);
+  currentConfig=after;showToast('Updated '+feature);noteWorkspaceEvent('info','Live feature changed: '+feature+'='+String(value));await refreshFeatureStatus();
+}
+async function refreshFeatureStatus(){
+  try{
+    const mode=await nativeFetch('/api/mode',{cache:'no-store'}).then(function(r){return r.json();});const f=mode.features||{},c=mode.capabilities||{};
+    const features=await nativeFetch('/api/features',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+    renderLiveFeatureControls(features);
+    const rows=[
+      ['Traffic lights',features.restart_required&&features.restart_required.TRAFFIC_LIGHTS_ENABLED],
+      ['Confidence-aware speed',features.restart_required&&features.restart_required.CONFIDENCE_AWARE_ENABLED],
+      ['Adaptive obstacle avoidance',features.restart_required&&features.restart_required.ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED],
+      ['Encoder map',features.restart_required&&features.restart_required.ENCODER_MAP_ENABLED]
+    ];
+    const newline=String.fromCharCode(10);
+    $('ext_feature_status').textContent=rows.map(function(r){const meta=r[1]||{};return r[0]+': '+(meta.enabled?'enabled':'disabled')+' — '+(meta.reason||'startup configuration');}).join(newline)+newline+newline+'Lane detector: '+(f.lane_detector||'unknown')+newline+'ML lane detector: '+String(!!f.ml_lane_detector)+newline+'Mode capabilities:'+newline+JSON.stringify(c,null,2);
+    if(f.encoder_map){$('ext_encoder_embed').hidden=false;$('ext_encoder_status').textContent='Encoder odometry is active.';if(!$('ext_encoder_frame').src||!$('ext_encoder_frame').src.endsWith('/encoder-map'))$('ext_encoder_frame').src='/encoder-map';}
+    else{$('ext_encoder_embed').hidden=true;$('ext_encoder_status').textContent='Encoder map is disabled (enable with --encoder-map and compatible firmware, then restart).';}
+    const setStatusSectionVisible=function(element,visible){if(!element)return;element.style.display=visible?'':'none';if(element.previousElementSibling)element.previousElementSibling.style.display=visible?'':'none';};
+    setStatusSectionVisible($('ext_traffic_status'),mode.mode==='city');
+    setStatusSectionVisible($('ext_race_status'),mode.mode==='race');
+    window.extActiveMode=mode.mode;
+  }catch(err){$('ext_feature_status').textContent='Feature query failed: '+err.message;}
+}
+async function refreshTrafficAndRace(){
+  const mode=window.extActiveMode;
+  if(mode==='city'){
+    try{
+      const light=await nativeFetch('/api/traffic-lights',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.reason||j.message||('HTTP '+r.status));return j;});
+      $('ext_traffic_status').textContent=JSON.stringify(light,null,2);
+    }catch(err){$('ext_traffic_status').textContent='Traffic-light status unavailable: '+err.message;}
+    return;
+  }
+  if(mode==='race'){
+    try{
+      const race=await nativeFetch('/api/race',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.reason||j.message||('HTTP '+r.status));return j;});
+      $('ext_race_status').textContent=JSON.stringify(race,null,2);
+    }catch(err){$('ext_race_status').textContent='Race lifecycle unavailable: '+err.message;}
+  }
+}
+async function refreshCameraSettings(){
+  try{
+    const data=await nativeFetch('/api/camera/settings',{cache:'no-store'}).then(function(r){return r.json();});const c=data.camera||{};
+    cameraSupportedControlNames=c.control_names||[];cameraSettingsEditable=!!c.supported;
+    $('ext_camera_support').textContent=c.supported?'Picamera2 controls detected. Available controls: '+cameraSupportedControlNames.join(', '):'Not editable: '+(c.reason||'camera controls unavailable');
+    const ranges=c.control_ranges||{};
+    [['ExposureTime','ext_exposure'],['AnalogueGain','ext_gain']].forEach(function(pair){
+      const range=ranges[pair[0]]||{},input=$(pair[1]);
+      if(range.min!=null&&Number.isFinite(Number(range.min)))input.min=String(range.min);
+      else input.removeAttribute('min');
+      if(range.max!=null&&Number.isFinite(Number(range.max)))input.max=String(range.max);
+      else input.removeAttribute('max');
+      const step=pair[0]==='ExposureTime'?'100':'0.1';input.step=step;
+      input.title=(range.min!=null||range.max!=null)?'Sensor limits: '+(range.min==null?'unreported':range.min)+' to '+(range.max==null?'unreported':range.max):'The API validates against sensor-supported limits';
+    });
+    const controls=c.controls||{};if(controls.ExposureTime!=null)$('ext_exposure').value=String(controls.ExposureTime);if(controls.AnalogueGain!=null)$('ext_gain').value=String(controls.AnalogueGain);
+    $('ext_auto_exposure').checked=!!controls.AeEnable;$('ext_auto_wb').checked=!!controls.AwbEnable;
+    updateCameraControlsEnabled();
+  }catch(err){$('ext_camera_support').textContent='Camera capability read failed: '+err.message;}
+}
+function updateCameraControlsEnabled(){
+  const writable=!!cameraSettingsEditable&&STREAM_CONTROL_ALLOWED;
+  $('ext_exposure').disabled=!writable||$('ext_auto_exposure').checked||!cameraSupportedControlNames.includes('ExposureTime');
+  $('ext_gain').disabled=!writable||$('ext_auto_exposure').checked||!cameraSupportedControlNames.includes('AnalogueGain');
+  $('ext_auto_exposure').disabled=!writable||!cameraSupportedControlNames.includes('AeEnable');
+  $('ext_auto_wb').disabled=!writable||!cameraSupportedControlNames.includes('AwbEnable');
+  $('ext_apply_camera').disabled=!writable||!cameraSupportedControlNames.some(function(key){return ['ExposureTime','AnalogueGain','AeEnable','AwbEnable'].includes(key);});
+}
+async function refreshProcessingRate(){
+  try{
+    const data=await nativeFetch('/api/processing-rate',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+    if(data.target_fps!=null)$('ext_target_fps').value=String(data.target_fps);
+    $('ext_fps_status').textContent=data.available?'Live · '+Number(data.target_fps).toFixed(1)+' FPS':'Unavailable';
+    $('ext_target_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;$('ext_apply_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;
+  }catch(err){$('ext_fps_status').textContent=err.message;}
+}
+async function refreshSafety(){
+  try{const data=await nativeFetch('/api/safety',{cache:'no-store'}).then(function(r){return r.json();});
+    $('ext_safety_state').textContent='Software stop: '+(data.software_stop_active?'ACTIVE':'inactive')+' · RUN_LVL='+data.run_level;
+    $('ext_software_stop').disabled=!data.controls_enabled;$('ext_software_resume').disabled=!data.controls_enabled;
+  }catch(err){$('ext_safety_state').textContent='Safety status read failed: '+err.message;}
+}
+async function refreshServerLogs(){
+  const level=encodeURIComponent($('ext_log_level').value||'ALL'),q=encodeURIComponent($('ext_log_search').value||'');
+  try{
+    const data=await nativeFetch('/api/logs?limit=200&level='+level+'&q='+q,{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+    serverLogsVisible=data.items||[];$('ext_server_logs').textContent=serverLogsVisible.map(function(item){return new Date(item.timestamp*1000).toLocaleTimeString()+' '+item.level.padEnd(8)+' '+item.logger+' — '+item.message;}).join(String.fromCharCode(10))||'No matching in-memory runtime logs.';
+  }catch(err){$('ext_server_logs').textContent='Log API unavailable: '+err.message;}
+}
+async function safetyAction(action){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  if(action==='stop'&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
+  if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
+  const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+  showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested');await refreshSafety();
+}
+async function applyProcessingRate(){
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  const fps=Number($('ext_target_fps').value);const data=await nativeFetch('/api/processing-rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_fps:fps})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+  $('ext_fps_status').textContent='Saved · '+Number(data.target_fps).toFixed(1)+' FPS';currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Processing-rate limit applied and saved');
+}
+async function applyCameraControls(){
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
+  const payload={};
+  if(cameraSupportedControlNames.includes('AeEnable')){
+    payload.AeEnable=!!$('ext_auto_exposure').checked;
+  }
+  if(cameraSupportedControlNames.includes('AwbEnable')){
+    payload.AwbEnable=!!$('ext_auto_wb').checked;
+  }
+  if(!$('ext_auto_exposure').checked){
+    if(cameraSupportedControlNames.includes('ExposureTime'))payload.ExposureTime=Number($('ext_exposure').value);
+    if(cameraSupportedControlNames.includes('AnalogueGain'))payload.AnalogueGain=Number($('ext_gain').value);
+  }
+  if(!Object.keys(payload).length)throw new Error('This camera does not expose any supported runtime controls.');
+  const response=await nativeFetch('/api/camera/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));await refreshCameraSettings();currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Runtime camera controls applied');
+}
+function buildCommandPalette(){
+  const commands=[
+    ['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y'],
+    ['Fit camera frame','fit','0'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],
+    ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],['Draw rectangle ROI preview','roi_rect',''],['Draw trapezoid ROI preview','roi_trapezoid',''],
+    ['Save workspace layout','workspace',''],['Save workspace profile','profile',''],['Save configuration preset','preset',''],
+    ['Capture frame snapshot','snapshot',''],['Refresh runtime diagnostics','health',''],['Refresh server logs','logs',''],
+    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Request software stop','stop',''],['Resume motion (confirmation)','resume','']
+  ];
+  const list=$('ext_command_list');list.replaceChildren();
+  commands.forEach(function(entry){const b=document.createElement('button');b.type='button';b.dataset.command=entry[1];b.textContent=entry[0]+(entry[2]?' · '+entry[2]:'');b.onclick=function(){closeCommandPalette();executeCommand(entry[1]);};list.appendChild(b);});
+  $('ext_command_search').addEventListener('input',function(){const q=this.value.toLowerCase();list.querySelectorAll('button').forEach(function(b){b.hidden=!b.textContent.toLowerCase().includes(q);});});
+}
+function openCommandPalette(){const m=$('ext_command_palette');m.style.display='flex';$('ext_command_search').value='';$('ext_command_search').focus();$('ext_command_search').dispatchEvent(new Event('input'));}
+function closeCommandPalette(){$('ext_command_palette').style.display='none';}
+function executeCommand(name){
+  const actions={
+    export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,
+    fit:function(){fitWorkspaceView();},overlays:function(){$('ext_overlays').click();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},
+    annotate:function(){setEditorTool('annotate');},ruler:function(){$('ext_ruler').click();},
+    roi_rect:function(){setEditorTool('roi_rect');},roi_trapezoid:function(){setEditorTool('roi_trapezoid');},
+    snapshot:addFrameSnapshot,workspace:function(){saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(e){showToast(e.message);});},
+    profile:function(){$('ext_editor_panel').open=true;$('ext_profile_name').focus();},
+    preset:function(){$('ext_config_panel').open=true;$('ext_preset_name').focus();},
+    health:function(){refreshRuntime().then(function(){showToast('Runtime diagnostics refreshed');});},
+    logs:refreshServerLogs,
+    camera:function(){$('ext_camera_panel').open=true;$('ext_camera_panel').scrollIntoView({behavior:'smooth',block:'nearest'});},
+    encoder:function(){if($('ext_encoder_embed').hidden)showToast('Encoder map requires --encoder-map and compatible firmware restart.');else $('ext_encoder_frame').scrollIntoView({behavior:'smooth'});},
+    stop:function(){safetyAction('stop').catch(function(e){showToast(e.message);});},
+    resume:function(){safetyAction('resume').catch(function(e){showToast(e.message);});}
+  };
+  if(actions[name])Promise.resolve(actions[name]()).catch(function(err){showToast(err.message||String(err));});
+}
+function enableReadOnlyState(){
+  if(STREAM_CONTROL_ALLOWED)return;
+  ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_software_stop','ext_software_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
+}
+function initializeResize(){
+  const container=document.querySelector('.container'),panel=document.querySelector('.right-panel');if(!container||!panel)return;
+  let active=false,startX=0,startWidth=315;
+  panel.addEventListener('pointerdown',function(e){const bounds=panel.getBoundingClientRect();if(e.clientX-bounds.left>7||window.innerWidth<721)return;active=true;startX=e.clientX;startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||bounds.width;panel.setPointerCapture(e.pointerId);e.preventDefault();});
+  panel.addEventListener('pointermove',function(e){if(!active)return;const delta=startX-e.clientX;const width=Math.max(250,Math.min(700,startWidth+delta));container.style.setProperty('--right-pane-width',width+'px');});
+  panel.addEventListener('pointerup',function(){if(!active)return;active=false;scheduleWorkspaceSave();});
+  panel.addEventListener('pointercancel',function(){active=false;});
+}
+function installExtension(){
+  const stage=$('canvas_stage');if(stage&&canvas){
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);
+    canvas.addEventListener('pointerdown',onCustomPointerDown,true);
+    canvas.addEventListener('pointermove',function(e){const rect=canvas.getBoundingClientRect();const x=(e.clientX-rect.left)*(canvas.width/rect.width),y=(e.clientY-rect.top)*(canvas.height/rect.height);extCrosshairPoint={x:x,y:y};if(extCrosshair)drawPrecisionOverlay();});
+  }
+  if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
+  $('ext_grid').addEventListener('change',function(){extGrid=this.checked;drawPrecisionOverlay();scheduleWorkspaceSave();});
+  $('ext_snap').addEventListener('change',function(){extSnap=this.checked;scheduleWorkspaceSave();});
+  $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;drawPrecisionOverlay();scheduleWorkspaceSave();});
+  $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;renderWorkspaceCanvas();scheduleWorkspaceSave();});
+  showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
+  $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
+  $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
+  $('ext_roi_rect_tool').onclick=function(){setEditorTool(editorTool==='roi_rect'?'select':'roi_rect');};
+  $('ext_roi_trapezoid_tool').onclick=function(){setEditorTool(editorTool==='roi_trapezoid'?'select':'roi_trapezoid');};
+  $('ext_roi_top_factor').addEventListener('input',function(){$('ext_roi_top_factor_label').textContent=Math.round(Number(this.value)*100)+'%';});
+  $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all custom annotations from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
+  $('ext_save_workspace').onclick=function(){saveWorkspace().then(function(){showToast('Workspace layout saved');}).catch(function(err){showToast(err.message);});};
+  $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
+  $('ext_profile_save').onclick=function(){profileAction('save').catch(function(e){showToast(e.message);});};$('ext_profile_load').onclick=function(){profileAction('load').catch(function(e){showToast(e.message);});};$('ext_profile_delete').onclick=function(){profileAction('delete').catch(function(e){showToast(e.message);});};
+  $('ext_export_config').onclick=function(){exportFullConfig().catch(function(e){showToast(e.message);});};
+  $('ext_import_config').onclick=function(){$('ext_config_file').click();};$('ext_config_file').addEventListener('change',function(){if(this.files&&this.files[0])importFullConfigFile(this.files[0]);this.value='';});
+  $('ext_undo').onclick=doUndo;$('ext_redo').onclick=doRedo;
+  $('ext_preset_save').onclick=function(){presetAction('save').then(refreshHistory).catch(function(e){showToast(e.message);});};
+  $('ext_preset_apply').onclick=function(){presetAction('apply').catch(function(e){showToast(e.message);});};
+  $('ext_preset_delete').onclick=function(){presetAction('delete').catch(function(e){showToast(e.message);});};
+  $('ext_compare_preset').onclick=function(){comparePreset().catch(function(e){showToast(e.message);});};$('ext_history_refresh').onclick=function(){refreshHistory().catch(function(e){showToast(e.message);});};$('ext_history_restore').onclick=function(){restoreHistory().catch(function(e){showToast(e.message);});};
+  $('ext_apply_fps').onclick=function(){applyProcessingRate().catch(function(e){showToast(e.message);});};$('ext_apply_camera').onclick=function(){applyCameraControls().catch(function(e){showToast(e.message);});};
+  $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
+  $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
+  $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
+  $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
+  $('console_level').addEventListener('change',function(){workspaceConsoleLevel=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
+  $('console_pause').addEventListener('change',function(){workspaceConsolePaused=this.checked;if(!workspaceConsolePaused){renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');}});
+  $('console_autoscroll').addEventListener('change',function(){workspaceConsoleAutoScroll=this.checked;if(workspaceConsoleAutoScroll){renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');}});
+  $('console_export_btn').onclick=function(){downloadText(JSON.stringify({exported_at:new Date().toISOString(),events:workspaceEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};}),requests:workspaceApiEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};})},null,2),'roboy-workspace-console.json','application/json');};
+  $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
+  $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String('{{ mode }}').toLowerCase()+'-annotations.json','application/json');};
+  $('ext_open_palette').onclick=openCommandPalette;
+  $('ext_encoder_reset').onclick=async function(){if(!confirm('Reset only the displayed odometry origin? Hardware counters will not be reset.'))return;const r=await nativeFetch('/api/encoder-map/reset-origin',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));showToast('Displayed odometry origin reset');};
+  $('ext_frame_compare_close').onclick=function(){$('ext_frame_compare').style.display='none';};
+  $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+  $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();enableReadOnlyState();
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();return;}
+    if($('ext_command_palette').style.display==='flex'&&e.key==='Escape'){closeCommandPalette();return;}
+    if(e.target&&(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable))return;
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();doUndo();return;}
+    if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){e.preventDefault();doRedo();return;}
+    if(!e.ctrlKey&&!e.metaKey&&!e.altKey){
+      if(e.key.toLowerCase()==='g')$('ext_grid').click();
+      else if(e.key.toLowerCase()==='x')$('ext_crosshair').click();
+      else if(e.key.toLowerCase()==='n')setEditorTool('annotate');
+      else if(e.key.toLowerCase()==='r'){$('ext_ruler').checked=!$('ext_ruler').checked;$('ext_ruler').dispatchEvent(new Event('change'));}
+    }
+  });
+  document.querySelectorAll('.right-panel details.dock-panel').forEach(function(panel){panel.addEventListener('toggle',scheduleWorkspaceSave);});
+  window.addEventListener('resize',drawPrecisionOverlay);
+}
+async function initializeExtension(){
+  try{currentConfig=await readConfig();if(currentConfig.ui&&currentConfig.ui.opacity)ui.opacity=currentConfig.ui.opacity;}catch(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Extended config API unavailable: '+err.message);}
+  syncLayerControls();syncLegacyLayerControls();installExtension();refreshAnnotationList();drawPrecisionOverlay();
+  refreshWorkspaceProfiles().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace load failed: '+err.message);});
+  refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
+  refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
+  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshServerLogs();
+  extHealthTimer=setInterval(function(){refreshRuntime();refreshTrafficAndRace();refreshSafety();},1800);
+  setInterval(function(){refreshCameraSettings();refreshProcessingRate();},8000);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeExtension,{once:true});else initializeExtension();
+})();
+</script>
+
+<div id="ext_frame_compare" style="display:none;position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.82);align-items:center;justify-content:center;padding:18px">
+  <div style="width:min(1000px,96vw);max-height:92vh;overflow:auto;background:#0b1420;border:1px solid var(--border);border-radius:8px;padding:12px">
+    <div style="display:flex;gap:10px;align-items:center"><strong id="ext_frame_compare_title">Frame comparison</strong><span style="flex:1"></span><button type="button" class="ghost" id="ext_frame_compare_close">Close</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><div><div class="small-muted">Saved snapshot</div><img id="ext_compare_old" alt="Saved frame" style="width:100%;background:#02070c"></div><div><div class="small-muted">Current frame</div><img id="ext_compare_live" alt="Current frame" style="width:100%;background:#02070c"></div></div>
+  </div>
+</div>
+<div id="ext_command_palette"><div class="palette-box"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><strong>Command Palette</strong><span class="small-muted">Ctrl+K · Esc to close</span></div><input type="search" id="ext_command_search" placeholder="Search tools, commands, shortcuts…"><div id="ext_command_list"></div></div></div>
+
 </body>
 </html>
 """
