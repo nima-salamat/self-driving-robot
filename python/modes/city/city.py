@@ -457,9 +457,18 @@ class Robot:
                 if wait and elapsed < float(config_city.CROSSWALK_SLEEP): self._traffic_light_status=f"Waiting before check ({elapsed:.1f}/{config_city.CROSSWALK_SLEEP:.1f}s)"
                 elif frame is None or not getattr(self.camera,"last_capture_valid",False): self._traffic_light_status="UNKNOWN camera frame; holding"
                 else:
-                    try: color,_=self.traffic_light_detector.detect(frame)
+                    traffic_started = time.monotonic()
+                    try:
+                        color, _ = self.traffic_light_detector.detect(frame)
                     except Exception:
-                        logger.exception("Traffic-light detector failed; holding");color=None
+                        logger.exception("Traffic-light detector failed; holding")
+                        color = None
+                    finally:
+                        if self.metrics is not None:
+                            self.metrics.record_stage(
+                                "traffic_light",
+                                (time.monotonic() - traffic_started) * 1000.0,
+                            )
                     token=getattr(self.camera,"last_capture_at",None)
                     if token is None:token=id(frame)
                     permitted=self.traffic_light_window.observe(color,token)
