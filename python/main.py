@@ -62,8 +62,11 @@ def _apply_cli_overrides(config, args):
         "STREAM_ALLOW_CONTROL": args.stream_control,
         "CAMERA_MODE": args.camera_mode,
         "USBCAM_ADDR": args.camera_index,
-        # Separate camera capture is a strict CLI opt-in, not a JSON default.
+        # Multiprocessing is a strict CLI opt-in, not a JSON default.
+        # It isolates both camera capture and sign inference while keeping all
+        # steering/control decisions in the owning mode process.
         "MULTIPROCESS_CAMERA": getattr(args, "multiprocess_camera", False),
+        "MULTIPROCESS_SIGN_DETECTOR": getattr(args, "multiprocess_camera", False),
         "ARDUINO_CONFIG": args.arduino_config,
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
         "CITY_LANE_DETECTOR": getattr(args, "city_lane_detector", None),
