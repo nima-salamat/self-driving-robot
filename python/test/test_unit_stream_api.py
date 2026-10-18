@@ -627,7 +627,6 @@ class StreamApiTests(unittest.TestCase):
         import json
         import os
         import tempfile
-        import time as time_module
 
         from stream import WebStreamer
 
