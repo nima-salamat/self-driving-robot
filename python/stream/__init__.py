@@ -300,6 +300,11 @@ def start_stream(config):
             "authentication. Use only on a trusted LAN; pass --stream-read-only "
             "or bind to 127.0.0.1 on untrusted networks."
         )
+    elif wildcard_bind:
+        logger.warning(
+            "Stream telemetry is exposed on all network interfaces without "
+            "authentication. Use only on a trusted LAN or bind to 127.0.0.1."
+        )
 
     for url in urls:
         host = urlsplit(url).hostname or ""
