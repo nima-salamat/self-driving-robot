@@ -12,6 +12,7 @@ from vision.traffic_light import TrafficLightDetector, GreenConfirmationWindow
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
 from traffic_sign_detector.async_detector import AsyncSignDetector
+from traffic_sign_detector.process_detector import ProcessSignDetector
 from traffic_sign_detector.area_filter import (
     accepts_sign_detection,
     normalize_sign_name,
@@ -28,9 +29,47 @@ import cv2
 import numpy as np
 import time
 import threading
+from functools import wraps
 from utils.fps import FPS
 from utils.processing_rate import ProcessingRateController, DEFAULT_TARGET_FPS
 from utils.roi_manager import crop_image
+
+
+def _measure_stage(stage_name):
+    """Collect duration for an expensive method when performance metrics exist."""
+    def decorate(function):
+        @wraps(function)
+        def measured(self, *args, **kwargs):
+            started = time.monotonic()
+            try:
+                return function(self, *args, **kwargs)
+            finally:
+                metrics = getattr(self, "metrics", None)
+                if metrics is not None:
+                    metrics.record_stage(
+                        stage_name, (time.monotonic() - started) * 1000.0
+                    )
+        return measured
+    return decorate
+
+
+def _draw_process_sign_overlay(debug_frame, source_frame, coordinate, label, config):
+    """Draw process-returned ROI coordinates locally to avoid shipping debug frames over IPC."""
+    if debug_frame is None or source_frame is None or not coordinate or not label:
+        return
+    try:
+        top = int(float(getattr(config, "ST_TOP_ROI", 0.0)) * source_frame.shape[0])
+        left = int(float(getattr(config, "ST_LEFT_ROI", 0.0)) * source_frame.shape[1])
+        (x1, y1), (x2, y2) = coordinate
+        p1 = (int(x1) + left, int(y1) + top)
+        p2 = (int(x2) + left, int(y2) + top)
+        cv2.rectangle(debug_frame, p1, p2, (0, 255, 0), 2)
+        cv2.putText(
+            debug_frame, str(label), (p1[0], max(0, p1[1] - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA,
+        )
+    except (TypeError, ValueError, IndexError, AttributeError):
+        logger.debug("Skipping invalid process sign overlay", exc_info=True)
 
 
 logger = logging.getLogger(__name__)
@@ -155,12 +194,15 @@ class Robot:
     def _ensure_sign_detector(self):
         if self.sign_detector is not None:
             return
-        detector = (
-            SVMTrafficSignDetector()
-            if config_city.SIGN_DETECTOR_METHOD == "svm"
-            else YOLOTrafficSignDetector()
-        )
-        self.sign_detector = AsyncSignDetector(detector)
+        if bool(getattr(config_city, "MULTIPROCESS_SIGN_DETECTOR", False)):
+            self.sign_detector = ProcessSignDetector(config_city.SIGN_DETECTOR_METHOD)
+        else:
+            detector = (
+                SVMTrafficSignDetector()
+                if config_city.SIGN_DETECTOR_METHOD == "svm"
+                else YOLOTrafficSignDetector()
+            )
+            self.sign_detector = AsyncSignDetector(detector)
         setattr(config_city, "sign_detector", self.sign_detector)
 
     def apply_marker_mode(self, mode):
@@ -192,6 +234,7 @@ class Robot:
         else:
             self._next_control_time = time.monotonic()
 
+    @_measure_stage("rate_wait")
     def _wait_for_processing_slot(self):
         if not getattr(self, "processing_rate", None):
             self.processing_rate = ProcessingRateController(
@@ -614,7 +657,12 @@ class Robot:
                         debug_frame = None
                     
                     perception_started = time.monotonic()
+                    lane_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
+                    if self.metrics is not None:
+                        self.metrics.record_stage(
+                            "lane", (time.monotonic() - lane_started) * 1000.0
+                        )
                     if getattr(self, "odometry", None) is not None:
                         # The telemetry API returns a rolling tail, so loops overlap.
                         # Only feed ODOM1 records; EncoderOdometry also rejects replayed
@@ -626,12 +674,18 @@ class Robot:
                                 )
                     confidence = None
                     if getattr(self, "confidence_estimator", None) is not None:
+                        confidence_started = time.monotonic()
                         confidence = self.confidence_estimator.evaluate(
                             result,
                             frame_valid=self.camera.last_capture_valid,
                             frame_at=self.camera.last_capture_at,
                             observation_token=self.camera.last_capture_at,
                         )
+                        if self.metrics is not None:
+                            self.metrics.record_stage(
+                                "confidence",
+                                (time.monotonic() - confidence_started) * 1000.0,
+                            )
                         config_city.perception_confidence = confidence
                     if self.metrics is not None:
                         self.metrics.record_perception(
@@ -731,14 +785,25 @@ class Robot:
 
                     if config_city.DEBUG or config_city.STREAM:
                         perception_started = time.monotonic()
+                        lane_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
+                        if self.metrics is not None:
+                            self.metrics.record_stage(
+                                "lane", (time.monotonic() - lane_started) * 1000.0
+                            )
                         if getattr(self, "confidence_estimator", None) is not None:
+                            confidence_started = time.monotonic()
                             confidence = self.confidence_estimator.evaluate(
                                 result,
                                 frame_valid=self.camera.last_capture_valid,
                                 frame_at=self.camera.last_capture_at,
                                 observation_token=self.camera.last_capture_at,
                             )
+                            if self.metrics is not None:
+                                self.metrics.record_stage(
+                                    "confidence",
+                                    (time.monotonic() - confidence_started) * 1000.0,
+                                )
                             config_city.perception_confidence = confidence
                         if self.metrics is not None:
                             self.metrics.record_perception(
@@ -840,6 +905,7 @@ class Robot:
             self.close(keep_dashboard=self.runtime_exception is not None)
             logger.info("exited")
 
+    @_measure_stage("object")
     def handle_detect_object(self, frame):
         object_frame = crop_image(frame, 
                                     config_city.OBJ_TOP_ROI, 
@@ -930,9 +996,13 @@ class Robot:
             if self.sign_detector is None:
                 self._ensure_sign_detector()
 
-            should_submit = bool(force_check)
-            if force_check:
-                # No READ_SIGN_THRESHOLD gate in the latched STOP state.
+            multiprocess_signs = bool(
+                getattr(config_city, "MULTIPROCESS_SIGN_DETECTOR", False)
+            )
+            should_submit = bool(force_check or multiprocess_signs)
+            if force_check or multiprocess_signs:
+                # The process worker has a latest-frame slot of its own. Feed it
+                # every control-loop frame instead of throttling on READ_SIGN_THRESHOLD.
                 self.read_sign_counter = 0
             else:
                 self.read_sign_counter += 1
@@ -942,10 +1012,17 @@ class Robot:
 
             if should_submit:
                 self.read_sign_counter = 0
-                self.sign_detector.submit(
-                    sign_tag_frame.copy(),
-                    debug_frame.copy() if debug_frame is not None else None,
+                submit_frame = sign_tag_frame if multiprocess_signs else sign_tag_frame.copy()
+                submit_debug = (
+                    None if multiprocess_signs
+                    else debug_frame.copy() if debug_frame is not None else None
                 )
+                submit_started = time.monotonic()
+                self.sign_detector.submit(submit_frame, submit_debug)
+                if self.metrics is not None:
+                    self.metrics.record_stage(
+                        "sign_submit", (time.monotonic() - submit_started) * 1000.0
+                    )
 
             # Consume each completed result once even if inference took longer
             # than the configured age limit. Otherwise a slow detector can
@@ -957,6 +1034,15 @@ class Robot:
                 and latest_sign[0] > self.last_sign_result_id
             ):
                 self.last_sign_result_id = latest_sign[0]
+                if self.metrics is not None and len(latest_sign) >= 4:
+                    self.metrics.record_stage(
+                        "sign_latency",
+                        max(0.0, (latest_sign[3] - latest_sign[2]) * 1000.0),
+                    )
+                    self.metrics.record_stage(
+                        "sign_input_age",
+                        max(0.0, (time.monotonic() - latest_sign[2]) * 1000.0),
+                    )
                 sign_result = latest_sign[1]
                 debug_frame = sign_result.get("debug_frame", debug_frame)
                 detection_accepted = accepts_sign_detection(
@@ -973,6 +1059,11 @@ class Robot:
 
                 if detection_accepted:
                     coordinate = sign_result.get("coordinate")
+                    if getattr(self.sign_detector, "multiprocess", False):
+                        _draw_process_sign_overlay(
+                            debug_frame, frame, coordinate, sign_result.get("text", ""),
+                            config_city,
+                        )
 
                     sign_label = normalize_sign_name(sign_result.get("text", ""))
                     if sign_label == "TURN LEFT":
@@ -993,6 +1084,7 @@ class Robot:
         return tag_id, stop_seen, debug_frame, coordinate
 
 
+    @_measure_stage("debug_stream")
     def handle_debug_stream(self, result, frame, angle, crosswalk, status, sign_text):
         if config_city.DEBUG:
             debug = result.get("debug") or {}
