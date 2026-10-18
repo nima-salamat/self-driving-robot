@@ -106,7 +106,7 @@ python main.py --mode city --stream
 
 The CAD-style workspace includes:
 - Fixed operational ROI / BEV point editing, layer visibility/color/opacity, zoom/pan, grid, snap, and crosshair.
-- Note/marker annotations, pixel ruler, and custom rectangle/trapezoid ROI previews. Custom ROIs are **visual annotations only**; they do not change perception or steering.
+- Note/marker annotations and a live-preview pixel ruler. Operational ROI regions (RL/LL/CW/ST/OBJ) are edited directly through Properties; custom preview-only ROI drawing is intentionally not offered because it does not affect perception or steering.
 - Full mode-specific configuration JSON import/export, preset save/apply/compare, configuration history, and undo/redo.
 - Runtime-health charts/details, Arduino telemetry, sign-worker status, confidence/obstacle diagnostics, City traffic-light or Race lifecycle status, and an embedded encoder map when `--encoder-map` is enabled.
 - Picamera2-supported exposure/gain/auto-control settings, live processing-cycle FPS limiting, session-only frame snapshots/comparison, console filters/export, runtime log search, workspace profiles, and a command palette (`Ctrl+K`).
