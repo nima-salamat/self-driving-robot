@@ -1028,7 +1028,14 @@ class Robot:
                     else debug_frame.copy() if debug_frame is not None else None
                 )
                 submit_started = time.monotonic()
-                self.sign_detector.submit(submit_frame, submit_debug)
+                submit_options = {}
+                if multiprocess_signs:
+                    submit_options["frame_captured_at"] = getattr(
+                        self.camera, "last_capture_at", None
+                    )
+                self.sign_detector.submit(
+                    submit_frame, submit_debug, **submit_options
+                )
                 if self.metrics is not None:
                     self.metrics.record_stage(
                         "sign_submit", (time.monotonic() - submit_started) * 1000.0
@@ -1045,13 +1052,18 @@ class Robot:
             ):
                 self.last_sign_result_id = latest_sign[0]
                 if self.metrics is not None and len(latest_sign) >= 4:
+                    frame_captured_at = (
+                        latest_sign[4]
+                        if len(latest_sign) >= 5 and latest_sign[4] is not None
+                        else latest_sign[2]
+                    )
                     self.metrics.record_stage(
                         "sign_latency",
-                        max(0.0, (latest_sign[3] - latest_sign[2]) * 1000.0),
+                        max(0.0, (latest_sign[3] - frame_captured_at) * 1000.0),
                     )
                     self.metrics.record_stage(
                         "sign_input_age",
-                        max(0.0, (time.monotonic() - latest_sign[2]) * 1000.0),
+                        max(0.0, (time.monotonic() - frame_captured_at) * 1000.0),
                     )
                 sign_result = latest_sign[1]
                 debug_frame = sign_result.get("debug_frame", debug_frame)
@@ -1065,7 +1077,11 @@ class Robot:
                     # While held, a completed but filtered result is still a
                     # fresh observation that contains no accepted STOP.
                     self.last_sign_observation_fresh = True
-                    self.last_sign_observation_at = latest_sign[2]
+                    self.last_sign_observation_at = (
+                        latest_sign[4]
+                        if len(latest_sign) >= 5 and latest_sign[4] is not None
+                        else latest_sign[2]
+                    )
 
                 if detection_accepted:
                     coordinate = sign_result.get("coordinate")
