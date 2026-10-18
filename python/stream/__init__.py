@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 
 CONFIG_HISTORY_LIMIT = 50
 STREAM_LOG_LIMIT = 500
+
+# Serialize state-file operations across dashboard threads. RLock is required
+# because history recording holds the lock while calling _write_json_atomic.
+_STATE_FILE_LOCKS = {}
+_STATE_FILE_LOCKS_GUARD = threading.Lock()
+
+
+def _state_file_lock(filename):
+    """Return a process-wide re-entrant lock for a state file path."""
+    normalized = os.path.normcase(os.path.abspath(os.fspath(filename)))
+    with _STATE_FILE_LOCKS_GUARD:
+        lock = _STATE_FILE_LOCKS.get(normalized)
+        if lock is None:
+            lock = threading.RLock()
+            _STATE_FILE_LOCKS[normalized] = lock
+        return lock
+
+
 _STREAM_LOG_LOCK = threading.RLock()
 _STREAM_LOGS = deque(maxlen=STREAM_LOG_LIMIT)
 _SECRET_PATTERNS = (
@@ -544,21 +562,35 @@ class WebStreamer:
     def _write_json_atomic(filename, data):
         directory = os.path.dirname(filename) or "."
         os.makedirs(directory, exist_ok=True)
-        # Separate temporary files prevent simultaneous dashboard requests
-        # from writing through the same .tmp path before the atomic replace.
-        temporary = f"{filename}.{os.getpid()}.{threading.get_ident()}.tmp"
-        try:
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, indent=2, ensure_ascii=False, allow_nan=False)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, filename)
-        finally:
+        lock = _state_file_lock(filename)
+        with lock:
+            # Separate temporary files avoid collisions, while the path lock
+            # serializes writers targeting the same destination in this process.
+            temporary = f"{filename}.{os.getpid()}.{threading.get_ident()}.tmp"
             try:
-                if os.path.exists(temporary):
-                    os.remove(temporary)
-            except OSError:
-                logger.warning("Could not remove temporary dashboard state file")
+                with open(temporary, "w", encoding="utf-8") as handle:
+                    json.dump(data, handle, indent=2, ensure_ascii=False, allow_nan=False)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+
+                # Windows scanners and short-lived readers can briefly deny
+                # replacement of an existing file. Retry only this transient
+                # operation; persistent permission errors still propagate.
+                replace_attempts = 6
+                for attempt in range(replace_attempts):
+                    try:
+                        os.replace(temporary, filename)
+                        break
+                    except PermissionError:
+                        if attempt + 1 >= replace_attempts:
+                            raise
+                        time.sleep(min(0.05 * (2 ** attempt), 0.4))
+            finally:
+                try:
+                    if os.path.exists(temporary):
+                        os.remove(temporary)
+                except OSError:
+                    logger.warning("Could not remove temporary dashboard state file")
 
     @staticmethod
     def _read_json_file(filename, default):
@@ -633,20 +665,25 @@ class WebStreamer:
 
     def _record_config_history(self, label, snapshot=None):
         try:
-            data = self._read_json_file(self._history_file(), {"items": []})
-            items = data.get("items", [])
-            if not isinstance(items, list):
-                items = []
-            state = snapshot or self._full_config_snapshot()
-            signature = json.dumps(state, sort_keys=True, separators=(",", ":"), allow_nan=False)
-            if items:
-                previous = items[-1]
-                previous_state = previous.get("snapshot", {}) if isinstance(previous, dict) else {}
-                if json.dumps(previous_state, sort_keys=True, separators=(",", ":"), allow_nan=False) == signature:
-                    return
-            items.append({"id": int(time.time() * 1000), "timestamp": time.time(),
-                          "label": str(label)[:100], "snapshot": state})
-            self._write_json_atomic(self._history_file(), {"version": 1, "items": items[-CONFIG_HISTORY_LIMIT:]})
+            history_file = self._history_file()
+            # Keep the read/compare/append/write transaction under one lock;
+            # locking only os.replace would still allow concurrent updates to
+            # overwrite one another's history entries.
+            with _state_file_lock(history_file):
+                data = self._read_json_file(history_file, {"items": []})
+                items = data.get("items", [])
+                if not isinstance(items, list):
+                    items = []
+                state = snapshot or self._full_config_snapshot()
+                signature = json.dumps(state, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                if items:
+                    previous = items[-1]
+                    previous_state = previous.get("snapshot", {}) if isinstance(previous, dict) else {}
+                    if json.dumps(previous_state, sort_keys=True, separators=(",", ":"), allow_nan=False) == signature:
+                        return
+                items.append({"id": int(time.time() * 1000), "timestamp": time.time(),
+                              "label": str(label)[:100], "snapshot": state})
+                self._write_json_atomic(history_file, {"version": 1, "items": items[-CONFIG_HISTORY_LIMIT:]})
         except Exception:
             logger.exception("Failed to record dashboard configuration history")
 

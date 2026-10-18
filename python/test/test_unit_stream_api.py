@@ -623,6 +623,58 @@ class StreamApiTests(unittest.TestCase):
             )
             self.assertEqual(startup_only.status_code, 400)
 
+    def test_atomic_state_write_retries_transient_windows_permission_error(self):
+        import json
+        import os
+        import tempfile
+
+        from stream import WebStreamer
+
+        original_replace = os.replace
+        replace_attempts = []
+
+        def fail_once(source, destination):
+            replace_attempts.append((source, destination))
+            if len(replace_attempts) == 1:
+                raise PermissionError(5, "Access is denied", destination)
+            return original_replace(source, destination)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = str(Path(tmp_dir) / "race_config_history.json")
+            with patch("stream.os.replace", side_effect=fail_once), patch(
+                "stream.time.sleep"
+            ) as sleep:
+                WebStreamer._write_json_atomic(path, {"version": 1, "items": []})
+
+            self.assertEqual(len(replace_attempts), 2)
+            sleep.assert_called_once()
+            with open(path, "r", encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle), {"version": 1, "items": []})
+
+    def test_concurrent_history_records_do_not_overwrite_each_other(self):
+        import json
+        import tempfile
+        from concurrent.futures import ThreadPoolExecutor
+
+        config = self.make_config()
+        streamer = WebStreamer(config)
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            labels = [f"parallel-{index}" for index in range(24)]
+
+            def record(index):
+                streamer._record_config_history(labels[index], {"sequence": index})
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(executor.map(record, range(len(labels))))
+
+            history_path = Path(tmp_dir) / "city_config_history.json"
+            with history_path.open("r", encoding="utf-8") as handle:
+                history = json.load(handle)
+
+        stored_labels = {item["label"] for item in history["items"]}
+        self.assertEqual(stored_labels, set(labels))
+
     def test_video_frame_endpoint_does_not_cache_live_frames(self):
         config = self.make_config()
         config.debug_frames_list = []
