@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import queue
+import signal
 import threading
 import time
 from multiprocessing.shared_memory import SharedMemory
@@ -48,6 +49,12 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
                      raw_nbytes, lock, stop_event, frame_event, ready_event,
                      metadata, errors, commands, responses, capabilities):
     """The sole camera owner; publishes frame bytes only through shared memory."""
+    # Let the owning runtime handle Ctrl+C and stop this worker through its
+    # event, rather than interrupting OpenCV resize/capture mid-call.
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except (AttributeError, ValueError):
+        pass
     shared = None
     camera = None
     raw_view = None
@@ -204,6 +211,7 @@ class SharedMemoryCapture:
         self._command_lock = threading.Lock()
         self._command_id = 0
         self._last_sequence = 0
+        self.frames_skipped = 0
         self._closed = False
         self._shared = SharedMemory(create=True, size=self._raw_nbytes + resized_nbytes)
 
@@ -312,6 +320,7 @@ class SharedMemoryCapture:
                 initialized = int(self._metadata[_INITIALIZED]) == 1
                 if sequence > self._last_sequence:
                     state = _state(self._metadata)
+                    self.frames_skipped += max(0, sequence - self._last_sequence - 1)
                     self._last_sequence = sequence
                     if state["valid"] and initialized:
                         frame = np.ndarray(
