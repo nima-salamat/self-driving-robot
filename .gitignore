@@ -7,3 +7,8 @@ input_log.csv
 output
 signs_output
 python/assets/dataset_connector/
+
+# Local Stream credentials must never be committed.
+.env
+.env.*
+!.env.example
