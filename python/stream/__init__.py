@@ -1203,7 +1203,11 @@ class WebStreamer:
                 },
                 "marker_mode": {
                     "value": marker_mode(self.config),
-                    "available": bool(capabilities.get("supports_sign", False) and capabilities.get("supports_apriltag", False)),
+                    "available": bool(
+                        capabilities.get("supports_sign", False)
+                        and capabilities.get("supports_apriltag", False)
+                        and capabilities.get("marker_runtime_control", False)
+                    ),
                     "description": "Marker mode uses the mode's existing runtime apply_marker_mode callback.",
                 },
             },
@@ -1261,6 +1265,8 @@ class WebStreamer:
                     raise ValueError("USE_BEV value must be boolean")
                 setattr(self.config, "USE_BEV", value)
             elif feature == "marker_mode":
+                if not capabilities.get("marker_runtime_control", False):
+                    return jsonify(success=False, message="active runtime has no marker-mode switch callback"), 409
                 value = str(value).lower()
                 if value not in {"none", "sign", "apriltag"}:
                     raise ValueError("marker_mode must be none, sign, or apriltag")
