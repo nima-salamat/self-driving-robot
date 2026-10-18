@@ -462,6 +462,7 @@ class WebStreamer:
             if group in data and not isinstance(data[group], dict):
                 return jsonify(success=False, message=f"{group} must be a JSON object"), 400
         before = self._full_config_snapshot()
+        previous_ui = json.loads(json.dumps(self.ui_settings))
         try:
             for key, value in data.get("colors", {}).items():
                 if key not in self.ui_settings["colors"] or not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
@@ -478,12 +479,20 @@ class WebStreamer:
             self.ui_settings["colors"].update({k:v.lower() for k,v in data.get("colors", {}).items()})
             self.ui_settings["visible"].update(data.get("visible", {}))
             self.ui_settings.setdefault("opacity", {}).update({k:float(v) for k,v in data.get("opacity", {}).items()})
-            self.save_ui_settings()
+            if not self.save_ui_settings():
+                self.ui_settings = previous_ui
+                return jsonify(success=False, message="failed to persist UI settings; values were rolled back"), 500
             self._record_config_history("before layer update", before)
             self._record_config_history("layer visibility/color/opacity update")
             return jsonify(success=True, ui=self.ui_settings)
         except (TypeError, ValueError) as exc:
+            self.ui_settings = previous_ui
             return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            self.ui_settings = previous_ui
+            self.save_ui_settings()
+            logger.exception("Failed to persist dashboard layer settings")
+            return jsonify(success=False, message="failed to persist layer settings; values were rolled back"), 500
 
     def _mode_slug(self):
         raw = str(getattr(self.config, "MODE", "mode")).lower()
@@ -1159,9 +1168,13 @@ class WebStreamer:
             if not math.isfinite(fps) or not 1.0 <= fps <= 60.0:
                 raise ValueError("target_fps must be between 1 and 60")
             before = self._full_config_snapshot()
+            old_fps = float(rate.target_fps)
             rate.set_target_fps(fps)
             setattr(self.config, "TARGET_PROCESSING_FPS", fps)
-            self.save_conf_to_json()
+            if not self.save_conf_to_json():
+                rate.set_target_fps(old_fps)
+                setattr(self.config, "TARGET_PROCESSING_FPS", old_fps)
+                return jsonify(success=False, message="could not persist processing-rate change; previous rate restored"), 500
             self._record_config_history("before processing rate update", before)
             self._record_config_history("processing rate updated")
             return jsonify(success=True, persisted=True, target_fps=rate.target_fps, diagnostics=rate.snapshot())
@@ -1181,8 +1194,19 @@ class WebStreamer:
         if action not in {"stop", "resume"}:
             return jsonify(success=False, message="action must be stop or resume"), 400
         # The mode loop owns the MCU latch; do not send a guessed raw serial command.
-        setattr(self.config, "RUN_LVL", "STOP" if action == "stop" else "MOVE")
-        self.save_conf_to_json()
+        previous_level = str(getattr(self.config, "RUN_LVL", "MOVE"))
+        requested_level = "STOP" if action == "stop" else "MOVE"
+        setattr(self.config, "RUN_LVL", requested_level)
+        if not self.save_conf_to_json():
+            # Never undo a stop request because disk persistence failed. For a
+            # resume request, retain the previous STOP state instead.
+            if action == "resume" and previous_level == "STOP":
+                setattr(self.config, "RUN_LVL", "STOP")
+            active_level = str(getattr(self.config, "RUN_LVL", "STOP"))
+            logger.error("Could not persist software %s request; RUN_LVL remains %s", action, active_level)
+            return jsonify(success=False, action=action, run_level=active_level,
+                           software_stop_active=active_level == "STOP", persisted=False,
+                           message="could not persist runtime control state"), 500
         self._record_config_history("dashboard software " + action)
         logger.warning("Dashboard requested software %s (mode=%s)", action, self._mode_slug())
         return jsonify(success=True, action=action, run_level=getattr(self.config, "RUN_LVL"),
