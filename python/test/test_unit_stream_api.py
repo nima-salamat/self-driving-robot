@@ -62,6 +62,7 @@ class StreamApiTests(unittest.TestCase):
             ("/api/processing-rate", "processing_rate_api"),
             ("/api/safety", "safety_api"),
             ("/api/sign-requests", "sign_requests_api"),
+            ("/api/stream-control/stop", "stop_stream_api"),
             ("/api/features", "features_api"),
             ("/encoder-map", "encoder_map_page"),
             ("/api/encoder-map", "encoder_map_api"),
@@ -78,6 +79,58 @@ class StreamApiTests(unittest.TestCase):
         response = WebStreamer(config).app.test_client().get("/encoder-map")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Estimated Odometry", response.get_data(as_text=True))
+
+    def test_stream_exit_stops_only_stream_server_and_requires_controls(self):
+        import threading
+
+        config = self.make_config()
+        config.RUN_LVL = "MOVE"
+        client = WebStreamer(config).app.test_client()
+
+        denied = client.post("/api/stream-control/stop", json={"action": "stop"})
+        self.assertEqual(denied.status_code, 403)
+        self.assertTrue(config.STREAM)
+        self.assertEqual(config.RUN_LVL, "MOVE")
+
+        class FakeServer:
+            def __init__(self):
+                self.shutdown_called = threading.Event()
+
+            def shutdown(self):
+                self.shutdown_called.set()
+
+        config.STREAM_ALLOW_CONTROL = True
+        server = FakeServer()
+        config.stream_server = server
+        response = client.post("/api/stream-control/stop", json={"action": "stop"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["shutdown_started"])
+        self.assertTrue(payload["robot_runtime_continues"])
+        self.assertFalse(config.STREAM)
+        self.assertTrue(config.stream_shutdown_requested)
+        self.assertEqual(config.RUN_LVL, "MOVE")
+        response.close()
+        self.assertTrue(server.shutdown_called.wait(timeout=1.0))
+
+    def test_exit_stream_has_a_custom_confirmation_dialog_and_endpoint_binding(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        self.assertIn('data-action="exit-stream"', template)
+        self.assertIn('id="ext_stream_exit_dialog"', template)
+        self.assertIn('id="ext_stream_exit_confirm"', template)
+        self.assertIn("The robot’s main City/Race loop", template)
+        self.assertIn("case 'exit-stream'", core)
+        self.assertIn("window.openStreamExitDialog=openStreamExitDialog", extensions)
+        self.assertIn("nativeFetch('/api/stream-control/stop'", extensions)
+        self.assertIn("STREAM is now false in this running process", extensions)
+        self.assertIn(".menu-dropdown button.menu-danger", css)
+        self.assertIn("window.location.replace('about:blank')", extensions)
 
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
