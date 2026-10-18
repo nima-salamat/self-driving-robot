@@ -202,7 +202,21 @@ class Robot:
         self._marker_lock = threading.RLock()
         self.sign_detector = None
         if config_race.WITH_SIGN:
-            self._ensure_sign_detector()
+            try:
+                self._ensure_sign_detector()
+            except Exception:
+                # A process-backed detector can fail during spawn/model load.
+                # Do not leak the already-started camera worker in a failed
+                # Robot constructor.
+                try:
+                    self.camera.release()
+                except Exception:
+                    logger.exception("Failed to release camera after sign-worker startup failure")
+                try:
+                    self.control.connection.close()
+                except Exception:
+                    logger.exception("Failed to close serial after sign-worker startup failure")
+                raise
         # Keep the worker idle until the active-race STOP monitor starts.
         if self.sign_detector is not None and self.race_start_gate is None:
             self.sign_detector.pause()
