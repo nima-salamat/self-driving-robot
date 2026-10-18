@@ -148,10 +148,12 @@ def _apply_cli_overrides(config, args):
 
 
 def _validate_opt_in_features(config, args):
-    if args.sign_intra_op_threads is not None:
-        if not args.multiprocess_camera:
+    sign_threads = getattr(args, "sign_intra_op_threads", None)
+    multiprocess_enabled = bool(getattr(args, "multiprocess_camera", False))
+    if sign_threads is not None:
+        if not multiprocess_enabled:
             raise SystemExit("--sign-intra-op-threads requires --multiprocess")
-        if args.sign_intra_op_threads < 1:
+        if sign_threads < 1:
             raise SystemExit("--sign-intra-op-threads must be a positive integer")
 
     def positive(value, name):
