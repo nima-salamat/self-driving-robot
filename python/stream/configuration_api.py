@@ -496,7 +496,7 @@ class StreamConfigurationMixin:
                 if not math.isfinite(value) or not minimum <= value <= maximum:
                     raise ValueError(f"view.{key} is out of range")
                 clean_view[key] = value
-        for key in ("grid", "snap", "crosshair", "showRuler", "overlays"):
+        for key in ("grid", "snap", "crosshair", "showRuler", "overlays", "viewLocked"):
             if key in view:
                 if not isinstance(view[key], bool):
                     raise ValueError(f"view.{key} must be boolean")
