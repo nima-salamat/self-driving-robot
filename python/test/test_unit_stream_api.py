@@ -86,6 +86,10 @@ class StreamApiTests(unittest.TestCase):
         css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
 
         self.assertIn("if(!showRectsCheckbox.checked)return {type:'none'}", core)
+        self.assertIn("let streamDisplayFps = 8.3", core)
+        self.assertIn("function setStreamDisplayFps(value)", core)
+        self.assertIn("Math.round(1000/streamDisplayFps)", core)
+        self.assertIn("window.ensureStreamDockVisible=()=>setDock(true)", core)
         self.assertIn("function openStreamShortcuts()", core)
         self.assertIn("e.code==='F1'", core)
         self.assertIn("e.code==='KeyH'", core)
@@ -101,6 +105,16 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("getGridStepX()", extensions)
         self.assertIn("gridColor", extensions)
         self.assertIn("keyboardNudgePx", extensions)
+        self.assertIn("streamFps:streamFps", extensions)
+        self.assertIn("function settingSearchEntries()", extensions)
+        self.assertIn("function navigateToPaletteSetting(entry)", extensions)
+        self.assertIn("palette-setting-highlight", extensions)
+        self.assertIn("window.setStreamDisplayFps(streamFps)", extensions)
+        self.assertIn('id="ext_settings_results"', template)
+        self.assertIn('id="ext_command_count"', template)
+        self.assertIn('id="roi_setting_stream_fps"', template)
+        self.assertGreater(template.index('id="ext_open_palette"'), template.index('id="menu_live_status"'))
+        self.assertIn("@keyframes paletteSettingFlash", css)
         self.assertIn('id="shortcut_dialog"', template)
         self.assertIn('id="roi_setting_grid_color"', template)
         self.assertIn('id="roi_setting_keyboard_nudge"', template)
@@ -119,15 +133,19 @@ class StreamApiTests(unittest.TestCase):
             "view": {
                 "gridColor": "#A1B2C3",
                 "keyboardNudgePx": 7,
+                "streamFps": 15,
             }
         })
         self.assertEqual(clean["view"]["gridColor"], "#a1b2c3")
         self.assertEqual(clean["view"]["keyboardNudgePx"], 7.0)
+        self.assertEqual(clean["view"]["streamFps"], 15.0)
 
         with self.assertRaises(ValueError):
             streamer._sanitize_workspace({"view": {"gridColor": "steelblue"}})
         with self.assertRaises(ValueError):
             streamer._sanitize_workspace({"view": {"keyboardNudgePx": 101}})
+        with self.assertRaises(ValueError):
+            streamer._sanitize_workspace({"view": {"streamFps": 31}})
 
     def test_wildcard_bind_discovers_private_lan_address(self):
         from unittest.mock import patch
