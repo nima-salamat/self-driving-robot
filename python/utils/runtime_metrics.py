@@ -10,7 +10,12 @@ DEFAULT_WINDOW_SIZE = 240
 class RuntimeMetrics:
     """Low-overhead runtime measurements for the control process."""
 
-    _TIMERS = (\n        "loop", "camera", "perception", "control", "serial",\n        "lane", "confidence", "sign_submit", "sign_latency", "sign_input_age",\n        "object", "traffic_light", "debug_stream", "camera_wait",\n        "frame_age", "rate_wait",\n    )
+    _TIMERS = (
+        "loop", "camera", "perception", "control", "serial",
+        "lane", "confidence", "sign_submit", "sign_latency", "sign_input_age",
+        "object", "traffic_light", "debug_stream", "camera_wait",
+        "frame_age", "rate_wait",
+    )
 
     def __init__(self, window_size=DEFAULT_WINDOW_SIZE):
         self.window_size = max(10, int(window_size))
