@@ -234,7 +234,19 @@ def start_stream(config):
     else:
         ready_event.clear()
 
-    streamer = WebStreamer(config)
+    try:
+        streamer = WebStreamer(config)
+    except Exception as exc:
+        config.stream_start_error = f"{type(exc).__name__}: {exc}"
+        ready_event.set()
+        print(
+            f"[Stream] ERROR: could not initialize dashboard: "
+            f"{config.stream_start_error}",
+            flush=True,
+        )
+        logger.exception("Failed to initialize Stream dashboard")
+        return
+
     bind_host = str(getattr(config, "STREAM_HOST", "0.0.0.0"))
     requested_port = int(getattr(config, "STREAM_PORT", 5000))
     try:
