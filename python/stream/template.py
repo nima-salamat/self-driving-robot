@@ -385,7 +385,7 @@ canvas {
     </div>
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
-<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
 <div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
 <div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
 </section>
@@ -716,7 +716,31 @@ let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,
 const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
 let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
 function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
-function renderWorkspaceEventLog(channel='events'){const store=channel==='api'?workspaceApiEvents:workspaceEvents,root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;root.replaceChildren();if(!store.length){const e=document.createElement('div');e.className='console-empty';e.textContent=channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}else for(const entry of store.slice().reverse()){const row=document.createElement('div');row.className='console-entry';const stamp=document.createElement('span');stamp.className='console-time';stamp.textContent=entry.time.toLocaleTimeString([],{hour12:false})+'.'+String(entry.time.getMilliseconds()).padStart(3,'0');const level=document.createElement('span');level.className='console-level '+(entry.level==='error'?'error':entry.level==='warn'?'warn':'');level.textContent=entry.level.toUpperCase();const msg=document.createElement('span');msg.className='console-message';msg.textContent=entry.message;row.append(stamp,level,msg);root.appendChild(row);}const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';}
+let workspaceConsolePaused=false,workspaceConsoleAutoScroll=true,workspaceConsoleQuery='',workspaceConsoleLevel='ALL';
+function renderWorkspaceEventLog(channel='events'){
+  if(workspaceConsolePaused)return;
+  const store=channel==='api'?workspaceApiEvents:workspaceEvents;
+  const root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;
+  root.replaceChildren();
+  const query=workspaceConsoleQuery.trim().toLowerCase();
+  const selected=store.slice().reverse().filter(function(entry){
+    const level=String(entry.level||'info').toUpperCase();
+    return (workspaceConsoleLevel==='ALL'||level===workspaceConsoleLevel)&&(!query||(String(entry.message||'')+' '+level).toLowerCase().includes(query));
+  });
+  if(!selected.length){const e=document.createElement('div');e.className='console-empty';e.textContent=store.length?'No matching console entries.':channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}
+  else for(const entry of selected){
+    const row=document.createElement('div');row.className='console-entry';
+    const stamp=document.createElement('span');stamp.className='console-time';
+    const time=entry.time instanceof Date?entry.time:new Date(entry.time||Date.now());
+    stamp.textContent=time.toLocaleTimeString([],{hour12:false})+'.'+String(time.getMilliseconds()).padStart(3,'0');
+    const levelName=String(entry.level||'info').toUpperCase();
+    const level=document.createElement('span');level.className='console-level '+(levelName==='ERROR'?'error':levelName==='WARN'?'warn':'');level.textContent=levelName;
+    const msg=document.createElement('span');msg.className='console-message';msg.textContent=entry.message;
+    row.append(stamp,level,msg);root.appendChild(row);
+  }
+  if(workspaceConsoleAutoScroll)root.scrollTop=0;
+  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';
+}
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){const z=Math.max(.3,Math.min(4,Number(next)||1));if(Math.abs(z-workspaceZoom)<.0001)return;const b=getImgBounds(),u=(ax-b.ix)/b.iw,v=(ay-b.iy)/b.ih;workspaceZoom=z;const nw=canvas.width*z,nh=canvas.height*z;viewPanX=ax-u*nw-(canvas.width-nw)/2;viewPanY=ay-v*nh-(canvas.height-nh)/2;document.getElementById('workspace_zoom').value=String(z);renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');}
 function fitWorkspaceView(log=true){workspaceZoom=1;viewPanX=0;viewPanY=0;document.getElementById('workspace_zoom').value='1';renderWorkspaceCanvas();updateZoomStatus();if(log)noteWorkspaceEvent('info','View reset to fit camera frame');}
@@ -2318,6 +2342,11 @@ function installExtension(){
   $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
+  $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
+  $('console_level').addEventListener('change',function(){workspaceConsoleLevel=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
+  $('console_pause').addEventListener('change',function(){workspaceConsolePaused=this.checked;if(!workspaceConsolePaused){renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');}});
+  $('console_autoscroll').addEventListener('change',function(){workspaceConsoleAutoScroll=this.checked;if(workspaceConsoleAutoScroll){renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');}});
+  $('console_export_btn').onclick=function(){downloadText(JSON.stringify({exported_at:new Date().toISOString(),events:workspaceEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};}),requests:workspaceApiEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};})},null,2),'roboy-workspace-console.json','application/json');};
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String('{{ mode }}').toLowerCase()+'-annotations.json','application/json');};
   $('ext_open_palette').onclick=openCommandPalette;
