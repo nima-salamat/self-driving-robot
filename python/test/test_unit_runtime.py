@@ -279,6 +279,34 @@ class AsyncSignDetectorTests(unittest.TestCase):
         finally:
             worker.close()
 
+    def test_manual_request_pause_is_independent_from_phase_resume(self):
+        calls = []
+        processed = threading.Event()
+
+        class FakeDetector:
+            def process_frame(self, frame, debug_frame=None):
+                calls.append(frame)
+                processed.set()
+                return {"label": "ok"}
+
+        worker = AsyncSignDetector(FakeDetector())
+        try:
+            worker.pause()
+            worker.pause_requests()
+            worker.resume()  # Phase transitions must not re-enable operator-disabled requests.
+
+            self.assertFalse(worker.status()["requests_enabled"])
+            self.assertIsNone(worker.submit("discarded-frame"))
+            self.assertEqual(calls, [])
+
+            worker.resume_requests()
+            self.assertTrue(worker.status()["requests_enabled"])
+            self.assertIsNotNone(worker.submit("accepted-frame"))
+            self.assertTrue(processed.wait(2.0))
+            self.assertEqual(calls, ["accepted-frame"])
+        finally:
+            worker.close()
+
     @staticmethod
     def _wait(predicate, timeout=2.0):
         deadline = time.monotonic() + timeout
