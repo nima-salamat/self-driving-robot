@@ -134,9 +134,12 @@ python main.py --mode city --stream-control
 For compatibility, `--stream --stream-read-only` is also valid. The two
 control-mode flags are mutually exclusive.
 
-**Network and safety:** the stream binds to all interfaces by default and has no
-built-in user authentication. Only expose it on a trusted network; choose
-`--stream-host 127.0.0.1` for loopback-only access. **Force Stop** sets the robot's
+**Network and safety:** the stream binds to all interfaces by default. Optional
+login is enabled when both `STREAM_USERNAME` and `STREAM_PASSWORD` are set in
+`python/.env` or the process environment; when neither is set, dashboard access
+has no login requirement. Only expose it on a trusted network; choose
+`--stream-host 127.0.0.1` for loopback-only access. The built-in server uses HTTP,
+so a configured login is not encrypted in transit without an HTTPS reverse proxy. **Force Stop** sets the robot's
 `RUN_LVL=STOP` through the active Python mode loop. `Ctrl+Shift+Space` toggles
 motion: when the robot is moving it requests STOP; when already stopped it
 requests MOVE after explicit confirmation that the track is clear. Neither is a
