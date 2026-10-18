@@ -1,6 +1,6 @@
 # Selected adaptive-PWM firmware extension
 
-Target: `new_main_adaptive_pwm_with_savingPulseInEEPROM` only.
+The `ODOM1` telemetry contract described here is implemented by the EEPROM/set-based adaptive-PWM sketches, including `new_main_adaptive_pwm_with_savingPulseInEEPROM` and the active `new_main_adaptive_pwm_with_savingPulseInEEPROM_FIX` variant.
 
 The sketch preserves its default seven-field status output. The explicit host
 command `encoder telemetry on` enables the `ODOM1` version extension:
