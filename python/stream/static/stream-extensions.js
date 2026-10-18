@@ -182,7 +182,34 @@ function closeEditorSettings(restore){const m=$('roi_settings_dialog');if(restor
 function resetEditorSettingsDraft(){const a={gridMode:'off',gridSpacing:.05,gridOpacity:.35,gridThickness:1,gridDotSize:2,snap:false,roiAppearance:{labelFontSize:12,labelFontWeight:'700',outlineThickness:2,handleSize:10}};syncSettingsFormControls(a);applyEditorSettings(a);}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();closeEditorSettings(true);}});
 
+async function copyCoordinateText(text){
+  try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return true;}}catch(_){}
+  const input=document.createElement('textarea');input.value=text;input.setAttribute('readonly','');
+  input.style.position='fixed';input.style.left='-9999px';input.style.top='0';document.body.appendChild(input);
+  input.select();let copied=false;try{copied=document.execCommand('copy');}catch(_){}input.remove();
+  if(!copied)throw new Error('Clipboard access is blocked by this browser.');
+  return true;
+}
 function onCustomPointerDown(event){
+  if(extCrosshair&&event.button===0){
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+    const point=pointFromEvent(event);
+    if(!point){showToast('Click inside the visible camera frame to capture U,V coordinates.');return;}
+    extCrosshairPoint={x:point.x,y:point.y};
+    const coordinateText=point.u.toFixed(3)+', '+point.v.toFixed(3);
+    extCrosshair=false;if($('ext_crosshair'))$('ext_crosshair').checked=false;
+    if(canvas)canvas.classList.remove('crosshair-active');
+    drawPrecisionOverlay();scheduleWorkspaceSave();
+    copyCoordinateText(coordinateText).then(function(){
+      updateEditorStatus('Captured and copied normalized point (U, V): '+coordinateText+'. Paste into an ROI corner in Properties.');
+      showToast('Copied U, V: '+coordinateText+' · Paste into Left/Top or Right/Bottom, then Apply.');
+      if(typeof noteWorkspaceEvent==='function')noteWorkspaceEvent('info','Crosshair point copied: '+coordinateText);
+    }).catch(function(){
+      updateEditorStatus('Captured U, V: '+coordinateText+'. Clipboard unavailable; coordinates are shown here.');
+      showToast('Point: '+coordinateText+' · Clipboard unavailable.');
+    });
+    return;
+  }
   if(!['annotate','ruler','roi_rect','roi_trapezoid'].includes(editorTool)||event.button!==0)return;
   const point=pointFromEvent(event);if(!point)return;
   event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
@@ -611,7 +638,7 @@ async function applyCameraControls(){
 }
 function buildCommandPalette(){
   const commands=[
-    ['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y'],
+    ['Keyboard shortcuts','shortcuts','F1'],['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Save workspace layout','workspace','Ctrl+S'],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y / Ctrl+Shift+Z'],
     ['Fit camera frame','fit','0'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],
     ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],['Draw rectangle ROI preview','roi_rect',''],['Draw trapezoid ROI preview','roi_trapezoid',''],
     ['Save workspace layout','workspace',''],['Save workspace profile','profile',''],['Save configuration preset','preset',''],
@@ -626,6 +653,7 @@ function openCommandPalette(){const m=$('ext_command_palette');m.style.display='
 function closeCommandPalette(){$('ext_command_palette').style.display='none';}
 function executeCommand(name){
   const actions={
+    shortcuts:function(){if(window.openStreamShortcuts)window.openStreamShortcuts();},
     export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,
     fit:function(){fitWorkspaceView();},overlays:function(){$('ext_overlays').click();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},
     annotate:function(){setEditorTool('annotate');},ruler:function(){$('ext_ruler').click();},
@@ -654,11 +682,40 @@ function initializeResize(){
   panel.addEventListener('pointerup',function(){if(!active)return;active=false;scheduleWorkspaceSave();});
   panel.addEventListener('pointercancel',function(){active=false;});
 }
+function installCoordinatePairPaste(){
+  ['prop_left','prop_top','prop_right','prop_bottom','prop_point_x','prop_point_y'].forEach(function(id){
+    const field=$(id);if(!field)return;
+    field.addEventListener('paste',function(event){
+      const transfer=event.clipboardData||window.clipboardData;
+      const text=transfer&&transfer.getData?transfer.getData('text'):'';
+      const match=String(text||'').match(/^\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+))\\s*[,;\\s]\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+))\\s*$/);
+      if(!match)return;
+      const a=Number(match[1]),b=Number(match[2]);if(!Number.isFinite(a)||!Number.isFinite(b))return;
+      const target=$('prop_target')?$('prop_target').value:'NONE';
+      let ids=[];
+      if(['RL','LL','CW','ST','OBJ'].includes(target)){
+        if(a<0||a>1||b<0||b>1){showToast('ROI coordinates must be between 0 and 1.');event.preventDefault();return;}
+        if(['prop_left','prop_top'].includes(id))ids=['prop_left','prop_top'];
+        else if(['prop_right','prop_bottom'].includes(id))ids=['prop_right','prop_bottom'];
+        else return;
+      }else if(target.startsWith('BEV_')&&['prop_point_x','prop_point_y'].includes(id)){
+        if(a< -5||a>5||b< -5||b>5){showToast('BEV coordinates must be between -5 and 5.');event.preventDefault();return;}
+        ids=['prop_point_x','prop_point_y'];
+      }else return;
+      event.preventDefault();
+      $(ids[0]).value=a.toFixed(3);$(ids[1]).value=b.toFixed(3);
+      const hint=$('prop_hint');if(hint)hint.textContent='Point pasted as U/X='+a.toFixed(3)+', V/Y='+b.toFixed(3)+'. Click Apply to save this ROI corner.';
+      updateEditorStatus('Coordinate pair pasted into '+ids.join(' and ')+'. Click Apply to save.');
+      showToast('Pasted coordinate pair into '+(ids[0]==='prop_left'?'ROI first corner':ids[0]==='prop_right'?'ROI second corner':'BEV point')+'. Click Apply.');
+    });
+  });
+}
 function installExtension(){
   const stage=$('canvas_stage');if(stage&&canvas){
     let svg=$('ext_precision_overlay');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);}
     canvas.addEventListener('pointerdown',onCustomPointerDown,true);
-    canvas.addEventListener('pointermove',function(e){const rect=canvas.getBoundingClientRect();const x=(e.clientX-rect.left)*(canvas.width/rect.width),y=(e.clientY-rect.top)*(canvas.height/rect.height);extCrosshairPoint={x:x,y:y};if(extCrosshair)drawPrecisionOverlay();});
+    installCoordinatePairPaste();
+    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);extCrosshairPoint=point?{x:point.x,y:point.y}:null;if(extCrosshair)drawPrecisionOverlay();});
   }
   if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
   $('ext_grid').addEventListener('change',function(){gridMode=this.checked?(gridMode==='dots'?'dots':'grid'):'off';extGrid=gridMode!=='off';drawPrecisionOverlay();scheduleWorkspaceSave();});
@@ -666,7 +723,7 @@ function installExtension(){
   $('roi_settings_apply').addEventListener('click',()=>{previewEditorSettings();scheduleWorkspaceSave();closeEditorSettings(false);showToast('Editor settings applied');});$('roi_settings_reset').addEventListener('click',resetEditorSettingsDraft);
   const settingsModalElement=$('roi_settings_dialog');settingsModalElement.addEventListener('click',e=>{if(e.target===settingsModalElement)closeEditorSettings(true);});settingsModalElement.querySelectorAll('input,select').forEach(el=>['input','change'].forEach(evt=>el.addEventListener(evt,previewEditorSettings)));
   $('ext_snap').addEventListener('change',function(){extSnap=this.checked;scheduleWorkspaceSave();});
-  $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;drawPrecisionOverlay();scheduleWorkspaceSave();});
+  $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);drawPrecisionOverlay();scheduleWorkspaceSave();if(extCrosshair)updateEditorStatus('Crosshair active: click a point inside the camera image to copy normalized U, V coordinates.');});
   $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;renderWorkspaceCanvas();scheduleWorkspaceSave();});
   showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
   $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
@@ -711,6 +768,8 @@ function installExtension(){
       return;
     }
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();return;}
+    if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='e'){e.preventDefault();exportFullConfig().catch(function(err){showToast('Export failed: '+err.message);});return;}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(err){showToast('Save failed: '+err.message);});return;}
     if($('ext_command_palette').style.display==='flex'&&e.key==='Escape'){closeCommandPalette();return;}
     if(e.target&&(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable))return;
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();doUndo();return;}
