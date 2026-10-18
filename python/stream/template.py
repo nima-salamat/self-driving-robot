@@ -2305,6 +2305,16 @@ async function refreshCameraSettings(){
     const data=await nativeFetch('/api/camera/settings',{cache:'no-store'}).then(function(r){return r.json();});const c=data.camera||{};
     cameraSupportedControlNames=c.control_names||[];cameraSettingsEditable=!!c.supported;
     $('ext_camera_support').textContent=c.supported?'Picamera2 controls detected. Available controls: '+cameraSupportedControlNames.join(', '):'Not editable: '+(c.reason||'camera controls unavailable');
+    const ranges=c.control_ranges||{};
+    [['ExposureTime','ext_exposure'],['AnalogueGain','ext_gain']].forEach(function(pair){
+      const range=ranges[pair[0]]||{},input=$(pair[1]);
+      if(range.min!=null&&Number.isFinite(Number(range.min)))input.min=String(range.min);
+      else input.removeAttribute('min');
+      if(range.max!=null&&Number.isFinite(Number(range.max)))input.max=String(range.max);
+      else input.removeAttribute('max');
+      const step=pair[0]==='ExposureTime'?'100':'0.1';input.step=step;
+      input.title=(range.min!=null||range.max!=null)?'Sensor limits: '+(range.min==null?'unreported':range.min)+' to '+(range.max==null?'unreported':range.max):'The API validates against sensor-supported limits';
+    });
     const controls=c.controls||{};if(controls.ExposureTime!=null)$('ext_exposure').value=String(controls.ExposureTime);if(controls.AnalogueGain!=null)$('ext_gain').value=String(controls.AnalogueGain);
     $('ext_auto_exposure').checked=!!controls.AeEnable;$('ext_auto_wb').checked=!!controls.AwbEnable;
     updateCameraControlsEnabled();
