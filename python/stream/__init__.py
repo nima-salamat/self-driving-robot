@@ -205,16 +205,28 @@ class WebStreamer:
 
     def save_conf_to_json(self):
         filename = self.config_filename()
-        data = {var: self.get_base_var(var) for var in VARIABLES}
-        data.update(self.get_all_advanced())
-        target_rate = getattr(self.config, "processing_rate_controller", None)
-        if target_rate is not None:
-            data["TARGET_PROCESSING_FPS"] = float(target_rate.target_fps)
         try:
+            # Preserve every mode-specific setting not editable in this
+            # dashboard. Replacing the JSON with just the ROI/advanced subset
+            # would silently discard speeds, sign thresholds, hardware
+            # contracts and other controls owned by the mode config.
+            data = {}
+            if os.path.exists(filename):
+                with open(filename, "r", encoding="utf-8") as handle:
+                    existing = json.load(handle)
+                if not isinstance(existing, dict):
+                    raise ValueError("mode configuration file must contain a JSON object")
+                data.update(existing)
+
+            data.update({var: self.get_base_var(var) for var in VARIABLES})
+            data.update(self.get_all_advanced())
+            target_rate = getattr(self.config, "processing_rate_controller", None)
+            if target_rate is not None:
+                data["TARGET_PROCESSING_FPS"] = float(target_rate.target_fps)
             self._write_json_atomic(filename, data)
             return True
         except Exception:
-            logger.exception("Failed writing config JSON")
+            logger.exception("Failed writing config JSON without dropping unrelated mode settings")
             return False
 
 
