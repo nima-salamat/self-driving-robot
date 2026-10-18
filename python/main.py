@@ -67,6 +67,11 @@ def _apply_cli_overrides(config, args):
         # steering/control decisions in the owning mode process.
         "MULTIPROCESS_CAMERA": getattr(args, "multiprocess_camera", False),
         "MULTIPROCESS_SIGN_DETECTOR": getattr(args, "multiprocess_camera", False),
+        "MULTIPROCESS_SIGN_INTRA_OP_THREADS": (
+            getattr(args, "sign_intra_op_threads", None)
+            if getattr(args, "sign_intra_op_threads", None) is not None
+            else 2
+        ) if getattr(args, "multiprocess_camera", False) else None,
         "ARDUINO_CONFIG": args.arduino_config,
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
         "CITY_LANE_DETECTOR": getattr(args, "city_lane_detector", None),
@@ -143,6 +148,12 @@ def _apply_cli_overrides(config, args):
 
 
 def _validate_opt_in_features(config, args):
+    if args.sign_intra_op_threads is not None:
+        if not args.multiprocess_camera:
+            raise SystemExit("--sign-intra-op-threads requires --multiprocess")
+        if args.sign_intra_op_threads < 1:
+            raise SystemExit("--sign-intra-op-threads must be a positive integer")
+
     def positive(value, name):
         if value is None or not math.isfinite(float(value)) or float(value) <= 0:
             raise SystemExit(f"{name} must be supplied as a positive finite value")
