@@ -218,11 +218,15 @@ def parse_args(argv=None):
 
     parser.add_argument(
         "--multiprocess-camera",
+        "--multiprocess",
+        dest="multiprocess_camera",
         action="store_true",
         default=False,
         help=(
-            "Experimental: run camera capture in a separate process and hand off "
-            "latest frames through shared memory. Disabled by default."
+            "Experimental: isolate camera capture and traffic-sign inference in "
+            "separate processes. Camera frames use a shared-memory latest-frame "
+            "slot; sign inference replaces queued frames instead of building a "
+            "backlog. Disabled by default."
         ),
     )
 
