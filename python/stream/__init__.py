@@ -223,6 +223,7 @@ def _make_stream_request_handler(log_requests=False):
 
 def start_stream(config):
     config.stream_start_error = None
+    config.stream_shutdown_requested = False
     ready_event = getattr(config, "stream_ready_event", None)
     if ready_event is None:
         ready_event = threading.Event()
