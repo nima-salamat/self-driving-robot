@@ -181,6 +181,10 @@ window.onStreamWorkspaceToolChanged=function(tool){
   if(internalWorkspaceToolSync)return;
   setEditorTool(tool==='pan'?'pan':'select',false,true);
 };
+window.onWorkspaceViewLockChanged=function(){
+  scheduleWorkspaceSave();
+  if(typeof window.refreshStreamCommandPalette==='function')window.refreshStreamCommandPalette();
+};
 function pointFromEvent(event){
   const rect=canvas.getBoundingClientRect();
   const x=(event.clientX-rect.left)*(canvas.width/rect.width),y=(event.clientY-rect.top)*(canvas.height/rect.height);
@@ -308,7 +312,7 @@ function collectWorkspace(){
   layers.ANNOTATIONS={visible:extAnnotationsVisible,opacity:1};layers.GRID={visible:gridMode!=='off',opacity:gridOpacity};
   const panels={};document.querySelectorAll('.right-panel details.dock-panel').forEach(p=>{if(p.id)panels[p.id]=p.open;});
   const rect=document.querySelector('.right-panel').getBoundingClientRect(),paneWidth=parseFloat(getComputedStyle(document.querySelector('.container')).getPropertyValue('--right-pane-width'))||rect.width||315;
-  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,grid:gridMode!=='off',gridMode:gridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
+  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,viewLocked:typeof window.isWorkspaceViewLocked==='function'?window.isWorkspaceViewLocked():false,grid:gridMode!=='off',gridMode:gridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
     roiAppearance:{labelFontSize:roiAppearance.labelFontSize,labelFontWeight:String(roiAppearance.labelFontWeight),outlineThickness:roiAppearance.outlineThickness,handleSize:roiAppearance.handleSize},panels:panels,layers:layers,annotations:extAnnotations};
 }
 async function saveWorkspace(){
@@ -332,6 +336,7 @@ function applyWorkspace(workspace){
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
   editorTool=['select','pan','annotate','ruler'].includes(view.tool)?view.tool:'select';
   const layers=workspace.layers||{};extAnnotationsVisible=!layers.ANNOTATIONS||layers.ANNOTATIONS.visible!==false;
+  if(typeof window.setWorkspaceViewLocked==='function')window.setWorkspaceViewLocked(view.viewLocked===true,false,false);
   if(typeof view.rightPaneWidth==='number'&&view.rightPaneWidth>=250&&view.rightPaneWidth<=700)document.querySelector('.container').style.setProperty('--right-pane-width',view.rightPaneWidth+'px');
   Object.keys(workspace.panels||{}).forEach(id=>{const p=$(id);if(p&&p.tagName==='DETAILS')p.open=!!workspace.panels[id];});
   Object.keys(layers).forEach(key=>{const layer=layers[key];if(layer&&EXT_LAYERS.includes(key)){ui.visible[key]=layer.visible!==false;ui.opacity[key]=Number(layer.opacity==null?1:layer.opacity);}});
@@ -776,6 +781,7 @@ function navigateToPaletteSetting(entry){
   revealAndFocus();
 }
 function isPaletteCommandActive(name){
+  if(name==='view-lock')return typeof window.isWorkspaceViewLocked==='function'&&window.isWorkspaceViewLocked();
   if(name==='select')return editorTool==='select';
   if(name==='pan')return editorTool==='pan';
   if(name==='annotate')return editorTool==='annotate';
@@ -789,7 +795,7 @@ function isPaletteCommandActive(name){
 }
 function buildCommandPalette(){
   const commands=[
-    ['Select / Edit operational ROI','select','V'],['Pan camera view','pan','H'],
+    ['Select / Edit operational ROI','select','V'],['Pan camera view','pan','H'],['Toggle view lock','view-lock',''],
     ['Keyboard shortcuts','shortcuts','F1'],['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Save workspace layout','workspace','Ctrl+S'],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y / Ctrl+Shift+Z'],
     ['Fit camera frame','fit','0'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],
     ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],
@@ -848,6 +854,7 @@ function executeCommand(name){
     shortcuts:function(){if(window.openStreamShortcuts)window.openStreamShortcuts();},
     export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,
     fit:function(){fitWorkspaceView();},overlays:function(){$('ext_overlays').click();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},
+    'view-lock':function(){if(typeof window.setWorkspaceViewLocked==='function')window.setWorkspaceViewLocked(!window.isWorkspaceViewLocked());},
     select:function(){setEditorTool('select');},pan:function(){setEditorTool(editorTool==='pan'?'select':'pan');},
     annotate:function(){setEditorTool(editorTool==='annotate'?'select':'annotate');},ruler:function(){setEditorTool(editorTool==='ruler'?'select':'ruler');},
     snapshot:addFrameSnapshot,workspace:function(){saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(e){showToast(e.message);});},
