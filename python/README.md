@@ -77,6 +77,22 @@ options:
                         Enable ML lane detection with the selected model
 ~~~
 
+## Multiprocess camera and traffic-sign inference
+
+The experimental process-isolated path remains off unless explicitly requested. `--multiprocess` and `--multiprocess-camera` are aliases. They run camera capture in a shared-memory latest-frame producer and sign inference in a separate process, while the main process still owns lane perception, STOP/phase handling, steering, speed decisions and Arduino I/O.
+
+The sign worker keeps one inference in flight and at most one waiting ROI frame. In this mode every active main-loop frame may be submitted; `READ_SIGN_THRESHOLD` is bypassed only as a frame-submission cadence limit. Detector confidence thresholds, Race STOP confidence checks, area filters and control safety rules are unchanged. New waiting frames replace stale waiting frames rather than forming a backlog.
+
+Example (do not actuate Arduino during an initial performance comparison):
+
+```bash
+python main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
+```
+
+Compare against the same command without `--multiprocess`. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
+
+See [Multiprocessing Camera and Sign Inference Experiment](../docs/MULTIPROCESSING_EXPERIMENT.md) for design details and the current limitations.
+
 ## Stream request logging
 
 The stream's HTTP access lines are disabled by default to avoid console-I/O
