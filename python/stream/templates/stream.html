@@ -295,7 +295,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Safety & Runtime Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div id="ext_safety_state" class="status-line">Reading software stop state…</div>
       <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Request Software Stop</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
-      <div class="small-muted">Software stop is consumed by the active Python mode loop. This is not a hardware emergency stop and does not replace a physical cutoff. Resume requires explicit confirmation.</div>
+      <div class="small-muted"><strong>Shortcut: Shift+Esc</strong> requests software STOP immediately (no confirmation). It is not a hardware emergency stop or a substitute for a physical cutoff. Resume requires explicit confirmation.</div>
     </div></details>
 
   </div>

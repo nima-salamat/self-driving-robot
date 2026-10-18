@@ -69,7 +69,7 @@ function extImageBounds(){
 function drawPrecisionOverlay(){
   const svg=$('ext_precision_overlay'),stage=$('canvas_stage');
   if(!svg||!canvas||!stage)return;
-  const z=Math.max(.3,Number(workspaceZoom)||1);
+  const z=getOverlayScale();
   const canvasRect=canvas.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();
   const contentLeft=stageRect.left+stage.clientLeft,contentTop=stageRect.top+stage.clientTop;
   svg.style.left=(canvasRect.left-contentLeft)+'px';
@@ -180,7 +180,7 @@ function previewEditorSettings(){const a=readEditorSettingsForm();applyEditorSet
 function openEditorSettings(){const m=$('roi_settings_dialog');settingsBeforeOpen=currentEditorSettings();settingsReturnFocus=document.activeElement;syncSettingsFormControls(settingsBeforeOpen);m.classList.add('is-open');m.setAttribute('aria-hidden','false');$('roi_setting_grid_mode').focus();}
 function closeEditorSettings(restore){const m=$('roi_settings_dialog');if(restore&&settingsBeforeOpen)applyEditorSettings(settingsBeforeOpen);m.classList.remove('is-open');m.setAttribute('aria-hidden','true');if(settingsReturnFocus&&settingsReturnFocus.focus)settingsReturnFocus.focus();settingsBeforeOpen=null;}
 function resetEditorSettingsDraft(){const a={gridMode:'off',gridSpacing:.05,gridOpacity:.35,gridThickness:1,gridDotSize:2,snap:false,roiAppearance:{labelFontSize:12,labelFontWeight:'700',outlineThickness:2,handleSize:10}};syncSettingsFormControls(a);applyEditorSettings(a);}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();closeEditorSettings(true);}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.shiftKey&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();closeEditorSettings(true);}});
 
 function onCustomPointerDown(event){
   if(!['annotate','ruler','roi_rect','roi_trapezoid'].includes(editorTool)||event.button!==0)return;
@@ -199,7 +199,7 @@ function onCustomPointerDown(event){
   }else{
     const start=rulerStart;rulerStart=null;
     if(editorTool==='ruler'){
-      const distance=Math.hypot((point.u-start.u)*extImageBounds().iw,(point.v-start.v)*extImageBounds().ih);
+      const distance=Math.hypot((point.u-start.u)*(frameSourceWidth||canvas.width),(point.v-start.v)*(frameSourceHeight||canvas.height));
       extAnnotations.push({kind:'ruler',u:start.u,v:start.v,u2:point.u,v2:point.v,label:distance.toFixed(1)+' px',color:'#22d3ee'});
       updateEditorStatus('Ruler saved: '+distance.toFixed(1)+' image pixels.');syncLayerControls();
     }else{
@@ -579,12 +579,13 @@ async function refreshServerLogs(){
     serverLogsVisible=data.items||[];$('ext_server_logs').textContent=serverLogsVisible.map(function(item){return new Date(item.timestamp*1000).toLocaleTimeString()+' '+item.level.padEnd(8)+' '+item.logger+' — '+item.message;}).join(String.fromCharCode(10))||'No matching in-memory runtime logs.';
   }catch(err){$('ext_server_logs').textContent='Log API unavailable: '+err.message;}
 }
-async function safetyAction(action){
+async function safetyAction(action,options){
+  const settings=options||{};
   if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
-  if(action==='stop'&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
+  if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested');await refreshSafety();
+  showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Shift+Esc':''));await refreshSafety();
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -701,6 +702,14 @@ function installExtension(){
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
   $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();enableReadOnlyState();
   document.addEventListener('keydown',function(e){
+    // Fast software-stop hotkey: no confirmation dialog. It still uses /api/safety,
+    // so the active Python mode loop owns the RUN_LVL transition.
+    if(e.shiftKey&&e.key==='Escape'){
+      if(e.repeat)return;
+      e.preventDefault();
+      safetyAction('stop',{skipConfirm:true,source:'keyboard'}).catch(function(err){showToast('Software STOP failed: '+err.message);});
+      return;
+    }
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();return;}
     if($('ext_command_palette').style.display==='flex'&&e.key==='Escape'){closeCommandPalette();return;}
     if(e.target&&(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable))return;

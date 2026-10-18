@@ -102,7 +102,7 @@ button:disabled, input:disabled, select:disabled { opacity: .45; cursor: not-all
   min-width: 0;
   min-height: 80px;
   overflow: hidden;
-  padding: 5px;
+  padding: 0;
   border: 1px solid #344456;
   border-radius: 6px;
   background-color: #080d14;
