@@ -38,19 +38,19 @@ def _replace_queue_item(target, item):
             return False
 
 
-def _make_detector(method, detector_factory=None):
+def _make_detector(method, detector_factory=None, intra_op_num_threads=2):
     if detector_factory is not None:
         return detector_factory()
     if str(method).lower() == "svm":
         from traffic_sign_detector.svm_detector import TrafficSignDetector
-    else:
-        from traffic_sign_detector.yolo_detector import TrafficSignDetector
-    return TrafficSignDetector()
+        return TrafficSignDetector()
+    from traffic_sign_detector.yolo_detector import TrafficSignDetector
+    return TrafficSignDetector(intra_op_num_threads=intra_op_num_threads)
 
 
-def _sign_worker(method, detector_factory, requests, results, ready, ready_payload,
-                 stop_event, paused_event, requests_enabled, idle_event,
-                 active_event):
+def _sign_worker(method, detector_factory, intra_op_num_threads, requests, results,
+                 ready, ready_payload, stop_event, paused_event, requests_enabled,
+                 idle_event, active_event):
     """Load the model once in the child and process only the newest queued frame."""
     # Ctrl+C should be handled by the owning runtime. A child receiving SIGINT
     # during OpenCV/ONNX work otherwise emits a misleading KeyboardInterrupt.
@@ -60,7 +60,7 @@ def _sign_worker(method, detector_factory, requests, results, ready, ready_paylo
         pass
 
     try:
-        detector = _make_detector(method, detector_factory)
+        detector = _make_detector(method, detector_factory, intra_op_num_threads)
         ready_payload.put((True, None), timeout=2.0)
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -145,8 +145,13 @@ class ProcessSignDetector:
     multiprocess = True
     STARTUP_TIMEOUT_S = 45.0
 
-    def __init__(self, method="yolo", *, detector_factory=None):
+    def __init__(
+        self, method="yolo", *, detector_factory=None, intra_op_num_threads=2
+    ):
         self.method = str(method).lower()
+        self.intra_op_num_threads = int(intra_op_num_threads)
+        if self.intra_op_num_threads < 1:
+            raise ValueError("intra_op_num_threads must be a positive integer")
         self._context = mp.get_context("spawn")
         self._requests = self._context.Queue(maxsize=1)
         self._results = self._context.Queue(maxsize=1)
@@ -177,7 +182,8 @@ class ProcessSignDetector:
             target=_sign_worker,
             name="robot-sign-detector",
             args=(
-                self.method, detector_factory, self._requests, self._results,
+                self.method, detector_factory, self.intra_op_num_threads,
+                self._requests, self._results,
                 self._ready, self._ready_payload, self._stop, self._paused,
                 self._requests_enabled, self._idle, self._active,
             ),
@@ -203,8 +209,9 @@ class ProcessSignDetector:
             self.close()
             raise RuntimeError(f"Sign detector process initialization failed: {detail}")
         logger.info(
-            "Using multiprocessing traffic-sign inference (method=%s, latest-frame queue)",
-            self.method,
+            "Using multiprocessing traffic-sign inference "
+            "(method=%s, intra_op_threads=%s, latest-frame queue)",
+            self.method, self.intra_op_num_threads,
         )
 
     def submit(self, frame, debug_frame=None, confidence_threshold=None,
@@ -343,6 +350,7 @@ class ProcessSignDetector:
             queue_depth = int(not self._idle.is_set())
         return {
             "worker_alive": self._worker.is_alive(),
+            "intra_op_num_threads": self.intra_op_num_threads,
             "paused": self._paused.is_set(),
             "requests_enabled": self._requests_enabled.is_set(),
             "queue_depth": queue_depth,
