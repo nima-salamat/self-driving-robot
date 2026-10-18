@@ -1914,6 +1914,7 @@ function updateEditorStatus(text){if($('ext_editor_status'))$('ext_editor_status
 function setEditorTool(tool){
   editorTool=tool;
   rulerStart=null;
+  if($('ext_ruler'))$('ext_ruler').checked=tool==='ruler';
   ['ext_annotate_btn','ext_ruler','ext_roi_rect_tool','ext_roi_trapezoid_tool'].forEach(function(id){
     if($(id))$(id).classList.toggle('ext-tool-active',
       (id==='ext_ruler'&&tool==='ruler')||(id==='ext_annotate_btn'&&tool==='annotate')||
@@ -2405,9 +2406,9 @@ function installExtension(){
   document.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();return;}
     if($('ext_command_palette').style.display==='flex'&&e.key==='Escape'){closeCommandPalette();return;}
+    if(e.target&&(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable))return;
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();doUndo();return;}
     if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){e.preventDefault();doRedo();return;}
-    if(e.target&&['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;
     if(!e.ctrlKey&&!e.metaKey&&!e.altKey){
       if(e.key.toLowerCase()==='g')$('ext_grid').click();
       else if(e.key.toLowerCase()==='x')$('ext_crosshair').click();
