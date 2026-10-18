@@ -640,7 +640,7 @@ async function safetyAction(action,options){
   if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':''));await refreshSafety();
+  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSafety();
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -801,7 +801,7 @@ function buildCommandPalette(){
     ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],
     ['Save workspace profile','profile',''],['Save configuration preset','preset',''],
     ['Capture frame snapshot','snapshot',''],['Refresh runtime diagnostics','health',''],['Refresh server logs','logs',''],
-    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Request software stop','stop','Ctrl+Shift+Space'],['Resume motion (confirmation)','resume','']
+    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Force Stop (RUN_LVL → STOP)','stop','Ctrl+Shift+Space'],['Resume motion (confirmation)','resume','']
   ];
   const commandList=$('ext_command_list'),settingsList=$('ext_settings_results'),search=$('ext_command_search');
   function renderResults(){
@@ -864,7 +864,7 @@ function executeCommand(name){
     logs:refreshServerLogs,
     camera:function(){$('ext_camera_panel').open=true;$('ext_camera_panel').scrollIntoView({behavior:'smooth',block:'nearest'});},
     encoder:function(){if($('ext_encoder_embed').hidden)showToast('Encoder map requires --encoder-map and compatible firmware restart.');else $('ext_encoder_frame').scrollIntoView({behavior:'smooth'});},
-    stop:function(){safetyAction('stop').catch(function(e){showToast(e.message);});},
+    stop:function(){safetyAction('stop',{skipConfirm:true,source:'command-palette'}).catch(function(e){showToast(e.message);});},
     resume:function(){safetyAction('resume').catch(function(e){showToast(e.message);});}
   };
   if(actions[name])Promise.resolve(actions[name]()).catch(function(err){showToast(err.message||String(err));});
