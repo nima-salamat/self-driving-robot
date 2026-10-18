@@ -165,9 +165,9 @@ function setEditorTool(tool,syncCore=true,persist=true){
   ['ext_annotate_btn','ext_ruler'].forEach(function(id){
     if($(id))$(id).classList.toggle('ext-tool-active',(id==='ext_ruler'&&editorTool==='ruler')||(id==='ext_annotate_btn'&&editorTool==='annotate'));
   });
-  if(syncCore&&typeof setTool==='function'){
+  if(syncCore&&typeof window.setStreamWorkspaceTool==='function'){
     internalWorkspaceToolSync=true;
-    try{setTool(editorTool==='pan'?'pan':'select');}finally{internalWorkspaceToolSync=false;}
+    try{window.setStreamWorkspaceTool(editorTool==='pan'?'pan':'select');}finally{internalWorkspaceToolSync=false;}
   }
   if(canvas)canvas.style.cursor=editorTool==='pan'?'grab':(['annotate','ruler'].includes(editorTool)?'crosshair':'default');
   const messages={ruler:'Ruler active: click two points inside the image.',annotate:'Annotation mode active: click the image to add a note or marker.',pan:'Pan mode active: drag the camera view.'};
