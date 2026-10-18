@@ -166,7 +166,7 @@ class StreamRuntimeMixin:
             level = str(getattr(self.config, "RUN_LVL", "MOVE"))
             return jsonify(controls_enabled=self._control_allowed(), run_level=level,
                            software_stop_active=level == "STOP",
-                           disclaimer="Software stop is processed by the active Python control loop; it is not a hardware emergency stop.")
+                           disclaimer="RUN_LVL STOP is processed by the active Python control loop to stop robot motion; it is not a hardware emergency stop. Sign-inference request pausing is separate at /api/sign-requests.")
         if not self._control_allowed():
             return self._control_denied()
         body = request.get_json(silent=True) or {}
@@ -188,7 +188,7 @@ class StreamRuntimeMixin:
                            software_stop_active=active_level == "STOP", persisted=False,
                            message="could not persist runtime control state"), 500
         self._record_config_history("dashboard software " + action)
-        logger.warning("Dashboard requested software %s (mode=%s)", action, self._mode_slug())
+        logger.warning("Dashboard requested RUN_LVL %s (mode=%s)", requested_level, self._mode_slug())
         return jsonify(success=True, action=action, run_level=getattr(self.config, "RUN_LVL"),
                        software_stop_active=action == "stop", hardware_emergency_stop=False)
 
@@ -208,6 +208,7 @@ class StreamRuntimeMixin:
                 and callable(getattr(detector, "pause_requests", None))
                 and callable(getattr(detector, "resume_requests", None)),
                 "requests_enabled": bool(status.get("requests_enabled", True)),
+                "phase_paused": bool(status.get("paused", False)),
                 "worker_alive": bool(status.get("worker_alive", False)),
                 "queue_depth": int(status.get("queue_depth", 0) or 0),
                 "inference_in_flight": bool(status.get("inference_in_flight", False)),
