@@ -337,7 +337,7 @@ function applyWorkspace(workspace){
   Object.keys(layers).forEach(key=>{const layer=layers[key];if(layer&&EXT_LAYERS.includes(key)){ui.visible[key]=layer.visible!==false;ui.opacity[key]=Number(layer.opacity==null?1:layer.opacity);}});
   if(layers.GRID&&layers.GRID.visible===false){gridMode='off';extGrid=false;}
   extAnnotations=Array.isArray(workspace.annotations)?jsonClone(workspace.annotations).filter(function(item){return item&& !['roi','roi_rect','roi_trapezoid'].includes(item.kind);}).slice(0,250):[];
-  setEditorTool(editorTool,false,false);
+  setEditorTool(editorTool,true,false);
   syncLayerControls();syncLegacyLayerControls();refreshAnnotationList();renderWorkspaceCanvas();drawPrecisionOverlay();updateZoomStatus();
 }
 function syncLegacyLayerControls(){
