@@ -589,3 +589,13 @@ canvas {
 .annotation-delete{flex:0 0 auto;border-color:rgba(251,113,133,.32)!important;color:#fda4af!important;background:rgba(127,29,29,.12)!important;padding:4px 7px!important;font-size:10px}
 .annotation-delete:hover{border-color:#fb7185!important;background:rgba(127,29,29,.35)!important;color:#fff!important}
 
+/* Keep the camera view fixed while the view-lock toggle is active. */
+.view-lock-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:27px;padding:3px 7px;white-space:nowrap;font-size:10px}
+.view-lock-button .toolbar-icon{width:14px;height:14px;flex:0 0 14px}
+.view-lock-button.is-locked{color:#86efac!important;border-color:#277a55!important;background:rgba(22,101,52,.22)!important}
+.view-lock-button.is-locked .toolbar-icon{color:#4ade80}
+.controls input:disabled,.controls button:disabled,.tool-button:disabled{opacity:.4;cursor:not-allowed!important;filter:saturate(.45)}
+.controls button:disabled:hover,.tool-button:disabled:hover{background:transparent;color:inherit;border-color:transparent}
+@media(max-width:1050px){.view-lock-button{padding:3px 5px;gap:3px}.view-lock-button #workspace_view_lock_label{font-size:9px}}
+@media(max-width:720px){.view-lock-button #workspace_view_lock_label{display:none}.view-lock-button{width:27px;padding:3px;flex:0 0 27px}}
+
