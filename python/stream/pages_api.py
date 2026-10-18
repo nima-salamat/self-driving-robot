@@ -41,7 +41,7 @@ class StreamPagesMixin:
         def encoder_map_page(self):
             if not bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)):
                 return Response("Not Found", status=404)
-            return Response(ENCODER_MAP_TEMPLATE, mimetype="text/html")
+            return Response(_stream_module.ENCODER_MAP_TEMPLATE, mimetype="text/html")
 
         def encoder_map_api(self):
             if not bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)):
