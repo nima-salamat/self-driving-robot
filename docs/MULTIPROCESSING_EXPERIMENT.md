@@ -10,7 +10,7 @@ On a Raspberry Pi 4, the operator compared these two short Race runs at the same
 - With camera multiprocessing: reported FPS was mostly about 22–29 (approximate mean of the steady samples: 24.5).
 - Mean loop duration decreased from about 47 ms to about 40 ms.
 
-These are only short, user-supplied runs, not a controlled benchmark or proof of long-run stability. The earlier Ctrl+C output also showed the camera worker being interrupted inside OpenCV resize; the camera child now ignores SIGINT and relies on the parent shutdown event for cleanup. A hardware shutdown retest is still required.
+These are only short, user-supplied runs, not a controlled benchmark or proof of long-run stability. Importantly, this comparison predates the new sign-inference process: it measures the camera-process experiment only, so the combined camera-plus-sign mode still needs a fresh Pi benchmark. The earlier Ctrl+C output also showed the camera worker being interrupted inside OpenCV resize; the camera child now ignores SIGINT and relies on the parent shutdown event for cleanup. A hardware shutdown retest is still required.
 
 ## Opt-in architecture
 
