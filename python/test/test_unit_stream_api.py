@@ -475,6 +475,56 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(config.RUN_LVL, "STOP")
             self.assertTrue(resumed.get_json()["software_stop_active"])
 
+    def test_camera_api_exposes_sensor_ranges_and_rejects_out_of_range_controls(self):
+        import tempfile
+
+        class FakePicam:
+            camera_controls = {
+                "ExposureTime": (100, 100000, 10000),
+                "AnalogueGain": (1.0, 16.0, 6.0),
+                "AeEnable": (False, True, False),
+                "AwbEnable": (False, True, False),
+            }
+
+            def __init__(self):
+                self.applied = []
+
+            def set_controls(self, controls):
+                self.applied.append(dict(controls))
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        picam = FakePicam()
+        config.camera = types.SimpleNamespace(
+            pi_mode=True,
+            picam=picam,
+            _dashboard_image_controls={
+                "ExposureTime": 10000,
+                "AnalogueGain": 6.0,
+                "AeEnable": False,
+                "AwbEnable": False,
+            },
+            requested_frame_rate=30,
+            measured_frame_rate=29,
+        )
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            status = client.get("/api/camera/settings")
+            self.assertEqual(status.status_code, 200)
+            camera = status.get_json()["camera"]
+            self.assertEqual(camera["control_ranges"]["ExposureTime"], {"min": 100.0, "max": 100000.0})
+            self.assertEqual(camera["control_ranges"]["AnalogueGain"], {"min": 1.0, "max": 16.0})
+
+            invalid = client.post("/api/camera/settings", json={"ExposureTime": 100001})
+            self.assertEqual(invalid.status_code, 400)
+            self.assertEqual(picam.applied, [])
+
+            valid = client.post("/api/camera/settings", json={"ExposureTime": 20000})
+            self.assertEqual(valid.status_code, 200)
+            self.assertEqual(picam.applied, [{"ExposureTime": 20000}])
+
     def test_camera_and_processing_rate_report_unavailable_capabilities_cleanly(self):
         streamer = WebStreamer(self.make_config())
         client = streamer.app.test_client()
