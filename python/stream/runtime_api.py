@@ -192,6 +192,70 @@ class StreamRuntimeMixin:
         return jsonify(success=True, action=action, run_level=getattr(self.config, "RUN_LVL"),
                        software_stop_active=action == "stop", hardware_emergency_stop=False)
 
+    def sign_requests_api(self):
+        """Pause/resume sign-inference submissions without changing robot motion state."""
+        robot = getattr(self.config, "runtime_robot", None)
+        detector = getattr(robot, "sign_detector", None) if robot is not None else None
+        if detector is None:
+            detector = getattr(self.config, "sign_detector", None)
+
+        def snapshot():
+            status_method = getattr(detector, "status", None)
+            status = status_method() if callable(status_method) else {}
+            return {
+                "controls_enabled": self._control_allowed(),
+                "available": detector is not None
+                and callable(getattr(detector, "pause_requests", None))
+                and callable(getattr(detector, "resume_requests", None)),
+                "requests_enabled": bool(status.get("requests_enabled", True)),
+                "worker_alive": bool(status.get("worker_alive", False)),
+                "queue_depth": int(status.get("queue_depth", 0) or 0),
+                "inference_in_flight": bool(status.get("inference_in_flight", False)),
+                "run_level": str(getattr(self.config, "RUN_LVL", "MOVE")),
+                "control": "sign_inference_requests_only",
+            }
+
+        if request.method == "GET":
+            return jsonify(snapshot())
+        if not self._control_allowed():
+            return self._control_denied()
+
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="request body must be a JSON object"), 400
+        action = body.get("action")
+        if action not in {"pause", "resume"}:
+            return jsonify(success=False, message="action must be pause or resume"), 400
+        current = snapshot()
+        if not current["available"]:
+            return jsonify(success=False, message="the active runtime has no sign inference request worker"), 409
+
+        try:
+            if action == "pause":
+                detector.pause_requests()
+            else:
+                detector.resume_requests()
+            current = snapshot()
+            logger.info(
+                "Dashboard %s sign inference requests (RUN_LVL unchanged: %s)",
+                action,
+                current["run_level"],
+            )
+            return jsonify(
+                success=True,
+                action=action,
+                requests_enabled=current["requests_enabled"],
+                run_level=current["run_level"],
+                worker=current,
+                motion_state_changed=False,
+            )
+        except Exception:
+            logger.exception("Could not %s sign inference requests", action)
+            return jsonify(
+                success=False,
+                message="sign inference request control failed; robot motion state was not changed",
+            ), 500
+
     def _feature_snapshot(self):
         capabilities = mode_capabilities(self.config)
         robot = getattr(self.config, "runtime_robot", None)
@@ -434,4 +498,5 @@ def register_runtime_routes(app, streamer):
     app.add_url_rule("/api/camera/settings", "camera_settings_api", streamer.camera_settings_api, methods=["GET","POST"])
     app.add_url_rule("/api/processing-rate", "processing_rate_api", streamer.processing_rate_api, methods=["GET","POST"])
     app.add_url_rule("/api/safety", "safety_api", streamer.safety_api, methods=["GET","POST"])
+    app.add_url_rule("/api/sign-requests", "sign_requests_api", streamer.sign_requests_api, methods=["GET","POST"])
     app.add_url_rule("/api/features", "features_api", streamer.features_api, methods=["GET","POST"])
