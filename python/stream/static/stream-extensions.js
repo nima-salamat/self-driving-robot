@@ -621,6 +621,16 @@ async function refreshProcessingRate(){
     $('ext_target_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;$('ext_apply_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;
   }catch(err){$('ext_fps_status').textContent=err.message;}
 }
+async function refreshSafety(){
+  try{
+    const response=await nativeFetch('/api/safety',{cache:'no-store'});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+    $('ext_safety_state').textContent='Robot motion: RUN_LVL='+data.run_level+' · '+(data.software_stop_active?'STOPPED':'MOVE');
+    $('ext_software_stop').disabled=!data.controls_enabled||data.software_stop_active;
+    $('ext_software_resume').disabled=!data.controls_enabled||!data.software_stop_active;
+    if($('run_lvl'))$('run_lvl').value=String(data.run_level||'MOVE');
+  }catch(err){$('ext_safety_state').textContent='Robot motion status unavailable: '+err.message;}
+}
 async function refreshSignRequests(){
   try{
     const response=await nativeFetch('/api/sign-requests',{cache:'no-store'});
@@ -664,7 +674,7 @@ async function safetyAction(action,options){
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
   if($('run_lvl'))$('run_lvl').value=String(data.run_level|| (action==='stop'?'STOP':'MOVE'));
-  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard RUN_LVL '+(action==='stop'?'STOP':'MOVE')+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSignRequests();
+  showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard RUN_LVL '+(action==='stop'?'STOP':'MOVE')+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await Promise.all([refreshSafety(),refreshSignRequests()]);
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -895,7 +905,7 @@ function executeCommand(name){
 }
 function enableReadOnlyState(){
   if(STREAM_CONTROL_ALLOWED)return;
-  ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_sign_requests_pause','ext_sign_requests_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
+  ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_sign_requests_pause','ext_sign_requests_resume','ext_software_stop','ext_software_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
 }
 function initializeResize(){
   const container=document.querySelector('.container'),panel=document.querySelector('.right-panel');if(!container||!panel)return;
@@ -964,6 +974,7 @@ function installExtension(){
   $('ext_compare_preset').onclick=function(){comparePreset().catch(function(e){showToast(e.message);});};$('ext_history_refresh').onclick=function(){refreshHistory().catch(function(e){showToast(e.message);});};$('ext_history_restore').onclick=function(){restoreHistory().catch(function(e){showToast(e.message);});};
   $('ext_apply_fps').onclick=function(){applyProcessingRate().catch(function(e){showToast(e.message);});};$('ext_apply_camera').onclick=function(){applyCameraControls().catch(function(e){showToast(e.message);});};
   $('ext_sign_requests_pause').onclick=function(){signRequestsAction('pause').catch(function(e){showToast(e.message);});};$('ext_sign_requests_resume').onclick=function(){signRequestsAction('resume').catch(function(e){showToast(e.message);});};
+  $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
   $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
@@ -1012,8 +1023,8 @@ async function initializeExtension(){
   refreshWorkspaceProfiles().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace load failed: '+err.message);});
   refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
   refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
-  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSignRequests();refreshServerLogs();
-  extHealthTimer=setInterval(function(){refreshRuntime();refreshTrafficAndRace();refreshSignRequests();},1800);
+  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
+  extHealthTimer=setInterval(function(){refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
   setInterval(function(){refreshCameraSettings();refreshProcessingRate();},8000);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeExtension,{once:true});else initializeExtension();
