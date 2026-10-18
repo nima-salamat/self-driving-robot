@@ -414,7 +414,7 @@ class WebStreamer:
                 unsupported=unsupported,
             ), 409
         if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
-                and data.get("RUN_LVL") == "MOVE"):
+                and "RUN_LVL" in data and data.get("RUN_LVL") != "STOP"):
             return jsonify(
                 success=False,
                 message="motion is software-stopped; use the explicit /api/safety resume action",
