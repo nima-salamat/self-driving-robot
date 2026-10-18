@@ -41,6 +41,7 @@ usage: main.py [-h] [--mode {city,race}] [--debug]
                [--camera-mode {picam,webcam,opencv}]
                [--camera-index INDEX] [--target-fps N]
                [--multiprocess | --multiprocess-camera]
+               [--sign-intra-op-threads N]
                [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
 
 Self-driving robot runtime.
@@ -79,6 +80,9 @@ options:
   --multiprocess, --multiprocess-camera
                         Run camera capture and traffic-sign inference in
                         separate processes using latest-frame handoff
+  --sign-intra-op-threads N
+                        CPU thread budget for ONNX sign inference in
+                        multiprocessing mode (default: 2)
   --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
                         Enable ML lane detection with the selected model
 ~~~
@@ -95,7 +99,7 @@ Example (do not actuate Arduino during an initial performance comparison):
 python main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
 ```
 
-Compare against the same command without `--multiprocess`. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait, synchronous AprilTag detection, and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
+Compare against the same command without `--multiprocess`. The multiprocessing YOLO worker defaults to two ONNX intra-op CPU threads to limit contention with capture and lane processing; test `--sign-intra-op-threads 1`, `2` and `3` on the Pi to find the best trade-off. This setting does not affect the legacy threaded detector. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait, synchronous AprilTag detection, and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
 
 See [Multiprocessing Camera and Sign Inference Experiment](../docs/MULTIPROCESSING_EXPERIMENT.md) for design details and the current limitations.
 
