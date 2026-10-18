@@ -1823,6 +1823,11 @@ function updateUndoButtons(){
   if($('ext_redo')) $('ext_redo').disabled=!STREAM_CONTROL_ALLOWED||redoStack.length===0;
   if($('ext_undo_status')) $('ext_undo_status').textContent='Undo: '+undoStack.length+' · Redo: '+redoStack.length;
 }
+function rememberUndo(before,after){
+  if(before&&!sameConfig(before,after)){
+    undoStack.push(jsonClone(before));undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();
+  }
+}
 function restoreTrackingStack(){
   undoStack=undoStack.slice(-40);redoStack=redoStack.slice(-40);updateUndoButtons();
 }
@@ -1840,9 +1845,7 @@ window.fetch=async function(input,init){
   if(track&&response&&response.ok){
     try{
       const next=await readConfig();
-      if(before&&!sameConfig(before,next)){
-        undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];
-      }
+      rememberUndo(before,next);
       currentConfig=next;updateUndoButtons();
     }catch(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Configuration tracker refresh failed: '+err.message);}
   }
@@ -2064,9 +2067,10 @@ function syncLayerControls(){
 let uiLayerSaveTimer=null;
 function scheduleUILayerSave(){if(uiLayerSaveTimer)clearTimeout(uiLayerSaveTimer);uiLayerSaveTimer=setTimeout(function(){saveUILayers().catch(function(err){showToast('Layer save failed: '+err.message);});},250);}
 async function saveUILayers(){
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const response=await nativeFetch('/set_ui',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({colors:ui.colors,visible:ui.visible,opacity:ui.opacity||{}})});
   const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
-  currentConfig=await readConfig().catch(function(){return currentConfig;});drawPrecisionOverlay();scheduleWorkspaceSave();return data;
+  const after=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,after);currentConfig=after;drawPrecisionOverlay();scheduleWorkspaceSave();return data;
 }
 function applyConfigToUI(snapshot){
   const cfg=normalizedConfig(snapshot);if(!cfg)return;
@@ -2088,17 +2092,21 @@ async function applyFullConfig(snapshot,label,trackForUndo){
     const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
     applyConfigToUI(data.config);
     const after=normalizedConfig(data.config);
-    if(trackForUndo&&!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}
+    if(trackForUndo)rememberUndo(before,after);
     noteWorkspaceEvent('info',label||'Configuration restored');return data.config;
   }finally{internalConfigWrite--;}
 }
 async function doUndo(){
-  if(!undoStack.length)return;const target=undoStack.pop();if(currentConfig)redoStack.push(jsonClone(currentConfig));
-  try{const result=await applyFullConfig(target,'Undo configuration change');currentConfig=normalizedConfig(result);restoreTrackingStack();}catch(err){showToast('Undo failed: '+err.message);}
+  if(!undoStack.length)return;const target=undoStack.pop(),previous=currentConfig?jsonClone(currentConfig):null;
+  if(previous)redoStack.push(previous);
+  try{const result=await applyFullConfig(target,'Undo configuration change');currentConfig=normalizedConfig(result);restoreTrackingStack();}
+  catch(err){undoStack.push(target);if(previous&&redoStack.length)redoStack.pop();restoreTrackingStack();showToast('Undo failed: '+err.message);}
 }
 async function doRedo(){
-  if(!redoStack.length)return;const target=redoStack.pop();if(currentConfig)undoStack.push(jsonClone(currentConfig));
-  try{const result=await applyFullConfig(target,'Redo configuration change');currentConfig=normalizedConfig(result);restoreTrackingStack();}catch(err){showToast('Redo failed: '+err.message);}
+  if(!redoStack.length)return;const target=redoStack.pop(),previous=currentConfig?jsonClone(currentConfig):null;
+  if(previous)undoStack.push(previous);
+  try{const result=await applyFullConfig(target,'Redo configuration change');currentConfig=normalizedConfig(result);restoreTrackingStack();}
+  catch(err){redoStack.push(target);if(previous&&undoStack.length)undoStack.pop();restoreTrackingStack();showToast('Redo failed: '+err.message);}
 }
 async function refreshWorkspaceProfiles(){
   const data=await nativeFetch('/api/workspace',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
@@ -2220,7 +2228,7 @@ async function applyLiveFeature(feature,value){
   const response=await nativeFetch('/api/features',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature:feature,value:value})});
   const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
   const after=await readConfig();
-  if(!sameConfig(before,after)){undoStack.push(before);undoStack=undoStack.slice(-40);redoStack=[];updateUndoButtons();}
+  rememberUndo(before,after);
   currentConfig=after;showToast('Updated '+feature);noteWorkspaceEvent('info','Live feature changed: '+feature+'='+String(value));await refreshFeatureStatus();
 }
 async function refreshFeatureStatus(){
@@ -2301,10 +2309,12 @@ async function safetyAction(action){
   showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested');await refreshSafety();
 }
 async function applyProcessingRate(){
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const fps=Number($('ext_target_fps').value);const data=await nativeFetch('/api/processing-rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_fps:fps})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  $('ext_fps_status').textContent='Live · '+Number(data.target_fps).toFixed(1)+' FPS';showToast('Processing-rate limit updated at runtime');currentConfig=await readConfig().catch(function(){return currentConfig;});
+  $('ext_fps_status').textContent='Saved · '+Number(data.target_fps).toFixed(1)+' FPS';currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Processing-rate limit applied and saved');
 }
 async function applyCameraControls(){
+  const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const payload={};
   if(cameraSupportedControlNames.includes('AeEnable')){
     payload.AeEnable=!!$('ext_auto_exposure').checked;
@@ -2318,7 +2328,7 @@ async function applyCameraControls(){
   }
   if(!Object.keys(payload).length)throw new Error('This camera does not expose any supported runtime controls.');
   const response=await nativeFetch('/api/camera/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));showToast('Runtime camera controls applied');await refreshCameraSettings();currentConfig=await readConfig().catch(function(){return currentConfig;});
+  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));await refreshCameraSettings();currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Runtime camera controls applied');
 }
 function buildCommandPalette(){
   const commands=[
