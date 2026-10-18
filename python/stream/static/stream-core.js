@@ -651,10 +651,9 @@ canvas.addEventListener('mousemove',e=>{
     let nx_t = orig.t, nx_b = orig.b, nx_l = orig.l, nx_r = orig.r;
     
     if(dragState.type==='move'){
-        nx_t = clamp01(orig.t + dny); nx_b = clamp01(orig.b + dny);
-        nx_l = clamp01(orig.l + dnx); nx_r = clamp01(orig.r + dnx);
-        if(nx_r - nx_l < 0.02){ const mid = (nx_l + nx_r)/2; nx_l = mid - 0.01; nx_r = mid + 0.01; }
-        if(nx_b - nx_t < 0.02){ const mid = (nx_t + nx_b)/2; nx_t = mid - 0.01; nx_b = mid + 0.01; }
+        const width=orig.r-orig.l,height=orig.b-orig.t;
+        nx_l=Math.max(0,Math.min(1-width,orig.l+dnx));nx_r=nx_l+width;
+        nx_t=Math.max(0,Math.min(1-height,orig.t+dny));nx_b=nx_t+height;
     } else {
         if(dragState.corner==='nw'){ nx_t = clamp01(orig.t + dny); nx_l = clamp01(orig.l + dnx); }
         if(dragState.corner==='ne'){ nx_t = clamp01(orig.t + dny); nx_r = clamp01(orig.r + dnx); }
@@ -1264,9 +1263,17 @@ function mirrorLaneRoi(source,destination){
  if(![l,r,t,b].every(Number.isFinite)||r-l<.01||b-t<.01)return showToast('Source ROI geometry is invalid; mirroring was not applied.');
  const left=round01(1-r),right=round01(1-l);if(right-left<.01)return showToast('Mirrored ROI is invalid.');
  values[dst.left]=left;values[dst.right]=right;values[dst.top]=round01(t);values[dst.bottom]=round01(b);
+ const sourceFactorKey=source+'_TOP_WIDTH_FACTOR',destinationFactorKey=destination+'_TOP_WIDTH_FACTOR',factorPayload={};
+ if(Object.prototype.hasOwnProperty.call(advanced,sourceFactorKey)&&Object.prototype.hasOwnProperty.call(advanced,destinationFactorKey)&&Number.isFinite(Number(advanced[sourceFactorKey]))){
+   advanced[destinationFactorKey]=Math.max(0,Math.min(1,Number(advanced[sourceFactorKey])));
+   factorPayload[destinationFactorKey]=advanced[destinationFactorKey];
+   updateShapeUIFromData();
+ }
  markerHighlight=destination;selectedVar=destination;select.value=destination;propTarget.value=destination;updateInputsFromValues();renderWorkspaceCanvas();syncPropertiesSelection(destination);
  sendUpdate({[dst.top]:values[dst.top],[dst.bottom]:values[dst.bottom],[dst.left]:values[dst.left],[dst.right]:values[dst.right]});
- noteWorkspaceEvent('info','Mirrored '+source+' ROI to '+destination+' around normalized image center.');showToast('Mirrored '+(source==='LL'?'Left':'Right')+' ROI to '+(destination==='RL'?'Right':'Left')+'.');
+ if(Object.keys(factorPayload).length)sendAdvanced(factorPayload);
+ noteWorkspaceEvent('info','Mirrored '+source+' ROI to '+destination+' around normalized image center, including lane shape when available.');
+ showToast('Mirrored '+(source==='LL'?'Left':'Right')+' ROI to '+(destination==='RL'?'Right':'Left')+'.');
 }
 document.getElementById('mirror_left_to_right').addEventListener('click',()=>mirrorLaneRoi('LL','RL'));
 document.getElementById('mirror_right_to_left').addEventListener('click',()=>mirrorLaneRoi('RL','LL'));
