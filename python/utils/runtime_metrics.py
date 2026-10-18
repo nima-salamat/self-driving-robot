@@ -14,7 +14,7 @@ class RuntimeMetrics:
         "loop", "camera", "perception", "control", "serial",
         "lane", "confidence", "sign_submit", "sign_consume",
         "sign_latency", "sign_input_age",
-        "object", "traffic_light", "debug_stream", "camera_wait",
+        "object", "apriltag", "traffic_light", "debug_stream", "camera_wait",
         "frame_age", "rate_wait",
     )
 
