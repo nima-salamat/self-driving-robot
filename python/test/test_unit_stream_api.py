@@ -108,6 +108,20 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("streamFps:streamFps", extensions)
         self.assertIn("function settingSearchEntries()", extensions)
         self.assertIn("function navigateToPaletteSetting(entry)", extensions)
+        self.assertIn("function updateActiveToolBanner()", extensions)
+        self.assertIn("function isPaletteCommandActive(name)", extensions)
+        self.assertIn("Ruler start marked. Move the pointer to preview distance", extensions)
+        self.assertIn("window.onStreamWorkspaceToolChanged=function(tool)", extensions)
+        self.assertIn("palette-active-indicator", extensions)
+        self.assertNotIn('id="ext_roi_rect_tool"', template)
+        self.assertNotIn('id="ext_roi_trapezoid_tool"', template)
+        self.assertNotIn('id="ext_roi_top_factor"', template)
+        self.assertNotIn("Draw rectangle ROI preview", extensions)
+        self.assertNotIn("Draw trapezoid ROI preview", extensions)
+        self.assertIn('id="active_tool_banner"', template)
+        self.assertIn('id="active_tool_cancel"', template)
+        self.assertIn(".active-tool-banner[hidden]", css)
+        self.assertIn(".palette-active-indicator{", css)
         self.assertIn("palette-setting-highlight", extensions)
         self.assertIn("window.setStreamDisplayFps(streamFps)", extensions)
         self.assertIn('id="ext_settings_results"', template)
@@ -698,33 +712,40 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(queried.status_code, 200)
             self.assertIn("config", queried.get_json())
 
-    def test_custom_preview_roi_geometry_and_drawing_tool_are_validated(self):
+    def test_workspace_migrates_legacy_visual_custom_roi_annotations(self):
         import tempfile
 
         client = WebStreamer(self.make_config()).app.test_client()
         with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
-            valid = client.post(
+            migrated = client.post(
                 "/api/workspace",
                 json={"action": "save_workspace", "workspace": {
                     "view": {"tool": "roi_trapezoid", "rightPaneWidth": 380},
-                    "annotations": [{
-                        "kind": "roi_trapezoid", "x": 0.1, "y": 0.2,
-                        "w": 0.5, "h": 0.4, "topFactor": 0.45,
-                        "label": "Preview-only region"
-                    }],
+                    "annotations": [
+                        {
+                            "kind": "roi_trapezoid", "x": 0.1, "y": 0.2,
+                            "w": 0.5, "h": 0.4, "topFactor": 0.45,
+                            "label": "Legacy preview-only region"
+                        },
+                        {"kind": "marker", "u": 0.25, "v": 0.35, "label": "Keep this note"},
+                    ],
                 }},
             )
-            self.assertEqual(valid.status_code, 200, valid.get_data(as_text=True))
-            bad = client.post(
+            self.assertEqual(migrated.status_code, 200, migrated.get_data(as_text=True))
+            workspace = migrated.get_json()["workspace"]
+            self.assertEqual(workspace["view"]["tool"], "select")
+            self.assertEqual(workspace["view"]["rightPaneWidth"], 380.0)
+            self.assertEqual(workspace["annotations"], [
+                {"kind": "marker", "u": 0.25, "v": 0.35, "label": "Keep this note"}
+            ])
+
+            unsupported = client.post(
                 "/api/workspace",
                 json={"action": "save_workspace", "workspace": {
-                    "annotations": [{
-                        "kind": "roi_rect", "x": 0.8, "y": 0.2,
-                        "w": 0.4, "h": 0.2
-                    }],
+                    "annotations": [{"kind": "unknown-tool", "u": 0.1, "v": 0.2}],
                 }},
             )
-            self.assertEqual(bad.status_code, 400)
+            self.assertEqual(unsupported.status_code, 400)
 
     def test_live_feature_controls_are_gated_and_persisted(self):
         import tempfile
