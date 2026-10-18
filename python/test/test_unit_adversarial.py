@@ -338,6 +338,31 @@ class ControllerAdversarialTests(unittest.TestCase):
 
 
 class SignFreshnessAdversarialTests(unittest.TestCase):
+    def test_source_capture_timestamp_survives_async_handoff(self):
+        from traffic_sign_detector.async_detector import AsyncSignDetector
+
+        done = threading.Event()
+
+        class FakeDetector:
+            def process_frame(self, frame, debug_frame=None):
+                done.set()
+                return {"label": frame}
+
+        captured_at = time.monotonic() - 0.1
+        worker = AsyncSignDetector(FakeDetector())
+        try:
+            worker.submit("frame", frame_captured_at=captured_at)
+            self.assertTrue(done.wait(2.0))
+            latest = worker.latest()
+            self.assertIsNotNone(latest)
+            self.assertEqual(latest[4], captured_at)
+            self.assertIsNone(worker.latest(max_age_s=0.05))
+            self.assertGreaterEqual(
+                worker.status()["last_result_input_age_s"], 0.1
+            )
+        finally:
+            worker.close()
+
     def test_completed_result_has_input_metadata_and_expires(self):
         from traffic_sign_detector.async_detector import AsyncSignDetector
 
