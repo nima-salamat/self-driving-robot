@@ -780,7 +780,7 @@ setInterval(()=>{
   document.getElementById('hud_speed').textContent = hwSpeed;
   document.getElementById('hud_angle').textContent = hwAngle;
   document.getElementById('speed_limit_lbl').textContent = speedLimit;
-  document.getElementById('angle_limit_number').value = String(angleLimit);
+  if(document.activeElement.id !== 'angle_limit_number') document.getElementById('angle_limit_number').value = String(angleLimit);
 
   // send normalized forward/steer (-1..1) and speed_scale (speedLimit / max_speed)
   const speedScale = speedLimit / (Number(document.getElementById('max_speed').value || settings.max_speed) || 1);
