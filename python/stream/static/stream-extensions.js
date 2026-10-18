@@ -663,6 +663,7 @@ async function safetyAction(action,options){
   if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+  if($('run_lvl'))$('run_lvl').value=String(data.run_level|| (action==='stop'?'STOP':'MOVE'));
   showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard RUN_LVL '+(action==='stop'?'STOP':'MOVE')+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await refreshSignRequests();
 }
 async function applyProcessingRate(){
