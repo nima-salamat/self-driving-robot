@@ -38,11 +38,12 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
       <output id="workspace_zoom_percent" class="zoom-percent" aria-live="off">100%</output>
       <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
-      <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
+      
       <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
       <span id="mode_features" class="sr-only" aria-hidden="true"></span>
       <div id="frame_mode" class="small status-line">Mode: Live</div>
       {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
+      <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button" aria-expanded="true" aria-label="Hide settings panels" title="Show or hide the right-side panels"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
     </div>
     <div class="workspace-main">
 <aside class="left-toolbar" aria-label="Tools">
@@ -53,7 +54,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <button type="button" class="tool-button" data-action="fit-view" title="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
 <button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" title="Toggle overlays (O)">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
 <button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" data-action="toggle-console" title="Recent events console">▤<span class="tool-tip">Recent Events · Ctrl+Backtick</span></button></aside>
+<button type="button" class="tool-button" data-action="toggle-console" aria-label="Toggle Event Console" title="Recent events console (Ctrl+Backtick)"><svg class="toolbar-icon toolbar-icon-console" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span class="tool-tip">Event Console · Ctrl+Backtick</span></button></aside>
 <div class="workspace-stage-column">
     <div id="canvas_stage" class="canvas-stage">
       <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen">⛶ Fullscreen</button>
@@ -77,7 +78,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     </div>
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
-<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false">⌃ EVENT CONSOLE</button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
 <div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
 <div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
 </section>
@@ -320,6 +321,48 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <p class="settings-note">Appearance values are base sizes at 100% zoom; overlays scale with the camera image.</p>
     </div>
     <footer class="settings-footer"><button type="button" class="ghost" id="roi_settings_reset">Reset defaults</button><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="roi_settings_cancel">Cancel</button><button type="button" class="btn" id="roi_settings_apply">Apply</button></footer>
+  </section>
+</div>
+<div id="shortcut_dialog" class="shortcut-modal" aria-hidden="true">
+  <section class="shortcut-card" role="dialog" aria-modal="true" aria-labelledby="shortcut_title">
+    <header class="shortcut-header">
+      <div><p class="shortcut-eyebrow">STREAM EDITOR GUIDE</p><h2 id="shortcut_title">Keyboard & Mouse Shortcuts</h2><p>Fast navigation, precise ROI editing, and workspace controls.</p></div>
+      <button type="button" class="ghost shortcut-close" id="shortcut_close" aria-label="Close shortcuts">×</button>
+    </header>
+    <div class="shortcut-groups">
+      <section class="shortcut-group"><h3>Navigate the frame</h3>
+        <div class="shortcut-row"><span>Fit frame to available space</span><kbd>0</kbd></div>
+        <div class="shortcut-row"><span>Zoom in / out</span><kbd>+</kbd><kbd>−</kbd></div>
+        <div class="shortcut-row"><span>Zoom around pointer</span><kbd>Mouse wheel</kbd></div>
+        <div class="shortcut-row"><span>Pan the workspace</span><kbd>H</kbd><kbd>Middle mouse drag</kbd></div>
+        <div class="shortcut-row"><span>Return to select / edit tool</span><kbd>V</kbd></div>
+        <div class="shortcut-row"><span>Camera fullscreen</span><kbd>F</kbd></div>
+      </section>
+      <section class="shortcut-group"><h3>ROI & precision tools</h3>
+        <div class="shortcut-row"><span>Show / hide operational ROI overlays</span><kbd>O</kbd></div>
+        <div class="shortcut-row"><span>Toggle grid</span><kbd>G</kbd></div>
+        <div class="shortcut-row"><span>Crosshair: click to copy U,V point</span><kbd>X</kbd></div>
+        <div class="shortcut-row"><span>Place annotation / marker</span><kbd>N</kbd></div>
+        <div class="shortcut-row"><span>Pixel ruler: click two points</span><kbd>R</kbd></div>
+        <div class="shortcut-row"><span>Draw custom rectangle / trapezoid ROI</span><kbd>Command Palette</kbd></div>
+        <div class="shortcut-note">Paste a copied pair such as <code>0.325, 0.640</code> into Left/Top for the first ROI corner or Right/Bottom for the second corner. Press Apply to save.</div>
+      </section>
+      <section class="shortcut-group"><h3>Workspace & configuration</h3>
+        <div class="shortcut-row"><span>Command palette</span><kbd>Ctrl</kbd><kbd>K</kbd></div>
+        <div class="shortcut-row"><span>Open this shortcut guide</span><kbd>F1</kbd><kbd>?</kbd></div>
+        <div class="shortcut-row"><span>Event Console open / close</span><kbd>Ctrl</kbd><kbd>`</kbd></div>
+        <div class="shortcut-row"><span>Undo</span><kbd>Ctrl</kbd><kbd>Z</kbd></div>
+        <div class="shortcut-row"><span>Redo</span><kbd>Ctrl</kbd><kbd>Y</kbd><span class="shortcut-or">or</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></div>
+        <div class="shortcut-row"><span>Save workspace layout</span><kbd>Ctrl</kbd><kbd>S</kbd></div>
+        <div class="shortcut-row"><span>Export full configuration</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>E</kbd></div>
+        <div class="shortcut-row"><span>Close dialog / dropdown</span><kbd>Esc</kbd></div>
+      </section>
+      <section class="shortcut-group shortcut-safety"><h3>Runtime & safety</h3>
+        <div class="shortcut-row"><span>Request software STOP (no confirmation)</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd></div>
+        <p class="shortcut-note">This shortcut requests a software stop through the dashboard API. It is <strong>not</strong> a hardware emergency stop; use the physical cutoff when required. Resume motion remains confirmation-gated.</p>
+      </section>
+    </div>
+    <footer class="shortcut-footer"><span>Letter shortcuts are disabled while typing in an input field.</span><button type="button" class="btn" id="shortcut_done">Done</button></footer>
   </section>
 </div>
 <div id="toast" class="toast" style="display:none"></div>
