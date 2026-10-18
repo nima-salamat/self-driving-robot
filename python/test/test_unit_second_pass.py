@@ -23,6 +23,17 @@ from train_sign_detector.labels import SIGN_LABELS
 
 
 class SecondPassStreamTests(unittest.TestCase):
+    def setUp(self):
+        import stream
+
+        self._stream_test_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._stream_test_directory.cleanup)
+        base_dir_patch = patch.object(stream, "BASE_DIR", self._stream_test_directory.name)
+        base_dir_patch.start()
+        self.addCleanup(base_dir_patch.stop)
+        env_patch = patch.dict(os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
     def config(self, mode="race", ml=True):
         return types.SimpleNamespace(
             MODE=mode,
