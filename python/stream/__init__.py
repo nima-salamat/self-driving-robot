@@ -916,7 +916,7 @@ class WebStreamer:
                     raise ValueError(f"view.{key} must be boolean")
                 clean_view[key] = view[key]
         if "tool" in view:
-            if view["tool"] not in {"select", "pan", "annotate", "ruler", "roi"}:
+            if view["tool"] not in {"select", "pan", "annotate", "ruler", "roi", "roi_rect", "roi_trapezoid"}:
                 raise ValueError("view.tool is invalid")
             clean_view["tool"] = view["tool"]
         clean["view"] = clean_view
