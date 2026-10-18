@@ -28,7 +28,7 @@ When sign inference is enabled, a spawned worker loads the configured YOLO or SV
 
 Only the cropped sign ROI and inference options cross the process boundary; full debug frames and binary masks do not. Bounding-box overlays are drawn back onto the parent frame. The existing model confidence, Race STOP confidence, sign-area filtering, phase gates and StopSignHold logic remain in place. The opt-in changes how often work is submitted, not the detector's confidence threshold or what constitutes an accepted sign.
 
-A process boundary is not guaranteed to improve FPS on every device: camera/ROI copying, process scheduling and CPU contention cost time. The newly expanded metrics are meant to show whether it helps under the actual camera/model workload.
+A process boundary is not guaranteed to improve FPS on every device: camera/ROI copying, process scheduling and CPU contention cost time. The ONNX YOLO process now defaults to two intra-op CPU threads in multiprocessing mode, with an opt-in `--sign-intra-op-threads N` tuning override. The number is configurable because the best latency/throughput split depends on CPU cores and thermal state. Compare 1, 2 and 3 threads on the Pi; these thread-budget changes have not yet been benchmarked in the operator's environment. The newly expanded metrics are meant to show whether it helps under the actual camera/model workload.
 
 ## Performance diagnostics
 
@@ -46,7 +46,7 @@ Example comparison commands (hardware-free with respect to motor/Arduino command
 
 ```bash
 python python/main.py --mode race --without-arduino --performance --target-fps 40
-python python/main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
+python python/main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess --sign-intra-op-threads 2
 ```
 
 Keep camera, model, resolution, lighting, target rate and debug/stream settings identical. Wait for warm-up, collect several runs of at least 30–60 seconds, and compare steady-state samples. Start and stop the process repeatedly to check for resource leaks. Do not consider the multiprocessing path validated for physical movement until it has been tested in a controlled setup.
