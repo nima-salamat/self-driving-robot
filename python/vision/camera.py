@@ -208,7 +208,7 @@ class Camera:
                 raise RuntimeError("Webcam not functioning properly")
     
     def get_frame_rate_limits(self):
-        if self._shared_capture is not None:
+        if getattr(self, "_shared_capture", None) is not None:
             return self._shared_capture.get_frame_rate_limits()
         if not self.pi_mode:
             return None
@@ -231,7 +231,7 @@ class Camera:
         if fps <= 0:
             raise ValueError("fps must be greater than zero")
 
-        if self._shared_capture is not None:
+        if getattr(self, "_shared_capture", None) is not None:
             actual = self._shared_capture.set_frame_rate(fps)
             self.requested_frame_rate = actual
             if getattr(self, "config", None) is not None:
@@ -314,7 +314,7 @@ class Camera:
             return None
 
     def capture_frame(self, with_resize=True):
-        if self._shared_capture is not None:
+        if getattr(self, "_shared_capture", None) is not None:
             frame, frame_resized, state = self._shared_capture.capture_frame(
                 with_resize=with_resize
             )
@@ -344,7 +344,7 @@ class Camera:
             self.last_capture_duration_ms = max(
                 0.0, (self.last_capture_at - started) * 1000.0
             )
-            self.frame_sequence += 1
+            self.frame_sequence = int(getattr(self, "frame_sequence", 0)) + 1
             metrics = getattr(self.config, "runtime_metrics", None)
             if metrics is not None:
                 metrics.record_camera(self.last_capture_duration_ms, valid)
@@ -403,7 +403,7 @@ class Camera:
     def release(self):
         self.camera_initialized = False
         self.last_capture_valid = False
-        if self._shared_capture is not None:
+        if getattr(self, "_shared_capture", None) is not None:
             capture = self._shared_capture
             self._shared_capture = None
             self.picam = None

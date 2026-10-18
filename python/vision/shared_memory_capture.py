@@ -50,6 +50,8 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
     """The sole camera owner; publishes frame bytes only through shared memory."""
     shared = None
     camera = None
+    raw_view = None
+    resized_view = None
     ready_sent = False
     try:
         # Import inside the child so imports do not initialize hardware.
@@ -157,6 +159,10 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
                 camera.release()
             except Exception:
                 logger.exception("Failed to release camera in capture worker")
+        # NumPy views export the shared buffer. Drop them before closing the
+        # SharedMemory mapping, particularly important on Windows.
+        raw_view = None
+        resized_view = None
         if shared is not None:
             try:
                 shared.close()
