@@ -688,7 +688,7 @@ function installCoordinatePairPaste(){
     field.addEventListener('paste',function(event){
       const transfer=event.clipboardData||window.clipboardData;
       const text=transfer&&transfer.getData?transfer.getData('text'):'';
-      const match=String(text||'').match(/^\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+))\\s*[,;\\s]\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+))\\s*$/);
+      const match=String(text||'').match(/^\s*(-?(?:\d+\.?\d*|\.\d+))\s*[,;\s]\s*(-?(?:\d+\.?\d*|\.\d+))\s*$/);
       if(!match)return;
       const a=Number(match[1]),b=Number(match[2]);if(!Number.isFinite(a)||!Number.isFinite(b))return;
       const target=$('prop_target')?$('prop_target').value:'NONE';
