@@ -38,7 +38,7 @@ Run with `--performance`. The headline reports cycle FPS, loop mean/p95/max, cam
 - Sign submission, inference latency and age of its input frame.
 - Parent-side camera handoff/copy time and camera-frame age when using the shared-memory camera.
 - Skipped camera sequences, measured camera FPS and sign-worker liveness/queue/counters.
-- Processing-rate wait, debug/stream rendering, object detection, and the optional City traffic-light detector.
+- Processing-rate wait, debug/stream rendering, object detection, synchronous AprilTag detection, and the optional City traffic-light detector.
 
 Counters and stage timers have a finite rolling window; this diagnostics option adds measurement/logging only. Use the p95 values together with frame age and the worker counters, not the target FPS alone, to identify the true bottleneck.
 
