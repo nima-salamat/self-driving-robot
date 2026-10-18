@@ -132,6 +132,15 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn(".menu-dropdown button.menu-danger", css)
         self.assertIn("window.location.replace('about:blank')", extensions)
 
+        # Check the page as Flask actually renders it, not just source templates.
+        live_config = self.make_config()
+        live_config.STREAM_ALLOW_CONTROL = True
+        rendered = WebStreamer(live_config).app.test_client().get("/")
+        self.assertEqual(rendered.status_code, 200)
+        rendered_html = rendered.get_data(as_text=True)
+        self.assertIn('data-action="exit-stream"', rendered_html)
+        self.assertIn("Exit · Stop Stream Server…", rendered_html)
+
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
         core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
@@ -302,6 +311,10 @@ class StreamApiTests(unittest.TestCase):
             args = parse_args()
 
         self.assertIs(args.stream_control, False)
+        self.assertTrue(
+            args.stream,
+            "--stream-read-only must also start the read-only dashboard",
+        )
 
     def test_stream_control_cli_flags_are_mutually_exclusive(self):
         from unittest.mock import patch
@@ -313,6 +326,16 @@ class StreamApiTests(unittest.TestCase):
             ["main.py", "--stream-control", "--stream-read-only"],
         ), self.assertRaises(SystemExit):
             parse_args()
+
+    def test_stream_control_cli_flag_also_starts_dashboard(self):
+        from unittest.mock import patch
+        from utils.parser import parse_args
+
+        with patch.object(sys, "argv", ["main.py", "--stream-control"]):
+            args = parse_args()
+
+        self.assertTrue(args.stream)
+        self.assertIs(args.stream_control, True)
 
     def test_controls_are_enabled_when_config_allows_updates(self):
         config = self.make_config()
