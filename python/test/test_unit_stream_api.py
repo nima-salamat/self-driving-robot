@@ -48,6 +48,7 @@ class StreamApiTests(unittest.TestCase):
             ("/set_ui", "set_ui"),
             ("/video_feed_frame", "video_feed_frame"),
             ("/video_feed", "video_feed"),
+            ("/api/stream/quality", "stream_quality_api"),
             ("/api/mode", "mode"),
             ("/api/arduino-output", "arduino_output"),
             ("/api/health", "health"),
@@ -418,6 +419,9 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
         html = response.get_data(as_text=True)
+        self.assertIn("Pause Dashboard Requests", html)
+        self.assertIn('id="roi_setting_jpeg_quality"', html)
+        self.assertIn("This only changes JPEG encoding for dashboard frames", html)
 
         # HTML_TEMPLATE is a Python triple-quoted string. The rendered
         # JavaScript must contain a backslash+n escape, not a literal newline
@@ -1059,6 +1063,74 @@ class StreamApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_stream_jpeg_quality_api_updates_cached_and_live_encoders(self):
+        import cv2
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        initial = client.get("/api/stream/quality")
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.get_json()["quality"], 85)
+        self.assertTrue(initial.get_json()["runtime_only"])
+
+        with patch("stream.media_api.cv2.imencode", wraps=cv2.imencode) as encode:
+            first = client.get("/video_feed_frame")
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.headers["X-Stream-JPEG-Quality"], "85")
+
+            changed = client.post("/api/stream/quality", json={"quality": 60})
+            self.assertEqual(changed.status_code, 200)
+            self.assertEqual(changed.get_json()["quality"], 60)
+            self.assertEqual(config.STREAM_JPEG_QUALITY, 60)
+
+            # Same source frame ID: changing quality must invalidate cached JPEG.
+            second = client.get("/video_feed_frame")
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(second.headers["X-Stream-JPEG-Quality"], "60")
+            self.assertEqual(encode.call_count, 2)
+            self.assertEqual(
+                encode.call_args_list[0].args[2],
+                [cv2.IMWRITE_JPEG_QUALITY, 85],
+            )
+            self.assertEqual(
+                encode.call_args_list[1].args[2],
+                [cv2.IMWRITE_JPEG_QUALITY, 60],
+            )
+
+        self.assertEqual(client.get("/api/stream/quality").get_json()["quality"], 60)
+        invalid = client.post("/api/stream/quality", json={"quality": 101})
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(config.STREAM_JPEG_QUALITY, 60)
+
+    def test_stream_jpeg_quality_mutation_respects_read_only_mode(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = False
+        client = WebStreamer(config).app.test_client()
+
+        self.assertEqual(client.get("/api/stream/quality").status_code, 200)
+        denied = client.post("/api/stream/quality", json={"quality": 50})
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(getattr(config, "STREAM_JPEG_QUALITY", 85), 85)
+
+    def test_dashboard_request_pause_is_distinct_from_robot_stop(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        self.assertIn("Pause Dashboard Requests", template)
+        self.assertIn("Resume Dashboard Requests", core)
+        self.assertIn("clearInterval(fetchFrameTimer)", core)
+        self.assertIn("Dashboard polling paused; robot motion is unchanged", core)
+        # The polling button must never send a RUN_LVL/safety mutation.
+        stop_handler = core.split("Pause Dashboard Requests Logic", 1)[1].split(
+            "Advanced API Sync", 1
+        )[0]
+        self.assertNotIn("/api/safety", stop_handler)
+        self.assertIn("RUN_LVL", template)
+        self.assertIn("does not stop the robot or change RUN_LVL", template)
 
 
     def test_manual_controller_angle_limit_accepts_numeric_entry(self):
