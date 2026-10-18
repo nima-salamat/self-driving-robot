@@ -870,6 +870,17 @@ class ProgressHealthAdversarialTests(unittest.TestCase):
 
 
 class StreamFailureAdversarialTests(unittest.TestCase):
+    def setUp(self):
+        import stream
+
+        self._stream_test_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._stream_test_directory.cleanup)
+        base_dir_patch = patch.object(stream, "BASE_DIR", self._stream_test_directory.name)
+        base_dir_patch.start()
+        self.addCleanup(base_dir_patch.stop)
+        env_patch = patch.dict(os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
     def test_video_api_returns_degraded_response_on_encode_failure(self):
         import types
         from unittest.mock import patch
