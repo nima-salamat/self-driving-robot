@@ -60,6 +60,14 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
         pass
 
     try:
+        # OpenCV preprocessing in the YOLO child is small compared with ONNX
+        # inference. Keep its own thread pool from oversubscribing the CPU
+        # alongside the bounded ONNX pool and the capture/control processes.
+        try:
+            import cv2
+            cv2.setNumThreads(1)
+        except Exception:
+            logger.debug("Could not bound OpenCV threads in sign worker", exc_info=True)
         detector = _make_detector(method, detector_factory, intra_op_num_threads)
         ready_payload.put((True, None), timeout=2.0)
     except Exception as exc:
