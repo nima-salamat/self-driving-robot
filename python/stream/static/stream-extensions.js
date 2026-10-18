@@ -9,11 +9,26 @@ let gridColor='#69bed2', keyboardNudgePx=5, streamFps=8.3, streamJpegQuality=85,
 window.__isEditorSnapEnabled=()=>extSnap;
 window.__getStreamKeyboardNudgePx=()=>keyboardNudgePx;
 let editorTool='select', rulerStart=null, rulerHoverPoint=null, internalWorkspaceToolSync=false, extAnnotations=[], extFrameGallery=[], extRuntimeSample=[];
-let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null;
+let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null, extSettingsTimer=null;
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
 let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
 const nativeFetch = window.fetch.bind(window);
 let motionHotkeyActionInFlight=false, streamShutdownRequestedLocally=false;
+function stopExtensionPolling(){
+  if(extHealthTimer){clearInterval(extHealthTimer);extHealthTimer=null;}
+  if(extSettingsTimer){clearInterval(extSettingsTimer);extSettingsTimer=null;}
+}
+function startExtensionPolling(){
+  if(streamShutdownRequestedLocally)return;
+  if(!extHealthTimer)extHealthTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
+  if(!extSettingsTimer)extSettingsTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshCameraSettings();refreshProcessingRate();},8000);
+}
+window.setStreamExtensionPollingEnabled=function(enabled){
+  if(!enabled){stopExtensionPolling();return;}
+  if(streamShutdownRequestedLocally)return;
+  startExtensionPolling();
+  refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
+};
 
 function normalizedConfig(snapshot){
   if(!snapshot || typeof snapshot!=='object') return null;
@@ -1029,7 +1044,7 @@ function installExtension(){
   if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
   $('ext_grid').addEventListener('change',function(){gridMode=this.checked?(gridMode==='dots'?'dots':'grid'):'off';extGrid=gridMode!=='off';drawPrecisionOverlay();scheduleWorkspaceSave();});
   $('roi_settings_open').addEventListener('click',openEditorSettings);$('roi_settings_close').addEventListener('click',()=>closeEditorSettings(true));$('roi_settings_cancel').addEventListener('click',()=>closeEditorSettings(true));
-  $('roi_settings_apply').addEventListener('click',async()=>{const qualityInput=$('roi_setting_jpeg_quality');const requestedQuality=qualityInput?Number(qualityInput.value):streamJpegQuality;try{if(requestedQuality!==streamJpegQuality){if(!STREAM_CONTROL_ALLOWED)throw new Error('Stream controls are disabled; JPEG quality was not changed.');const response=await nativeFetch('/api/stream/quality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quality:requestedQuality})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||('HTTP '+response.status));streamJpegQuality=Number(data.quality);}previewEditorSettings();scheduleWorkspaceSave();closeEditorSettings(false);showToast('Editor settings applied'+(requestedQuality!==85?' · JPEG quality '+streamJpegQuality:''));}catch(error){showToast('Could not apply JPEG quality: '+(error&&error.message?error.message:'request failed'));}});$('roi_settings_reset').addEventListener('click',resetEditorSettingsDraft);
+  $('roi_settings_apply').addEventListener('click',async()=>{const qualityInput=$('roi_setting_jpeg_quality');const requestedQuality=qualityInput?Number(qualityInput.value):streamJpegQuality;try{if(requestedQuality!==streamJpegQuality||streamQualityDraftDirty){if(!STREAM_CONTROL_ALLOWED)throw new Error('Stream controls are disabled; JPEG quality was not changed.');const response=await nativeFetch('/api/stream/quality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quality:requestedQuality})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||('HTTP '+response.status));streamJpegQuality=Number(data.quality);}previewEditorSettings();scheduleWorkspaceSave();closeEditorSettings(false);showToast('Editor settings applied'+(requestedQuality!==85?' · JPEG quality '+streamJpegQuality:''));}catch(error){showToast('Could not apply JPEG quality: '+(error&&error.message?error.message:'request failed'));}});$('roi_settings_reset').addEventListener('click',resetEditorSettingsDraft);
   const settingsModalElement=$('roi_settings_dialog');settingsModalElement.addEventListener('click',e=>{if(e.target===settingsModalElement)closeEditorSettings(true);});settingsModalElement.querySelectorAll('input,select').forEach(el=>['input','change'].forEach(evt=>el.addEventListener(evt,previewEditorSettings)));
   const jpegQualityInput=$('roi_setting_jpeg_quality');
   if(jpegQualityInput)jpegQualityInput.addEventListener('input',function(){streamQualityDraftDirty=true;const label=$('roi_setting_jpeg_quality_value');if(label)label.textContent=this.value+' / 100';});
@@ -1107,8 +1122,7 @@ async function initializeExtension(){
   refreshPresets().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Preset list failed: '+err.message);});
   refreshHistory().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','History read failed: '+err.message);});
   refreshRuntime();refreshFeatureStatus();refreshTrafficAndRace();refreshCameraSettings();refreshProcessingRate();refreshSafety();refreshSignRequests();refreshServerLogs();
-  extHealthTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
-  setInterval(function(){if(streamShutdownRequestedLocally)return;refreshCameraSettings();refreshProcessingRate();},8000);
+  startExtensionPolling();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeExtension,{once:true});else initializeExtension();
 })();
