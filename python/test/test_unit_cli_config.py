@@ -97,6 +97,17 @@ class CliConfigPrecedenceTests(unittest.TestCase):
                 self.assertTrue(config.MULTIPROCESS_CAMERA)
                 self.assertTrue(config.MULTIPROCESS_SIGN_DETECTOR)
 
+    def test_multiprocess_is_strictly_opt_in_even_if_config_is_true(self):
+        with patch.object(sys, "argv", ["main.py"]):
+            args = parse_args()
+        config = types.SimpleNamespace(
+            MULTIPROCESS_CAMERA=True,
+            MULTIPROCESS_SIGN_DETECTOR=True,
+        )
+        _apply_cli_overrides(config, args)
+        self.assertFalse(config.MULTIPROCESS_CAMERA)
+        self.assertFalse(config.MULTIPROCESS_SIGN_DETECTOR)
+
     def test_stream_is_disabled_unless_flag_is_supplied(self):
         for mode in ("city", "race"):
             with self.subTest(mode=mode):
