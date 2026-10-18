@@ -920,8 +920,6 @@ function installExtension(){
   showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
   $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
   $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
-  $('ext_roi_rect_tool').onclick=function(){setEditorTool(editorTool==='roi_rect'?'select':'roi_rect');};
-  $('ext_roi_trapezoid_tool').onclick=function(){setEditorTool(editorTool==='roi_trapezoid'?'select':'roi_trapezoid');};
   $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all custom annotations from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
   $('ext_save_workspace').onclick=function(){saveWorkspace().then(function(){showToast('Workspace layout saved');}).catch(function(err){showToast(err.message);});};
   $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
