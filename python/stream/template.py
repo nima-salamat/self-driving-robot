@@ -801,7 +801,7 @@ function sendAdvanced(payload) {
 // Convert image norm coords (0-1) to physical canvas coords, honoring workspace zoom
 function getImgBounds(){const w=canvas.width,h=canvas.height,iw=w*workspaceZoom,ih=h*workspaceZoom;return{ix:(w-iw)/2+viewPanX,iy:(h-ih)/2+viewPanY,iw,ih};}
 function canvasPointFromEvent(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return{x:0,y:0};return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height};}
-function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();}
+function renderWorkspaceCanvas(){ctx.clearRect(0,0,canvas.width,canvas.height);if(lastFrameImage){const b=getImgBounds();ctx.drawImage(lastFrameImage,b.ix,b.iy,b.iw,b.ih);}drawOverlays();if(typeof drawPrecisionOverlay==='function')drawPrecisionOverlay();}
 
 function toCanvas(nx, ny) {
     const b = getImgBounds();
@@ -2238,9 +2238,9 @@ async function refreshFeatureStatus(){
     $('ext_feature_status').textContent=rows.map(function(r){const meta=r[1]||{};return r[0]+': '+(meta.enabled?'enabled':'disabled')+' — '+(meta.reason||'startup configuration');}).join(newline)+newline+newline+'Lane detector: '+(f.lane_detector||'unknown')+newline+'ML lane detector: '+String(!!f.ml_lane_detector)+newline+'Mode capabilities:'+newline+JSON.stringify(c,null,2);
     if(f.encoder_map_enabled){$('ext_encoder_embed').hidden=false;$('ext_encoder_status').textContent='Encoder odometry is active.';if(!$('ext_encoder_frame').src||!$('ext_encoder_frame').src.endsWith('/encoder-map'))$('ext_encoder_frame').src='/encoder-map';}
     else{$('ext_encoder_embed').hidden=true;$('ext_encoder_status').textContent='Encoder map is disabled (enable with --encoder-map and compatible firmware, then restart).';}
-    if(f.mode==='city'){$('ext_traffic_status').parentElement.style.display='';$('ext_traffic_status').previousElementSibling.style.display='';$('ext_race_status').parentElement.style.display='none';}
-    if(f.mode==='race'){$('ext_race_status').parentElement.style.display='';$('ext_race_status').previousElementSibling.style.display='';$('ext_traffic_status').parentElement.style.display='none';}
-    if(f.mode!=='city'&&f.mode!=='race'){$('ext_traffic_status').parentElement.style.display='none';$('ext_race_status').parentElement.style.display='none';}
+    const setStatusSectionVisible=function(element,visible){if(!element)return;element.style.display=visible?'':'none';if(element.previousElementSibling)element.previousElementSibling.style.display=visible?'':'none';};
+    setStatusSectionVisible($('ext_traffic_status'),f.mode==='city');
+    setStatusSectionVisible($('ext_race_status'),f.mode==='race');
     window.extActiveMode=f.mode;
   }catch(err){$('ext_feature_status').textContent='Feature query failed: '+err.message;}
 }
