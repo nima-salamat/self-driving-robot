@@ -17,7 +17,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
 <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Editor Self Driving Robot</span></div>
 <details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
-<details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
+<details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
 <details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
@@ -34,7 +34,8 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <option value="BEV_BR">BEV Control Point · Bottom Right</option><option value="BEV_BL">BEV Control Point · Bottom Left</option>
       </select>
       <button id="clear_selection" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg><span>Clear</span></button>
-      <button id="center_reset" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
+      <button id="center_reset" class="ghost toolbar-icon-button" type="button" title="Fit frame to available space (0)"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
+      <button id="refresh_vals" class="ghost toolbar-icon-button refresh-feed-button" type="button" title="Refresh configuration values and advanced settings" aria-label="Refresh feed and settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6l3 6M4 12l3 6a7 7 0 0 0 11.4-3"/></svg><span class="sr-only">Refresh Feed</span></button>
       <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
       <output id="workspace_zoom_percent" class="zoom-percent" aria-live="off">100%</output>
       <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
@@ -69,13 +70,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       
       <span id="cad_selected_area" class="cad-area">Object: NONE</span>
     </div>
-    <div class="workspace-actionbar" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button id="apply_all" class="btn">Apply Base Settings</button>
-      <button id="refresh_vals" class="ghost">Refresh Feed</button>
-      <button id="download_json" class="ghost">Download JSON</button>
-      <div style="flex:1"></div>
-      
-    </div>
+
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
 <div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
