@@ -131,16 +131,18 @@ ADVANCED_VARS = {
     "BEV_SRC_BL_Y": 1.00
 }
 
+from .auth_api import StreamAuthMixin, register_auth_routes
 from .controls_api import StreamControlsMixin
 from .configuration_api import StreamConfigurationMixin
 from .runtime_api import StreamRuntimeMixin
 from .pages_api import StreamPagesMixin
 from .media_api import StreamMediaMixin
 
-class WebStreamer(StreamControlsMixin, StreamConfigurationMixin, StreamRuntimeMixin, StreamPagesMixin, StreamMediaMixin):
+class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin, StreamRuntimeMixin, StreamPagesMixin, StreamMediaMixin):
     def __init__(self, config):
         self.config = config
         self.app = Flask(__name__)
+        self._initialize_stream_auth(os.path.join(str(BASE_DIR), ".env"))
 
         self.ui_settings = self.load_ui_settings()
 
@@ -160,6 +162,7 @@ class WebStreamer(StreamControlsMixin, StreamConfigurationMixin, StreamRuntimeMi
         from .runtime_api import register_runtime_routes
         from .configuration_api import register_configuration_routes
 
+        register_auth_routes(self.app, self)
         register_page_routes(self.app, self)
         register_control_routes(self.app, self)
         register_media_routes(self.app, self)
@@ -271,7 +274,15 @@ def start_stream(config):
     controls_enabled = bool(
         getattr(config, "STREAM_ALLOW_CONTROL", False)
     )
-    if wildcard_bind and controls_enabled:
+    if streamer.auth_enabled:
+        logger.info("Stream dashboard authentication is enabled.")
+        if wildcard_bind:
+            logger.warning(
+                "Stream login uses plain HTTP; credentials and session cookies are not "
+                "encrypted in transit. Use only on a trusted network or place Stream "
+                "behind an HTTPS reverse proxy."
+            )
+    elif wildcard_bind and controls_enabled:
         logger.warning(
             "Dashboard controls are enabled on all network interfaces without "
             "authentication. Use only on a trusted LAN; pass --stream-read-only "
