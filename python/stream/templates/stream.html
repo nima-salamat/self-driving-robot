@@ -40,6 +40,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
       <button id="toggle_dock_btn" type="button" class="ghost">Hide Panels</button>
       <button id="roi_settings_open" type="button" class="ghost" title="Grid, snap and ROI appearance">Settings</button>
+      <span id="mode_features" class="sr-only" aria-hidden="true"></span>
       <div id="frame_mode" class="small status-line">Mode: Live</div>
       {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
     </div>
