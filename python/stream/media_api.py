@@ -10,6 +10,51 @@ for _global_name, _global_value in vars(_stream_module).items():
         globals()[_global_name] = _global_value
 
 class StreamMediaMixin:
+    @staticmethod
+    def _normalize_stream_jpeg_quality(value):
+        try:
+            quality = int(value)
+        except (TypeError, ValueError, OverflowError):
+            return 85
+        return max(30, min(100, quality))
+
+    def stream_quality_api(self):
+        if request.method == "GET":
+            return jsonify(
+                quality=self._normalize_stream_jpeg_quality(
+                    getattr(self.config, "STREAM_JPEG_QUALITY", 85)
+                ),
+                minimum=30,
+                maximum=100,
+                step=5,
+                runtime_only=True,
+            )
+        if not self._control_allowed():
+            return self._control_denied()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or "quality" not in body:
+            return jsonify(success=False, message="request body must contain an integer quality"), 400
+        value = body.get("quality")
+        if isinstance(value, bool):
+            return jsonify(success=False, message="quality must be an integer from 30 to 100"), 400
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return jsonify(success=False, message="quality must be an integer from 30 to 100"), 400
+        if not math.isfinite(numeric) or not numeric.is_integer() or not 30 <= numeric <= 100:
+            return jsonify(success=False, message="quality must be an integer from 30 to 100"), 400
+
+        quality = int(numeric)
+        setattr(self.config, "STREAM_JPEG_QUALITY", quality)
+        # The current frame may be unchanged, but its cached JPEG must be
+        # encoded again when the quality setting changes.
+        with self._jpeg_cache_lock:
+            self._jpeg_cache = None
+            self._jpeg_cache_frame_id = None
+            self._jpeg_cache_quality = None
+        logger.info("Stream JPEG quality changed to %s", quality)
+        return jsonify(success=True, quality=quality, runtime_only=True)
+
     def video_feed_frame(self):
         with self._frame_lock:
             frozen = getattr(self.config, "frozen_debug_frame", None)
@@ -39,10 +84,19 @@ class StreamMediaMixin:
             return response
 
         frame_id = getattr(self.config, "stream_frame_seq", id(frame))
+        quality = self._normalize_stream_jpeg_quality(
+            getattr(self.config, "STREAM_JPEG_QUALITY", 85)
+        )
         with self._jpeg_cache_lock:
-            if frame_id != self._jpeg_cache_frame_id or self._jpeg_cache is None:
+            if (
+                frame_id != self._jpeg_cache_frame_id
+                or quality != getattr(self, "_jpeg_cache_quality", None)
+                or self._jpeg_cache is None
+            ):
                 try:
-                    ret, buffer = cv2.imencode(".jpg", frame)
+                    ret, buffer = cv2.imencode(
+                        ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality]
+                    )
                     if not ret:
                         response = Response("", status=204)
                         response.headers.update(cache_headers)
@@ -55,11 +109,13 @@ class StreamMediaMixin:
                     return response
                 self._jpeg_cache = payload
                 self._jpeg_cache_frame_id = frame_id
+                self._jpeg_cache_quality = quality
             payload = self._jpeg_cache
 
         response = Response(payload, mimetype="image/jpeg")
         response.headers.update(cache_headers)
         response.headers["X-Stream-Frame-Sequence"] = str(frame_id)
+        response.headers["X-Stream-JPEG-Quality"] = str(quality)
         for key, value in self._feature_diagnostics().items():
             if value is not None:
                 response.headers["X-Robot-" + key.replace("_", "-")] = json.dumps(value, separators=(",", ":"))
@@ -100,10 +156,13 @@ class StreamMediaMixin:
                     continue
 
                 try:
+                    quality = self._normalize_stream_jpeg_quality(
+                        getattr(self.config, "STREAM_JPEG_QUALITY", 85)
+                    )
                     ret, buffer = cv2.imencode(
                         ".jpg",
                         frame,
-                        [cv2.IMWRITE_JPEG_QUALITY, 85],
+                        [cv2.IMWRITE_JPEG_QUALITY, quality],
                     )
                 except Exception:
                     logger.exception("Failed to encode MJPEG stream frame")
@@ -170,6 +229,7 @@ def register_media_routes(app, streamer):
     """Register stream media routes on the shared Flask app."""
     app.add_url_rule("/video_feed_frame", "video_feed_frame", streamer.video_feed_frame)
     app.add_url_rule("/video_feed", "video_feed", streamer.video_feed)
+    app.add_url_rule("/api/stream/quality", "stream_quality_api", streamer.stream_quality_api, methods=["GET", "POST"])
     app.add_url_rule("/take_picture", "take_picture", streamer.take_picture, methods=["POST"])
     app.add_url_rule("/toggle_record", "toggle_record", streamer.toggle_record, methods=["POST"])
     app.add_url_rule("/freeze_frame", "freeze_frame", streamer.freeze_frame, methods=["POST"])
