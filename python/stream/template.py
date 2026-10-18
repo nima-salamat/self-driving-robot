@@ -2215,7 +2215,10 @@ function applyWorkspace(workspace){
   if(!workspace||typeof workspace!=='object')return;
   const view=workspace.view||{};
   if(typeof view.zoom==='number'&&typeof setWorkspaceZoom==='function'){workspaceZoom=Math.max(.3,Math.min(4,view.zoom));viewPanX=Number(view.panX)||0;viewPanY=Number(view.panY)||0;$('workspace_zoom').value=String(workspaceZoom);}
-  extGrid=!!view.grid;extSnap=!!view.snap;extCrosshair=!!view.crosshair;
+  /* Keep precision guides off on load: an old saved workspace can otherwise
+     restore dashed grid/crosshair lines over the live camera image. They remain
+     available via the Grid and Crosshair controls when explicitly needed. */
+  extGrid=false;extSnap=!!view.snap;extCrosshair=false;
   if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;
   if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
