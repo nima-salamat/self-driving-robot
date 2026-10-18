@@ -183,7 +183,11 @@ class ProcessSignDetector:
             ),
             daemon=True,
         )
-        self._worker.start()
+        try:
+            self._worker.start()
+        except Exception:
+            self.close()
+            raise
         if not self._ready.wait(self.STARTUP_TIMEOUT_S):
             self.close()
             raise RuntimeError(
