@@ -176,7 +176,21 @@ class Robot:
         self._marker_lock = threading.RLock()
         self.sign_detector = None
         if config_city.WITH_SIGN:
-            self._ensure_sign_detector()
+            try:
+                self._ensure_sign_detector()
+            except Exception:
+                # A process-backed detector can fail during spawn/model load.
+                # Do not leak the already-started camera worker in a failed
+                # Robot constructor.
+                try:
+                    self.camera.release()
+                except Exception:
+                    logger.exception("Failed to release camera after sign-worker startup failure")
+                try:
+                    self.control.connection.close()
+                except Exception:
+                    logger.exception("Failed to close serial after sign-worker startup failure")
+                raise
         setattr(config_city, "sign_detector", self.sign_detector)
         config_city.apply_marker_mode = self.apply_marker_mode
         # OutputManager instance 
