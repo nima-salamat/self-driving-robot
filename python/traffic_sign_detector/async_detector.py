@@ -16,6 +16,8 @@ class AsyncSignDetector:
         self._submitted = 0
         self._completed = 0
         self._failures = 0
+        self._replaced = 0
+        self._dropped = 0
         self._last_result_at = None
         self._last_submit_at = None
         self._last_latency_ms = None
@@ -56,11 +58,13 @@ class AsyncSignDetector:
                 try:
                     self._requests.get_nowait()
                     self._requests.task_done()
+                    self._replaced += 1
                 except queue.Empty:
                     pass
                 try:
                     self._requests.put_nowait(request)
                 except queue.Full:
+                    self._dropped += 1
                     return None
             self._submitted += 1
             self._idle_event.clear()
@@ -196,6 +200,8 @@ class AsyncSignDetector:
                 "submitted": self._submitted,
                 "completed": self._completed,
                 "failures": self._failures,
+                "replaced": self._replaced,
+                "dropped": self._dropped,
                 "last_result_request_id": (
                     self._latest[0] if self._latest is not None else None
                 ),
