@@ -116,7 +116,7 @@ function drawPrecisionOverlay(){
     const distance=Math.hypot((rulerHoverPoint.u-rulerStart.u)*(frameSourceWidth||canvas.width),(rulerHoverPoint.v-rulerStart.v)*(frameSourceHeight||canvas.height));
     addSVG('line',{x1:x1,y1:y1,x2:x2,y2:y2,stroke:'#22d3ee','stroke-width':Math.max(1,2*z),'stroke-dasharray':(6*z)+' '+(3*z)});
     addSVG('circle',{cx:x1,cy:y1,r:Math.max(3,(Number(roiAppearance.handleSize)||10)*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
-    addSVG('circle',{cx:x2,cy:y2,r:Math.max(3,baseHandle*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
+    addSVG('circle',{cx:x2,cy:y2,r:Math.max(3,(Number(roiAppearance.handleSize)||10)*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
     const distanceLabel=addSVG('text',{x:(x1+x2)/2+7*z,y:(y1+y2)/2-7*z,fill:'#e0faff','font-size':Math.max(10,(Number(roiAppearance.labelFontSize)||12)*z),'font-weight':'700','paint-order':'stroke',stroke:'#07101a','stroke-width':3*z});
     distanceLabel.textContent=distance.toFixed(1)+' px';
   }
@@ -920,7 +920,7 @@ function installExtension(){
   showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
   $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
   $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
-  $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all custom annotations from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
+  $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all notes and ruler measurements from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
   $('ext_save_workspace').onclick=function(){saveWorkspace().then(function(){showToast('Workspace layout saved');}).catch(function(err){showToast(err.message);});};
   $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
   $('ext_profile_save').onclick=function(){profileAction('save').catch(function(e){showToast(e.message);});};$('ext_profile_load').onclick=function(){profileAction('load').catch(function(e){showToast(e.message);});};$('ext_profile_delete').onclick=function(){profileAction('delete').catch(function(e){showToast(e.message);});};
@@ -961,8 +961,8 @@ function installExtension(){
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.code==='KeyE'){e.preventDefault();exportFullConfig().catch(function(err){showToast('Export failed: '+err.message);});return;}
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyS'){e.preventDefault();saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(err){showToast('Save failed: '+err.message);});return;}
     if($('ext_command_palette').style.display==='flex'&&e.code==='Escape'){closeCommandPalette();return;}
-    if(e.code==='Escape'&&editorTool!=='select'&&!$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();setEditorTool('select');return;}
     if(e.target&&(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable))return;
+    if(e.code==='Escape'&&editorTool!=='select'&&!$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();setEditorTool('select');return;}
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();if(e.shiftKey)doRedo();else doUndo();return;}
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){e.preventDefault();doRedo();return;}
     if(!e.ctrlKey&&!e.metaKey&&!e.altKey){
