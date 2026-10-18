@@ -29,6 +29,12 @@ class StreamAuthTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def make_streamer(self, env):
+        # Isolate tests from a developer's real python/.env file.
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("stream.BASE_DIR", tmp), patch.dict(os.environ, env, clear=True):
+                return WebStreamer(self.make_config())
+
     def test_dotenv_credentials_are_loaded_without_overriding_process_environment(self):
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"
@@ -55,8 +61,7 @@ class StreamAuthTests(unittest.TestCase):
                 WebStreamer(self.make_config())
 
     def test_auth_is_disabled_when_both_credentials_are_unset(self):
-        with patch.dict(os.environ, {}, clear=True):
-            streamer = WebStreamer(self.make_config())
+        streamer = self.make_streamer({})
         client = streamer.app.test_client()
 
         response = client.get("/")
@@ -65,12 +70,9 @@ class StreamAuthTests(unittest.TestCase):
         self.assertEqual(client.get("/login").status_code, 302)
 
     def test_dashboard_and_api_require_login_when_credentials_are_set(self):
-        with patch.dict(
-            os.environ,
-            {"STREAM_USERNAME": "robot-user", "STREAM_PASSWORD": "unique-secret"},
-            clear=True,
-        ):
-            streamer = WebStreamer(self.make_config())
+        streamer = self.make_streamer(
+            {"STREAM_USERNAME": "robot-user", "STREAM_PASSWORD": "unique-secret"}
+        )
 
         client = streamer.app.test_client()
         page = client.get("/")
@@ -133,12 +135,9 @@ class StreamAuthTests(unittest.TestCase):
         self.assertEqual(client.get("/").status_code, 302)
 
     def test_login_rate_limits_failed_attempts(self):
-        with patch.dict(
-            os.environ,
-            {"STREAM_USERNAME": "robot-user", "STREAM_PASSWORD": "unique-secret"},
-            clear=True,
-        ):
-            streamer = WebStreamer(self.make_config())
+        streamer = self.make_streamer(
+            {"STREAM_USERNAME": "robot-user", "STREAM_PASSWORD": "unique-secret"}
+        )
 
         client = streamer.app.test_client()
         for index in range(5):
