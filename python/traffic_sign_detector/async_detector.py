@@ -81,7 +81,7 @@ class AsyncSignDetector:
                 self._idle_event.set()
 
     def resume(self):
-        """Allow new inference requests in an active sign-detection phase."""
+        """Clear the phase pause; the independent operator request gate still applies."""
         with self._lock:
             if not self._stop.is_set():
                 self._paused = False
