@@ -507,3 +507,32 @@ canvas {
   .shortcut-footer .btn { width:100%; }
 }
 
+/* Compact top-row refresh control replaces the old extra action row. */
+.editor-controls .refresh-feed-button {
+  width:30px;
+  min-width:30px;
+  height:28px;
+  min-height:28px;
+  padding:5px;
+  flex:0 0 30px;
+}
+.editor-controls .refresh-feed-button .toolbar-icon { width:15px; height:15px; flex-basis:15px; }
+.settings-section input[type="color"].settings-color-input {
+  width:54px;
+  height:30px;
+  padding:2px;
+  cursor:pointer;
+}
+.settings-section input[type="number"]#roi_setting_keyboard_nudge {
+  width:88px;
+  min-width:88px;
+  min-height:30px;
+  text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+.settings-section>label:has(#roi_setting_keyboard_nudge) {
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+}
+.workspace-stage-column { flex:1 1 auto; }
+
