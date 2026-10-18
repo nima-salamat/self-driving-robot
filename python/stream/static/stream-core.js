@@ -382,36 +382,25 @@ function fetchFrameOnce(){
 }
 
 /* ---------- Overlays (Shapes & Rects) ---------- */
-function drawHandle(cx, cy, size, fill, stroke){
-    ctx.beginPath();
-    ctx.fillStyle = fill;
-    ctx.strokeStyle = stroke || '#000';
-    ctx.lineWidth = 1;
-    ctx.rect(cx - size/2, cy - size/2, size, size);
-    ctx.fill(); ctx.stroke();
+function drawHandle(cx,cy,size,fill,stroke){
+    const z=Math.max(.3,Number(workspaceZoom)||1);
+    ctx.beginPath();ctx.fillStyle=fill;ctx.strokeStyle=stroke||'#000';
+    ctx.lineWidth=Math.max(.5,(Number(roiAppearance.outlineThickness)||2)*z*.5);
+    ctx.rect(cx-size/2,cy-size/2,size,size);ctx.fill();ctx.stroke();
 }
 
-function drawPolygon(points, color, isHighlight, labelText, r, fillAlpha=0.35) {
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-    ctx.closePath();
-    
-    ctx.fillStyle = color;
-    ctx.globalAlpha = fillAlpha;
-    ctx.fill();
-    
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = isHighlight ? '#ffffff' : color;
-    ctx.lineWidth = isHighlight ? 3 : 2;
-    ctx.stroke();
-
-    if (r && labelText) {
-        ctx.fillStyle = color;
-        ctx.fillRect(r.x + 6, r.y + 6, 120, 18);
-        ctx.fillStyle = '#012';
-        ctx.font = 'bold 12px Arial';
-        ctx.fillText(labelText, r.x + 10, r.y + 19);
+function drawPolygon(points,color,isHighlight,labelText,r,fillAlpha=0.35){
+    const z=Math.max(.3,Number(workspaceZoom)||1);
+    ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(let i=1;i<points.length;i++)ctx.lineTo(points[i].x,points[i].y);ctx.closePath();
+    ctx.fillStyle=color;ctx.globalAlpha=fillAlpha;ctx.fill();ctx.globalAlpha=1;
+    ctx.strokeStyle=isHighlight?'#fff':color;
+    ctx.lineWidth=Math.max(.5,(Number(roiAppearance.outlineThickness)||2)*z+(isHighlight?z:0));
+    ctx.setLineDash(isHighlight?[6*z,4*z]:[]);ctx.stroke();ctx.setLineDash([]);
+    if(r&&labelText){
+      const fs=Math.max(4,Math.min(64,(Number(roiAppearance.labelFontSize)||12)*z));
+      ctx.font=String(roiAppearance.labelFontWeight||'700')+' '+fs+'px Arial,sans-serif';
+      const pad=4*z,w=Math.ceil(ctx.measureText(labelText).width+pad*2),h=Math.ceil(fs+5*z);
+      ctx.fillStyle=color;ctx.fillRect(r.x+4*z,r.y+4*z,w,h);ctx.fillStyle='#012';ctx.textBaseline='top';ctx.fillText(labelText,r.x+8*z,r.y+6*z);
     }
 }
 
@@ -439,13 +428,10 @@ function drawOverlays(){
             
             drawPolygon(pts, bevColor, isBevHL, null, null, 0.15); 
             
-            ctx.fillStyle = bevColor;
-            ctx.fillRect(pts[0].x, pts[0].y - 20, 90, 18);
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 12px Arial';
-            ctx.fillText("BEV Region", pts[0].x + 5, pts[0].y - 7);
-
-            const size = 12;
+            const z=Math.max(.3,Number(workspaceZoom)||1),fs=Math.max(4,(Number(roiAppearance.labelFontSize)||12)*z);
+            ctx.fillStyle=bevColor;ctx.fillRect(pts[0].x,pts[0].y-20*z,90*z,18*z);ctx.fillStyle='#fff';
+            ctx.font=String(roiAppearance.labelFontWeight||'700')+' '+fs+'px Arial,sans-serif';ctx.fillText("BEV Region",pts[0].x+5*z,pts[0].y-7*z);
+            const size=Math.max(2,(Number(roiAppearance.handleSize)||10)*z);
             for(let p of pts) drawHandle(p.x, p.y, size, '#fff', bevColor);
         }
 
@@ -509,14 +495,11 @@ function drawOverlays(){
                 }
             }
             
-            ctx.globalAlpha = 1.0;
-            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([4, 4]);
-            ctx.strokeRect(r.x, r.y, r.w, r.h);
-            ctx.setLineDash([]);
-            
-            const size = 10;
+            const z=Math.max(.3,Number(workspaceZoom)||1);ctx.globalAlpha=1;
+            ctx.strokeStyle=isHL?'rgba(255,255,255,.95)':'rgba(255,255,255,.24)';
+            ctx.lineWidth=Math.max(.5,(Number(roiAppearance.outlineThickness)||2)*.5*z);
+            ctx.setLineDash(isHL?[6*z,4*z]:[]);ctx.strokeRect(r.x,r.y,r.w,r.h);ctx.setLineDash([]);
+            const size=Math.max(2,(Number(roiAppearance.handleSize)||10)*z);
             drawHandle(r.x, r.y, size, '#fff', color);
             drawHandle(r.x + r.w, r.y, size, '#fff', color);
             drawHandle(r.x, r.y + r.h, size, '#fff', color);
@@ -528,7 +511,7 @@ function drawOverlays(){
 
 /* ---------- Hit testing & Drag Bounding Box ---------- */
 function hitTest(px, py){
-    const size = 12;
+    const size = Math.max(4,(Number(roiAppearance.handleSize)||10)*Math.max(.3,Number(workspaceZoom)||1)/2+3*Math.max(.3,Number(workspaceZoom)||1));
     
     if(ui.visible['BEV'] && advanced.USE_BEV !== false) {
         const bevCorners = {
@@ -575,26 +558,28 @@ canvas.addEventListener('mousedown',e=>{
     
     if(hit.group === 'BEV') {
         dragState = {type:'resize', group:'BEV', corner:hit.corner, start:{x:px,y:py}, orig: {...advanced}};
-        markerHighlight = 'BEV';
-        window.syncPropertiesSelection('BEV_' + hit.corner);
+        markerHighlight = 'BEV';selectedVar='BEV_'+hit.corner;select.value=selectedVar;document.getElementById('prop_target').value=selectedVar;
+        window.syncPropertiesSelection(selectedVar);
     } 
     else if(hit.type==='handle'){
         dragState = {type:'resize', group:hit.group, corner:hit.corner, origRect:hit.rect, start:{x:px,y:py}};
         markerHighlight = hit.group;
-        selectedVar = mapGroupToDefaultVar(hit.group);
-        select.value = selectedVar;
+        selectedVar = hit.group;
+        select.value = hit.group;
+        document.getElementById('prop_target').value = hit.group;
         window.syncPropertiesSelection(hit.group);
     } 
     else if(hit.type==='inside'){
         dragState = {type:'move', group:hit.group, origRect:hit.rect, start:{x:px,y:py}};
         markerHighlight = hit.group;
-        selectedVar = mapGroupToDefaultVar(hit.group);
-        select.value = selectedVar;
+        selectedVar = hit.group;
+        select.value = hit.group;
+        document.getElementById('prop_target').value = hit.group;
         window.syncPropertiesSelection(hit.group);
     } 
     else {
-        dragState = null;
-        markerHighlight = null;
+        dragState=null;markerHighlight=null;selectedVar='NONE';select.value='NONE';document.getElementById('prop_target').value='NONE';
+        if(window.syncPropertiesSelection)window.syncPropertiesSelection('NONE');renderWorkspaceCanvas();
     }
 });
 
@@ -668,6 +653,19 @@ canvas.addEventListener('mousemove',e=>{
         if(dragState.corner==='se'){ nx_b = clamp01(orig.b + dny); nx_r = clamp01(orig.r + dnx); }
         if(nx_b <= nx_t) nx_b = nx_t + 0.01;
         if(nx_r <= nx_l) nx_r = nx_l + 0.01;
+    }
+    if(isEditorSnapEnabled()){
+        const step=Math.max(.025,Math.min(.25,Number(gridSpacing)||.05));
+        if(dragState.type==='move'){
+            const w=nx_r-nx_l,h=nx_b-nx_t;nx_l=Math.max(0,Math.min(1-w,snapNormalized(nx_l)));nx_t=Math.max(0,Math.min(1-h,snapNormalized(nx_t)));nx_r=nx_l+w;nx_b=nx_t+h;
+        }else{
+            if(dragState.corner==='nw'||dragState.corner==='sw')nx_l=clamp01(snapNormalized(nx_l));
+            if(dragState.corner==='ne'||dragState.corner==='se')nx_r=clamp01(snapNormalized(nx_r));
+            if(dragState.corner==='nw'||dragState.corner==='ne')nx_t=clamp01(snapNormalized(nx_t));
+            if(dragState.corner==='sw'||dragState.corner==='se')nx_b=clamp01(snapNormalized(nx_b));
+            if(nx_r-nx_l<.01){if(dragState.corner==='nw'||dragState.corner==='sw')nx_l=Math.max(0,nx_r-.01);else nx_r=Math.min(1,nx_l+.01);}
+            if(nx_b-nx_t<.01){if(dragState.corner==='nw'||dragState.corner==='ne')nx_t=Math.max(0,nx_b-.01);else nx_b=Math.min(1,nx_t+.01);}
+        }
     }
     values[topVar] = round01(nx_t); values[bottomVar] = round01(nx_b);
     values[leftVar] = round01(nx_l); values[rightVar] = round01(nx_r);
@@ -909,7 +907,7 @@ document.getElementById('refresh_vals').addEventListener('click', ()=>{
     fetchDashboardJson('/get_values').then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); drawOverlays(); }});
     loadAdvanced();
 });
-document.getElementById('clear_selection').addEventListener('click', ()=>{ select.value='NONE'; selectedVar='NONE'; markerHighlight=null; drawOverlays(); });
+document.getElementById('clear_selection').addEventListener('click',()=>{select.value='NONE';selectedVar='NONE';markerHighlight=null;document.getElementById('prop_target').value='NONE';if(window.syncPropertiesSelection)window.syncPropertiesSelection('NONE');renderWorkspaceCanvas();});
 document.getElementById('download_json').addEventListener('click', ()=>{
     fetchDashboardJson('/get_values').then(j=>{
         if(!j || !j.values) return;
@@ -1127,10 +1125,7 @@ function updateArduinoOutput(){
         .catch(()=>{});
 }
 
-function fetchValuesLoop() {
-    if(!syncActive) return;
-    fetchDashboardJson('/get_values').then(j=>{ if(j && j.values){ values=j.values; updateInputsFromValues(); }});
-}
+function fetchValuesLoop(){if(!syncActive)return;fetchDashboardJson('/get_values').then(j=>{if(j&&j.values){values=j.values;updateInputsFromValues();if(window.syncPropertiesSelection)window.syncPropertiesSelection(document.getElementById('prop_target').value);drawOverlays();}});}
 
 function loadModeFeatures(){
     fetchDashboardJson('/api/mode').then(j=>{
@@ -1167,7 +1162,7 @@ function loadModeFeatures(){
         controls.forEach(item=>disable(item[0], item[1], item[2]));
         if(!STREAM_CONTROL_ALLOWED){
             document.querySelectorAll('button,input,select').forEach(el=>{
-                if(!['download_json','toggle_dock_btn','camera_fullscreen_btn','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
+                if(!['download_json','toggle_dock_btn','camera_fullscreen_btn','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn','roi_settings_open','roi_settings_close','roi_settings_cancel','roi_settings_reset','roi_settings_apply','roi_setting_grid_mode','roi_setting_grid_spacing','roi_setting_grid_opacity','roi_setting_grid_thickness','roi_setting_grid_dot_size','roi_setting_snap','roi_setting_label_size','roi_setting_label_weight','roi_setting_outline_thickness','roi_setting_handle_size','ext_grid','ext_snap','ext_crosshair'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
             });
         }
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
@@ -1218,20 +1213,65 @@ case 'help':showToast('Wheel: zoom at cursor · Middle mouse: pan · H: hand · 
 document.getElementById('center_reset').addEventListener('click',()=>fitWorkspaceView());document.getElementById('camera_fullscreen_btn').addEventListener('click',toggleCameraFullscreen);document.getElementById('tool_overlays_btn').addEventListener('click',toggleOverlays);
 document.addEventListener('keydown',e=>{const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():'';if((e.ctrlKey||e.metaKey)&&e.code==='Backquote'){e.preventDefault();setConsoleOpen(!consoleDock.classList.contains('console-open'));return;}if(['input','textarea','select'].includes(tag)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;const k=e.key.toLowerCase();if(k==='h')setTool('pan');else if(k==='v')setTool('select');else if(k==='0')fitWorkspaceView();else if(k==='o')toggleOverlays();else if(k==='f')toggleCameraFullscreen();else if(k==='+'||k==='=')zoomBy(1.2);else if(k==='-')zoomBy(1/1.2);else if(k==='escape')document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
 function names(g){const p=g+'_';return{top:p+'TOP_ROI',bottom:p+'BOTTOM_ROI',left:p+'LEFT_ROI',right:p+'RIGHT_ROI'};}
-function info(){return propTarget.value.startsWith('BEV_')?{kind:'point',corner:propTarget.value.slice(4)}:{kind:'roi',group:propTarget.value};}
-function syncPropertiesSelection(target){if(!target)return;if(target.startsWith('BEV_'))propTarget.value=target;else if(['RL','LL','CW','ST','OBJ'].includes(target))propTarget.value=target;const s=info();document.getElementById('prop_roi_fields').hidden=s.kind!=='roi';document.getElementById('prop_point_fields').hidden=s.kind!=='point';
-if(s.kind==='roi'){const n=names(s.group);document.getElementById('properties_mode').textContent=s.group+' · ROI bounds';document.getElementById('prop_left').value=values[n.left]??'';document.getElementById('prop_top').value=values[n.top]??'';document.getElementById('prop_right').value=values[n.right]??'';document.getElementById('prop_bottom').value=values[n.bottom]??'';document.getElementById('prop_hint').textContent='Normalized camera coordinates (0–1). Drag this ROI or edit fields, then Apply.';document.getElementById('cad_selected_area').textContent='Object: '+s.group;}
-else{const c=s.corner;document.getElementById('properties_mode').textContent='BEV · '+c+' control point';document.getElementById('prop_point_x').value=advanced['BEV_SRC_'+c+'_X']??'';document.getElementById('prop_point_y').value=advanced['BEV_SRC_'+c+'_Y']??'';document.getElementById('prop_hint').textContent='BEV point coordinates range from -5 to 5. Drag the corner or edit X/Y, then Apply.';document.getElementById('cad_selected_area').textContent='Object: BEV '+c;}}
+function info(){if(propTarget.value==='NONE')return{kind:'none'};return propTarget.value.startsWith('BEV_')?{kind:'point',corner:propTarget.value.slice(4)}:{kind:'roi',group:propTarget.value};}
+function syncPropertiesSelection(target){
+ if(!target)target='NONE';propTarget.value=target;const st=info();
+ document.getElementById('prop_roi_fields').hidden=st.kind!=='roi';document.getElementById('prop_point_fields').hidden=st.kind!=='point';
+ const mirror=document.getElementById('roi_mirror_actions');if(mirror)mirror.hidden=!(st.kind==='roi'&&(st.group==='RL'||st.group==='LL'));
+ if(st.kind==='none'){
+  selectedVar='NONE';select.value='NONE';markerHighlight=null;document.getElementById('properties_mode').textContent='No object selected';
+  ['prop_left','prop_top','prop_right','prop_bottom','prop_point_x','prop_point_y'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('prop_hint').textContent='Select an ROI or BEV control point to inspect or edit.';document.getElementById('cad_selected_area').textContent='Object: NONE';return;
+ }
+ if(st.kind==='roi'){
+  selectedVar=st.group;select.value=st.group;const n=names(st.group);
+  document.getElementById('properties_mode').textContent=({RL:'Right Lane ROI',LL:'Left Lane ROI',CW:'Crosswalk ROI',ST:'Sign / Tag ROI',OBJ:'Object ROI'})[st.group]+' · bounds';
+  document.getElementById('prop_left').value=values[n.left]??'';document.getElementById('prop_top').value=values[n.top]??'';document.getElementById('prop_right').value=values[n.right]??'';document.getElementById('prop_bottom').value=values[n.bottom]??'';
+  document.getElementById('prop_hint').textContent='Normalized camera coordinates (0–1). Drag this ROI, use arrow keys, or edit fields.';document.getElementById('cad_selected_area').textContent='Object: '+st.group;
+ }else{
+  selectedVar='BEV_'+st.corner;select.value=selectedVar;document.getElementById('properties_mode').textContent='BEV · '+st.corner+' control point';
+  document.getElementById('prop_point_x').value=advanced['BEV_SRC_'+st.corner+'_X']??'';document.getElementById('prop_point_y').value=advanced['BEV_SRC_'+st.corner+'_Y']??'';
+  document.getElementById('prop_hint').textContent='BEV point coordinates range from -5 to 5. Drag the corner or edit X/Y, then Apply.';document.getElementById('cad_selected_area').textContent='Object: BEV '+st.corner;
+ }
+}
 window.syncPropertiesSelection=syncPropertiesSelection;
-propTarget.addEventListener('change',()=>{const s=info();markerHighlight=s.kind==='point'?'BEV':s.group;if(s.kind==='roi'){selectedVar=mapGroupToDefaultVar(s.group);select.value=selectedVar;}syncPropertiesSelection(propTarget.value);renderWorkspaceCanvas();noteWorkspaceEvent('info','Properties target selected: '+propTarget.value);});
+propTarget.addEventListener('change',()=>{const st=info();markerHighlight=st.kind==='point'?'BEV':st.kind==='roi'?st.group:null;syncPropertiesSelection(propTarget.value);renderWorkspaceCanvas();noteWorkspaceEvent('info','Properties target selected: '+propTarget.value);});
 document.getElementById('prop_apply_btn').addEventListener('click',()=>{if(!syncActive)return showToast('Requests are stopped!');const s=info();if(s.kind==='roi'){const n=names(s.group);let l=Number(document.getElementById('prop_left').value),t=Number(document.getElementById('prop_top').value),r=Number(document.getElementById('prop_right').value),b=Number(document.getElementById('prop_bottom').value);if(![l,t,r,b].every(Number.isFinite))return showToast('Enter valid numeric ROI coordinates');l=clamp01(l);t=clamp01(t);r=clamp01(r);b=clamp01(b);if(r-l<.01||b-t<.01)return showToast('ROI requires right > left and bottom > top');values[n.left]=round01(l);values[n.top]=round01(t);values[n.right]=round01(r);values[n.bottom]=round01(b);updateInputsFromValues();renderWorkspaceCanvas();sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});syncPropertiesSelection(s.group);noteWorkspaceEvent('info',s.group+' ROI properties applied');}
-else{const c=s.corner,x=Number(document.getElementById('prop_point_x').value),y=Number(document.getElementById('prop_point_y').value);if(!Number.isFinite(x)||!Number.isFinite(y))return showToast('Enter valid BEV point coordinates');advanced['BEV_SRC_'+c+'_X']=Math.max(-5,Math.min(5,round01(x)));advanced['BEV_SRC_'+c+'_Y']=Math.max(-5,Math.min(5,round01(y)));updateShapeUIFromData();renderWorkspaceCanvas();sendAdvanced({['BEV_SRC_'+c+'_X']:advanced['BEV_SRC_'+c+'_X'],['BEV_SRC_'+c+'_Y']:advanced['BEV_SRC_'+c+'_Y']});syncPropertiesSelection('BEV_'+c);noteWorkspaceEvent('info','BEV '+c+' point properties applied');}});
+else if(s.kind==='point'){const c=s.corner,x=Number(document.getElementById('prop_point_x').value),y=Number(document.getElementById('prop_point_y').value);if(!Number.isFinite(x)||!Number.isFinite(y))return showToast('Enter valid BEV point coordinates');advanced['BEV_SRC_'+c+'_X']=Math.max(-5,Math.min(5,round01(x)));advanced['BEV_SRC_'+c+'_Y']=Math.max(-5,Math.min(5,round01(y)));updateShapeUIFromData();renderWorkspaceCanvas();sendAdvanced({['BEV_SRC_'+c+'_X']:advanced['BEV_SRC_'+c+'_X'],['BEV_SRC_'+c+'_Y']:advanced['BEV_SRC_'+c+'_Y']});syncPropertiesSelection('BEV_'+c);noteWorkspaceEvent('info','BEV '+c+' point properties applied');}else{return showToast('Select an ROI or BEV point first.');}});
 document.getElementById('prop_revert_btn').addEventListener('click',()=>syncPropertiesSelection(propTarget.value));
+function mirrorLaneRoi(source,destination){
+ if(!STREAM_CONTROL_ALLOWED)return showToast('Dashboard is read-only; ROI changes are disabled.');if(!syncActive)return showToast('Requests are stopped!');
+ const src=names(source),dst=names(destination),l=Number(values[src.left]),r=Number(values[src.right]),t=Number(values[src.top]),b=Number(values[src.bottom]);
+ if(![l,r,t,b].every(Number.isFinite)||r-l<.01||b-t<.01)return showToast('Source ROI geometry is invalid; mirroring was not applied.');
+ const left=round01(1-r),right=round01(1-l);if(right-left<.01)return showToast('Mirrored ROI is invalid.');
+ values[dst.left]=left;values[dst.right]=right;values[dst.top]=round01(t);values[dst.bottom]=round01(b);
+ markerHighlight=destination;selectedVar=destination;select.value=destination;propTarget.value=destination;updateInputsFromValues();renderWorkspaceCanvas();syncPropertiesSelection(destination);
+ sendUpdate({[dst.top]:values[dst.top],[dst.bottom]:values[dst.bottom],[dst.left]:values[dst.left],[dst.right]:values[dst.right]});
+ noteWorkspaceEvent('info','Mirrored '+source+' ROI to '+destination+' around normalized image center.');showToast('Mirrored '+(source==='LL'?'Left':'Right')+' ROI to '+(destination==='RL'?'Right':'Left')+'.');
+}
+document.getElementById('mirror_left_to_right').addEventListener('click',()=>mirrorLaneRoi('LL','RL'));
+document.getElementById('mirror_right_to_left').addEventListener('click',()=>mirrorLaneRoi('RL','LL'));
+let keyboardRoiSaveTimer=null,keyboardRoiPendingGroup=null;
+function flushKeyboardRoiMove(){if(keyboardRoiSaveTimer){clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=null;}const g=keyboardRoiPendingGroup;keyboardRoiPendingGroup=null;if(!g||!['RL','LL','CW','ST','OBJ'].includes(g))return;const n=names(g);sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});}
+function scheduleKeyboardRoiMove(g){keyboardRoiPendingGroup=g;if(keyboardRoiSaveTimer)clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=setTimeout(flushKeyboardRoiMove,220);}
+document.addEventListener('keydown',function(e){
+ const dirs={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};if(!dirs[e.key])return;
+ const target=e.target,tag=target&&target.tagName?target.tagName.toLowerCase():'';
+ if(['input','textarea','select','button'].includes(tag)||target?.isContentEditable||document.getElementById('roi_settings_dialog').classList.contains('is-open'))return;
+ if(workspaceTool!=='select'||!STREAM_CONTROL_ALLOWED||!syncActive)return;const g=markerHighlight;if(!['RL','LL','CW','ST','OBJ'].includes(g))return;
+ const n=names(g),l=Number(values[n.left]),r=Number(values[n.right]),t=Number(values[n.top]),b=Number(values[n.bottom]);if(![l,r,t,b].every(Number.isFinite))return;e.preventDefault();
+ const d=dirs[e.key],step=(isEditorSnapEnabled()?Math.max(.025,Math.min(.25,Number(gridSpacing)||.05)):.005)*(e.shiftKey?5:1),w=r-l,h=b-t;let nl=l+d[0]*step,nt=t+d[1]*step;
+ if(isEditorSnapEnabled()){nl=snapNormalized(nl);nt=snapNormalized(nt);}nl=Math.max(0,Math.min(1-w,nl));nt=Math.max(0,Math.min(1-h,nt));
+ values[n.left]=round01(nl);values[n.right]=round01(nl+w);values[n.top]=round01(nt);values[n.bottom]=round01(nt+h);
+ selectedVar=g;select.value=g;propTarget.value=g;markerHighlight=g;updateInputsFromValues();syncPropertiesSelection(g);renderWorkspaceCanvas();scheduleKeyboardRoiMove(g);
+});
+document.addEventListener('keyup',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))flushKeyboardRoiMove();});window.addEventListener('blur',flushKeyboardRoiMove);
+
 const readout={x:document.getElementById('cad_cursor_x'),y:document.getElementById('cad_cursor_y'),u:document.getElementById('cad_cursor_u'),v:document.getElementById('cad_cursor_v'),area:document.getElementById('cad_selected_area')};
 function updateCadReadout(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;readout.x.textContent='X: '+Math.round(u*canvas.width)+' px';readout.y.textContent='Y: '+Math.round(v*canvas.height)+' px';readout.u.textContent='U: '+(u*100).toFixed(1)+' %';readout.v.textContent='V: '+(v*100).toFixed(1)+' %';}
 canvas.addEventListener('mousemove',updateCadReadout,{passive:true});canvas.addEventListener('mouseleave',()=>{if(!viewPanState){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';}},{passive:true});
-select.addEventListener('change',()=>{selectedVar=select.value;readout.area.textContent='Object: '+(select.value||'NONE');if(selectedVar.endsWith('_TOP_ROI'))window.syncPropertiesSelection(selectedVar.split('_')[0]);});
-noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('RL');updateZoomStatus();
+select.addEventListener('change',()=>{flushKeyboardRoiMove();const t=select.value;if(t==='NONE'){markerHighlight=null;selectedVar='NONE';document.getElementById('prop_target').value='NONE';window.syncPropertiesSelection('NONE');}else if(t.startsWith('BEV_')){markerHighlight='BEV';selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}else if(['RL','LL','CW','ST','OBJ'].includes(t)){markerHighlight=t;selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}readout.area.textContent='Object: '+(t==='NONE'?'NONE':t.startsWith('BEV_')?'BEV '+t.slice(4):t);renderWorkspaceCanvas();});
+noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('NONE');updateZoomStatus();
 }
 
 function initApp(){
