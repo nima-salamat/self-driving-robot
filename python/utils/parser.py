@@ -145,14 +145,14 @@ def parse_args(argv=None):
         dest="stream_control",
         action="store_true",
         default=None,
-        help="Enable dashboard controls (enabled by default).",
+        help="Enable dashboard controls and start the stream (enabled by default).",
     )
     stream_control_group.add_argument(
         "--stream-read-only",
         dest="stream_control",
         action="store_false",
         default=None,
-        help="Disable dashboard mutation endpoints and make the stream read-only.",
+        help="Start the stream in read-only mode; implies --stream and disables dashboard mutation endpoints.",
     )
 
     parser.add_argument(
@@ -251,4 +251,10 @@ def parse_args(argv=None):
         ),
     )
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    # A dashboard access-mode flag is an explicit request to run the dashboard.
+    # Without this implication, --stream-read-only alone silently disables the
+    # server because --stream defaults to False.
+    if args.stream_control is not None:
+        args.stream = True
+    return args
