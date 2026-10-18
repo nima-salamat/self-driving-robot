@@ -180,7 +180,7 @@ function previewEditorSettings(){const a=readEditorSettingsForm();applyEditorSet
 function openEditorSettings(){const m=$('roi_settings_dialog');settingsBeforeOpen=currentEditorSettings();settingsReturnFocus=document.activeElement;syncSettingsFormControls(settingsBeforeOpen);m.classList.add('is-open');m.setAttribute('aria-hidden','false');$('roi_setting_grid_mode').focus();}
 function closeEditorSettings(restore){const m=$('roi_settings_dialog');if(restore&&settingsBeforeOpen)applyEditorSettings(settingsBeforeOpen);m.classList.remove('is-open');m.setAttribute('aria-hidden','true');if(settingsReturnFocus&&settingsReturnFocus.focus)settingsReturnFocus.focus();settingsBeforeOpen=null;}
 function resetEditorSettingsDraft(){const a={gridMode:'off',gridSpacing:.05,gridOpacity:.35,gridThickness:1,gridDotSize:2,snap:false,roiAppearance:{labelFontSize:12,labelFontWeight:'700',outlineThickness:2,handleSize:10}};syncSettingsFormControls(a);applyEditorSettings(a);}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.shiftKey&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();closeEditorSettings(true);}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();closeEditorSettings(true);}});
 
 function onCustomPointerDown(event){
   if(!['annotate','ruler','roi_rect','roi_trapezoid'].includes(editorTool)||event.button!==0)return;
@@ -585,7 +585,7 @@ async function safetyAction(action,options){
   if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Shift+Esc':''));await refreshSafety();
+  showToast(action==='stop'?'Software stop requested':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard software '+action+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':''));await refreshSafety();
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -702,9 +702,9 @@ function installExtension(){
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
   $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();enableReadOnlyState();
   document.addEventListener('keydown',function(e){
-    // Fast software-stop hotkey: no confirmation dialog. It still uses /api/safety,
-    // so the active Python mode loop owns the RUN_LVL transition.
-    if(e.shiftKey&&e.key==='Escape'){
+    // Fast software-stop hotkey: Ctrl+Shift+Space, with no confirmation dialog.
+    // It still uses /api/safety; the active Python mode loop owns RUN_LVL.
+    if(e.ctrlKey&&e.shiftKey&&(e.code==='Space'||e.key===' ')){
       if(e.repeat)return;
       e.preventDefault();
       safetyAction('stop',{skipConfirm:true,source:'keyboard'}).catch(function(err){showToast('Software STOP failed: '+err.message);});
