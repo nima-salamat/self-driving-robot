@@ -21,7 +21,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
 <details class="menu-group"><summary>Help</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="help">Mouse & Keyboard Shortcuts</button></div></details>
-<button type="button" class="ghost" id="ext_open_palette" title="Command Palette · Ctrl+K" style="margin-left:6px;padding:4px 8px">⌘ Commands</button><span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span></div>
+<span class="menu-spacer"></span><span class="menu-live" id="menu_live_status">LIVE · {{ mode|capitalize }} MODE</span><button type="button" class="ghost command-launch-button" id="ext_open_palette" title="Search commands, settings, and panel options · Ctrl+K"><svg viewBox="0 0 24 24" class="toolbar-icon" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><span>Commands</span><kbd>Ctrl K</kbd></button></div>
 <div class="container">
   <div class="card">
     <div class="controls editor-controls" aria-label="Editor controls">
@@ -299,7 +299,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 
 <div id="roi_settings_dialog" class="settings-modal" aria-hidden="true">
   <section class="settings-card" role="dialog" aria-modal="true" aria-labelledby="roi_settings_title">
-    <header class="settings-header"><div><h2 id="roi_settings_title">Editor Settings</h2><p>Grid, snapping, and ROI appearance</p></div><button type="button" class="ghost" id="roi_settings_close" aria-label="Close settings">×</button></header>
+    <header class="settings-header"><div><h2 id="roi_settings_title">Editor Settings</h2><p>Grid, snapping, stream display rate, and ROI appearance</p></div><button type="button" class="ghost" id="roi_settings_close" aria-label="Close settings">×</button></header>
     <div class="settings-section"><h3>Grid & Snap</h3>
       <label>Overlay mode<select id="roi_setting_grid_mode"><option value="off">Off</option><option value="grid">Grid</option><option value="dots">Dots</option></select></label>
       <label>Cell height <span id="roi_setting_grid_spacing_value">5% of frame height</span><input id="roi_setting_grid_spacing" type="range" min="0.025" max="0.25" step="0.025" value="0.05"></label>
@@ -310,6 +310,10 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <label>Arrow-key nudge distance (source pixels) <input id="roi_setting_keyboard_nudge" type="number" min="1" max="100" step="1" value="5" aria-label="Arrow-key nudge distance in source image pixels"></label>
       <label class="settings-check"><input id="roi_setting_snap" type="checkbox"> Snap mouse-drag and resize handles to the square grid</label>
       <p class="settings-note">Grid spacing is measured relative to image height; horizontal spacing is corrected for the frame aspect ratio so grid cells remain square. Arrow keys move the selected ROI by the configured number of source-image pixels; Shift + Arrow moves 5× farther.</p>
+    </div>
+    <div class="settings-section"><h3>Stream Display Performance</h3>
+      <label>Stream display FPS <span id="roi_setting_stream_fps_value">8.3 FPS target</span><input id="roi_setting_stream_fps" type="number" min="1" max="30" step="0.5" value="8.3" aria-label="Stream display refresh rate in frames per second"></label>
+      <p class="settings-note">Controls how often this page requests a new frame. It is separate from target processing FPS and the camera sensor FPS; the actual display rate can be lower when frames, network, or browser rendering are slower.</p>
     </div>
     <div class="settings-section"><h3>ROI Appearance</h3>
       <label>Label font size <span id="roi_setting_label_size_value">12 px at 100%</span><input id="roi_setting_label_size" type="range" min="6" max="32" step="1" value="12"></label>
@@ -377,7 +381,27 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><div><div class="small-muted">Saved snapshot</div><img id="ext_compare_old" alt="Saved frame" style="width:100%;background:#02070c"></div><div><div class="small-muted">Current frame</div><img id="ext_compare_live" alt="Current frame" style="width:100%;background:#02070c"></div></div>
   </div>
 </div>
-<div id="ext_command_palette"><div class="palette-box"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><strong>Command Palette</strong><span class="small-muted">Ctrl+K · Esc to close</span></div><input type="search" id="ext_command_search" placeholder="Search tools, commands, shortcuts…"><div id="ext_command_list"></div></div></div>
+<div id="ext_command_palette" aria-hidden="true">
+  <div class="palette-box" role="dialog" aria-modal="true" aria-labelledby="ext_palette_title">
+    <header class="palette-header">
+      <div><strong id="ext_palette_title">Quick Find</strong><span class="small-muted">Search actions and settings</span></div>
+      <kbd>Ctrl K</kbd><kbd>Esc</kbd>
+    </header>
+    <input type="search" id="ext_command_search" placeholder="Search commands, settings, or panel options…" autocomplete="off" aria-label="Search commands, settings, and panel options">
+    <div class="palette-results-grid">
+      <section class="palette-results-section commands-results" aria-labelledby="ext_command_heading">
+        <div class="palette-section-title"><span id="ext_command_heading">Commands</span><span class="palette-result-count" id="ext_command_count">0</span></div>
+        <p class="palette-section-help">Run an action immediately.</p>
+        <div id="ext_command_list"></div>
+      </section>
+      <section class="palette-results-section settings-results" aria-labelledby="ext_settings_heading">
+        <div class="palette-section-title"><span id="ext_settings_heading">Settings &amp; Panels</span><span class="palette-result-count" id="ext_settings_count">Search</span></div>
+        <p class="palette-section-help">Jump to a setting, open its panel, and highlight the control.</p>
+        <div id="ext_settings_results"><div class="palette-empty">Type to search settings and panel options.</div></div>
+      </section>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
