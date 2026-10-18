@@ -1141,10 +1141,16 @@ class Robot:
         detector_kind = None
 
         if use_apriltag:
+            apriltag_started = time.monotonic()
             _, debug_frame, largest_tag, coordinate = self.apriltag_detector.detect(
                 sign_tag_frame,
                 debug_frame,
             )
+            if self.metrics is not None:
+                self.metrics.record_stage(
+                    "apriltag",
+                    (time.monotonic() - apriltag_started) * 1000.0,
+                )
             # AprilTag detection is synchronous, so every captured frame is a
             # fresh presence/absence observation while STOP hold is active.
             self.last_sign_observation_fresh = True
