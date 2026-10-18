@@ -294,10 +294,11 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="small-muted">Session-only snapshots from the current dashboard frame. They are not a replacement for recorded video.</div><div id="ext_frame_gallery" class="ext-gallery"></div><button type="button" class="ghost" id="ext_clear_gallery">Clear Frame History</button>
     </div></details>
 
-    <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Safety & Runtime Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
-      <div id="ext_safety_state" class="status-line">Reading software stop state…</div>
-      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Request Software Stop</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
-      <div class="small-muted"><strong>Shortcut: Ctrl+Shift+Space</strong> requests software STOP immediately (no confirmation). It is not a hardware emergency stop or a substitute for a physical cutoff. Resume requires explicit confirmation.</div>
+    <details class="dock-panel" id="ext_sign_requests_panel" open><summary class="dock-summary"><span>Sign Detection Compute Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div id="ext_sign_requests_state" class="status-line">Reading sign detector request state…</div>
+      <div class="form-row"><button type="button" class="btn" id="ext_sign_requests_pause">Pause Sign Requests</button><button type="button" class="ghost" id="ext_sign_requests_resume">Resume Sign Requests</button></div>
+      <div class="small-muted">Pause blocks new frames from being submitted to the asynchronous sign-detection worker and drops queued frames. An inference already in progress may finish. This does not change RUN_LVL or stop robot movement; sign-based detection is unavailable while requests are paused.</div>
+      <div class="small-muted" style="margin-top:6px">Robot movement is controlled separately: use the Force Stop command or Ctrl+Shift+Space to set RUN_LVL=STOP. Resume motion is a separate action.</div>
     </div></details>
 
   </div>
