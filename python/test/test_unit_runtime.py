@@ -62,6 +62,16 @@ class ArduinoContractCliPolicyTests(unittest.TestCase):
 
 
 class RuntimeMetricsTests(unittest.TestCase):
+    def test_runtime_metrics_records_named_pipeline_stages(self):
+        metrics = RuntimeMetrics()
+        metrics.record_stage("lane", 12.5)
+        metrics.record_stage("sign_latency", 34.0)
+
+        timing = metrics.snapshot()["timing"]
+        self.assertEqual(timing["lane"]["count"], 1)
+        self.assertEqual(timing["lane"]["p95_ms"], 12.5)
+        self.assertEqual(timing["sign_latency"]["p95_ms"], 34.0)
+
     def test_statistics_and_counters(self):
         metrics = RuntimeMetrics(window_size=3)
         metrics.record_loop(10)
