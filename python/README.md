@@ -110,9 +110,13 @@ The CAD-style workspace includes:
 - Full mode-specific configuration JSON import/export, preset save/apply/compare, configuration history, and undo/redo.
 - Runtime-health charts/details, Arduino telemetry, sign-worker status, confidence/obstacle diagnostics, City traffic-light or Race lifecycle status, and an embedded encoder map when `--encoder-map` is enabled.
 - Picamera2-supported exposure/gain/auto-control settings, live processing-cycle FPS limiting, session-only frame snapshots/comparison, console filters/export, runtime log search, workspace profiles, and a command palette (`Ctrl+K`).
+- Runtime Stream JPEG quality (30–100) for smaller or clearer dashboard images; it is separate from browser display FPS, camera sensor FPS, and robot perception/processing.
 - `File → Exit · Stop Stream Server…` opens a custom confirmation dialog and then shuts down only the Stream HTTP server and its serving thread; it does not stop the City/Race runtime loop or robot motion.
+- `Pause Dashboard Requests` stops the browser's frame, configuration, health, and Arduino polling intervals. `Resume Dashboard Requests` restores those requests. Neither action sends a robot stop command or changes `RUN_LVL`; use `Force Stop (RUN_LVL → STOP)` to request a software motion stop. This polling pause reduces dashboard request/encoding traffic, but it does not pause the robot's City/Race control loop.
 
 After confirmation, the active process sets `STREAM=False` so dashboard-only frame generation stops too. The current browser page disconnects; restarting the dashboard requires launching the program again with `--stream`. This runtime action is disabled when launched with `--stream-read-only`.
+
+The JPEG quality control is available under `Settings → Stream Display Performance` and requires dashboard controls to be enabled. It changes only the JPEG encoding used by the two Stream frame endpoints; the default is 85 and values are kept for the current running process only. It does not resize the camera frame or alter vision inputs.
 
 The dashboard control endpoints respect `STREAM_ALLOW_CONTROL` and the CLI's
 `--stream-read-only` option. Either `--stream-read-only` or
