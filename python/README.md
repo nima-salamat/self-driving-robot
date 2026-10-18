@@ -171,7 +171,7 @@ If both variables are absent or empty, Stream keeps its existing no-login behavi
 If only one is set, Stream startup reports a configuration error rather than silently
 disabling authentication. Credentials are not committed: `.env` files are ignored by
 Git, while `.env.example` is only a template. The login is rate-limited, uses a
-server-side-verified signed session cookie, expires after 12 hours, and rejects
+server-side-verified signed session cookie, expires after 12 hours of inactivity, and rejects
 cross-origin state-changing requests. Restarting the Stream process invalidates
 existing sessions.
 
