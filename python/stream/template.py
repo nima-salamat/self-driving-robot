@@ -531,6 +531,9 @@ canvas {
       <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
+      <div class="small-muted">Custom ROI preview only: these user-defined shapes do not affect the driving pipeline. Operational controls remain the fixed RL/LL/CW/ST/OBJ regions.</div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_roi_rect_tool">Draw Rectangle ROI</button><button type="button" class="ghost" id="ext_roi_trapezoid_tool">Draw Trapezoid ROI</button></div>
+      <div class="form-row"><label for="ext_roi_top_factor" class="small-muted">Trapezoid top width</label><input type="range" id="ext_roi_top_factor" min="0.1" max="1" step="0.05" value="0.5" style="min-width:70px;flex:1"><span id="ext_roi_top_factor_label" class="small-muted">50%</span></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
       <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
       <div id="ext_annotations_list" class="ext-list"></div>
@@ -1876,7 +1879,20 @@ function drawPrecisionOverlay(){
   }
   if(currentConfig&&currentConfig.ui&&currentConfig.ui.visible&&currentConfig.ui.visible.ANNOTATIONS===false)return;
   extAnnotations.forEach(function(item,index){
-    const x=b.ix+Number(item.u||0)*b.iw,y=b.iy+Number(item.v||0)*b.ih,color=item.color||'#fbbf24';
+    const color=item.color||'#fbbf24';
+    if(item.kind==='roi_rect'||item.kind==='roi_trapezoid'){
+      const x=b.ix+Number(item.x||0)*b.iw,y=b.iy+Number(item.y||0)*b.ih,w=Number(item.w||0)*b.iw,h=Number(item.h||0)*b.ih;
+      if(item.kind==='roi_rect'){
+        addSVG('rect',{x:x,y:y,width:w,height:h,fill:'rgba(34,211,238,.10)',stroke:color,'stroke-width':2,'stroke-dasharray':'5 3'});
+      }else{
+        const top=Math.max(0,Math.min(1,Number(item.topFactor==null?0.5:item.topFactor))),inset=(w*(1-top))/2;
+        addSVG('polygon',{points:(x+inset)+','+y+' '+(x+w-inset)+','+y+' '+(x+w)+','+(y+h)+' '+x+','+(y+h),fill:'rgba(34,211,238,.10)',stroke:color,'stroke-width':2,'stroke-dasharray':'5 3'});
+      }
+      const label=addSVG('text',{x:x+4,y:y+13,fill:color,'font-size':12,'paint-order':'stroke',stroke:'#07101a','stroke-width':3});
+      label.textContent=item.label||('Preview ROI '+(index+1));
+      return;
+    }
+    const x=b.ix+Number(item.u||0)*b.iw,y=b.iy+Number(item.v||0)*b.ih;
     if(item.kind==='ruler'&&item.u2!=null&&item.v2!=null){
       const x2=b.ix+item.u2*b.iw,y2=b.iy+item.v2*b.ih;
       addSVG('line',{x1:x,y1:y,x2:x2,y2:y2,stroke:color,'stroke-width':2});
@@ -1895,10 +1911,15 @@ function updateEditorStatus(text){if($('ext_editor_status'))$('ext_editor_status
 function setEditorTool(tool){
   editorTool=tool;
   rulerStart=null;
-  ['ext_annotate_btn','ext_ruler'].forEach(function(id){if($(id))$(id).classList.toggle('ext-tool-active',(id==='ext_ruler'&&tool==='ruler')||(id==='ext_annotate_btn'&&tool==='annotate'));});
+  ['ext_annotate_btn','ext_ruler','ext_roi_rect_tool','ext_roi_trapezoid_tool'].forEach(function(id){
+    if($(id))$(id).classList.toggle('ext-tool-active',
+      (id==='ext_ruler'&&tool==='ruler')||(id==='ext_annotate_btn'&&tool==='annotate')||
+      (id==='ext_roi_rect_tool'&&tool==='roi_rect')||(id==='ext_roi_trapezoid_tool'&&tool==='roi_trapezoid'));
+  });
   if(typeof setTool==='function')setTool(tool==='pan'?'pan':'select');
-  if(canvas)canvas.style.cursor=tool==='pan'?'grab':tool==='annotate'?'crosshair':tool==='ruler'?'crosshair':'default';
-  updateEditorStatus(tool==='ruler'?'Ruler active: click two points inside the image.':tool==='annotate'?'Annotation active: click in the image to add a note marker.':'Tool: '+tool);
+  if(canvas)canvas.style.cursor=tool==='pan'?'grab':(['annotate','ruler','roi_rect','roi_trapezoid'].includes(tool)?'crosshair':'default');
+  const messages={ruler:'Ruler active: click two points inside the image.',annotate:'Annotation active: click in the image to add a note marker.',roi_rect:'Rectangle ROI preview: click two opposite corners.',roi_trapezoid:'Trapezoid ROI preview: click two opposite corners.'};
+  updateEditorStatus(messages[tool]||('Tool: '+tool));
   scheduleWorkspaceSave();drawPrecisionOverlay();
 }
 function pointFromEvent(event){
@@ -1921,7 +1942,7 @@ function refreshAnnotationList(){
   });
 }
 function onCustomPointerDown(event){
-  if(editorTool!=='annotate'&&editorTool!=='ruler')return;
+  if(!['annotate','ruler','roi_rect','roi_trapezoid'].includes(editorTool)||event.button!==0)return;
   const point=pointFromEvent(event);if(!point)return;
   event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
   if(editorTool==='annotate'){
@@ -1933,12 +1954,26 @@ function onCustomPointerDown(event){
     refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();
     updateEditorStatus('Annotation placed at U '+(point.u*100).toFixed(1)+'%, V '+(point.v*100).toFixed(1)+'%.');
   }else if(!rulerStart){
-    rulerStart=point;updateEditorStatus('Ruler start marked. Click the second point.');drawPrecisionOverlay();
+    rulerStart=point;updateEditorStatus(editorTool==='ruler'?'Ruler start marked. Click the second point.':'ROI first corner marked. Click the opposite corner.');drawPrecisionOverlay();
   }else{
-    const distance=Math.hypot((point.u-rulerStart.u)*extImageBounds().iw,(point.v-rulerStart.v)*extImageBounds().ih);
-    extAnnotations.push({kind:'ruler',u:rulerStart.u,v:rulerStart.v,u2:point.u,v2:point.v,label:distance.toFixed(1)+' px',color:'#22d3ee'});
+    const start=rulerStart;rulerStart=null;
+    if(editorTool==='ruler'){
+      const distance=Math.hypot((point.u-start.u)*extImageBounds().iw,(point.v-start.v)*extImageBounds().ih);
+      extAnnotations.push({kind:'ruler',u:start.u,v:start.v,u2:point.u,v2:point.v,label:distance.toFixed(1)+' px',color:'#22d3ee'});
+      updateEditorStatus('Ruler saved: '+distance.toFixed(1)+' image pixels.');
+    }else{
+      const x=Math.min(start.u,point.u),y=Math.min(start.v,point.v),w=Math.abs(point.u-start.u),h=Math.abs(point.v-start.v);
+      if(w<0.005||h<0.005){updateEditorStatus('Custom ROI is too small; draw it again with a larger area.');return;}
+      const kind=editorTool;
+      const generatedName='Preview ROI '+(extAnnotations.length+1);
+      const typedLabel=window.prompt('Custom ROI label:',generatedName);
+      if(typedLabel===null){drawPrecisionOverlay();return;}
+      const item={kind:kind,x:x,y:y,w:w,h:h,label:String(typedLabel||generatedName).trim().slice(0,80),color:'#22d3ee'};
+      if(kind==='roi_trapezoid')item.topFactor=Number($('ext_roi_top_factor').value)||0.5;
+      extAnnotations.push(item);updateEditorStatus('Preview ROI added. This shape does not alter robot perception or control.');
+    }
     if(extAnnotations.length>250)extAnnotations.shift();
-    rulerStart=null;refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();updateEditorStatus('Ruler saved: '+distance.toFixed(1)+' image pixels.');
+    refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();
   }
 }
 function drawSparkline(id,values){
@@ -2004,7 +2039,7 @@ function applyWorkspace(workspace){
   if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;
   if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
-  editorTool=['select','pan','annotate','ruler'].includes(view.tool)?view.tool:'select';
+  editorTool=['select','pan','annotate','ruler','roi_rect','roi_trapezoid'].includes(view.tool)?view.tool:'select';
   if(typeof view.rightPaneWidth==='number'&&view.rightPaneWidth>=250&&view.rightPaneWidth<=700)document.querySelector('.container').style.setProperty('--right-pane-width',view.rightPaneWidth+'px');
   Object.keys(workspace.panels||{}).forEach(function(id){const panel=$(id);if(panel&&panel.tagName==='DETAILS')panel.open=!!workspace.panels[id];});
   Object.keys(workspace.layers||{}).forEach(function(key){const layer=workspace.layers[key];if(!layer)return;if(EXT_LAYERS.includes(key)){ui.visible[key]=layer.visible!==false;ui.opacity[key]=Number(layer.opacity==null?1:layer.opacity);}});
@@ -2327,6 +2362,9 @@ function installExtension(){
   showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
   $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
   $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
+  $('ext_roi_rect_tool').onclick=function(){setEditorTool(editorTool==='roi_rect'?'select':'roi_rect');};
+  $('ext_roi_trapezoid_tool').onclick=function(){setEditorTool(editorTool==='roi_trapezoid'?'select':'roi_trapezoid');};
+  $('ext_roi_top_factor').addEventListener('input',function(){$('ext_roi_top_factor_label').textContent=Math.round(Number(this.value)*100)+'%';});
   $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all custom annotations from the workspace?')){extAnnotations=[];refreshAnnotationList();drawPrecisionOverlay();scheduleWorkspaceSave();}};
   $('ext_save_workspace').onclick=function(){saveWorkspace().then(function(){showToast('Workspace layout saved');}).catch(function(err){showToast(err.message);});};
   $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
