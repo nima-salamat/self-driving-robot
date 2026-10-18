@@ -61,6 +61,7 @@ class StreamApiTests(unittest.TestCase):
             ("/api/camera/settings", "camera_settings_api"),
             ("/api/processing-rate", "processing_rate_api"),
             ("/api/safety", "safety_api"),
+            ("/api/sign-requests", "sign_requests_api"),
             ("/api/features", "features_api"),
             ("/encoder-map", "encoder_map_page"),
             ("/api/encoder-map", "encoder_map_api"),
@@ -118,6 +119,14 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("function updateActiveToolBanner()", extensions)
         self.assertIn("function isPaletteCommandActive(name)", extensions)
         self.assertIn("Force Stop (RUN_LVL → STOP)", extensions)
+        self.assertIn("function refreshSignRequests()", extensions)
+        self.assertIn("function signRequestsAction(action)", extensions)
+        self.assertIn("nativeFetch('/api/sign-requests'", extensions)
+        self.assertNotIn("function refreshSafety()", extensions)
+        self.assertIn('id="ext_sign_requests_pause"', template)
+        self.assertIn('id="ext_sign_requests_resume"', template)
+        self.assertIn("This does not change RUN_LVL", template)
+        self.assertNotIn("ext_software_stop", template)
         self.assertIn("Ctrl+Shift+Space", extensions)
         self.assertIn("stop:function(){safetyAction('stop',{skipConfirm:true,source:'command-palette'})", extensions)
         self.assertIn("safetyAction('stop',{skipConfirm:true,source:'keyboard'})", extensions)
@@ -539,6 +548,63 @@ class StreamApiTests(unittest.TestCase):
             resumed = client.post("/api/safety", json={"action": "resume"})
             self.assertEqual(resumed.status_code, 200)
             self.assertEqual(config.RUN_LVL, "MOVE")
+
+    def test_sign_request_pause_is_independent_from_run_level_stop(self):
+        import tempfile
+
+        class FakeSignWorker:
+            def __init__(self):
+                self.requests_enabled = True
+
+            def pause_requests(self):
+                self.requests_enabled = False
+
+            def resume_requests(self):
+                self.requests_enabled = True
+
+            def status(self):
+                return {
+                    "requests_enabled": self.requests_enabled,
+                    "worker_alive": True,
+                    "queue_depth": 0,
+                    "inference_in_flight": False,
+                }
+
+        config = self.make_config()
+        worker = FakeSignWorker()
+        config.runtime_robot = types.SimpleNamespace(sign_detector=worker)
+        client = WebStreamer(config).app.test_client()
+
+        denied = client.post("/api/sign-requests", json={"action": "pause"})
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(getattr(config, "RUN_LVL", "MOVE"), "MOVE")
+        self.assertTrue(worker.requests_enabled)
+
+        config.STREAM_ALLOW_CONTROL = True
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            paused = client.post("/api/sign-requests", json={"action": "pause"})
+            self.assertEqual(paused.status_code, 200, paused.get_data(as_text=True))
+            self.assertFalse(worker.requests_enabled)
+            self.assertEqual(paused.get_json()["run_level"], "MOVE")
+            self.assertFalse(paused.get_json()["motion_state_changed"])
+            self.assertEqual(getattr(config, "RUN_LVL", "MOVE"), "MOVE")
+
+            stopped = client.post("/api/safety", json={"action": "stop"})
+            self.assertEqual(stopped.status_code, 200, stopped.get_data(as_text=True))
+            self.assertEqual(config.RUN_LVL, "STOP")
+            self.assertFalse(worker.requests_enabled)
+
+            resumed_requests = client.post(
+                "/api/sign-requests", json={"action": "resume"}
+            )
+            self.assertEqual(resumed_requests.status_code, 200)
+            self.assertTrue(worker.requests_enabled)
+            self.assertEqual(config.RUN_LVL, "STOP")
+
+            resumed_motion = client.post("/api/safety", json={"action": "resume"})
+            self.assertEqual(resumed_motion.status_code, 200)
+            self.assertEqual(config.RUN_LVL, "MOVE")
+            self.assertTrue(worker.requests_enabled)
 
     def test_server_log_endpoint_redacts_bearer_credentials(self):
         import logging
