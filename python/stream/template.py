@@ -321,7 +321,7 @@ canvas {
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
 <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>ROBOY STUDIO</span></div>
-<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
+<details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button></div></details>
 <details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><button type="button" data-action="apply-base">Apply Base Settings</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
 <details class="menu-group"><summary>Tools</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="tool-select">Select / Edit ROI</button><button type="button" data-action="tool-pan">Hand / Pan View</button><button type="button" data-action="freeze">Freeze Camera Frame</button><button type="button" data-action="unfreeze">Return to Live Camera</button></div></details>
@@ -1734,7 +1734,7 @@ function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;d
 function toggleProperties(){const p=document.querySelector('.properties-panel');if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{switch(b.dataset.action){
-case 'export-config':document.getElementById('download_json').click();break;case 'refresh-config':document.getElementById('refresh_vals').click();noteWorkspaceEvent('info','Configuration refresh requested');break;
+case 'export-config':if(window.exportFullConfig)window.exportFullConfig().catch(err=>showToast('Export failed: '+err.message));else document.getElementById('download_json').click();break;case 'refresh-config':if(window.reloadFullConfig)window.reloadFullConfig().catch(err=>showToast('Reload failed: '+err.message));else document.getElementById('refresh_vals').click();noteWorkspaceEvent('info','Full configuration refresh requested');break;
 case 'take-picture':document.getElementById('take_picture_btn').click();break;case 'clear-selection':document.getElementById('clear_selection').click();break;case 'apply-base':document.getElementById('apply_all').click();break;case 'properties':toggleProperties();break;case 'toggle-properties':document.getElementById('toggle_dock_btn').click();break;
 case 'zoom-in':zoomBy(1.2);break;case 'zoom-out':zoomBy(1/1.2);break;case 'fit-view':fitWorkspaceView();break;case 'toggle-overlays':toggleOverlays();break;case 'toggle-console':setConsoleOpen(!consoleDock.classList.contains('console-open'));break;
 case 'tool-select':setTool('select');break;case 'tool-pan':setTool('pan');break;case 'freeze':document.getElementById('freeze_btn').click();break;case 'unfreeze':document.getElementById('unfreeze_btn').click();break;
@@ -2200,6 +2200,16 @@ function importFullConfigFile(file){
 async function exportFullConfig(){
   const config=await readConfig();config.exported_at=new Date().toISOString();downloadText(JSON.stringify(config,null,2),'roboy-'+String('{{ mode }}').toLowerCase()+'-full-config.json','application/json');noteWorkspaceEvent('info','Exported full configuration');
 }
+window.exportFullConfig=exportFullConfig;
+window.reloadFullConfig=async function(){
+  const config=await readConfig();
+  currentConfig=config;
+  applyConfigToUI(config);
+  undoStack=[];redoStack=[];updateUndoButtons();
+  showToast('Reloaded active configuration from the robot');
+  noteWorkspaceEvent('info','Reloaded full configuration from runtime');
+  return config;
+};
 async function refreshRuntime(){
   try{
     const health=await nativeFetch('/api/health',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
