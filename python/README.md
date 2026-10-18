@@ -95,6 +95,40 @@ This flag gates access-log lines for the robot dashboard server only. It does
 not suppress Flask application errors or Werkzeug warnings/errors. The global
 `--log-level` still controls which severities are displayed.
 
+## Stream dashboard workspace
+
+Start the workspace with:
+
+~~~bash
+python main.py --mode city --stream
+# Open the URL printed by the runtime, normally http://<robot-ip>:5000
+~~~
+
+The CAD-style workspace includes:
+- Fixed operational ROI / BEV point editing, layer visibility/color/opacity, zoom/pan, grid, snap, and crosshair.
+- Note/marker annotations, pixel ruler, and custom rectangle/trapezoid ROI previews. Custom ROIs are **visual annotations only**; they do not change perception or steering.
+- Full mode-specific configuration JSON import/export, preset save/apply/compare, configuration history, and undo/redo.
+- Runtime-health charts/details, Arduino telemetry, sign-worker status, confidence/obstacle diagnostics, City traffic-light or Race lifecycle status, and an embedded encoder map when `--encoder-map` is enabled.
+- Picamera2-supported exposure/gain/auto-control settings, live processing-cycle FPS limiting, session-only frame snapshots/comparison, console filters/export, runtime log search, workspace profiles, and a command palette (`Ctrl+K`).
+
+The dashboard control endpoints respect `STREAM_ALLOW_CONTROL` and the CLI's
+`--stream-read-only` option. Use the read-only option when users should inspect
+telemetry but must not change live settings:
+
+~~~bash
+python main.py --mode city --stream --stream-read-only
+~~~
+
+**Network and safety:** the stream binds to all interfaces by default and has no
+built-in user authentication. Only expose it on a trusted network; choose
+`--stream-host 127.0.0.1` for loopback-only access. The dashboard's **Software
+Stop** requests the active Python mode loop to set its existing software stop
+latch. It is not a hardware emergency stop or a substitute for a physical
+power cutoff. Resume requires explicit confirmation. Features that need startup
+construction or compatible firmware are displayed as restart-required rather
+than being enabled through an unsafe generic toggle. Runtime camera tuning is
+available only when the active Picamera2 camera reports support for each control.
+
 ## Log verbosity
 
 Logging defaults to `INFO`, so `DEBUG` records are hidden from both the terminal
