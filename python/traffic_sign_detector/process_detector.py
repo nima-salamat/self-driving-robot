@@ -18,9 +18,16 @@ def _replace_queue_item(target, item):
         target.put_nowait(item)
         return True
     except queue.Full:
-        try:
-            target.get_nowait()
-        except queue.Empty:
+        # Multiprocessing.Queue has a feeder thread. The semaphore can report
+        # Full just before the feeder has made the previous item readable.
+        # Retry briefly rather than silently losing the newest camera frame.
+        for _ in range(3):
+            try:
+                target.get(timeout=0.001)
+                break
+            except queue.Empty:
+                continue
+        else:
             return False
         try:
             target.put_nowait(item)
@@ -210,6 +217,10 @@ class ProcessSignDetector:
             confidence_threshold,
             tuple(target_sign_types) if target_sign_types is not None else None,
         )
+        try:
+            replacing_waiting_frame = self._requests.full()
+        except (NotImplementedError, OSError):
+            replacing_waiting_frame = False
         if not _replace_queue_item(self._requests, request):
             with self._lock:
                 self._dropped += 1
@@ -217,9 +228,8 @@ class ProcessSignDetector:
 
         with self._lock:
             self._submitted += 1
-            # Count only if an older waiting frame really was replaced. If the
-            # queue had been full, _replace_queue_item removed its previous item.
-            # The exact queue state is shared, so this is intentionally diagnostic.
+            if replacing_waiting_frame:
+                self._replaced += 1
         self._idle.clear()
         return request_id
 
