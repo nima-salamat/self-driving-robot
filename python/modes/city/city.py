@@ -209,7 +209,12 @@ class Robot:
         if self.sign_detector is not None:
             return
         if bool(getattr(config_city, "MULTIPROCESS_SIGN_DETECTOR", False)):
-            self.sign_detector = ProcessSignDetector(config_city.SIGN_DETECTOR_METHOD)
+            self.sign_detector = ProcessSignDetector(
+                config_city.SIGN_DETECTOR_METHOD,
+                intra_op_num_threads=getattr(
+                    config_city, "MULTIPROCESS_SIGN_INTRA_OP_THREADS", 2
+                ),
+            )
         else:
             detector = (
                 SVMTrafficSignDetector()
