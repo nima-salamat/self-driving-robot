@@ -2400,7 +2400,7 @@ function executeCommand(name){
     annotate:function(){setEditorTool('annotate');},ruler:function(){$('ext_ruler').click();},
     roi_rect:function(){setEditorTool('roi_rect');},roi_trapezoid:function(){setEditorTool('roi_trapezoid');},
     snapshot:addFrameSnapshot,workspace:function(){saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(e){showToast(e.message);});},
-    profile:function(){$('ext_profile_panel').open=true;$('ext_profile_name').focus();},
+    profile:function(){$('ext_editor_panel').open=true;$('ext_profile_name').focus();},
     preset:function(){$('ext_config_panel').open=true;$('ext_preset_name').focus();},
     health:function(){refreshRuntime().then(function(){showToast('Runtime diagnostics refreshed');});},
     logs:refreshServerLogs,
