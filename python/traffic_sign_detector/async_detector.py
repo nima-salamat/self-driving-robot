@@ -1,4 +1,5 @@
 import logging
+import math
 import queue
 import threading
 import time
@@ -11,7 +12,7 @@ class AsyncSignDetector:
         self.detector = detector
         self._requests = queue.Queue(maxsize=1)
         self._lock = threading.Lock()
-        self._latest = None  # (request_id, result, submitted_at, completed_at)
+        self._latest = None  # (request_id, result, submitted_at, completed_at, frame_captured_at)
         self._next_id = 0
         self._submitted = 0
         self._completed = 0
@@ -38,10 +39,17 @@ class AsyncSignDetector:
     def submit(
         self, frame, debug_frame=None, confidence_threshold=None,
         target_sign_types=None,
+        frame_captured_at=None,
     ):
         if frame is None:
             return None
         submitted_at = time.monotonic()
+        try:
+            frame_captured_at = float(frame_captured_at)
+            if not math.isfinite(frame_captured_at) or frame_captured_at <= 0:
+                frame_captured_at = submitted_at
+        except (TypeError, ValueError):
+            frame_captured_at = submitted_at
         with self._lock:
             if self._paused or not self._requests_enabled or self._stop.is_set():
                 return None
@@ -50,7 +58,7 @@ class AsyncSignDetector:
             self._last_submit_at = submitted_at
             request = (
                 request_id, frame, debug_frame, submitted_at,
-                confidence_threshold, target_sign_types,
+                confidence_threshold, target_sign_types, frame_captured_at,
             )
             try:
                 self._requests.put_nowait(request)
@@ -122,7 +130,8 @@ class AsyncSignDetector:
             return latest
 
         max_age_s = max(0.0, float(max_age_s))
-        input_age_s = max(0.0, time.monotonic() - latest[2])
+        frame_captured_at = latest[4] if len(latest) >= 5 else latest[2]
+        input_age_s = max(0.0, time.monotonic() - frame_captured_at)
         return latest if input_age_s < max_age_s else None
 
     def _run(self):
@@ -130,7 +139,8 @@ class AsyncSignDetector:
         while not self._stop.is_set():
             try:
                 (request_id, frame, debug_frame, submitted_at,
-                 confidence_threshold, target_sign_types) = self._requests.get(timeout=0.1)
+                 confidence_threshold, target_sign_types,
+                 frame_captured_at) = self._requests.get(timeout=0.1)
             except queue.Empty:
                 continue
 
@@ -168,6 +178,7 @@ class AsyncSignDetector:
                         result,
                         submitted_at,
                         completed_at,
+                        frame_captured_at,
                     )
                     self._completed += 1
                     self._last_result_at = completed_at
@@ -207,7 +218,12 @@ class AsyncSignDetector:
                 ),
                 "last_result_age_s": last_result_age_s,
                 "last_result_input_age_s": (
-                    max(0.0, time.monotonic() - self._latest[2])
+                    max(
+                        0.0,
+                        time.monotonic() - (
+                            self._latest[4] if len(self._latest) >= 5 else self._latest[2]
+                        ),
+                    )
                     if self._latest is not None
                     else None
                 ),
