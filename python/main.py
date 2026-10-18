@@ -105,11 +105,19 @@ def _apply_cli_overrides(config, args):
     config.ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED = bool(
         getattr(args, "adaptive_obstacle_avoidance", False)
     )
+    # Optional physical calibration values follow the normal precedence:
+    # mode defaults -> mode JSON -> explicit CLI override. An omitted CLI
+    # argument must not erase a calibration already set for this mode.
     for name, value in (
         ("ENCODER_PULSE_DISTANCE_CM", getattr(args, "encoder_pulse_distance_cm", None)),
         ("ENCODER_WHEELBASE_CM", getattr(args, "encoder_wheelbase_cm", None)),
         ("ENCODER_ROAD_ANGLE_MIN_DEG", getattr(args, "encoder_road_wheel_angle_at_servo_min_deg", None)),
         ("ENCODER_ROAD_ANGLE_MAX_DEG", getattr(args, "encoder_road_wheel_angle_at_servo_max_deg", None)),
+    ):
+        if value is not None:
+            setattr(config, name, value)
+
+    for name, value in (
         ("CONFIDENCE_SLOW_THRESHOLD", getattr(args, "confidence_slow_threshold", 0.65)),
         ("CONFIDENCE_STOP_THRESHOLD", getattr(args, "confidence_stop_threshold", 0.30)),
         ("OBSTACLE_TRIGGER_DISTANCE_CM", getattr(args, "obstacle_trigger_distance_cm", 35.0)),
@@ -133,6 +141,13 @@ def _validate_opt_in_features(config, args):
     def positive(value, name):
         if value is None or not math.isfinite(float(value)) or float(value) <= 0:
             raise SystemExit(f"{name} must be supplied as a positive finite value")
+
+    # Calibration has already been merged using active mode defaults, its JSON,
+    # then explicit CLI overrides.
+    encoder_pulse_distance = getattr(config, "ENCODER_PULSE_DISTANCE_CM", None)
+    encoder_wheelbase = getattr(config, "ENCODER_WHEELBASE_CM", None)
+    encoder_road_min = getattr(config, "ENCODER_ROAD_ANGLE_MIN_DEG", None)
+    encoder_road_max = getattr(config, "ENCODER_ROAD_ANGLE_MAX_DEG", None)
 
     if (args.race_start_on_stop_sign or args.race_finish_after_seconds is not None or
             args.race_finish_speed is not None) and args.mode != "race":
@@ -166,10 +181,10 @@ def _validate_opt_in_features(config, args):
             raise SystemExit("--encoder-map requires --stream")
         if args.without_arduino or getattr(config, "WITHOUT_ARDUINO", False):
             raise SystemExit("--encoder-map requires an active Arduino serial connection")
-        positive(args.encoder_pulse_distance_cm, "--encoder-pulse-distance-cm")
-        wheelbase = args.encoder_wheelbase_cm
-        road_min = args.encoder_road_wheel_angle_at_servo_min_deg
-        road_max = args.encoder_road_wheel_angle_at_servo_max_deg
+        positive(encoder_pulse_distance, "--encoder-pulse-distance-cm or active mode ENCODER_PULSE_DISTANCE_CM")
+        wheelbase = encoder_wheelbase
+        road_min = encoder_road_min
+        road_max = encoder_road_max
         supplied = (wheelbase is not None, road_min is not None, road_max is not None)
         if any(supplied) and not all(supplied):
             raise SystemExit("2D odometry requires all of --encoder-wheelbase-cm and both --encoder-road-wheel-angle-at-servo-{min,max}-deg; omit all three for pulse/distance-only view")
@@ -196,7 +211,7 @@ def _validate_opt_in_features(config, args):
             raise SystemExit("--adaptive-obstacle-avoidance is currently supported only in race mode")
         if args.without_arduino or getattr(config, "WITHOUT_ARDUINO", False):
             raise SystemExit("--adaptive-obstacle-avoidance requires an active Arduino connection")
-        positive(args.encoder_pulse_distance_cm, "--encoder-pulse-distance-cm (shared encoder telemetry calibration)")
+        positive(encoder_pulse_distance, "--encoder-pulse-distance-cm or active mode ENCODER_PULSE_DISTANCE_CM")
         if not args.stream:
             raise SystemExit("--adaptive-obstacle-avoidance currently requires --stream for live diagnostics")
         if getattr(config, "USE_ML_LANE_DETECTOR", False):
@@ -211,12 +226,12 @@ def _validate_opt_in_features(config, args):
             raise SystemExit("obstacle distances must satisfy 0 < emergency stop < trigger distance")
         if args.obstacle_lane_width_cm <= args.obstacle_robot_width_cm + 2 * args.obstacle_clearance_cm:
             raise SystemExit("lane width must exceed robot width plus required clearance on both sides")
-        if args.encoder_wheelbase_cm is None or args.encoder_road_wheel_angle_at_servo_min_deg is None or args.encoder_road_wheel_angle_at_servo_max_deg is None:
-            raise SystemExit("adaptive obstacle avoidance requires calibrated steering geometry: --encoder-wheelbase-cm and both road-wheel-angle-at-servo-limit values")
+        if encoder_wheelbase is None or encoder_road_min is None or encoder_road_max is None:
+            raise SystemExit("adaptive obstacle avoidance requires calibrated steering geometry in the active mode config or via --encoder-wheelbase-cm and both road-wheel-angle-at-servo-limit options")
         low = float(getattr(config, "MIN_SERVO_ANGLE", 55))
         high = float(getattr(config, "MAX_SERVO_ANGLE", 125))
         center = float(getattr(config, "SERVO_CENTER", 95))
-        angle_at_center = args.encoder_road_wheel_angle_at_servo_min_deg + (center - low) / (high - low) * (args.encoder_road_wheel_angle_at_servo_max_deg - args.encoder_road_wheel_angle_at_servo_min_deg)
+        angle_at_center = encoder_road_min + (center - low) / (high - low) * (encoder_road_max - encoder_road_min)
         if abs(angle_at_center) > 5.0:
             raise SystemExit("steering calibration must map SERVO_CENTER to approximately zero road-wheel angle")
 
