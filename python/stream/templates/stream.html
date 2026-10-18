@@ -303,7 +303,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 
     <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Robot Motion Control · RUN_LVL</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div id="ext_safety_state" class="status-line">Reading robot motion state…</div>
-      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Request Software Stop</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
+      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Force Stop (RUN_LVL → STOP)</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
       <div class="small-muted"><strong>Force Stop shortcut: Ctrl+Shift+Space</strong> sets RUN_LVL=STOP. This is a software motion stop, not a hardware emergency stop. Resume requires explicit confirmation.</div>
     </div></details>
 
