@@ -302,11 +302,14 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     <header class="settings-header"><div><h2 id="roi_settings_title">Editor Settings</h2><p>Grid, snapping, and ROI appearance</p></div><button type="button" class="ghost" id="roi_settings_close" aria-label="Close settings">×</button></header>
     <div class="settings-section"><h3>Grid & Snap</h3>
       <label>Overlay mode<select id="roi_setting_grid_mode"><option value="off">Off</option><option value="grid">Grid</option><option value="dots">Dots</option></select></label>
-      <label>Spacing <span id="roi_setting_grid_spacing_value">5%</span><input id="roi_setting_grid_spacing" type="range" min="0.025" max="0.25" step="0.025" value="0.05"></label>
+      <label>Cell height <span id="roi_setting_grid_spacing_value">5% of frame height</span><input id="roi_setting_grid_spacing" type="range" min="0.025" max="0.25" step="0.025" value="0.05"></label>
+      <label>Grid color <input id="roi_setting_grid_color" class="settings-color-input" type="color" value="#69bed2" aria-label="Grid and dots color"></label>
       <label>Grid opacity<input id="roi_setting_grid_opacity" type="range" min="0.05" max="1" step="0.05" value="0.35"></label>
       <label>Grid line thickness<input id="roi_setting_grid_thickness" type="range" min="0.5" max="3" step="0.5" value="1"></label>
       <label>Dot size<input id="roi_setting_grid_dot_size" type="range" min="1" max="6" step="0.5" value="2"></label>
-      <label class="settings-check"><input id="roi_setting_snap" type="checkbox"> Snap moves and resize handles to grid spacing</label>
+      <label>Arrow-key nudge distance (source pixels) <input id="roi_setting_keyboard_nudge" type="number" min="1" max="100" step="1" value="5" aria-label="Arrow-key nudge distance in source image pixels"></label>
+      <label class="settings-check"><input id="roi_setting_snap" type="checkbox"> Snap moves and resize handles to the square grid</label>
+      <p class="settings-note">Grid spacing is measured relative to image height; horizontal spacing is corrected for the frame aspect ratio so grid cells remain square. Arrow keys move the selected ROI by the configured number of source-image pixels; Shift + Arrow moves 5× farther.</p>
     </div>
     <div class="settings-section"><h3>ROI Appearance</h3>
       <label>Label font size <span id="roi_setting_label_size_value">12 px at 100%</span><input id="roi_setting_label_size" type="range" min="6" max="32" step="1" value="12"></label>
@@ -335,6 +338,8 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       </section>
       <section class="shortcut-group"><h3>ROI & precision tools</h3>
         <div class="shortcut-row"><span>Show / hide operational ROI overlays</span><kbd>O</kbd></div>
+        <div class="shortcut-row"><span>Move selected ROI by configured pixel step</span><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></div>
+        <div class="shortcut-row"><span>Move ROI 5× farther</span><kbd>Shift</kbd><kbd>Arrow</kbd></div>
         <div class="shortcut-row"><span>Toggle grid</span><kbd>G</kbd></div>
         <div class="shortcut-row"><span>Crosshair: click to copy U,V point</span><kbd>X</kbd></div>
         <div class="shortcut-row"><span>Place annotation / marker</span><kbd>N</kbd></div>
@@ -357,7 +362,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <p class="shortcut-note">This shortcut requests a software stop through the dashboard API. It is <strong>not</strong> a hardware emergency stop; use the physical cutoff when required. Resume motion remains confirmation-gated.</p>
       </section>
     </div>
-    <footer class="shortcut-footer"><span>Letter shortcuts are disabled while typing in an input field.</span><button type="button" class="btn" id="shortcut_done">Done</button></footer>
+    <footer class="shortcut-footer"><span>Letter shortcuts use physical key positions and work across keyboard language layouts. They are disabled while typing in an input field.</span><button type="button" class="btn" id="shortcut_done">Done</button></footer>
   </section>
 </div>
 <div id="toast" class="toast" style="display:none"></div>
