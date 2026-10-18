@@ -39,7 +39,8 @@ usage: main.py [-h] [--mode {city,race}] [--debug]
                [--read-arduino-output] [--arduino-config PATH]
                [--arduino-contract-timeout SECONDS]
                [--camera-mode {picam,webcam,opencv}]
-               [--camera-index INDEX]
+               [--camera-index INDEX] [--target-fps N]
+               [--multiprocess | --multiprocess-camera]
                [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
 
 Self-driving robot runtime.
@@ -73,6 +74,11 @@ options:
                         OpenCV VideoCapture
   --camera-index INDEX
                         OpenCV camera index when using webcam/opencv
+  --target-fps N        Maximum desired rate of complete vision-processing
+                        cycles per second; does not set camera sensor FPS
+  --multiprocess, --multiprocess-camera
+                        Run camera capture and traffic-sign inference in
+                        separate processes using latest-frame handoff
   --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
                         Enable ML lane detection with the selected model
 ~~~
