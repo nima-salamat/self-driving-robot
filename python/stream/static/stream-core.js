@@ -13,11 +13,52 @@ let advanced = window.STREAM_BOOTSTRAP.advanced;
 const STREAM_CONTROL_ALLOWED = !!window.STREAM_BOOTSTRAP.streamControl;
 
 const controlNotice = document.getElementById('control_notice');
-if (controlNotice) {
-    controlNotice.textContent = STREAM_CONTROL_ALLOWED
-        ? 'Dashboard control is enabled.'
-        : 'Dashboard is read-only. Enable STREAM_ALLOW_CONTROL or restart without --stream-read-only to allow runtime changes.';
+const STREAM_VIEW_ONLY_ACTIONS = new Set([
+    'export-config', 'refresh-config', 'clear-selection', 'properties',
+    'toggle-properties', 'zoom-in', 'zoom-out', 'fit-view', 'toggle-fullscreen',
+    'toggle-overlays', 'toggle-console', 'tool-select', 'tool-pan',
+    'freeze', 'unfreeze', 'help'
+]);
+const STREAM_VIEW_ONLY_IDS = new Set([
+    'refresh_vals', 'toggle_dock_btn', 'camera_fullscreen_btn',
+    'workspace_view_lock', 'workspace_zoom', 'variable_select', 'clear_selection',
+    'center_reset', 'prop_target', 'prop_revert_btn', 'tool_overlays_btn',
+    'show_rects', 'console_toggle_btn', 'console_clear_btn', 'console_filter',
+    'console_level', 'console_pause', 'console_autoscroll', 'roi_settings_open',
+    'roi_settings_close', 'roi_settings_cancel', 'roi_settings_reset',
+    'roi_settings_apply', 'roi_setting_grid_mode', 'roi_setting_grid_spacing',
+    'roi_setting_grid_opacity', 'roi_setting_grid_thickness',
+    'roi_setting_grid_dot_size', 'roi_setting_grid_color',
+    'roi_setting_keyboard_nudge', 'roi_setting_stream_fps', 'roi_setting_snap',
+    'roi_setting_label_size', 'roi_setting_label_weight',
+    'roi_setting_outline_thickness', 'roi_setting_handle_size',
+    'ext_grid', 'ext_overlays', 'ext_snap', 'ext_crosshair'
+]);
+function syncStreamPermissionUI(){
+    const permission=STREAM_CONTROL_ALLOWED?'enabled':'read-only';
+    document.documentElement.dataset.streamControlPermission=permission;
+    if(controlNotice){
+        controlNotice.textContent=STREAM_CONTROL_ALLOWED
+            ? 'Dashboard control is enabled.'
+            : 'Read-only dashboard: runtime/configuration changes are disabled; viewing, zoom, overlays and console tools remain available.';
+        controlNotice.setAttribute('role','status');
+        controlNotice.dataset.permission=permission;
+    }
+    if(STREAM_CONTROL_ALLOWED)return;
+    document.querySelectorAll('button[data-action]').forEach(function(button){
+        if(!STREAM_VIEW_ONLY_ACTIONS.has(button.dataset.action))button.disabled=true;
+    });
+    document.querySelectorAll('button,input,select').forEach(function(control){
+        const viewOnlyAction=control.hasAttribute('data-action')&&STREAM_VIEW_ONLY_ACTIONS.has(control.dataset.action);
+        if(!STREAM_VIEW_ONLY_IDS.has(control.id)
+            && !control.hasAttribute('data-tool')
+            && !control.hasAttribute('data-console-tab')
+            && !viewOnlyAction){
+            control.disabled=true;
+        }
+    });
 }
+syncStreamPermissionUI();
 
 let selectedVar = 'NONE';
 let markerHighlight = null;
@@ -1268,18 +1309,7 @@ function loadModeFeatures(){
             [document.getElementById('with_apriltag'), !c.supports_apriltag, 'AprilTag processing is not supported by the active mode.']
         ];
         controls.forEach(item=>disable(item[0], item[1], item[2]));
-        document.documentElement.dataset.streamControlPermission=STREAM_CONTROL_ALLOWED?'enabled':'read-only';
-        if(!STREAM_CONTROL_ALLOWED){
-            const viewOnlyActions=new Set(['export-config','refresh-config','clear-selection','properties','toggle-properties','zoom-in','zoom-out','fit-view','toggle-fullscreen','toggle-overlays','toggle-console','tool-select','tool-pan','freeze','unfreeze','help']);
-            document.querySelectorAll('button[data-action]').forEach(el=>{
-                if(!viewOnlyActions.has(el.dataset.action))el.disabled=true;
-            });
-            const viewOnlyIds=new Set(['refresh_vals','toggle_dock_btn','camera_fullscreen_btn','workspace_view_lock','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','show_rects','console_toggle_btn','console_clear_btn','console_filter','console_level','console_pause','console_autoscroll','roi_settings_open','roi_settings_close','roi_settings_cancel','roi_settings_reset','roi_settings_apply','roi_setting_grid_mode','roi_setting_grid_spacing','roi_setting_grid_opacity','roi_setting_grid_thickness','roi_setting_grid_dot_size','roi_setting_grid_color','roi_setting_keyboard_nudge','roi_setting_stream_fps','roi_setting_snap','roi_setting_label_size','roi_setting_label_weight','roi_setting_outline_thickness','roi_setting_handle_size','ext_grid','ext_snap','ext_crosshair']);
-            document.querySelectorAll('button,input,select').forEach(el=>{
-                const actionIsViewOnly=el.hasAttribute('data-action')&&viewOnlyActions.has(el.dataset.action);
-                if(!viewOnlyIds.has(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-console-tab')&&!actionIsViewOnly)el.disabled=true;
-            });
-        }
+        syncStreamPermissionUI();
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
         document.querySelectorAll('input[name^="OBJ_"]').forEach(el=>disable(el, !c.supports_object_detection, 'Object detection ROI is not used by the active mode.'));
     }).catch(()=>{});
