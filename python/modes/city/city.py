@@ -6,6 +6,7 @@ from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.blsf_lane import create_blsf_lane_detector
+from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from vision.traffic_light import TrafficLightDetector, GreenConfirmationWindow
@@ -778,15 +779,15 @@ class Robot:
                     crosswalk = result.get("crosswalk", False)
 
                     status = "STOP HOLD" if self.stop_hold.active else "running"
-                    self.handle_debug_stream(
-                        result,
-                        frame,
-                        angle,
-                        crosswalk,
-                        status,
-                        sign_text,
-                    )
                     if self.stop_hold.active:
+                        self.handle_debug_stream(
+                            result,
+                            frame,
+                            angle,
+                            crosswalk,
+                            status,
+                            sign_text,
+                        )
                         self._keep_stop_hold()
                         self._pace_control_loop()
                         continue
@@ -905,6 +906,16 @@ class Robot:
                     if not control_ok:
                         self._pace_control_loop()
                         continue
+
+                # Render only after the actuator accepted this cycle's steering command.
+                self.handle_debug_stream(
+                    result,
+                    frame,
+                    angle,
+                    crosswalk,
+                    status,
+                    sign_text,
+                )
 
                 target_speed = SPEED
                 if getattr(self, "confidence_limiter", None) is not None:
@@ -1148,6 +1159,22 @@ class Robot:
 
     @_measure_stage("debug_stream")
     def handle_debug_stream(self, result, frame, angle, crosswalk, status, sign_text):
+        if not (config_city.DEBUG or config_city.STREAM):
+            return
+        debug = result.get("debug")
+        if not isinstance(debug, dict):
+            debug = {}
+            result["debug"] = debug
+        source_frame = debug.get("combined")
+        if source_frame is None:
+            source_frame = frame
+        visual_angle = resolve_visual_steering_angle(
+            config_city, self.control.last_angle, angle
+        )
+        if source_frame is not None:
+            debug["combined"] = render_lane_debug_overlay(
+                source_frame, debug.get("draw_data"), config_city, visual_angle
+            )
         if config_city.DEBUG:
             debug = result.get("debug") or {}
             if debug.get("combined") is not None:
