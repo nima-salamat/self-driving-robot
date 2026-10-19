@@ -20,6 +20,7 @@ if str(PYTHON_ROOT) not in sys.path:
 
 import base_config
 from utils import json_config
+from visualization.lane_debug_overlay import render_lane_debug_overlay
 
 BG = "#0b1220"
 PANEL = "#111c2d"
@@ -453,6 +454,14 @@ class LaneTuningApp:
             frame = self.detect_frame.copy()
             self.result = self.processor.detect(frame, frame.copy())
             debug = self.result.get("debug") or {}
+            combined = debug.get("combined")
+            if combined is not None:
+                debug["combined"] = render_lane_debug_overlay(
+                    combined,
+                    debug.get("draw_data"),
+                    self.config,
+                    self.result.get("steering_angle"),
+                )
             self.views = {"Original": self.original}
             if debug.get("combined") is not None:
                 self.views["All Hough candidates"] = debug["combined"]
