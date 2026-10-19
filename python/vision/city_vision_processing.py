@@ -112,7 +112,7 @@ class VisionProcessor:
                 "lane_type": "none",
                 "perception_valid": False,
                 "crosswalk": False,
-                "debug": {"rl_draw": None, "ll_draw": None, "combined": None, "cw_draw": None},
+                "debug": None,
                 "kp": 0
             }
 
@@ -403,138 +403,40 @@ class VisionProcessor:
 
         self.last_error = error
         
-        debug = {
-            "rl_draw": None, "ll_draw": None, "combined": None, "cw_draw": None,
-            "rl_edges": None, "ll_edges": None, "rl_lines": None, "ll_lines": None,
-            "rl_offset": None, "ll_offset": None,
-        }
-        
-        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:    
-            def scale(line_coords):
-                res = []
-                for x in line_coords:
-                    res.append((w_dbg / width) * x)
-                return res
-
-            vis = debug_frame
-            h_dbg, w_dbg = vis.shape[:2]
-            
-            rl_top, rl_bottom = int(conf.RL_TOP_ROI * h_dbg), int(conf.RL_BOTTOM_ROI * h_dbg)
-            rl_left, rl_right = int(conf.RL_LEFT_ROI * w_dbg), int(conf.RL_RIGHT_ROI * w_dbg)
-            ll_top, ll_bottom = int(conf.LL_TOP_ROI * h_dbg), int(conf.LL_BOTTOM_ROI * h_dbg)
-            ll_left, ll_right = int(conf.LL_LEFT_ROI * w_dbg), int(conf.LL_RIGHT_ROI * w_dbg)
-            cw_top, cw_bottom = int(conf.CW_TOP_ROI * h_dbg), int(conf.CW_BOTTOM_ROI * h_dbg)
-            cw_left, cw_right = int(conf.CW_LEFT_ROI * w_dbg), int(conf.CW_RIGHT_ROI * w_dbg)
-            
-            if ROI_RESIZABLE:
-                rl_right += int((1 - conf.RL_RIGHT_ROI) * w_dbg * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
-                ll_left += int((0 - conf.LL_LEFT_ROI) * w_dbg * 1 / self.max_unseen_counter * self.lroi_unseen_counter)
-
-            rl_draw = debug_frame[rl_top:rl_bottom, rl_left:rl_right].copy()
-            ll_draw = debug_frame[ll_top:ll_bottom, ll_left:ll_right].copy()
-            cw_draw = debug_frame[cw_top:cw_bottom, cw_left:cw_right].copy()
-            
-            frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * w_dbg / 2
-            
-            rl_roi_center = abs(rl_left - rl_right) / 2.0
-            ll_roi_center = abs(ll_left - ll_right) / 2.0
-            if rl_x_mid_full is None and ll_x_mid_full is None:
-                lane_center = frame_center
-                lane_center_guide_x = int(np.clip(frame_center, 0, w_dbg - 1))
-            else:
-                rl_x_mid_full = (w_dbg / width)*rl_x_mid_full
-                ll_x_mid_full = (w_dbg / width)*ll_x_mid_full
-                lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
-                # lane_center is a signed offset from frame center, not an
-                # absolute image X coordinate. Convert it before drawing the guide.
-                lane_center_guide_x = int(np.clip(frame_center - lane_center, 0, w_dbg - 1))
-
-            if hasattr(conf, 'LANE_ROI_MODE') and conf.LANE_ROI_MODE == "trapezoid":
-                rl_base_w_dbg = int((conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI) * w_dbg)
-                pts_rl_vis = np.array([[rl_left, rl_top], [rl_left + int(rl_base_w_dbg * conf.RL_TOP_WIDTH_FACTOR), rl_top], [rl_right, rl_bottom], [rl_left, rl_bottom]], np.int32)
-                cv2.polylines(vis, [pts_rl_vis], True, (255, 0, 0), 1)
-                ll_base_w_dbg = int((conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI) * w_dbg)
-                pts_ll_vis = np.array([[ll_right - int(ll_base_w_dbg * conf.LL_TOP_WIDTH_FACTOR), ll_top], [ll_right, ll_top], [ll_right, ll_bottom], [ll_left, ll_bottom]], np.int32)
-                cv2.polylines(vis, [pts_ll_vis], True, (0, 255, 0), 1)
-            else:
-                cv2.rectangle(vis, (rl_left, rl_top), (rl_right, rl_bottom), (255, 0, 0), 1)
-                cv2.rectangle(vis, (ll_left, ll_top), (ll_right, ll_bottom), (0, 255, 0), 1)
-
-            if hasattr(conf, 'CW_TRAPEZOID_MODE') and conf.CW_TRAPEZOID_MODE:
-                cw_w_dbg = cw_right - cw_left
-                pts_cw_vis = np.array([[cw_left + int(cw_w_dbg * (1 - conf.CW_TOP_WIDTH_FACTOR) / 2), cw_top], [cw_left + int(cw_w_dbg * (1 + conf.CW_TOP_WIDTH_FACTOR) / 2), cw_top], [cw_right, cw_bottom], [cw_left, cw_bottom]], np.int32)
-                cv2.polylines(vis, [pts_cw_vis], True, (0, 255, 255), 1)
-            else:
-                cv2.rectangle(vis, (cw_left + 1, cw_top), (cw_right - 1, cw_bottom), (0, 255, 255), 1)
-
-            if rl_lines is not None:
-                for line in rl_lines:
-                    lx1, ly1, lx2, ly2 = self._extract_line(line)
-                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
-                    if rl_draw is not None:
-                        cv2.line(rl_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0, 165, 255), 2, cv2.LINE_AA)
-                    cv2.line(vis, (rl_left + int(sx1), rl_top + int(sy1)), (rl_left + int(sx2), rl_top + int(sy2)), (0, 165, 255), 3, cv2.LINE_AA)
-                if rl_x_mid is not None:
-                    cv2.circle(vis, (rl_left + int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
-
-            if ll_lines is not None:
-                for line in ll_lines:
-                    lx1, ly1, lx2, ly2 = self._extract_line(line)
-                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
-                    if ll_draw is not None:
-                        cv2.line(ll_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (255, 255, 0), 2, cv2.LINE_AA)
-                    cv2.line(vis, (ll_left + int(sx1), ll_top + int(sy1)), (ll_left + int(sx2), ll_top + int(sy2)), (255, 255, 0), 3, cv2.LINE_AA)
-                if ll_x_mid is not None:
-                    cv2.circle(vis, (ll_left_ + int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
-
-            # Keep candidate labels compact; line geometry already shows the
-            # individual candidates, so the overlay only needs a short label.
-            candidate_font_scale = max(0.24, min(0.38, h_dbg / 1400.0))
-            candidate_thickness = max(1, int(round(h_dbg / 720.0)))
-            candidate_label = "Candidate:"
-            (candidate_text_width, candidate_text_height), _ = cv2.getTextSize(
-                candidate_label, cv2.FONT_HERSHEY_SIMPLEX,
-                candidate_font_scale, candidate_thickness,
-            )
-            candidate_y_offset = max(12, int(h_dbg * 0.04))
-            for roi_left, roi_top, candidate_color in (
-                (rl_left, rl_top, (0, 165, 255)),
-                (ll_left, ll_top, (255, 255, 0)),
-            ):
-                candidate_x = max(
-                    4, min(w_dbg - candidate_text_width - 4, roi_left + 4)
-                )
-                candidate_y = max(
-                    candidate_text_height + 4,
-                    min(h_dbg - 4, roi_top + candidate_y_offset),
-                )
-                cv2.putText(
-                    vis, candidate_label, (candidate_x, candidate_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, candidate_font_scale,
-                    candidate_color, candidate_thickness, cv2.LINE_AA,
-                )
-
-            cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
-            cv2.line(vis, (lane_center_guide_x, 0), (lane_center_guide_x, h_dbg), (255,0,255), 1)
-                            
-            if cw_lines is not None:
-                for line in cw_lines:
-                    lx1, ly1, lx2, ly2 = self._extract_line(line)
-                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
-                    if cw_draw is not None:
-                        cv2.line(cw_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0,255,0), 1)
-                    cv2.line(vis, (cw_left + (int(sx1)), cw_top + int(sy1)), (cw_left + int(sx2), cw_top + int(sy2)), (0,255,255), 2)
-                
-            debug["rl_draw"] = rl_draw
-            debug["ll_draw"] = ll_draw
-            debug["cw_draw"] = cw_draw
-            debug["combined"] = vis
-            debug["rl_edges"] = rl_edge
-            debug["ll_edges"] = ll_edge
-            debug["rl_lines"] = rl_lines
-            debug["ll_lines"] = ll_lines
-            debug["rl_offset"] = (rl_left, rl_top)
-            debug["ll_offset"] = (ll_left_, ll_top)
+        # Package geometry only; the optional visualization layer draws it later.
+        debug = None
+        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:
+            frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
+            draw_data = {
+                "kind": "classical",
+                "frame_width": int(width),
+                "frame_height": int(height),
+                "config": conf,
+                "roi_bounds": {
+                    "RL": (rl_left, rl_top, rl_right_, rl_bottom),
+                    "LL": (ll_left_, ll_top, ll_right, ll_bottom),
+                    "CW": (cw_left, cw_top, cw_right, cw_bottom),
+                },
+                "line_offsets": {
+                    "RL": (rl_left, rl_top),
+                    "LL": (ll_left_, ll_top),
+                    "CW": (cw_left, cw_top),
+                },
+                "lines": {"RL": rl_lines, "LL": ll_lines, "CW": cw_lines},
+                "midpoints": {"RL": rl_x_mid, "LL": ll_x_mid},
+                "frame_center_x": float(frame_center),
+                "lane_center_offset_px": float(lane_center),
+            }
+            debug = {
+                "combined": debug_frame,
+                "draw_data": draw_data,
+                "rl_edges": rl_edge,
+                "ll_edges": ll_edge,
+                "rl_lines": rl_lines,
+                "ll_lines": ll_lines,
+                "rl_offset": (rl_left, rl_top),
+                "ll_offset": (ll_left_, ll_top),
+            }
 
         return {
             "steering_angle": steering_angle,
