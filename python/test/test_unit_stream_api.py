@@ -690,6 +690,32 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("only be preserved unchanged", response.get_json()["message"])
         rate.set_target_fps.assert_not_called()
 
+    def test_full_config_undo_restores_settings_without_resuming_software_stop(self):
+        import copy
+        import tempfile
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RUN_LVL = "MOVE"
+        client = WebStreamer(config).app.test_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            before_stop = client.get("/api/config/full").get_json()
+            changed = copy.deepcopy(before_stop)
+            changed["values"]["RL_TOP_ROI"] = 0.25
+            applied = client.post("/api/config/full", json=changed)
+            self.assertEqual(applied.status_code, 200, applied.get_data(as_text=True))
+
+            # Simulate the operator pressing Force Stop after the edit. Undo
+            # must restore the ROI but may not clear the safety stop.
+            config.RUN_LVL = "STOP"
+            restored = client.post("/api/config/full", json=before_stop)
+            self.assertEqual(restored.status_code, 200, restored.get_data(as_text=True))
+            result = restored.get_json()["config"]
+            self.assertEqual(result["values"]["RL_TOP_ROI"], before_stop["values"].get("RL_TOP_ROI", 0.0))
+            self.assertEqual(result["advanced"]["RUN_LVL"], "STOP")
+            self.assertEqual(config.RUN_LVL, "STOP")
+
     def test_full_config_rejects_wrong_mode_and_non_finite_roi(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
