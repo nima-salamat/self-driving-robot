@@ -43,19 +43,33 @@ class CityVisionLineExtractionTests(unittest.TestCase):
 
 
 
-    def test_debug_lane_guide_uses_absolute_frame_coordinates_and_compact_labels(self):
-        source = (
+    def test_lane_overlay_rendering_lives_outside_the_vision_processor(self):
+        vision_source = (
             PYTHON_ROOT / "vision" / "city_vision_processing.py"
         ).read_text(encoding="utf-8")
+        overlay_source = (
+            PYTHON_ROOT / "visualization" / "lane_debug_overlay.py"
+        ).read_text(encoding="utf-8")
 
-        self.assertIn(
-            "lane_center_guide_x = int(np.clip(frame_center - lane_center, 0, w_dbg - 1))",
-            source,
-        )
-        self.assertIn('candidate_label = "Candidate:"', source)
-        self.assertIn("candidate_font_scale = max(0.24, min(0.38, h_dbg / 1400.0))", source)
-        self.assertNotIn("R Hough candidates:", source)
-        self.assertNotIn("L Hough candidates:", source)
+        self.assertIn('"kind": "classical"', vision_source)
+        self.assertIn('"lane_center_offset_px": float(lane_center)', vision_source)
+        self.assertNotIn("cv2.line(", vision_source)
+        self.assertNotIn("cv2.putText(", vision_source)
+        self.assertIn('label = "Candidate:"', overlay_source)
+        self.assertIn("lane_center_offset_px", overlay_source)
+        self.assertIn("steering_marker_x", overlay_source)
+
+    def test_debug_payload_is_none_when_debug_and_stream_are_disabled(self):
+        import modes.city.config_city as city_config
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        with patch.object(city_config, "DEBUG", False), patch.object(
+            city_config, "STREAM", False
+        ):
+            result = VisionProcessor().detect(frame)
+
+        self.assertIsNone(result["debug"])
 
 if __name__ == "__main__":
     unittest.main()
