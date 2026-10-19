@@ -91,7 +91,7 @@ options:
 
 The experimental process-isolated path remains off unless explicitly requested. `--multiprocess` and `--multiprocess-camera` are aliases. They run camera capture in a shared-memory latest-frame producer and sign inference in a separate process, while the main process still owns lane perception, STOP/phase handling, steering, speed decisions and Arduino I/O.
 
-The sign worker keeps one inference in flight and at most one waiting ROI frame. In this mode every active main-loop frame may be submitted; `READ_SIGN_THRESHOLD` is bypassed only as a frame-submission cadence limit. Detector confidence thresholds, Race STOP confidence checks, area filters and control safety rules are unchanged. New waiting frames replace stale waiting frames rather than forming a backlog.
+The sign worker keeps one inference in flight and at most one waiting ROI descriptor. ROI pixels are handed off through a shared-memory latest-frame slot; only sequence/shape metadata and inference options cross the process queue. The worker snapshots the shared slot under a short lock and performs inference after releasing it. In this mode every active main-loop frame may be submitted; `READ_SIGN_THRESHOLD` is bypassed only as a frame-submission cadence limit. Detector confidence thresholds, Race STOP confidence checks, area filters and control safety rules are unchanged. Stale waiting descriptors are replaced or skipped rather than forming a backlog.
 
 Example (do not actuate Arduino during an initial performance comparison):
 
