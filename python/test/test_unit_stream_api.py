@@ -12,7 +12,7 @@ PYTHON_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from stream import WebStreamer, publish_debug_frame
+from stream import WebStreamer, publish_camera_frame_fallback, publish_debug_frame
 
 
 class StreamApiTests(unittest.TestCase):
@@ -155,6 +155,17 @@ class StreamApiTests(unittest.TestCase):
         rendered_html = rendered.get_data(as_text=True)
         self.assertIn('data-action="exit-stream"', rendered_html)
         self.assertIn("Exit · Stop Stream Server…", rendered_html)
+
+    def test_fullscreen_exit_uses_a_complete_minimize_icon(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'd="M8 3v5H3M21 8h-5V3M3 16h5v5M16 21v-5h5"',
+            template,
+        )
+        self.assertIn("collapseIcon.style.display=active?'':'none'", core)
 
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
@@ -1102,6 +1113,43 @@ class StreamApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_camera_fallback_publishes_a_preview_before_debug_overlay_exists(self):
+        import cv2
+
+        config = self.make_config()
+        config.debug_frames_list = []
+        config.stream_frame_seq = 0
+        config.stream_frame_timestamps = []
+        camera_frame = np.empty((24, 36, 3), dtype=np.uint8)
+        camera_frame[:] = (17, 73, 129)
+
+        # A fresh annotated frame is preferred, but the first valid camera
+        # frame must be visible even before debug overlay generation finishes.
+        self.assertTrue(publish_camera_frame_fallback(config, camera_frame))
+        self.assertEqual(config.stream_frame_seq, 1)
+
+        response = WebStreamer(config).app.test_client().get("/video_feed_frame")
+        self.assertEqual(response.status_code, 200)
+        decoded = cv2.imdecode(
+            np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        self.assertIsNotNone(decoded)
+        np.testing.assert_array_equal(decoded[0, 0], np.array([17, 73, 129]))
+
+    def test_camera_fallback_does_not_replace_a_fresh_debug_frame(self):
+        config = self.make_config()
+        config.debug_frames_list = []
+        config.stream_frame_seq = 0
+        config.stream_frame_timestamps = []
+        debug_frame = np.full((20, 30, 3), 211, dtype=np.uint8)
+        publish_debug_frame(config, debug_frame)
+        original_sequence = config.stream_frame_seq
+
+        camera_frame = np.zeros((20, 30, 3), dtype=np.uint8)
+        self.assertFalse(publish_camera_frame_fallback(config, camera_frame))
+        self.assertEqual(config.stream_frame_seq, original_sequence)
+        np.testing.assert_array_equal(config.debug_frames_list[-1][0, 0], [211, 211, 211])
 
     def test_stream_jpeg_quality_api_updates_cached_and_live_encoders(self):
         import cv2
