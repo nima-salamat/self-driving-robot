@@ -1333,7 +1333,11 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("'show_rects'", core)
         self.assertIn("'ext_overlays'", core)
         self.assertIn("Read-only dashboard: runtime/configuration changes are disabled", core)
-        self.assertIn("aria-pressed=\"true\" title=\"Toggle overlays", template)
+        toolbar = template.split('<aside class="left-toolbar"', 1)[1].split("</aside>", 1)[0]
+        self.assertNotIn("title=", toolbar)
+        self.assertIn('aria-label="Show ROI overlays"', toolbar)
+        self.assertIn('aria-label="Open Event Console" aria-pressed="false"', toolbar)
+        self.assertIn('id="frame_mode" class="small status-line" hidden></div>', template)
 
 if __name__ == "__main__":
     unittest.main()
