@@ -384,10 +384,14 @@ class VisionProcessor:
             ll_roi_center = abs(ll_left - ll_right) / 2.0
             if rl_x_mid_full is None and ll_x_mid_full is None:
                 lane_center = frame_center
+                lane_center_guide_x = int(np.clip(frame_center, 0, w_dbg - 1))
             else:
                 rl_x_mid_full = (w_dbg / width)*rl_x_mid_full
                 ll_x_mid_full = (w_dbg / width)*ll_x_mid_full
                 lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
+                # lane_center is a signed offset from frame center, not an
+                # absolute image X coordinate. Convert it before drawing the guide.
+                lane_center_guide_x = int(np.clip(frame_center - lane_center, 0, w_dbg - 1))
 
             if hasattr(conf, 'LANE_ROI_MODE') and conf.LANE_ROI_MODE == "trapezoid":
                 rl_base_w_dbg = int((conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI) * w_dbg)
@@ -420,23 +424,35 @@ class VisionProcessor:
                 if ll_x_mid is not None:
                     cv2.circle(vis, (ll_left_ + int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
 
-            # Make raw Hough output explicit in the live debug feed. These are
-            # candidates only; the green/magenta center guides are estimates.
-            rl_candidate_count = 0 if rl_lines is None else len(rl_lines)
-            ll_candidate_count = 0 if ll_lines is None else len(ll_lines)
-            cv2.putText(
-                vis, f"R Hough candidates: {rl_candidate_count}",
-                (max(4, rl_left + 4), min(h_dbg - 4, rl_top + 20)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 165, 255), 1, cv2.LINE_AA,
+            # Keep candidate labels compact; line geometry already shows the
+            # individual candidates, so the overlay only needs a short label.
+            candidate_font_scale = max(0.24, min(0.38, h_dbg / 1400.0))
+            candidate_thickness = max(1, int(round(h_dbg / 720.0)))
+            candidate_label = "Candidate:"
+            (candidate_text_width, candidate_text_height), _ = cv2.getTextSize(
+                candidate_label, cv2.FONT_HERSHEY_SIMPLEX,
+                candidate_font_scale, candidate_thickness,
             )
-            cv2.putText(
-                vis, f"L Hough candidates: {ll_candidate_count}",
-                (max(4, ll_left + 4), min(h_dbg - 4, ll_top + 20)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 0), 1, cv2.LINE_AA,
-            )
+            candidate_y_offset = max(12, int(h_dbg * 0.04))
+            for roi_left, roi_top, candidate_color in (
+                (rl_left, rl_top, (0, 165, 255)),
+                (ll_left, ll_top, (255, 255, 0)),
+            ):
+                candidate_x = max(
+                    4, min(w_dbg - candidate_text_width - 4, roi_left + 4)
+                )
+                candidate_y = max(
+                    candidate_text_height + 4,
+                    min(h_dbg - 4, roi_top + candidate_y_offset),
+                )
+                cv2.putText(
+                    vis, candidate_label, (candidate_x, candidate_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, candidate_font_scale,
+                    candidate_color, candidate_thickness, cv2.LINE_AA,
+                )
 
             cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
-            cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
+            cv2.line(vis, (lane_center_guide_x, 0), (lane_center_guide_x, h_dbg), (255,0,255), 1)
                 
             debug["rl_draw"] = rl_draw
             debug["ll_draw"] = ll_draw
