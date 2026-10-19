@@ -62,18 +62,18 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     </div>
     <div class="workspace-main">
 <aside class="left-toolbar" aria-label="Tools">
-<button type="button" class="tool-button" data-tool="select" aria-pressed="true" title="Select / Edit ROI (V)">↖<span class="tool-tip">Select / Edit ROI · V</span></button>
-<button type="button" class="tool-button" data-tool="pan" aria-pressed="false" title="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" data-action="zoom-in" title="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
-<button type="button" class="tool-button" data-action="zoom-out" title="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
-<button type="button" class="tool-button view-lock-button" id="workspace_view_lock" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position">
+<button type="button" class="tool-button" data-tool="select" aria-pressed="true" aria-label="Select / Edit ROI (V)">↖<span class="tool-tip">Select / Edit ROI · V</span></button>
+<button type="button" class="tool-button" data-tool="pan" aria-pressed="false" aria-label="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="zoom-in" aria-label="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
+<button type="button" class="tool-button" data-action="zoom-out" aria-label="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
+<button type="button" class="tool-button view-lock-button" id="workspace_view_lock" aria-pressed="false" aria-label="Lock zoom and camera position">
   <svg class="toolbar-icon view-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg>
   <span id="workspace_view_lock_label" class="tool-tip">Lock View</span>
 </button>
-<button type="button" class="tool-button" data-action="fit-view" title="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" title="Toggle overlays (O)">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
-<button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" data-action="toggle-console" aria-label="Toggle Event Console" title="Recent events console (Ctrl+Backtick)"><svg class="toolbar-icon toolbar-icon-console" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span class="tool-tip">Event Console · Ctrl+Backtick</span></button></aside>
+<button type="button" class="tool-button" data-action="fit-view" aria-label="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" aria-label="Show ROI overlays">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
+<button type="button" class="tool-button" data-action="properties" aria-label="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="toggle-console" aria-label="Open Event Console" aria-pressed="false"><svg class="toolbar-icon toolbar-icon-console" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span class="tool-tip">Event Console · Ctrl+Backtick</span></button></aside>
 <div class="workspace-stage-column">
     <div id="active_tool_banner" class="active-tool-banner" hidden role="status" aria-live="polite">
       <span class="active-tool-dot" aria-hidden="true"></span>
