@@ -271,15 +271,42 @@ class StreamConfigurationMixin:
             raise ValueError("runtime must be an object")
         normalized_runtime = {}
         if isinstance(runtime, dict) and runtime.get("target_processing_fps") is not None:
-            if getattr(self.config, "processing_rate_controller", None) is None:
-                raise ValueError("live processing-rate control is unavailable in this runtime")
+            rate = getattr(self.config, "processing_rate_controller", None)
             try:
                 fps = float(runtime["target_processing_fps"])
             except (TypeError, ValueError):
                 raise ValueError("target_processing_fps must be numeric") from None
-            if not math.isfinite(fps) or not 1.0 <= fps <= 60.0:
-                raise ValueError("target_processing_fps must be between 1 and 60")
-            normalized_runtime["target_processing_fps"] = fps
+            if not math.isfinite(fps) or fps <= 0:
+                raise ValueError("target_processing_fps must be a positive finite number")
+            if 1.0 <= fps <= 60.0:
+                if rate is None:
+                    raise ValueError("live processing-rate control is unavailable in this runtime")
+                normalized_runtime["target_processing_fps"] = fps
+            else:
+                # CLI startup accepts any positive finite target, while live
+                # changes are deliberately limited to 1..60 FPS. Full-config
+                # restore/Undo must still work for unrelated settings when the
+                # active startup rate is outside that live-edit range. Preserve
+                # that rate only as an exact no-op; never apply an out-of-range
+                # value imported from another snapshot.
+                active_rate = (
+                    getattr(rate, "target_fps", None)
+                    if rate is not None
+                    else getattr(self.config, "TARGET_PROCESSING_FPS", None)
+                )
+                try:
+                    same_active_rate = (
+                        active_rate is not None
+                        and math.isfinite(float(active_rate))
+                        and math.isclose(float(active_rate), fps, rel_tol=0.0, abs_tol=1e-9)
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    same_active_rate = False
+                if not same_active_rate:
+                    raise ValueError(
+                        "target_processing_fps must be between 1 and 60; "
+                        "an out-of-range startup rate can only be preserved unchanged"
+                    )
         if isinstance(runtime, dict):
             raw_camera = runtime.get("camera", {})
             raw_controls = raw_camera.get("controls", {}) if isinstance(raw_camera, dict) else {}
