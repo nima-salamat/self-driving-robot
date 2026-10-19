@@ -42,5 +42,20 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         self.assertEqual(result["steering_angle"], 113)
 
 
+
+    def test_debug_lane_guide_uses_absolute_frame_coordinates_and_compact_labels(self):
+        source = (
+            PYTHON_ROOT / "vision" / "city_vision_processing.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "lane_center_guide_x = int(np.clip(frame_center - lane_center, 0, w_dbg - 1))",
+            source,
+        )
+        self.assertIn('candidate_label = "Candidate:"', source)
+        self.assertIn("candidate_font_scale = max(0.24, min(0.38, h_dbg / 1400.0))", source)
+        self.assertNotIn("R Hough candidates:", source)
+        self.assertNotIn("L Hough candidates:", source)
+
 if __name__ == "__main__":
     unittest.main()
