@@ -56,7 +56,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       
       <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
       <span id="mode_features" class="sr-only" aria-hidden="true"></span>
-      <div id="frame_mode" class="small status-line">Mode: Live</div>
+      <div id="frame_mode" class="small status-line" hidden></div>
       {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
 
     </div>
