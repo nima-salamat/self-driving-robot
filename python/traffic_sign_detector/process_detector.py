@@ -260,7 +260,7 @@ class ProcessSignDetector:
             raise RuntimeError(f"Sign detector process initialization failed: {detail}")
         logger.info(
             "Using multiprocessing traffic-sign inference "
-            "(method=%s, intra_op_threads=%s, latest-frame queue)",
+            "(method=%s, intra_op_threads=%s, shared-memory frame slot)",
             self.method, self.intra_op_num_threads,
         )
 
