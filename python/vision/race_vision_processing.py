@@ -107,7 +107,10 @@ class VisionProcessor:
 
     def detect(self, frame, debug_frame=None):
         if self.ml_lane_detector is not None:
-            return self.ml_lane_detector.detect(frame, debug_frame)
+            visualization_enabled = bool(conf.DEBUG or conf.STREAM)
+            return self.ml_lane_detector.detect(
+                frame, debug_frame if visualization_enabled else None
+            )
 
         if frame is None:
             return {
