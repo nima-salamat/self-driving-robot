@@ -1222,5 +1222,67 @@ class StreamApiTests(unittest.TestCase):
         )
 
 
+
+    def test_python_log_console_uses_runtime_logs_and_has_a_dedicated_tab(self):
+        import stream
+        import time
+
+        entry = {
+            "timestamp": time.time(),
+            "level": "ERROR",
+            "logger": "modes.race.race",
+            "message": "unit-python-log-console-regression",
+        }
+        with stream._STREAM_LOG_LOCK:
+            stream._STREAM_LOGS.append(entry)
+        try:
+            response = WebStreamer(self.make_config()).app.test_client().get(
+                "/api/logs?limit=20&q=unit-python-log-console-regression"
+            )
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(any(
+                item.get("message") == entry["message"]
+                for item in payload.get("items", [])
+            ))
+        finally:
+            with stream._STREAM_LOG_LOCK:
+                try:
+                    stream._STREAM_LOGS.remove(entry)
+                except ValueError:
+                    pass
+
+        stream_dir = PYTHON_ROOT / "stream"
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+        self.assertIn('data-console-tab="python"', template)
+        self.assertIn('id="console_python"', template)
+        self.assertIn("fetch('/api/logs?limit=200'", core)
+        self.assertIn("workspacePythonLogs", core)
+        self.assertIn('id="settings_drawer_backdrop"', template)
+        self.assertIn("left: max(4px, env(safe-area-inset-left, 0px))", css)
+        self.assertIn("Mobile polish: a true left-side settings drawer", css)
+
+    def test_ctrl_c_interrupted_shared_camera_wait_is_not_marked_as_runtime_fault(self):
+        race_source = (
+            PYTHON_ROOT / "modes" / "race" / "race.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "isinstance(e, InterruptedError) and self._shutdown_requested()",
+            race_source,
+        )
+        self.assertIn(
+            "exiting Race loop cleanly",
+            race_source,
+        )
+        stream_source = (PYTHON_ROOT / "stream" / "__init__.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "Stream dashboard closed; HTTP server socket released",
+            stream_source,
+        )
+
 if __name__ == "__main__":
     unittest.main()
