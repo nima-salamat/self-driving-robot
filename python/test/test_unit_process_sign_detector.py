@@ -101,5 +101,42 @@ class ProcessSignDetectorTests(unittest.TestCase):
         self.assertFalse(detector._worker.is_alive())
 
 
+    def test_pause_and_idle_state_are_consistent_during_frame_handoff(self):
+        detector = ProcessSignDetector("yolo", detector_factory=_FakeSignDetector)
+        try:
+            submitted = detector.submit(
+                np.full((24, 32, 3), 3, dtype=np.uint8),
+                frame_captured_at=time.monotonic(),
+            )
+            self.assertIsNotNone(submitted)
+
+            # This can catch the worker before it dequeues, between dequeue and
+            # frame snapshot, or while inference is already running. In every
+            # case pause must prevent new inference and idle must settle truthfully.
+            detector.pause()
+            self.assertTrue(detector.wait_until_idle(timeout=3.0))
+            status = detector.status()
+            self.assertFalse(status["inference_in_flight"])
+            self.assertEqual(status["queue_depth"], 0)
+
+            detector.resume()
+            fresh = detector.submit(
+                np.full((24, 32, 3), 9, dtype=np.uint8),
+                frame_captured_at=time.monotonic(),
+            )
+            self.assertIsNotNone(fresh)
+            deadline = time.monotonic() + 3.0
+            result = None
+            while time.monotonic() < deadline:
+                result = detector.latest()
+                if result is not None and result[0] == fresh:
+                    break
+                time.sleep(0.01)
+            self.assertIsNotNone(result)
+            self.assertEqual(result[0], fresh)
+            self.assertEqual(result[1]["text"], "9")
+        finally:
+            detector.close()
+
 if __name__ == "__main__":
     unittest.main()
