@@ -8,6 +8,7 @@ import queue
 import signal
 import threading
 import time
+from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 
@@ -50,19 +51,17 @@ def _make_detector(method, detector_factory=None, intra_op_num_threads=2):
 
 def _sign_worker(method, detector_factory, intra_op_num_threads, requests, results,
                  ready, ready_payload, stop_event, paused_event, requests_enabled,
-                 idle_event, active_event):
-    """Load the model once in the child and process only the newest queued frame."""
-    # Ctrl+C should be handled by the owning runtime. A child receiving SIGINT
-    # during OpenCV/ONNX work otherwise emits a misleading KeyboardInterrupt.
+                 idle_event, active_event, shared_memory_name, frame_lock,
+                 frame_sequence):
+    """Infer from a shared-memory latest-frame slot; queues carry metadata only."""
     try:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
     except (AttributeError, ValueError):
         pass
 
+    shared_frame = None
     try:
-        # OpenCV preprocessing in the YOLO child is small compared with ONNX
-        # inference. Keep its own thread pool from oversubscribing the CPU
-        # alongside the bounded ONNX pool and the capture/control processes.
+        shared_frame = SharedMemory(name=shared_memory_name)
         try:
             import cv2
             cv2.setNumThreads(1)
@@ -73,6 +72,11 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
         logger.exception("Process sign detector failed to initialize")
+        if shared_frame is not None:
+            try:
+                shared_frame.close()
+            except Exception:
+                logger.debug("Could not close sign shared memory after startup failure", exc_info=True)
         try:
             ready_payload.put((False, detail), timeout=1.0)
         except Exception:
@@ -81,65 +85,94 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
         return
     ready.set()
 
-    while not stop_event.is_set():
-        try:
-            (
-                request_id, frame, submitted_at, frame_captured_at,
-                confidence_threshold, target_sign_types,
-            ) = requests.get(timeout=0.1)
-        except queue.Empty:
-            continue
-
-        if paused_event.is_set() or not requests_enabled.is_set() or stop_event.is_set():
-            if not active_event.is_set() and requests.empty():
-                idle_event.set()
-            continue
-
-        active_event.set()
-        idle_event.clear()
-        started = time.monotonic()
-        try:
-            if str(method).lower() == "svm":
-                result = detector.process_frame(frame, debug_frame=None)
-            else:
-                options = {}
-                if confidence_threshold is not None:
-                    options["confidence_threshold"] = confidence_threshold
-                if target_sign_types is not None:
-                    options["target_sign_types"] = target_sign_types
-                result = detector.process_frame(frame, debug_frame=None, **options)
-
-            if not isinstance(result, dict):
-                raise TypeError("sign detector must return a dictionary")
-
-            # These arrays are not used by the control decision. In particular,
-            # never send an unchanged full debug frame or binary mask through IPC.
-            result = dict(result)
-            result.pop("binary_mask", None)
-            result.pop("debug_frame", None)
-            completed_at = time.monotonic()
-            payload = (
-                "ok", request_id, result, submitted_at, completed_at,
-                (completed_at - started) * 1000.0, None, frame_captured_at,
-            )
-            _replace_queue_item(results, payload)
-        except Exception as exc:
-            completed_at = time.monotonic()
-            detail = f"{type(exc).__name__}: {exc}"
-            logger.exception("Process sign inference failed")
-            _replace_queue_item(
-                results,
-                ("error", request_id, None, submitted_at, completed_at,
-                 (completed_at - started) * 1000.0, detail, frame_captured_at),
-            )
-        finally:
-            active_event.clear()
+    try:
+        while not stop_event.is_set():
             try:
-                queued = not requests.empty()
-            except (NotImplementedError, OSError):
-                queued = False
-            if not queued:
-                idle_event.set()
+                (
+                    request_id, frame_shape, submitted_at, frame_captured_at,
+                    confidence_threshold, target_sign_types,
+                ) = requests.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if paused_event.is_set() or not requests_enabled.is_set() or stop_event.is_set():
+                if not active_event.is_set() and requests.empty():
+                    idle_event.set()
+                continue
+
+            # A newer frame may have replaced the slot after this descriptor was
+            # queued. Skip stale descriptors instead of pairing old timestamps
+            # with the new pixels or spending CPU on an already obsolete frame.
+            with frame_lock:
+                if int(frame_sequence.value) != int(request_id):
+                    frame = None
+                else:
+                    frame = np.ndarray(
+                        tuple(frame_shape), dtype=np.uint8, buffer=shared_frame.buf
+                    ).copy()
+
+            if frame is None:
+                try:
+                    queued = not requests.empty()
+                except (NotImplementedError, OSError):
+                    queued = False
+                if not queued:
+                    idle_event.set()
+                continue
+
+            active_event.set()
+            idle_event.clear()
+            started = time.monotonic()
+            try:
+                if str(method).lower() == "svm":
+                    result = detector.process_frame(frame, debug_frame=None)
+                else:
+                    options = {}
+                    if confidence_threshold is not None:
+                        options["confidence_threshold"] = confidence_threshold
+                    if target_sign_types is not None:
+                        options["target_sign_types"] = target_sign_types
+                    result = detector.process_frame(frame, debug_frame=None, **options)
+
+                if not isinstance(result, dict):
+                    raise TypeError("sign detector must return a dictionary")
+
+                # Keep large image/mask results out of the control-process IPC.
+                result = dict(result)
+                result.pop("binary_mask", None)
+                result.pop("debug_frame", None)
+                completed_at = time.monotonic()
+                _replace_queue_item(
+                    results,
+                    (
+                        "ok", request_id, result, submitted_at, completed_at,
+                        (completed_at - started) * 1000.0, None, frame_captured_at,
+                    ),
+                )
+            except Exception as exc:
+                completed_at = time.monotonic()
+                detail = f"{type(exc).__name__}: {exc}"
+                logger.exception("Process sign inference failed")
+                _replace_queue_item(
+                    results,
+                    (
+                        "error", request_id, None, submitted_at, completed_at,
+                        (completed_at - started) * 1000.0, detail, frame_captured_at,
+                    ),
+                )
+            finally:
+                active_event.clear()
+                try:
+                    queued = not requests.empty()
+                except (NotImplementedError, OSError):
+                    queued = False
+                if not queued:
+                    idle_event.set()
+    finally:
+        try:
+            shared_frame.close()
+        except Exception:
+            logger.debug("Could not close sign shared memory in worker", exc_info=True)
 
 
 class ProcessSignDetector:
@@ -154,13 +187,21 @@ class ProcessSignDetector:
     STARTUP_TIMEOUT_S = 45.0
 
     def __init__(
-        self, method="yolo", *, detector_factory=None, intra_op_num_threads=2
+        self, method="yolo", *, detector_factory=None, intra_op_num_threads=2,
+        max_frame_bytes=4 * 1024 * 1024,
     ):
         self.method = str(method).lower()
         self.intra_op_num_threads = int(intra_op_num_threads)
         if self.intra_op_num_threads < 1:
             raise ValueError("intra_op_num_threads must be a positive integer")
+        self._max_frame_bytes = int(max_frame_bytes)
+        if self._max_frame_bytes < 1:
+            raise ValueError("max_frame_bytes must be a positive integer")
         self._context = mp.get_context("spawn")
+        self._shared_frame = SharedMemory(create=True, size=self._max_frame_bytes)
+        self._frame_lock = self._context.Lock()
+        self._frame_sequence = self._context.Value("q", 0, lock=False)
+        self._submit_lock = threading.Lock()
         self._requests = self._context.Queue(maxsize=1)
         self._results = self._context.Queue(maxsize=1)
         self._ready_payload = self._context.Queue(maxsize=1)
@@ -194,6 +235,7 @@ class ProcessSignDetector:
                 self._requests, self._results,
                 self._ready, self._ready_payload, self._stop, self._paused,
                 self._requests_enabled, self._idle, self._active,
+                self._shared_frame.name, self._frame_lock, self._frame_sequence,
             ),
             daemon=True,
         )
@@ -229,44 +271,80 @@ class ProcessSignDetector:
         if self._paused.is_set() or not self._requests_enabled.is_set() or self._stop.is_set():
             return None
 
-        submitted_at = time.monotonic()
-        try:
-            frame_captured_at = float(frame_captured_at)
-            if not math.isfinite(frame_captured_at) or frame_captured_at <= 0:
-                frame_captured_at = submitted_at
-        except (TypeError, ValueError):
-            frame_captured_at = submitted_at
-        with self._lock:
-            self._next_id += 1
-            request_id = self._next_id
-            self._last_submit_at = submitted_at
-        # Do not transfer debug_frame through the process queue. Control results
-        # only need the ROI crop and metadata; the caller keeps its own full frame.
-        request = (
-            request_id,
-            np.array(frame, copy=True, order="C"),
-            submitted_at,
-            frame_captured_at,
-            confidence_threshold,
-            tuple(target_sign_types) if target_sign_types is not None else None,
-        )
-        try:
-            replacing_waiting_frame = self._requests.full()
-        except (NotImplementedError, OSError):
-            replacing_waiting_frame = False
-        self._idle.clear()
-        if not _replace_queue_item(self._requests, request):
+        source = np.asarray(frame)
+        if source.dtype != np.uint8 or source.ndim != 3 or source.shape[2] != 3:
+            detail = "sign frame must be a uint8 HxWx3 array"
             with self._lock:
                 self._dropped += 1
-            if not self._active.is_set():
-                self._idle.set()
+                self._last_error = detail
+            return None
+        if source.size == 0 or source.nbytes > self._max_frame_bytes:
+            detail = (
+                f"sign frame needs {source.nbytes} bytes, shared slot capacity is "
+                f"{self._max_frame_bytes}"
+            )
+            with self._lock:
+                self._dropped += 1
+                should_log = self._last_error != detail
+                self._last_error = detail
+            if should_log:
+                logger.error("%s", detail)
             return None
 
-        with self._lock:
-            self._submitted += 1
-            if replacing_waiting_frame:
-                self._replaced += 1
-        return request_id
+        with self._submit_lock:
+            if self._closed or self._paused.is_set() or not self._requests_enabled.is_set() or self._stop.is_set():
+                return None
+
+            submitted_at = time.monotonic()
+            try:
+                frame_captured_at = float(frame_captured_at)
+                if not math.isfinite(frame_captured_at) or frame_captured_at <= 0:
+                    frame_captured_at = submitted_at
+            except (TypeError, ValueError):
+                frame_captured_at = submitted_at
+
+            with self._lock:
+                self._next_id += 1
+                request_id = self._next_id
+                self._last_submit_at = submitted_at
+
+            # The producer owns the write lock; the worker takes the same lock
+            # only long enough to copy the current slot into its private buffer.
+            # Inference then runs without holding the lock, so camera/control
+            # processing never waits for the full model latency.
+            self._idle.clear()
+            with self._frame_lock:
+                slot = np.ndarray(
+                    source.shape, dtype=np.uint8, buffer=self._shared_frame.buf
+                )
+                np.copyto(slot, source)
+                self._frame_sequence.value = request_id
+
+            request = (
+                request_id,
+                tuple(int(dim) for dim in source.shape),
+                submitted_at,
+                frame_captured_at,
+                confidence_threshold,
+                tuple(target_sign_types) if target_sign_types is not None else None,
+            )
+            try:
+                replacing_waiting_frame = self._requests.full()
+            except (NotImplementedError, OSError):
+                replacing_waiting_frame = False
+
+            if not _replace_queue_item(self._requests, request):
+                with self._lock:
+                    self._dropped += 1
+                if not self._active.is_set():
+                    self._idle.set()
+                return None
+
+            with self._lock:
+                self._submitted += 1
+                if replacing_waiting_frame:
+                    self._replaced += 1
+            return request_id
 
     def _collect_results(self):
         newest = None
@@ -358,6 +436,8 @@ class ProcessSignDetector:
             queue_depth = int(not self._idle.is_set())
         return {
             "worker_alive": self._worker.is_alive(),
+            "frame_transport": "shared_memory",
+            "shared_memory_frame_bytes": self._max_frame_bytes,
             "intra_op_num_threads": self.intra_op_num_threads,
             "paused": self._paused.is_set(),
             "requests_enabled": self._requests_enabled.is_set(),
@@ -408,3 +488,16 @@ class ProcessSignDetector:
                     channel.close()
                 except Exception:
                     pass
+
+        shared_frame = getattr(self, "_shared_frame", None)
+        if shared_frame is not None:
+            try:
+                shared_frame.close()
+            except Exception:
+                logger.debug("Could not close parent sign shared memory", exc_info=True)
+            try:
+                shared_frame.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception:
+                logger.exception("Could not unlink parent sign shared memory")
