@@ -1339,5 +1339,36 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn('aria-label="Open Event Console" aria-pressed="false"', toolbar)
         self.assertIn('id="frame_mode" class="small status-line" hidden></div>', template)
 
+
+    def test_header_controls_stay_left_while_panel_toggle_is_pinned_right(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        template = (stream_dir / "templates" / "stream.html").read_text(
+            encoding="utf-8"
+        )
+        css = (stream_dir / "static" / "stream.css").read_text(
+            encoding="utf-8"
+        )
+
+        header_start = template.index('<div class="controls editor-controls"')
+        header_end = template.index('<div class="workspace-main">', header_start)
+        header = template[header_start:header_end]
+        left_group = header.index('class="editor-controls-left"')
+        right_group = header.index('class="editor-controls-right"')
+        self.assertLess(left_group, right_group)
+        self.assertLess(
+            header.index('id="variable_select"'),
+            header.index('id="toggle_dock_btn"'),
+        )
+        self.assertIn('class="editor-control-group editor-selection-group"', header)
+        self.assertIn('class="editor-control-group editor-view-group"', header)
+        self.assertIn('class="editor-control-group editor-settings-group"', header)
+        self.assertEqual(header.count('class="editor-control-divider"'), 2)
+        self.assertIn('role="separator" aria-orientation="vertical"', header)
+        self.assertIn(".editor-controls > .editor-controls-left", css)
+        self.assertIn(".editor-controls > .editor-controls-right", css)
+        self.assertIn("border-left: 1px solid #344457", css)
+        self.assertIn("@media (max-width: 720px)", css)
+        self.assertIn("flex: 1 1 0 !important;", css)
+
 if __name__ == "__main__":
     unittest.main()
