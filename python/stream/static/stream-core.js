@@ -154,7 +154,7 @@ function updateWorkspaceViewLockUI(){
   const shackle=document.getElementById('workspace_lock_shackle');
   const label=document.getElementById('workspace_view_lock_label');
   const message=workspaceViewLocked?'Unlock view (allow zoom and pan)':'Lock zoom and camera position';
-  if(button){button.setAttribute('aria-pressed',String(workspaceViewLocked));button.setAttribute('aria-label',message);button.title=message;button.classList.toggle('is-locked',workspaceViewLocked);}
+  if(button){button.setAttribute('aria-pressed',String(workspaceViewLocked));button.setAttribute('aria-label',message);button.classList.toggle('is-locked',workspaceViewLocked);}
   if(shackle)shackle.setAttribute('d',workspaceViewLocked?'M7 10V7a5 5 0 0 1 10 0v3':'M7 10V7a5 5 0 0 1 9.5-2');
   if(label)label.textContent=workspaceViewLocked?'View Locked':'Lock View';
   if(slider)slider.disabled=workspaceViewLocked;
@@ -309,7 +309,9 @@ function varColorByKey(key){
   return 'rgba(' + parseInt(parts[1],16) + ',' + parseInt(parts[2],16) + ',' + parseInt(parts[3],16) + ',' + Math.max(0,Math.min(1,opacity)) + ')';
 }
 function updateFrameModeText(){
-    frameModeDisplay.textContent = !syncActive ? 'Dashboard requests: PAUSED' : (isFrozen ? 'Camera frame: Frozen (for precise tuning)' : 'Camera frame: Live');
+    const paused=!syncActive;
+    frameModeDisplay.textContent = paused ? 'Dashboard requests: PAUSED' : (isFrozen ? 'Frozen frame · precise tuning' : '');
+    frameModeDisplay.hidden = !paused && !isFrozen;
 }
 function sendAdvanced(payload) {
     if(!syncActive) return showToast('Requests are stopped!');
@@ -500,6 +502,21 @@ function drawPolygon(points,color,isHighlight,labelText,r,fillAlpha=0.35){
       ctx.fillStyle=color;ctx.fillRect(r.x+4*z,r.y+4*z,w,h);ctx.fillStyle='#012';ctx.textBaseline='top';ctx.fillText(labelText,r.x+8*z,r.y+6*z);
     }
 }
+
+function syncOverlayControlUI(){
+    const button=document.getElementById('tool_overlays_btn');
+    const visible=!!showRectsCheckbox.checked;
+    if(button){
+        button.setAttribute('aria-pressed',String(visible));
+        button.setAttribute('aria-label',visible?'Hide ROI overlays':'Show ROI overlays');
+        const tip=button.querySelector('.tool-tip');
+        if(tip)tip.textContent=visible?'Hide ROI Overlays · O':'Show ROI Overlays · O';
+    }
+    const topToggle=document.querySelector('.editor-overlay-toggle');
+    if(topToggle)topToggle.setAttribute('data-overlay-state',visible?'visible':'hidden');
+}
+window.syncStreamOverlayControlUI=syncOverlayControlUI;
+syncOverlayControlUI();
 
 function drawOverlays(){
     const showRects = showRectsCheckbox.checked;
@@ -1251,9 +1268,16 @@ function loadModeFeatures(){
             [document.getElementById('with_apriltag'), !c.supports_apriltag, 'AprilTag processing is not supported by the active mode.']
         ];
         controls.forEach(item=>disable(item[0], item[1], item[2]));
+        document.documentElement.dataset.streamControlPermission=STREAM_CONTROL_ALLOWED?'enabled':'read-only';
         if(!STREAM_CONTROL_ALLOWED){
+            const viewOnlyActions=new Set(['export-config','refresh-config','clear-selection','properties','toggle-properties','zoom-in','zoom-out','fit-view','toggle-fullscreen','toggle-overlays','toggle-console','tool-select','tool-pan','freeze','unfreeze','help']);
+            document.querySelectorAll('button[data-action]').forEach(el=>{
+                if(!viewOnlyActions.has(el.dataset.action))el.disabled=true;
+            });
+            const viewOnlyIds=new Set(['refresh_vals','toggle_dock_btn','camera_fullscreen_btn','workspace_view_lock','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','show_rects','console_toggle_btn','console_clear_btn','console_filter','console_level','console_pause','console_autoscroll','roi_settings_open','roi_settings_close','roi_settings_cancel','roi_settings_reset','roi_settings_apply','roi_setting_grid_mode','roi_setting_grid_spacing','roi_setting_grid_opacity','roi_setting_grid_thickness','roi_setting_grid_dot_size','roi_setting_grid_color','roi_setting_keyboard_nudge','roi_setting_stream_fps','roi_setting_snap','roi_setting_label_size','roi_setting_label_weight','roi_setting_outline_thickness','roi_setting_handle_size','ext_grid','ext_snap','ext_crosshair']);
             document.querySelectorAll('button,input,select').forEach(el=>{
-                if(!['refresh_vals','toggle_dock_btn','camera_fullscreen_btn','workspace_view_lock','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn','roi_settings_open','roi_settings_close','roi_settings_cancel','roi_settings_reset','roi_settings_apply','roi_setting_grid_mode','roi_setting_grid_spacing','roi_setting_grid_opacity','roi_setting_grid_thickness','roi_setting_grid_dot_size','roi_setting_grid_color','roi_setting_keyboard_nudge','roi_setting_stream_fps','roi_setting_snap','roi_setting_label_size','roi_setting_label_weight','roi_setting_outline_thickness','roi_setting_handle_size','ext_grid','ext_snap','ext_crosshair'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
+                const actionIsViewOnly=el.hasAttribute('data-action')&&viewOnlyActions.has(el.dataset.action);
+                if(!viewOnlyIds.has(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-console-tab')&&!actionIsViewOnly)el.disabled=true;
             });
         }
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
@@ -1278,6 +1302,12 @@ window.openStreamShortcuts=openStreamShortcuts;
 window.closeStreamShortcuts=closeStreamShortcuts;
 function setupCadWorkspace(){
 const workspace=document.querySelector('.container'),dockToggle=document.getElementById('toggle_dock_btn'),consoleDock=document.getElementById('bottom_console'),consoleToggle=document.getElementById('console_toggle_btn'),consoleClear=document.getElementById('console_clear_btn'),propTarget=document.getElementById('prop_target');let consoleTab='events';
+document.querySelectorAll('.left-toolbar .tool-button[title]').forEach(function(button){
+  if(button.querySelector('.tool-tip')){
+    if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',button.title);
+    button.removeAttribute('title');
+  }
+});
 const narrow=()=>window.matchMedia('(max-width:720px)').matches;
 let dockIsOpen=!narrow();
 const dockVisible=()=>dockIsOpen;
@@ -1336,8 +1366,19 @@ function updatePythonLogPolling(){
   if(shouldPoll&&!pythonLogPollTimer){refreshPythonLogs();pythonLogPollTimer=setInterval(refreshPythonLogs,2000);}
   else if(!shouldPoll&&pythonLogPollTimer){clearInterval(pythonLogPollTimer);pythonLogPollTimer=null;}
 }
-function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));updatePythonLogPolling();}
+function setConsoleOpen(open){
+  const visible=!!open;
+  consoleDock.classList.toggle('console-open',visible);
+  consoleToggle.setAttribute('aria-expanded',String(visible));
+  const toolButton=document.querySelector('.left-toolbar [data-action="toggle-console"]');
+  if(toolButton){
+    toolButton.setAttribute('aria-pressed',String(visible));
+    toolButton.setAttribute('aria-label',visible?'Close Event Console':'Open Event Console');
+  }
+  updatePythonLogPolling();
+}
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
+setConsoleOpen(consoleDock.classList.contains('console-open'));
 consoleClear.addEventListener('click',()=>{
   if(consoleTab==='api')workspaceApiEvents=[];
   else if(consoleTab==='python'){workspacePythonLogs=[];pythonLogsClearedAfter=Date.now()/1000+0.01;}
@@ -1361,7 +1402,7 @@ const consolePause=document.getElementById('console_pause');if(consolePause)cons
 function setTool(tool){if(tool==='pan'&&workspaceViewLocked){showToast('View is locked. Unlock it to pan.');tool='select';}workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');if(typeof window.onStreamWorkspaceToolChanged==='function')window.onStreamWorkspaceToolChanged(workspaceTool);}
 window.setStreamWorkspaceTool=setTool;
 function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}
-function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;document.getElementById('tool_overlays_btn').setAttribute('aria-pressed',String(showRectsCheckbox.checked));renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
+function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;syncOverlayControlUI();renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
 function toggleProperties(){const p=document.querySelector('.properties-panel');if(!dockVisible()){setDock(true);if(p)p.open=true;noteWorkspaceEvent('info','Properties panel shown');return;}if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{switch(b.dataset.action){
