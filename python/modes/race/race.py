@@ -27,7 +27,7 @@ from controller.adaptive_obstacle import AdaptiveObstaclePlanner
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
-from stream import publish_debug_frame, start_stream, stop_stream
+from stream import publish_camera_frame_fallback, publish_debug_frame, start_stream, stop_stream
 import logging
 import cv2
 import math
@@ -454,6 +454,7 @@ class Robot:
         frame, frame_resized = self.camera.capture_frame(with_resize=True)
         if not self.camera.last_capture_valid or frame_resized is None:
             self._keep_stop_hold()
+        publish_camera_frame_fallback(config_race, frame)
             self._pace_control_loop()
             return
 
@@ -686,6 +687,7 @@ class Robot:
                     self._pace_control_loop()
                     continue
                 if config_race.STREAM or config_race.DEBUG:
+                publish_camera_frame_fallback(config_race, frame)
                     debug_frame = frame.copy()
                 else:
                     debug_frame = None
