@@ -52,7 +52,7 @@ def _make_detector(method, detector_factory=None, intra_op_num_threads=2):
 def _sign_worker(method, detector_factory, intra_op_num_threads, requests, results,
                  ready, ready_payload, stop_event, paused_event, requests_enabled,
                  idle_event, active_event, shared_memory_name, frame_lock,
-                 frame_sequence):
+                 frame_sequence, generation):
     """Infer from a shared-memory latest-frame slot; queues carry metadata only."""
     try:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -89,8 +89,8 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
         while not stop_event.is_set():
             try:
                 (
-                    request_id, frame_shape, submitted_at, frame_captured_at,
-                    confidence_threshold, target_sign_types,
+                    request_id, request_generation, frame_shape, submitted_at,
+                    frame_captured_at, confidence_threshold, target_sign_types,
                 ) = requests.get(timeout=0.1)
             except queue.Empty:
                 continue
@@ -102,7 +102,12 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
             with frame_lock:
                 active_event.set()
                 idle_event.clear()
-                if paused_event.is_set() or not requests_enabled.is_set() or stop_event.is_set():
+                if (
+                    int(request_generation) != int(generation.value)
+                    or paused_event.is_set()
+                    or not requests_enabled.is_set()
+                    or stop_event.is_set()
+                ):
                     active_event.clear()
                     try:
                         queued = not requests.empty()
@@ -220,6 +225,9 @@ class ProcessSignDetector:
         self._shared_frame = SharedMemory(create=True, size=self._max_frame_bytes)
         self._frame_lock = self._context.Lock()
         self._frame_sequence = self._context.Value("q", 0, lock=False)
+        # Invalidates descriptors dequeued just before pause, even if the
+        # detector is resumed before that worker reaches its pause check.
+        self._generation = self._context.Value("q", 0, lock=False)
         self._submit_lock = threading.Lock()
         self._requests = self._context.Queue(maxsize=1)
         self._results = self._context.Queue(maxsize=1)
@@ -255,6 +263,7 @@ class ProcessSignDetector:
                 self._ready, self._ready_payload, self._stop, self._paused,
                 self._requests_enabled, self._idle, self._active,
                 self._shared_frame.name, self._frame_lock, self._frame_sequence,
+                self._generation,
             ),
             daemon=True,
         )
@@ -327,21 +336,21 @@ class ProcessSignDetector:
                 request_id = self._next_id
                 self._last_submit_at = submitted_at
 
-            request = (
-                request_id,
-                tuple(int(dim) for dim in source.shape),
-                submitted_at,
-                frame_captured_at,
-                confidence_threshold,
-                tuple(target_sign_types) if target_sign_types is not None else None,
-            )
-
             # Serialize shared-slot publication, queue replacement and the idle
             # flag under one short lock. The detector copies pixels under this
             # lock, but inference itself always runs outside it.
             with self._frame_lock:
                 if self._paused.is_set() or not self._requests_enabled.is_set() or self._stop.is_set():
                     return None
+                request = (
+                    request_id,
+                    int(self._generation.value),
+                    tuple(int(dim) for dim in source.shape),
+                    submitted_at,
+                    frame_captured_at,
+                    confidence_threshold,
+                    tuple(target_sign_types) if target_sign_types is not None else None,
+                )
                 self._idle.clear()
                 slot = np.ndarray(
                     source.shape, dtype=np.uint8, buffer=self._shared_frame.buf
@@ -415,6 +424,7 @@ class ProcessSignDetector:
 
     def pause(self):
         with self._frame_lock:
+            self._generation.value += 1
             self._paused.set()
             self._discard_waiting_requests_locked()
             if not self._active.is_set():
@@ -427,6 +437,7 @@ class ProcessSignDetector:
 
     def pause_requests(self):
         with self._frame_lock:
+            self._generation.value += 1
             self._requests_enabled.clear()
             self._discard_waiting_requests_locked()
             if not self._active.is_set():
