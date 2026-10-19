@@ -95,15 +95,27 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
             except queue.Empty:
                 continue
 
-            if paused_event.is_set() or not requests_enabled.is_set() or stop_event.is_set():
-                if not active_event.is_set() and requests.empty():
-                    idle_event.set()
-                continue
-
-            # A newer frame may have replaced the slot after this descriptor was
-            # queued. Skip stale descriptors instead of pairing old timestamps
-            # with the new pixels or spending CPU on an already obsolete frame.
+            # Serialize in-flight/idle transitions with producer queue updates.
+            # In particular, mark work active before checking pause state so a
+            # phase gate cannot observe "idle" and release while inference is
+            # about to start.
             with frame_lock:
+                active_event.set()
+                idle_event.clear()
+                if paused_event.is_set() or not requests_enabled.is_set() or stop_event.is_set():
+                    active_event.clear()
+                    try:
+                        queued = not requests.empty()
+                    except (NotImplementedError, OSError):
+                        queued = False
+                    if queued:
+                        idle_event.clear()
+                    else:
+                        idle_event.set()
+                    continue
+
+                # A newer frame may have replaced this slot after the descriptor
+                # was queued. Do not pair stale metadata with the new pixels.
                 if int(frame_sequence.value) != int(request_id):
                     frame = None
                 else:
@@ -111,17 +123,18 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
                         tuple(frame_shape), dtype=np.uint8, buffer=shared_frame.buf
                     ).copy()
 
-            if frame is None:
-                try:
-                    queued = not requests.empty()
-                except (NotImplementedError, OSError):
-                    queued = False
-                if not queued:
-                    idle_event.set()
-                continue
+                if frame is None:
+                    active_event.clear()
+                    try:
+                        queued = not requests.empty()
+                    except (NotImplementedError, OSError):
+                        queued = False
+                    if queued:
+                        idle_event.clear()
+                    else:
+                        idle_event.set()
+                    continue
 
-            active_event.set()
-            idle_event.clear()
             started = time.monotonic()
             try:
                 if str(method).lower() == "svm":
@@ -161,13 +174,19 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
                     ),
                 )
             finally:
-                active_event.clear()
-                try:
-                    queued = not requests.empty()
-                except (NotImplementedError, OSError):
-                    queued = False
-                if not queued:
-                    idle_event.set()
+                # The producer uses this same lock while changing the shared
+                # sequence and queue. This avoids setting idle after a concurrent
+                # submit has already cleared it.
+                with frame_lock:
+                    active_event.clear()
+                    try:
+                        queued = not requests.empty()
+                    except (NotImplementedError, OSError):
+                        queued = False
+                    if queued:
+                        idle_event.clear()
+                    else:
+                        idle_event.set()
     finally:
         try:
             shared_frame.close()
@@ -308,18 +327,6 @@ class ProcessSignDetector:
                 request_id = self._next_id
                 self._last_submit_at = submitted_at
 
-            # The producer owns the write lock; the worker takes the same lock
-            # only long enough to copy the current slot into its private buffer.
-            # Inference then runs without holding the lock, so camera/control
-            # processing never waits for the full model latency.
-            self._idle.clear()
-            with self._frame_lock:
-                slot = np.ndarray(
-                    source.shape, dtype=np.uint8, buffer=self._shared_frame.buf
-                )
-                np.copyto(slot, source)
-                self._frame_sequence.value = request_id
-
             request = (
                 request_id,
                 tuple(int(dim) for dim in source.shape),
@@ -328,22 +335,42 @@ class ProcessSignDetector:
                 confidence_threshold,
                 tuple(target_sign_types) if target_sign_types is not None else None,
             )
-            try:
-                replacing_waiting_frame = self._requests.full()
-            except (NotImplementedError, OSError):
-                replacing_waiting_frame = False
 
-            if not _replace_queue_item(self._requests, request):
+            # Serialize shared-slot publication, queue replacement and the idle
+            # flag under one short lock. The detector copies pixels under this
+            # lock, but inference itself always runs outside it.
+            with self._frame_lock:
+                if self._paused.is_set() or not self._requests_enabled.is_set() or self._stop.is_set():
+                    return None
+                self._idle.clear()
+                slot = np.ndarray(
+                    source.shape, dtype=np.uint8, buffer=self._shared_frame.buf
+                )
+                np.copyto(slot, source)
+                self._frame_sequence.value = request_id
+
+                try:
+                    replacing_waiting_frame = self._requests.full()
+                except (NotImplementedError, OSError):
+                    replacing_waiting_frame = False
+
+                if not _replace_queue_item(self._requests, request):
+                    with self._lock:
+                        self._dropped += 1
+                    try:
+                        queued = not self._requests.empty()
+                    except (NotImplementedError, OSError):
+                        queued = False
+                    if self._active.is_set() or queued:
+                        self._idle.clear()
+                    else:
+                        self._idle.set()
+                    return None
+
                 with self._lock:
-                    self._dropped += 1
-                if not self._active.is_set():
-                    self._idle.set()
-                return None
-
-            with self._lock:
-                self._submitted += 1
-                if replacing_waiting_frame:
-                    self._replaced += 1
+                    self._submitted += 1
+                    if replacing_waiting_frame:
+                        self._replaced += 1
             return request_id
 
     def _collect_results(self):
@@ -387,29 +414,41 @@ class ProcessSignDetector:
         return latest if input_age_s < max_age_s else None
 
     def pause(self):
-        self._paused.set()
-        self._discard_waiting_requests()
+        with self._frame_lock:
+            self._paused.set()
+            self._discard_waiting_requests_locked()
+            if not self._active.is_set():
+                self._idle.set()
 
     def resume(self):
-        if not self._stop.is_set():
-            self._paused.clear()
+        with self._frame_lock:
+            if not self._stop.is_set():
+                self._paused.clear()
 
     def pause_requests(self):
-        self._requests_enabled.clear()
-        self._discard_waiting_requests()
+        with self._frame_lock:
+            self._requests_enabled.clear()
+            self._discard_waiting_requests_locked()
+            if not self._active.is_set():
+                self._idle.set()
 
     def resume_requests(self):
-        if not self._stop.is_set():
-            self._requests_enabled.set()
+        with self._frame_lock:
+            if not self._stop.is_set():
+                self._requests_enabled.set()
 
     def _discard_waiting_requests(self):
+        with self._frame_lock:
+            self._discard_waiting_requests_locked()
+            if not self._active.is_set():
+                self._idle.set()
+
+    def _discard_waiting_requests_locked(self):
         while True:
             try:
                 self._requests.get_nowait()
             except queue.Empty:
                 break
-        if not self._active.is_set():
-            self._idle.set()
 
     def wait_until_idle(self, timeout=None):
         return self._idle.wait(timeout)
