@@ -293,7 +293,8 @@ canvas {
 @media(min-width:721px){.container{grid-template-columns:minmax(0,1fr) var(--right-pane-width)!important}}
 @media(max-width:720px){.container{grid-template-columns:minmax(0,1fr)!important}}
 .right-panel{min-width:250px;position:relative}
-.right-panel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;cursor:col-resize;z-index:6}
+@media(min-width:721px){.right-panel{border-left:1px solid #344457;padding-left:5px}.right-panel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none;z-index:6;background:linear-gradient(90deg,transparent 4px,rgba(112,146,176,.20) 4px,rgba(112,146,176,.20) 5px,transparent 5px)}}
+.right-panel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:12px;cursor:col-resize;z-index:6}
 .ext-list{display:grid;gap:4px;margin-top:7px}.ext-list-row{display:flex;gap:6px;align-items:center;justify-content:space-between;padding:5px;border:1px solid var(--border);border-radius:5px;font-size:11px}.ext-list-row button{padding:3px 6px}
 .ext-layer-row{display:grid;grid-template-columns:18px minmax(0,1fr) 28px minmax(55px,100px);align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px}.ext-layer-row input[type=color]{width:26px;height:24px;padding:1px}.ext-layer-row input[type=range]{min-width:0;width:100%}
 .ext-pre{background:#07101a;color:#c5d5e5;border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:10px/1.45 ui-monospace,Consolas,monospace;margin:6px 0 0}
@@ -317,12 +318,14 @@ canvas {
 .workspace-stage-column { min-width:0; min-height:0; }
 .canvas-stage { position:relative; }
 .canvas-fullscreen-btn {
+  display:inline-flex; align-items:center; gap:6px;
   position:absolute; top:8px; right:8px; z-index:5;
   padding:5px 8px; border:1px solid #3b5268; border-radius:5px;
   color:#e6edf5; background:rgba(8,15,24,.88); font-size:11px;
   font-weight:650; line-height:1.2; cursor:pointer;
   box-shadow:0 2px 9px rgba(0,0,0,.28);
 }
+.canvas-fullscreen-icon{width:15px;height:15px;flex:0 0 15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .canvas-fullscreen-btn:hover { border-color:var(--accent); background:#142536; }
 .canvas-fullscreen-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 #canvas_stage:fullscreen, #canvas_stage:-webkit-full-screen {
