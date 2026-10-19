@@ -788,11 +788,23 @@ class Robot:
                         result["lane_type"],
                     )
                     if not control_ok:
+                        # Diagnostic streaming must keep publishing frames even when
+                        # an actuator command is unavailable or rejected (for example,
+                        # the intentional --without-arduino Windows runtime).
+                        self.handle_debug_stream(
+                            result, frame, angle, "control unavailable", sign_text
+                        )
                         self._pace_control_loop()
                         continue
                 else:
                     control_ok = self.control.set_angle(result["steering_angle"])
                     if not control_ok:
+                        # Diagnostic streaming must keep publishing frames even when
+                        # an actuator command is unavailable or rejected (for example,
+                        # the intentional --without-arduino Windows runtime).
+                        self.handle_debug_stream(
+                            result, frame, angle, "control unavailable", sign_text
+                        )
                         self._pace_control_loop()
                         continue
 
