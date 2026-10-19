@@ -454,10 +454,10 @@ class Robot:
         frame, frame_resized = self.camera.capture_frame(with_resize=True)
         if not self.camera.last_capture_valid or frame_resized is None:
             self._keep_stop_hold()
-        publish_camera_frame_fallback(config_race, frame)
             self._pace_control_loop()
             return
 
+        publish_camera_frame_fallback(config_race, frame)
         debug_frame = frame.copy() if (config_race.STREAM or config_race.DEBUG) else None
         sign_text, _, _, _ = self.handle_read_sign_or_tag(
             frame,
@@ -686,8 +686,8 @@ class Robot:
                     self.control.stop()
                     self._pace_control_loop()
                     continue
-                if config_race.STREAM or config_race.DEBUG:
                 publish_camera_frame_fallback(config_race, frame)
+                if config_race.STREAM or config_race.DEBUG:
                     debug_frame = frame.copy()
                 else:
                     debug_frame = None
