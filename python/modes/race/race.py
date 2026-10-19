@@ -239,11 +239,15 @@ class Robot:
         if self.sign_detector is not None:
             return
         if bool(getattr(config_race, "MULTIPROCESS_SIGN_DETECTOR", False)):
+            camera = getattr(self, "camera", None)
+            frame_width = int(getattr(camera, "width", getattr(config_race, "CAM_WIDTH", 640)))
+            frame_height = int(getattr(camera, "height", getattr(config_race, "CAM_HEIGHT", 480)))
             self.sign_detector = ProcessSignDetector(
                 config_race.SIGN_DETECTOR_METHOD,
                 intra_op_num_threads=getattr(
                     config_race, "MULTIPROCESS_SIGN_INTRA_OP_THREADS", 2
                 ),
+                max_frame_bytes=max(1, frame_width * frame_height * 3),
             )
         else:
             detector = (
