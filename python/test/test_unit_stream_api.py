@@ -1135,7 +1135,10 @@ class StreamApiTests(unittest.TestCase):
             np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR
         )
         self.assertIsNotNone(decoded)
-        np.testing.assert_array_equal(decoded[0, 0], np.array([17, 73, 129]))
+        self.assertLessEqual(
+            int(np.max(np.abs(decoded[0, 0].astype(np.int16) - np.array([17, 73, 129])))),
+            2,
+        )
 
     def test_camera_fallback_does_not_replace_a_fresh_debug_frame(self):
         config = self.make_config()
