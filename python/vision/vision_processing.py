@@ -164,7 +164,6 @@ class VisionProcessor:
                     "kind": "classical",
                     "frame_width": int(width),
                     "frame_height": int(height),
-                    "config": base_config,
                     "roi_bounds": {
                         "RL": (rl_left, rl_top, rl_right, rl_bottom),
                         "LL": (ll_left, ll_top, ll_right, ll_bottom),
