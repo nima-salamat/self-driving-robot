@@ -1171,3 +1171,96 @@ canvas {
   }
 }
 
+/* Mobile polish: a true left-side settings drawer with a dismissible scrim. */
+.settings-drawer-backdrop[hidden] { display: none !important; }
+@media (max-width: 720px) {
+  .settings-drawer-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 990;
+    inset: calc(36px + env(safe-area-inset-top, 0px)) 0 0;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(2, 8, 18, .66);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    touch-action: manipulation;
+  }
+  .container .right-panel {
+    display: flex !important;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    left: max(4px, env(safe-area-inset-left, 0px)) !important;
+    right: auto !important;
+    transform: translate3d(calc(-100% - 14px), 0, 0);
+    transition: transform .22s cubic-bezier(.2, .75, .25, 1), opacity .16s ease, visibility .22s;
+    will-change: transform;
+  }
+  .container.show-dock .right-panel {
+    display: flex !important;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate3d(0, 0, 0);
+  }
+  .container.dock-hidden .right-panel,
+  .container:not(.show-dock) .right-panel {
+    display: flex !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translate3d(calc(-100% - 14px), 0, 0) !important;
+  }
+  .editor-controls #toggle_dock_btn {
+    order: -1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    padding: 0 9px;
+    border: 1px solid rgba(79, 156, 235, .62);
+    border-radius: 7px;
+    color: #e5f2ff;
+    background: linear-gradient(180deg, #173553, #10263d);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+  }
+  .editor-controls #toggle_dock_btn:active {
+    background: #1c4166;
+    transform: translateY(1px);
+  }
+  .editor-controls #toggle_dock_btn .toolbar-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .container.show-dock .right-panel .dock-panel {
+    border-color: #293b4f;
+    border-radius: 7px;
+    background: #0f1722;
+  }
+  .container.show-dock .right-panel .dock-summary {
+    min-height: 42px;
+    padding: 10px 11px;
+    font-size: 12px;
+  }
+  .container.show-dock .right-panel .dock-content {
+    padding: 10px;
+  }
+  .console-tab { border-radius: 5px 5px 0 0; }
+  .console-tab[aria-selected="true"] {
+    background: rgba(64, 145, 220, .12);
+    color: #eff7ff;
+  }
+  .bottom-console.console-open {
+    border-color: #3a536e;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .42);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .container .right-panel { transition: none !important; }
+}
+
