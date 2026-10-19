@@ -422,10 +422,10 @@ class Robot:
         frame, frame_resized = self.camera.capture_frame(with_resize=True)
         if not self.camera.last_capture_valid or frame_resized is None:
             self._keep_stop_hold()
-        publish_camera_frame_fallback(config_city, frame)
             self._pace_control_loop()
             return
 
+        publish_camera_frame_fallback(config_city, frame)
         debug_frame = frame.copy() if (config_city.STREAM or config_city.DEBUG) else None
         sign_text, _, _, _ = self.handle_read_sign_or_tag(
             frame,
@@ -685,8 +685,8 @@ class Robot:
                         self.control.stop()
                         self._pace_control_loop()
                         continue
-                    if config_city.STREAM or config_city.DEBUG:
                     publish_camera_frame_fallback(config_city, frame)
+                    if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()
                     else:
                         debug_frame = None
@@ -807,8 +807,8 @@ class Robot:
                         self.control.stop()
                         self._pace_control_loop()
                         continue
-                    result = {
                     publish_camera_frame_fallback(config_city, frame)
+                    result = {
                         "steering_angle": SERVO_CENTER,
                         "error": 0,
                         "lane_type": "crosswalk",
