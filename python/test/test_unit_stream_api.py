@@ -634,6 +634,62 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(history.status_code, 200)
             self.assertGreaterEqual(len(history.get_json()["items"]), 1)
 
+    def test_full_config_restore_preserves_active_cli_fps_above_live_edit_limit(self):
+        import copy
+        import tempfile
+        from unittest.mock import Mock
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        rate = types.SimpleNamespace(
+            target_fps=100.0,
+            set_target_fps=Mock(),
+        )
+        config.processing_rate_controller = rate
+        config.TARGET_PROCESSING_FPS = 100.0
+        client = WebStreamer(config).app.test_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            original = client.get("/api/config/full").get_json()
+            changed = copy.deepcopy(original)
+            changed["values"]["RL_TOP_ROI"] = 0.25
+
+            applied = client.post("/api/config/full", json=changed)
+            self.assertEqual(applied.status_code, 200, applied.get_data(as_text=True))
+            self.assertEqual(config.RL_TOP_ROI, 0.25)
+
+            # This simulates Undo: the previous full snapshot includes the
+            # startup target FPS, even though Stream only allows live edits
+            # from 1..60. Restoring an unrelated ROI must not try to reset FPS.
+            restored = client.post("/api/config/full", json=original)
+            self.assertEqual(restored.status_code, 200, restored.get_data(as_text=True))
+            self.assertEqual(config.RL_TOP_ROI, original["values"].get("RL_TOP_ROI", 0.0))
+            self.assertEqual(rate.target_fps, 100.0)
+            rate.set_target_fps.assert_not_called()
+
+    def test_full_config_rejects_out_of_range_fps_import_when_it_would_change_runtime(self):
+        import copy
+        from unittest.mock import Mock
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        rate = types.SimpleNamespace(
+            target_fps=30.0,
+            set_target_fps=Mock(),
+        )
+        config.processing_rate_controller = rate
+        config.TARGET_PROCESSING_FPS = 30.0
+        client = WebStreamer(config).app.test_client()
+
+        payload = client.get("/api/config/full").get_json()
+        foreign = copy.deepcopy(payload)
+        foreign["runtime"]["target_processing_fps"] = 100.0
+
+        response = client.post("/api/config/full", json=foreign)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("only be preserved unchanged", response.get_json()["message"])
+        rate.set_target_fps.assert_not_called()
+
     def test_full_config_rejects_wrong_mode_and_non_finite_roi(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
