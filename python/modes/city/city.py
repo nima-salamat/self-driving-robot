@@ -1168,8 +1168,9 @@ class Robot:
         source_frame = debug.get("combined")
         if source_frame is None:
             source_frame = frame
+        controller_angle = getattr(getattr(self, "control", None), "last_angle", None)
         visual_angle = resolve_visual_steering_angle(
-            config_city, self.control.last_angle, angle
+            config_city, controller_angle, angle
         )
         if source_frame is not None:
             debug["combined"] = render_lane_debug_overlay(
@@ -1202,7 +1203,7 @@ class Robot:
                 if isinstance(angle, (int, float, np.number))
                 else "N/A"
             )
-            real_angle = self.control.last_angle
+            real_angle = controller_angle
             real_angle_text = (
                 f"{real_angle:.1f}"
                 if isinstance(real_angle, (int, float, np.number))
