@@ -832,19 +832,31 @@ class Robot:
                 self._pace_control_loop()
 
         except KeyboardInterrupt:
-            logger.error("error KeyboardInterrupt")
-            
+            # A keyboard interrupt is an operator-requested shutdown, not a
+            # runtime fault. Keep normal shutdown quiet and deterministic.
+            logger.info("Keyboard interrupt received; shutting down Race loop cleanly")
+
         except Exception as e:
-            self.runtime_exception = e
-            if self.health is not None:
-                from utils.health import FaultSeverity
-                self.health.set_fault(
-                    "robot_loop",
-                    True,
-                    severity=FaultSeverity.CRITICAL,
-                    message=f"{type(e).__name__}: {e}",
+            # Windows/Python can raise InterruptedError from multiprocessing
+            # Event.wait() when Ctrl+C is delivered to the parent process. The
+            # signal handler sets SHUTDOWN_EVENT, so treat that specific
+            # interrupted wait as an orderly shutdown rather than a robot fault.
+            if isinstance(e, InterruptedError) and self._shutdown_requested():
+                logger.info(
+                    "Shutdown requested while waiting for a shared-memory camera frame; "
+                    "exiting Race loop cleanly"
                 )
-            logger.exception("Unhandled robot loop exception")
+            else:
+                self.runtime_exception = e
+                if self.health is not None:
+                    from utils.health import FaultSeverity
+                    self.health.set_fault(
+                        "robot_loop",
+                        True,
+                        severity=FaultSeverity.CRITICAL,
+                        message=f"{type(e).__name__}: {e}",
+                    )
+                logger.exception("Unhandled robot loop exception")
         finally:
             # A fatal loop error must stop hardware control but keep the
             # dashboard alive so the health endpoint can report the fault.
