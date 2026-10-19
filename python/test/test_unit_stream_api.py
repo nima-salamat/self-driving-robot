@@ -855,7 +855,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertIn("[REDACTED]", serialized)
 
-    def test_config_import_and_advanced_edit_cannot_bypass_software_stop(self):
+    def test_config_restore_preserves_software_stop_but_advanced_edit_cannot_resume(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
         config.RUN_LVL = "STOP"
@@ -864,14 +864,15 @@ class StreamApiTests(unittest.TestCase):
         payload = client.get("/api/config/full").get_json()
         payload["advanced"]["RUN_LVL"] = "MOVE"
         imported = client.post("/api/config/full", json=payload)
-        self.assertEqual(imported.status_code, 400)
+        self.assertEqual(imported.status_code, 200, imported.get_data(as_text=True))
+        self.assertEqual(imported.get_json()["config"]["advanced"]["RUN_LVL"], "STOP")
         self.assertEqual(config.RUN_LVL, "STOP")
 
         edited = client.post("/set_advanced", json={"RUN_LVL": "MOVE"})
         self.assertEqual(edited.status_code, 409)
         self.assertEqual(config.RUN_LVL, "STOP")
 
-        # The dedicated software-safety action remains the explicit resume path.
+        # Only the dedicated software-safety action may explicitly resume motion.
         resumed = client.post("/api/safety", json={"action": "resume"})
         self.assertEqual(resumed.status_code, 200)
         self.assertEqual(config.RUN_LVL, "MOVE")
