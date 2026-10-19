@@ -167,7 +167,10 @@ def _draw_classical(canvas, data):
 
     center_offset = _finite_number(data.get("lane_center_offset_px"))
     if center_offset is not None:
-        perception_x = int(round((source_width / 2.0 - center_offset) * sx))
+        perception_center = _finite_number(data.get("frame_center_x"))
+        if perception_center is None:
+            perception_center = source_width / 2.0
+        perception_x = int(round((perception_center - center_offset) * sx))
         perception_x = int(np.clip(perception_x, 0, width - 1))
         cv2.line(canvas, (perception_x, 0), (perception_x, height), (180, 0, 255), 1, cv2.LINE_AA)
 
