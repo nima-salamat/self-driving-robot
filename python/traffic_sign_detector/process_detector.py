@@ -110,7 +110,9 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
                 ):
                     active_event.clear()
                     try:
-                        queued = not requests.empty()
+                        # Queue.full() reflects the bounded queue's semaphore,
+                        # unlike empty(), which may race its feeder thread.
+                        queued = requests.full()
                     except (NotImplementedError, OSError):
                         queued = False
                     if queued:
@@ -131,7 +133,9 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
                 if frame is None:
                     active_event.clear()
                     try:
-                        queued = not requests.empty()
+                        # Queue.full() reflects the bounded queue's semaphore,
+                        # unlike empty(), which may race its feeder thread.
+                        queued = requests.full()
                     except (NotImplementedError, OSError):
                         queued = False
                     if queued:
@@ -185,7 +189,9 @@ def _sign_worker(method, detector_factory, intra_op_num_threads, requests, resul
                 with frame_lock:
                     active_event.clear()
                     try:
-                        queued = not requests.empty()
+                        # Queue.full() reflects the bounded queue's semaphore,
+                        # unlike empty(), which may race its feeder thread.
+                        queued = requests.full()
                     except (NotImplementedError, OSError):
                         queued = False
                     if queued:
@@ -367,7 +373,7 @@ class ProcessSignDetector:
                     with self._lock:
                         self._dropped += 1
                     try:
-                        queued = not self._requests.empty()
+                        queued = self._requests.full()
                     except (NotImplementedError, OSError):
                         queued = False
                     if self._active.is_set() or queued:
