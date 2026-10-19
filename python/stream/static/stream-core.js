@@ -466,64 +466,106 @@ function fetchFrameOnce(){
     if(Date.now() < frameRetryAt) return;
 
     frameRequestInFlight = true;
-    const img = new Image();
-    img.decoding = 'async';
+    let objectUrl = null;
 
-    img.onload = () => {
-        try {
-            if(!syncActive) return;
-
-            // Keep source dimensions separate from the viewport backing store.
-            // This preserves the camera aspect ratio inside a stage-sized canvas.
-            const frameWidth = img.naturalWidth || img.width;
-            const frameHeight = img.naturalHeight || img.height;
-            if(frameWidth <= 0 || frameHeight <= 0) return;
-            frameSourceWidth=frameWidth;
-            frameSourceHeight=frameHeight;
-            lastFrameImage=img;
-            syncCameraCanvasSize();
-            const rect = canvas.getBoundingClientRect();
-            if(rect.width <= 0 || rect.height <= 0) return;
-            renderWorkspaceCanvas();
-
-            hasRenderedFrame = true;
-            frameRequestFailures = 0;
-            frameRetryAt = 0;
-        } catch(err) {
-            console.error('Failed to render camera frame:', err);
-            showCameraConnectionState('Camera frame received, but display failed.');
-        } finally {
-            frameRequestInFlight = false;
-        }
-    };
-
-    img.onerror = () => {
+    const failFrameRequest = (error) => {
         frameRequestFailures += 1;
         frameRetryAt = Date.now() + Math.min(
             5000,
             250 * Math.pow(2, Math.min(frameRequestFailures - 1, 5))
         );
 
-        try {
-            // Keep the last good image. A transient 204/no-frame response must not
-            // blank a working preview; keep retrying until a valid frame arrives.
-            if(!hasRenderedFrame) {
-                showCameraConnectionState(
-                    frameRequestFailures > 3
-                        ? 'Waiting for camera frames...'
-                        : 'Connecting to camera...'
-                );
-            }
-        } catch(err) {
-            console.error('Failed to update camera connection state:', err);
-        } finally {
-            frameRequestInFlight = false;
+        const detail = error && error.message
+            ? error.message
+            : 'Unknown frame request error';
+        if(!hasRenderedFrame) {
+            showCameraConnectionState(
+                frameRequestFailures > 3
+                    ? 'Waiting for camera frames... ' + detail
+                    : 'Connecting to camera... ' + detail
+            );
         }
+        if(objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+        }
+        frameRequestInFlight = false;
     };
 
-    // Register callbacks before setting src so fast local responses cannot
-    // complete before the browser has installed the handlers.
-    img.src = '/video_feed_frame?t=' + Date.now();
+    // Fetch the JPEG as a response first so 204 (no published frame), HTTP
+    // errors, auth redirects and non-image responses are visible in the UI
+    // instead of all collapsing into an opaque Image.onerror event.
+    fetch('/video_feed_frame?t=' + Date.now(), {
+        cache: 'no-store',
+        headers: { 'Accept': 'image/jpeg' }
+    }).then(response => {
+        if(response.status === 204) {
+            throw new Error('The Stream server has not published a frame yet (HTTP 204).');
+        }
+        if(!response.ok) {
+            throw new Error('Camera frame endpoint returned HTTP ' + response.status + '.');
+        }
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if(contentType && !contentType.startsWith('image/')) {
+            throw new Error('Camera frame endpoint returned ' + contentType + ', not an image.');
+        }
+        return response.blob();
+    }).then(blob => {
+        if(!blob || blob.size === 0) {
+            throw new Error('Camera frame response was empty.');
+        }
+
+        objectUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.decoding = 'async';
+
+        img.onload = () => {
+            try {
+                if(syncActive) {
+                    const frameWidth = img.naturalWidth || img.width;
+                    const frameHeight = img.naturalHeight || img.height;
+                    if(frameWidth <= 0 || frameHeight <= 0) {
+                        throw new Error('Decoded camera frame has invalid dimensions.');
+                    }
+
+                    // Keep source dimensions separate from the viewport backing
+                    // store so aspect-fit and zoom/pan use native frame geometry.
+                    frameSourceWidth = frameWidth;
+                    frameSourceHeight = frameHeight;
+                    lastFrameImage = img;
+                    syncCameraCanvasSize();
+                    const rect = canvas.getBoundingClientRect();
+                    if(rect.width <= 0 || rect.height <= 0) {
+                        throw new Error('Camera canvas has no visible size.');
+                    }
+                    renderWorkspaceCanvas();
+                    hasRenderedFrame = true;
+                    frameRequestFailures = 0;
+                    frameRetryAt = 0;
+                }
+            } catch(error) {
+                console.error('Failed to render camera frame:', error);
+                failFrameRequest(new Error(
+                    'Camera frame received, but display failed: ' +
+                    (error && error.message ? error.message : String(error))
+                ));
+                return;
+            }
+
+            if(objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+                objectUrl = null;
+            }
+            frameRequestInFlight = false;
+        };
+
+        img.onerror = () => {
+            failFrameRequest(new Error('The response could not be decoded as an image.'));
+        };
+        img.src = objectUrl;
+    }).catch(error => {
+        failFrameRequest(error);
+    });
 }
 
 /* ---------- Overlays (Shapes & Rects) ---------- */
