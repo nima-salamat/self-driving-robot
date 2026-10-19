@@ -389,12 +389,22 @@ class ProcessSignDetector:
             return request_id
 
     def _collect_results(self):
+        # Health/status polling can overlap application shutdown. close() sets
+        # _closed before closing the multiprocessing queues; a poll that already
+        # passed this check may still race Queue.close(), so handle that below too.
+        if self._closed:
+            return
+
         newest = None
         while True:
             try:
                 item = self._results.get_nowait()
             except queue.Empty:
                 break
+            except (EOFError, OSError, ValueError):
+                if self._closed:
+                    break
+                raise
             newest = item
 
         if newest is None:
@@ -486,10 +496,15 @@ class ProcessSignDetector:
                 "last_latency_ms": self._last_latency_ms,
                 "last_error": self._last_error,
             }
-        try:
-            queue_depth = self._requests.qsize()
-        except (NotImplementedError, OSError):
-            queue_depth = int(not self._idle.is_set())
+        if self._closed:
+            queue_depth = 0
+        else:
+            try:
+                queue_depth = self._requests.qsize()
+            except (NotImplementedError, EOFError, OSError, ValueError):
+                # A concurrent close can invalidate qsize() after the first
+                # _closed check. Shutdown also sets idle, so this fallback is 0.
+                queue_depth = 0 if self._closed else int(not self._idle.is_set())
         return {
             "worker_alive": self._worker.is_alive(),
             "frame_transport": "shared_memory",
