@@ -685,3 +685,477 @@ canvas {
   .workspace-statusbar #cad_selected_area{max-width:75px}
 }
 
+/* Mobile workspace: keep every tool reachable without squeezing the camera canvas. */
+@media (max-width: 720px) {
+  html, body {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .app-menubar {
+    position: fixed;
+    z-index: 900;
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 36px;
+    min-height: 36px;
+    max-height: 36px;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 0 max(5px, env(safe-area-inset-left, 0px));
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .app-menubar::-webkit-scrollbar { display: none; }
+  .app-brand {
+    flex: 0 0 22px;
+    width: 22px;
+    max-width: 22px;
+    padding: 0;
+    justify-content: center;
+  }
+  .app-brand > span:last-child { display: none; }
+  .menu-spacer { display: none; }
+  .menu-group { flex: 0 0 auto; height: 36px; }
+  .menu-group > summary {
+    display: flex;
+    align-items: center;
+    height: 32px;
+    padding: 5px 7px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .menu-dropdown {
+    position: fixed;
+    top: calc(36px + env(safe-area-inset-top, 0px));
+    left: 6px;
+    right: auto;
+    width: max-content;
+    max-width: calc(100vw - 12px);
+    max-height: min(66dvh, 460px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .menu-live { display: none; }
+  .stream-auth-menu { flex: 0 0 auto; }
+  .app-menubar .stream-auth-menu button {
+    min-width: 38px;
+    min-height: 28px;
+    padding: 4px 6px;
+    font-size: 10px;
+  }
+  .app-menubar .command-launch-button {
+    flex: 0 0 30px;
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    height: 28px;
+    min-height: 28px;
+    margin: 0 1px 0 0;
+    padding: 4px;
+    gap: 0;
+  }
+  .app-menubar .command-launch-button > span,
+  .app-menubar .command-launch-button kbd { display: none; }
+  .app-menubar .command-launch-button .toolbar-icon {
+    display: block;
+    width: 15px;
+    height: 15px;
+  }
+
+  .container {
+    position: fixed;
+    inset: calc(36px + env(safe-area-inset-top, 0px)) 0 env(safe-area-inset-bottom, 0px);
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 4px max(4px, env(safe-area-inset-left, 0px)) 4px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0;
+    overflow: hidden;
+  }
+  .container > .card {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 4px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .editor-controls {
+    flex: 0 0 34px;
+    height: 34px;
+    min-height: 34px;
+    max-height: 34px;
+    margin: 0 0 4px;
+    padding: 0 0 3px;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    gap: 4px;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .editor-controls > * { flex: 0 0 auto; }
+  .editor-controls #variable_select {
+    width: 152px;
+    max-width: none;
+    min-width: 140px;
+    height: 28px;
+    min-height: 28px;
+    font-size: 12px;
+  }
+  .editor-controls .toolbar-icon-button,
+  .editor-controls .ghost {
+    min-height: 28px;
+    height: 28px;
+    padding: 3px 6px;
+  }
+  .editor-controls #toggle_dock_btn { margin-left: 0; }
+  .editor-controls #toggle_dock_label { font-size: 10px; }
+  .editor-controls #frame_mode { font-size: 9px; }
+
+  .workspace-main {
+    display: flex !important;
+    flex: 1 1 0;
+    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .workspace-stage-column {
+    order: 1;
+    display: flex;
+    flex: 1 1 0;
+    width: 100%;
+    min-width: 0;
+    min-height: 72px;
+    gap: 2px;
+    overflow: hidden;
+  }
+  .active-tool-banner {
+    flex: 0 0 auto;
+    min-height: 28px;
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+  .canvas-stage,
+  .workspace-stage-column .canvas-stage {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    max-height: none;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #video_canvas {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    flex: 0 0 auto;
+    object-fit: contain;
+    touch-action: none;
+  }
+  .workspace-stage-column .workspace-statusbar {
+    order: 2;
+    flex: 0 0 29px;
+    width: 100%;
+    min-width: 0;
+    min-height: 29px;
+    max-height: 29px;
+    gap: 5px;
+    padding: 2px 3px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    font-size: 9px;
+    scrollbar-width: thin;
+  }
+  .workspace-statusbar #cad_cursor_u,
+  .workspace-statusbar #cad_cursor_v { display: none; }
+  .workspace-statusbar .workspace-status-spacer { flex: 0 0 0; min-width: 0; }
+  .workspace-statusbar .editor-zoom-label {
+    flex: 0 0 auto;
+    gap: 3px;
+    font-size: 9px;
+  }
+  .workspace-statusbar .editor-zoom-label input {
+    width: 62px;
+    min-width: 50px;
+    max-width: 22vw;
+    min-height: 24px;
+    padding: 2px;
+  }
+  .workspace-statusbar .zoom-percent {
+    flex: 0 0 50px;
+    width: 50px;
+    min-width: 50px;
+    min-height: 24px;
+    padding: 2px;
+    font-size: 10px;
+  }
+  .workspace-statusbar #cad_selected_area {
+    flex: 0 0 auto;
+    max-width: 82px;
+    margin-left: 0;
+    font-size: 9px;
+    text-align: right;
+  }
+
+  /* The tool strip becomes a thumb-friendly horizontal dock on phones. */
+  .left-toolbar {
+    order: 2;
+    display: flex;
+    flex: 0 0 44px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    min-width: 0;
+    gap: 5px;
+    padding: 3px 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 6px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  .left-toolbar .tool-button,
+  .left-toolbar .view-lock-button {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 40px;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    min-width: 40px;
+    max-width: 40px;
+    height: 38px;
+    min-height: 38px;
+    max-height: 38px;
+    padding: 0;
+    font-size: 18px;
+    touch-action: manipulation;
+  }
+  .left-toolbar .view-lock-button .view-lock-icon {
+    display: block;
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+  }
+  .left-toolbar .tool-tip { display: none !important; }
+  .left-toolbar .tool-separator {
+    flex: 0 0 1px;
+    width: 1px;
+    height: 27px;
+    margin: 0 2px;
+  }
+  .left-toolbar .toolbar-icon-console { width: 19px; height: 19px; }
+
+  .bottom-console {
+    order: 3;
+    grid-column: auto;
+    display: flex;
+    flex: 0 0 34px;
+    width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    height: 34px;
+    max-height: min(28dvh, 190px);
+    margin: 0;
+    overflow: hidden;
+  }
+  .bottom-console.console-open {
+    flex: 0 1 clamp(105px, 24dvh, 180px);
+    height: clamp(105px, 24dvh, 180px);
+    min-height: 105px;
+  }
+  .console-titlebar {
+    flex: 0 0 31px;
+    min-width: 0;
+    gap: 6px;
+    padding: 0 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .console-titlebar::-webkit-scrollbar { display: none; }
+  .console-toggle { flex: 0 0 auto; min-height: 28px; font-size: 10px; }
+  .console-tab { flex: 0 0 auto; height: 29px; padding: 0 6px; font-size: 10px; }
+  .console-count { display: none; }
+  .console-titlebar input,
+  .console-titlebar select { flex: 0 0 auto; }
+  .console-titlebar #console_filter { width: 94px !important; min-width: 80px !important; }
+  .console-titlebar .console-clear { flex: 0 0 auto; padding: 4px 6px; }
+  .console-titlebar label { flex: 0 0 auto; }
+  .console-entry {
+    grid-template-columns: 65px 43px minmax(0, 1fr);
+    gap: 5px;
+    padding: 4px 6px;
+    font-size: 10px;
+  }
+
+  /* Panels open as a bounded drawer, leaving the menubar and tool dock usable. */
+  .container .right-panel {
+    display: none;
+    position: fixed !important;
+    z-index: 1000;
+    top: calc(36px + env(safe-area-inset-top, 0px) + 39px);
+    right: 4px;
+    bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+    left: auto;
+    width: min(360px, calc(100vw - 8px));
+    min-width: 0;
+    max-width: calc(100vw - 8px);
+    height: auto;
+    max-height: none;
+    margin: 0;
+    padding: 5px;
+    gap: 5px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #0b1119;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    box-shadow: 0 14px 45px rgba(0, 0, 0, .68);
+  }
+  .container.show-dock .right-panel { display: flex !important; }
+  .container.dock-hidden .right-panel,
+  .container:not(.show-dock) .right-panel { display: none !important; }
+  .right-panel:before { display: none; }
+  .properties-panel[open] {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+  .properties-panel[open] > .dock-content {
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .properties-panel .property-field {
+    height: auto;
+    min-height: 48px;
+    white-space: normal;
+  }
+  .properties-panel .property-field input,
+  .properties-panel .property-field select {
+    height: 34px;
+    min-height: 34px;
+    font-size: 14px;
+  }
+  .right-panel .dock-content input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+  .right-panel .dock-content select,
+  .settings-modal input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+  .settings-modal select,
+  .settings-modal textarea {
+    min-height: 38px;
+    font-size: 16px;
+  }
+  .right-panel .dock-content button,
+  .settings-modal button {
+    min-height: 36px;
+    touch-action: manipulation;
+  }
+  .settings-modal { padding: max(7px, env(safe-area-inset-top, 0px)) 7px max(7px, env(safe-area-inset-bottom, 0px)); }
+  .settings-card {
+    width: 100%;
+    max-width: 560px;
+    max-height: calc(100dvh - 14px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow: auto;
+    padding: 12px;
+    overscroll-behavior: contain;
+  }
+  .shortcut-modal { padding: 7px; }
+  .shortcut-card {
+    width: 100%;
+    max-width: 620px;
+    max-height: calc(100dvh - 14px);
+    overflow: auto;
+    padding: 12px;
+  }
+  #ext_command_palette { padding: calc(42px + env(safe-area-inset-top, 0px)) 7px 7px; }
+  #ext_command_palette .palette-box {
+    width: 100%;
+    max-width: 620px;
+    max-height: calc(100dvh - 50px - env(safe-area-inset-top, 0px));
+    padding: 10px;
+  }
+  .palette-results-grid { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .palette-results-section { min-height: 120px; max-height: 33dvh; }
+  .workspace-statusbar { color: #adbdcc; }
+  .view-lock-button.is-locked { border-color: #38bdf8 !important; color: #7dd3fc !important; }
+}
+
+@media (max-width: 420px) {
+  .menu-group > summary { padding-left: 5px; padding-right: 5px; }
+  .app-brand { flex-basis: 20px; width: 20px; max-width: 20px; }
+  .app-menubar { gap: 1px; }
+  .app-menubar .stream-auth-menu button { padding: 4px 5px; }
+  .editor-controls #variable_select { width: 138px; min-width: 128px; }
+  .workspace-statusbar { gap: 4px; }
+  .workspace-statusbar #cad_cursor_x,
+  .workspace-statusbar #cad_cursor_y { font-size: 8px; }
+  .workspace-statusbar .editor-zoom-label { font-size: 0; }
+  .workspace-statusbar .editor-zoom-label input { width: 58px; min-width: 48px; max-width: 20vw; }
+  .workspace-statusbar .zoom-percent { flex-basis: 46px; width: 46px; min-width: 46px; font-size: 9px; }
+  .workspace-statusbar #cad_selected_area { max-width: 72px; font-size: 8px; }
+  .console-titlebar { gap: 4px; padding: 0 4px; }
+  .console-titlebar #console_filter { width: 82px !important; min-width: 72px !important; }
+  .console-tab { padding: 0 4px; }
+}
+
+/* Landscape phones have little vertical room; prioritize the live frame. */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 520px) {
+  .app-menubar { height: 32px; min-height: 32px; max-height: 32px; }
+  .menu-group { height: 32px; }
+  .menu-group > summary { height: 28px; padding-top: 3px; padding-bottom: 3px; }
+  .container {
+    inset: calc(32px + env(safe-area-inset-top, 0px)) 0 env(safe-area-inset-bottom, 0px);
+  }
+  .editor-controls { flex-basis: 29px; height: 29px; min-height: 29px; max-height: 29px; }
+  .workspace-main { gap: 3px; }
+  .left-toolbar { flex-basis: 39px; height: 39px; min-height: 39px; max-height: 39px; }
+  .left-toolbar .tool-button,
+  .left-toolbar .view-lock-button {
+    flex-basis: 34px; width: 34px; min-width: 34px; max-width: 34px;
+    height: 33px; min-height: 33px; max-height: 33px;
+  }
+  .workspace-stage-column .workspace-statusbar { flex-basis: 24px; min-height: 24px; max-height: 24px; }
+  .bottom-console { flex-basis: 27px; height: 27px; min-height: 27px; }
+  .bottom-console.console-open { flex-basis: 95px; height: 95px; min-height: 95px; }
+  .console-titlebar { flex-basis: 25px; }
+  .container .right-panel {
+    top: calc(32px + env(safe-area-inset-top, 0px) + 34px);
+    bottom: calc(42px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
