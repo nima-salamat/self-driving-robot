@@ -719,9 +719,6 @@ class Robot:
                     )
 
                 sign_text = "None"
-                # The debug overlay must describe the servo position accepted this cycle.
-                self.handle_debug_stream(result, frame, angle, status, sign_text)
-
                 finish_state = getattr(self, "race_finish", None)
                 if finish_state is not None and self._race_timer_started:
                     finish_state.update(time.monotonic())
@@ -796,6 +793,9 @@ class Robot:
                     if not control_ok:
                         self._pace_control_loop()
                         continue
+
+                # The controller accepted this frame's servo target; update the visual guide now.
+                self.handle_debug_stream(result, frame, angle, status, sign_text)
 
                 finish_state = getattr(self, "race_finish", None)
                 if finish_state is not None and not getattr(self, "_race_timer_started", False):
