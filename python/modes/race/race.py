@@ -794,9 +794,6 @@ class Robot:
                         self._pace_control_loop()
                         continue
 
-                # The controller accepted this frame's servo target; update the visual guide now.
-                self.handle_debug_stream(result, frame, angle, status, sign_text)
-
                 finish_state = getattr(self, "race_finish", None)
                 if finish_state is not None and not getattr(self, "_race_timer_started", False):
                     finish_state.start(time.monotonic())
@@ -826,6 +823,7 @@ class Robot:
                         self.metrics.record_control((time.monotonic() - control_started) * 1000.0)
                     self._pace_control_loop()
                     continue
+                self.handle_debug_stream(result, frame, angle, status, sign_text)
                 self.control.set_speed(target_speed)
                 if self.metrics is not None:
                     self.metrics.record_control(
@@ -1349,8 +1347,9 @@ class Robot:
         source_frame = debug.get("combined")
         if source_frame is None:
             source_frame = frame
+        controller_angle = getattr(getattr(self, "control", None), "last_angle", None)
         visual_angle = resolve_visual_steering_angle(
-            config_race, self.control.last_angle, angle
+            config_race, controller_angle, angle
         )
         if source_frame is not None:
             debug["combined"] = render_lane_debug_overlay(
@@ -1383,7 +1382,7 @@ class Robot:
                 if isinstance(angle, (int, float, np.number))
                 else "N/A"
             )
-            real_angle = self.control.last_angle
+            real_angle = controller_angle
             real_angle_text = (
                 f"{real_angle:.1f}"
                 if isinstance(real_angle, (int, float, np.number))
