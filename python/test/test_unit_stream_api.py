@@ -1262,9 +1262,15 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn('id="console_python"', template)
         self.assertIn("fetch('/api/logs?limit=200'", core)
         self.assertIn("workspacePythonLogs", core)
+        self.assertIn("console_python').hidden=consoleTab!=='python'", core)
         self.assertIn('id="settings_drawer_backdrop"', template)
         self.assertIn("left: max(4px, env(safe-area-inset-left, 0px))", css)
         self.assertIn("Mobile polish: a true left-side settings drawer", css)
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("['events','api','python'].forEach(renderWorkspaceEventLog)", extensions)
+        self.assertIn("python_logs:workspacePythonLogs", extensions)
 
     def test_ctrl_c_interrupted_shared_camera_wait_is_not_marked_as_runtime_fault(self):
         race_source = (
