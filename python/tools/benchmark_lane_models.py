@@ -3,6 +3,7 @@ import argparse
 import time
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -14,6 +15,7 @@ if str(PYTHON_ROOT) not in sys.path:
 
 from vision.ml_lane.detector import MLLaneDetector
 from vision.ml_lane.registry import list_models
+from visualization.lane_debug_overlay import render_lane_debug_overlay
 
 
 def format_ms(value):
@@ -74,14 +76,35 @@ def benchmark(detector, source, warmup, frames, display, output, camera_mode):
         if not ok:
             break
 
-        result = detector.detect(frame)
+        result = detector.detect(
+            frame,
+            debug_frame=frame.copy() if (display or output) else None,
+        )
         total_frames += 1
         valid_frames += int(result["perception_valid"])
         infer_times.append(result["ml_latency_ms"])
         model_times.append(result["ml_inference_ms"])
 
         if display or output:
-            vis = result["debug"]["combined"]
+            debug = result.get("debug") or {}
+            base_frame = debug.get("combined")
+            if base_frame is None:
+                base_frame = frame
+            visual_config = SimpleNamespace(
+                OLD_METHOD=False,
+                SERVO_CENTER=detector.servo_center,
+                MIN_SERVO_ANGLE=detector.servo_min,
+                MAX_SERVO_ANGLE=detector.servo_max,
+                SERVO_DIRECTION="ltr",
+            )
+            vis = render_lane_debug_overlay(
+                base_frame,
+                debug.get("draw_data"),
+                visual_config,
+                result.get("steering_angle"),
+            )
+            if vis is None:
+                vis = frame
             if output and writer is None:
                 h, w = vis.shape[:2]
                 fps_guess = max(1.0, frames / max(1e-6, time.monotonic() - start))
