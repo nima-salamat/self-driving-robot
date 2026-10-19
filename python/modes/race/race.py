@@ -1372,7 +1372,13 @@ class Robot:
             if source_frame is None:
                 return
             display_frame = source_frame.copy()
+            selected_angle = visual_angle
             angle_text = (
+                f"{selected_angle:.1f}"
+                if isinstance(selected_angle, (int, float, np.number))
+                else "N/A"
+            )
+            vision_angle_text = (
                 f"{angle:.1f}"
                 if isinstance(angle, (int, float, np.number))
                 else "N/A"
@@ -1383,9 +1389,14 @@ class Robot:
                 if isinstance(real_angle, (int, float, np.number))
                 else "N/A"
             )
+            angle_details = (
+                f"Angle:{angle_text}, RealAngle:{real_angle_text}"
+                if bool(getattr(config_race, "OLD_METHOD", False))
+                else f"Angle:{angle_text}, VisionAngle:{vision_angle_text}"
+            )
             texts = [
                 f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, {status}",
-                f"Angle:{angle_text}, RealAngle:{real_angle_text}, Sign:{sign_text}, LastTag:{self.last_tag}",
+                f"{angle_details}, Sign:{sign_text}, LastTag:{self.last_tag}",
             ]
 
             font = cv2.FONT_HERSHEY_SIMPLEX
