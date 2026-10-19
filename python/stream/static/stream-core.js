@@ -1345,7 +1345,7 @@ function syncPropertiesSelection(target){
  if(st.kind==='none'){
   selectedVar='NONE';select.value='NONE';markerHighlight=null;document.getElementById('properties_mode').textContent='No object selected';
   ['prop_left','prop_top','prop_right','prop_bottom','prop_point_x','prop_point_y'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('prop_hint').textContent='Select an ROI or BEV control point to inspect or edit.';document.getElementById('cad_selected_area').textContent='Object: NONE';return;
+  document.getElementById('prop_hint').textContent='Select an ROI or BEV control point to inspect or edit.';document.getElementById('cad_selected_area').textContent='Object: None';return;
  }
  if(st.kind==='roi'){
   selectedVar=st.group;select.value=st.group;const n=names(st.group);
