@@ -61,6 +61,14 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
     resized_view = None
     ready_sent = False
     try:
+        # Keep the capture child's OpenCV work from oversubscribing cores
+        # alongside ONNX inference and the parent lane/control pipeline.
+        try:
+            import cv2
+            cv2.setNumThreads(1)
+        except Exception:
+            logger.debug("Could not bound OpenCV threads in camera worker", exc_info=True)
+
         # Import inside the child so imports do not initialize hardware.
         from vision.camera import Camera
 
