@@ -66,8 +66,12 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
 
         shared = SharedMemory(name=shared_name)
         raw_view = np.ndarray(frame_shape, dtype=np.uint8, buffer=shared.buf, offset=0)
-        resized_view = np.ndarray(
-            resized_shape, dtype=np.uint8, buffer=shared.buf, offset=raw_nbytes
+        resized_view = (
+            raw_view
+            if tuple(frame_shape) == tuple(resized_shape)
+            else np.ndarray(
+                resized_shape, dtype=np.uint8, buffer=shared.buf, offset=raw_nbytes
+            )
         )
         camera = Camera(config=SimpleNamespace(**config_values))
         limits = camera.get_frame_rate_limits()
@@ -135,7 +139,11 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
             with lock:
                 if valid:
                     np.copyto(raw_view, frame)
-                    np.copyto(resized_view, resized)
+                    # With equal input/output dimensions Camera returns the
+                    # same pixel layout for both values. Avoid a duplicate
+                    # shared-memory write in the common 640x480 configuration.
+                    if resized_view is not raw_view:
+                        np.copyto(resized_view, resized)
                 metadata[_SEQ] += 1.0
                 metadata[_CAPTURE_AT] = float(camera.last_capture_at or time.monotonic())
                 measured = camera.measured_frame_rate
@@ -195,6 +203,10 @@ class SharedMemoryCapture:
         self.resized_shape = (self.resize_height, self.resize_width, 3)
         self._raw_nbytes = int(np.prod(self.frame_shape))
         resized_nbytes = int(np.prod(self.resized_shape))
+        # Most current modes use equal capture and resize dimensions. In that
+        # case both API return values can reference one copied frame and the
+        # shared buffer need not store identical pixels twice.
+        self._same_shape = self.frame_shape == self.resized_shape
         self._context = mp.get_context("spawn")
         self._lock = self._context.Lock()
         self._stop_event = self._context.Event()
@@ -213,7 +225,8 @@ class SharedMemoryCapture:
         self._last_sequence = 0
         self.frames_skipped = 0
         self._closed = False
-        self._shared = SharedMemory(create=True, size=self._raw_nbytes + resized_nbytes)
+        shared_size = self._raw_nbytes + (0 if self._same_shape else resized_nbytes)
+        self._shared = SharedMemory(create=True, size=shared_size)
 
         config_values = {
             "CAM_WIDTH": self.width,
@@ -329,10 +342,16 @@ class SharedMemoryCapture:
                         ).copy()
                         resized = None
                         if with_resize:
-                            resized = np.ndarray(
-                                self.resized_shape, dtype=np.uint8,
-                                buffer=self._shared.buf, offset=self._raw_nbytes,
-                            ).copy()
+                            if self.frame_shape == self.resized_shape:
+                                # Match Camera's non-multiprocess path: the
+                                # resized view is the same array when no resize
+                                # is needed, so don't copy the identical pixels.
+                                resized = frame
+                            else:
+                                resized = np.ndarray(
+                                    self.resized_shape, dtype=np.uint8,
+                                    buffer=self._shared.buf, offset=self._raw_nbytes,
+                                ).copy()
                         return frame, resized, state
                     return None, None, state
 
