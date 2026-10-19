@@ -1303,5 +1303,37 @@ class StreamApiTests(unittest.TestCase):
             stream_source,
         )
 
+
+    def test_toolbar_active_state_tooltips_and_view_permissions_stay_in_sync(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        # The same toolbar pressed-state styling is used by Pan/Select and Console.
+        self.assertIn("toolButton.setAttribute('aria-pressed',String(visible))", core)
+        self.assertIn('.tool-button[aria-pressed="true"]', css)
+        self.assertIn("button.removeAttribute('title')", core)
+        self.assertIn("button.querySelector('.tool-tip')", core)
+        self.assertIn("window.syncStreamOverlayControlUI=syncOverlayControlUI", core)
+        self.assertIn("window.syncStreamOverlayControlUI()", extensions)
+        self.assertIn("view.viewLocked===true", extensions)
+        self.assertIn("lane_center_guide", core) is False
+
+        # No "Live" banner is left below the canvas; frozen/paused states remain.
+        self.assertNotIn("Camera frame: Live", core)
+        self.assertIn("frameModeDisplay.hidden = !paused && !isFrozen", core)
+        self.assertIn("Frozen frame · precise tuning", core)
+
+        # Login and write permission are separate: readonly mode disables writes
+        # immediately while keeping visual inspection controls available.
+        self.assertIn("syncStreamPermissionUI();", core)
+        self.assertIn("document.documentElement.dataset.streamControlPermission=permission", core)
+        self.assertIn("'show_rects'", core)
+        self.assertIn("'ext_overlays'", core)
+        self.assertIn("Read-only dashboard: runtime/configuration changes are disabled", core)
+        self.assertIn("aria-pressed=\"true\" title=\"Toggle overlays", template)
+
 if __name__ == "__main__":
     unittest.main()
