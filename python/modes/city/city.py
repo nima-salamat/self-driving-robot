@@ -918,19 +918,28 @@ class Robot:
                 self._pace_control_loop()
 
         except KeyboardInterrupt:
-            logger.error("error KeyboardInterrupt")
-            
+            # Ctrl+C requests an orderly shutdown; it is not a runtime fault.
+            logger.info("Keyboard interrupt received; shutting down City loop cleanly")
+
         except Exception as e:
-            self.runtime_exception = e
-            if self.health is not None:
-                from utils.health import FaultSeverity
-                self.health.set_fault(
-                    "robot_loop",
-                    True,
-                    severity=FaultSeverity.CRITICAL,
-                    message=f"{type(e).__name__}: {e}",
+            # A signal may interrupt multiprocessing Event.wait() while the
+            # main shutdown handler has already set SHUTDOWN_EVENT.
+            if isinstance(e, InterruptedError) and self._shutdown_requested():
+                logger.info(
+                    "Shutdown requested while waiting for a shared-memory camera frame; "
+                    "exiting City loop cleanly"
                 )
-            logger.exception("Unhandled robot loop exception")
+            else:
+                self.runtime_exception = e
+                if self.health is not None:
+                    from utils.health import FaultSeverity
+                    self.health.set_fault(
+                        "robot_loop",
+                        True,
+                        severity=FaultSeverity.CRITICAL,
+                        message=f"{type(e).__name__}: {e}",
+                    )
+                logger.exception("Unhandled robot loop exception")
         finally:
             # A fatal loop error must stop hardware control but keep the
             # dashboard alive so the health endpoint can report the fault.
