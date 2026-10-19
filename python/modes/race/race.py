@@ -6,6 +6,7 @@ from utils.config_mode import set_race_mode
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
+from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
@@ -718,6 +719,9 @@ class Robot:
                     )
 
                 sign_text = "None"
+                # The debug overlay must describe the servo position accepted this cycle.
+                self.handle_debug_stream(result, frame, angle, status, sign_text)
+
                 finish_state = getattr(self, "race_finish", None)
                 if finish_state is not None and self._race_timer_started:
                     finish_state.update(time.monotonic())
@@ -772,9 +776,6 @@ class Robot:
                 if config_race.DETECT_OBJECT:
                     self.handle_detect_object(frame)
 
-                # Publish the current debug frame regardless of marker configuration.
-                self.handle_debug_stream(result, frame, angle, status, sign_text)
-                    
                 if config_race.AUTO_UPDATE_KP:
                     self.control.update_kp(result["kp"])
                 
@@ -820,6 +821,7 @@ class Robot:
                         self._pace_control_loop()
                         continue
                     self._run_adaptive_obstacle_cycle(result, target_speed, confidence)
+                    self.handle_debug_stream(result, frame, angle, status, sign_text)
                     if self.metrics is not None:
                         self.metrics.record_control((time.monotonic() - control_started) * 1000.0)
                     self._pace_control_loop()
@@ -1329,7 +1331,13 @@ class Robot:
 
     @_measure_stage("debug_stream")
     def handle_debug_stream(self, result, frame, angle, status, sign_text):
-        if getattr(config_race, "STREAM", False):
+        if not (config_race.DEBUG or config_race.STREAM):
+            return
+        debug = result.get("debug")
+        if not isinstance(debug, dict):
+            debug = {}
+            result["debug"] = debug
+        if config_race.STREAM:
             diagnostics = []
             confidence = getattr(config_race, "perception_confidence", None)
             if confidence:
@@ -1337,7 +1345,17 @@ class Robot:
             obstacle = getattr(config_race, "obstacle_diagnostics", None)
             if obstacle:
                 diagnostics.append(f"Obstacle:{obstacle['state']} {obstacle['reason']}")
-            result.setdefault("debug", {})["runtime_diagnostics"] = diagnostics
+            debug["runtime_diagnostics"] = diagnostics
+        source_frame = debug.get("combined")
+        if source_frame is None:
+            source_frame = frame
+        visual_angle = resolve_visual_steering_angle(
+            config_race, self.control.last_angle, angle
+        )
+        if source_frame is not None:
+            debug["combined"] = render_lane_debug_overlay(
+                source_frame, debug.get("draw_data"), config_race, visual_angle
+            )
         if config_race.DEBUG:
             debug = result.get("debug") or {}
             if debug.get("combined") is not None:
