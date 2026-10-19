@@ -371,6 +371,42 @@ def publish_debug_frame(config, frame):
         timestamps.append(time.monotonic())
 
 
+def publish_camera_frame_fallback(config, frame, max_stale_s=0.75):
+    """Publish a raw camera frame only when no fresh annotated stream frame exists.
+
+    The camera preview must not depend on lane-detection/debug rendering
+    completing successfully. Normal diagnostic frames remain preferred; this
+    fallback only fills an empty/stale stream slot so a transient perception
+    or overlay failure cannot leave the dashboard black indefinitely.
+    """
+    if frame is None or not bool(getattr(config, "STREAM", False)):
+        return False
+
+    try:
+        stale_after = max(0.05, float(max_stale_s))
+    except (TypeError, ValueError, OverflowError):
+        stale_after = 0.75
+
+    lock = getattr(config, "stream_frame_lock", None)
+    if lock is None:
+        lock = threading.RLock()
+        setattr(config, "stream_frame_lock", lock)
+
+    now = time.monotonic()
+    with lock:
+        timestamps = getattr(config, "stream_frame_timestamps", None)
+        try:
+            last_published_at = float(timestamps[-1]) if timestamps else None
+        except (TypeError, ValueError, OverflowError, IndexError):
+            last_published_at = None
+
+    if last_published_at is not None and 0.0 <= now - last_published_at <= stale_after:
+        return False
+
+    publish_debug_frame(config, frame)
+    return True
+
+
 def stop_stream(config):
     server = getattr(config, "stream_server", None)
     if server is None:
