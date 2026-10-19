@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <title>Editor Self Driving Robot</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 
 
 
@@ -65,7 +65,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <button type="button" class="tool-button" data-tool="pan" aria-pressed="false" title="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
 <button type="button" class="tool-button" data-action="zoom-in" title="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
 <button type="button" class="tool-button" data-action="zoom-out" title="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
-<button type="button" class="tool-button view-lock-button" id="workspace_view_lock" type="button" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position">
+<button type="button" class="tool-button view-lock-button" id="workspace_view_lock" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position">
   <svg class="toolbar-icon view-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg>
   <span id="workspace_view_lock_label" class="tool-tip">Lock View</span>
 </button>
