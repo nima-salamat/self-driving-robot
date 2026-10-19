@@ -65,6 +65,10 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <button type="button" class="tool-button" data-tool="pan" aria-pressed="false" title="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
 <button type="button" class="tool-button" data-action="zoom-in" title="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
 <button type="button" class="tool-button" data-action="zoom-out" title="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
+<button type="button" class="tool-button view-lock-button" id="workspace_view_lock" type="button" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position">
+  <svg class="toolbar-icon view-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg>
+  <span id="workspace_view_lock_label" class="tool-tip">Lock View</span>
+</button>
 <button type="button" class="tool-button" data-action="fit-view" title="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
 <button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" title="Toggle overlays (O)">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
 <button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
@@ -103,10 +107,6 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 </div>
 
 <div class="right-panel">
-<div class="side-view-controls" aria-label="Camera view controls">
-  <span class="side-view-controls-title">View</span>
-  <button id="workspace_view_lock" class="ghost toolbar-icon-button view-lock-button" type="button" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg><span id="workspace_view_lock_label">Lock View</span></button>
-</div>
 <details class="dock-panel properties-panel" open><summary class="dock-summary"><span>Properties</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
 <div class="properties-mode" id="properties_mode">RL · ROI bounds</div>
 <label class="property-field" style="margin-bottom:8px;">Object / Point<select id="prop_target"><option value="NONE">No object selected</option><option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option><option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option><option value="BEV_TL">BEV · Top Left</option><option value="BEV_TR">BEV · Top Right</option><option value="BEV_BR">BEV · Bottom Right</option><option value="BEV_BL">BEV · Bottom Left</option></select></label>
