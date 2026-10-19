@@ -170,6 +170,13 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("function setWorkspaceViewLocked(locked,log=true,persist=true)", core)
         self.assertIn('id="workspace_zoom_percent" class="zoom-percent" type="text"', template)
         self.assertIn('aria-label="View zoom percentage"', template)
+        # View controls must stay associated with the correct workspace regions.
+        self.assertGreater(template.index('id="workspace_zoom_percent"'), template.index('class="workspace-statusbar"'))
+        self.assertGreater(template.index('id="cad_selected_area"'), template.index('id="workspace_zoom_percent"'))
+        self.assertGreater(template.index('id="workspace_view_lock"'), template.index('class="right-panel"'))
+        self.assertIn('Object: None', template)
+        self.assertIn('.app-menubar .command-launch-button', css)
+        self.assertIn('.app-menubar .stream-auth-menu button', css)
         self.assertIn(r"raw.match(/^(?:([0-9]+(?:\.[0-9]*)?)|(\.[0-9]+))\s*%?$/)", core)
         self.assertIn("zoomPercentInput.addEventListener('focus',function(){this.select();})", core)
         self.assertIn("zoomPercentInput.addEventListener('blur',applyWorkspaceZoomPercent)", core)
