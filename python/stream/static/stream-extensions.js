@@ -353,6 +353,7 @@ function applyWorkspace(workspace){
   extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;
   if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
+  if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();
   editorTool=['select','pan','annotate','ruler'].includes(view.tool)?view.tool:'select';
   const layers=workspace.layers||{};extAnnotationsVisible=!layers.ANNOTATIONS||layers.ANNOTATIONS.visible!==false;
   if(typeof window.setWorkspaceViewLocked==='function')window.setWorkspaceViewLocked(view.viewLocked===true,false,false);
@@ -1052,8 +1053,8 @@ function installExtension(){
   if(jpegQualityInput)jpegQualityInput.addEventListener('input',function(){streamQualityDraftDirty=true;const label=$('roi_setting_jpeg_quality_value');if(label)label.textContent=this.value+' / 100';});
   $('ext_snap').addEventListener('change',function(){extSnap=this.checked;scheduleWorkspaceSave();});
   $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);drawPrecisionOverlay();scheduleWorkspaceSave();if(extCrosshair)updateEditorStatus('Crosshair active: click a point inside the camera image to copy normalized U, V coordinates.');});
-  $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;renderWorkspaceCanvas();scheduleWorkspaceSave();});
-  showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
+  $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();renderWorkspaceCanvas();scheduleWorkspaceSave();});
+  showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();});
   $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
   $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
   $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all notes and ruler measurements from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
