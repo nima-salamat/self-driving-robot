@@ -346,6 +346,7 @@ def start_stream(config):
             config.stream_server = None
         if getattr(config, "streamer", None) is streamer:
             config.streamer = None
+        logger.info("Stream dashboard closed; HTTP server socket released")
 
 
 def publish_debug_frame(config, frame):
@@ -375,6 +376,7 @@ def stop_stream(config):
     if server is None:
         return False
     try:
+        logger.info("Stream dashboard shutdown requested")
         server.shutdown()
         return True
     except Exception:
