@@ -131,7 +131,7 @@ python main.py --mode city --stream
 ~~~
 
 The CAD-style workspace includes:
-- Fixed operational ROI / BEV point editing, layer visibility/color/opacity, zoom/pan, grid, snap, and crosshair.
+- Fixed operational ROI / BEV point editing, layer visibility/color/opacity, zoom/pan, grid, snap, and crosshair. On phones, the tool dock becomes a horizontally scrollable touch toolbar; View Lock sits beside Select/Pan/Zoom, while zoom percentage and the selected-object label stay in the footer below the camera frame.
 - Note/marker annotations and a live-preview pixel ruler. Operational ROI regions (RL/LL/CW/ST/OBJ) are edited directly through Properties; custom preview-only ROI drawing is intentionally not offered because it does not affect perception or steering.
 - Full mode-specific configuration JSON import/export, preset save/apply/compare, configuration history, and undo/redo.
 - Runtime-health charts/details, Arduino telemetry, sign-worker status, confidence/obstacle diagnostics, City traffic-light or Race lifecycle status, and an embedded encoder map when `--encoder-map` is enabled.
