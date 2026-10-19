@@ -22,8 +22,8 @@ def _finite_number(value):
 def resolve_visual_steering_angle(config, controller_angle, vision_angle):
     """Choose the angle to visualize without fabricating an actuator value.
 
-    The current controller/PID path uses the last successfully applied servo
-    angle. Legacy/direct-angle paths continue to show the detector's target.
+    Non-legacy paths use the last successfully applied servo angle. The
+    legacy angle calculation continues to show the detector's target.
     """
     # OLD_METHOD selects the legacy angle calculation. In every newer
     # path, visualize the controller's last successfully applied angle,
@@ -72,13 +72,12 @@ def _scaled_box(box, sx, sy):
     )
 
 
-def _draw_classical(canvas, data):
+def _draw_classical(canvas, data, config):
     height, width = canvas.shape[:2]
     source_width = max(1, int(data.get("frame_width", width)))
     source_height = max(1, int(data.get("frame_height", height)))
     sx, sy = width / source_width, height / source_height
     boxes = data.get("roi_bounds") or {}
-    config = data.get("config")
     if config is None:
         return
 
@@ -326,7 +325,7 @@ def render_lane_debug_overlay(frame, draw_data=None, config=None, steering_angle
     data = draw_data if isinstance(draw_data, dict) else {}
     kind = data.get("kind")
     if kind == "classical":
-        _draw_classical(canvas, data)
+        _draw_classical(canvas, data, config)
     elif kind == "blsf":
         _draw_blsf(canvas, data)
     elif kind == "ml":
