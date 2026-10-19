@@ -40,25 +40,35 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <div class="container">
   <div class="card">
     <div class="controls editor-controls" aria-label="Editor controls">
-      <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button" aria-expanded="true" aria-label="Hide settings panels" title="Open the left settings menu on mobile or show/hide panels"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
-      <label class="small" for="variable_select">Select Object</label>
-      <select id="variable_select" aria-label="Select logical object">
-        <option value="NONE">No object selected</option>
-        <option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option>
-        <option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option>
-        <option value="BEV_TL">BEV Control Point · Top Left</option><option value="BEV_TR">BEV Control Point · Top Right</option>
-        <option value="BEV_BR">BEV Control Point · Bottom Right</option><option value="BEV_BL">BEV Control Point · Bottom Left</option>
-      </select>
-      <button id="clear_selection" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg><span>Clear</span></button>
-      <button id="center_reset" class="ghost toolbar-icon-button" type="button" title="Fit frame to available space (0)"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
-      <button id="refresh_vals" class="ghost toolbar-icon-button refresh-feed-button" type="button" title="Refresh configuration values and advanced settings" aria-label="Refresh feed and settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6l3 6M4 12l3 6a7 7 0 0 0 11.4-3"/></svg><span class="sr-only">Refresh Feed</span></button>
-      <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
-      
-      <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
-      <span id="mode_features" class="sr-only" aria-hidden="true"></span>
-      <div id="frame_mode" class="small status-line" hidden></div>
-      {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
-
+      <div class="editor-controls-left" role="group" aria-label="Object selection and frame tools">
+        <div class="editor-control-group editor-selection-group">
+          <label class="small" for="variable_select">Select Object</label>
+          <select id="variable_select" aria-label="Select logical object">
+            <option value="NONE">No object selected</option>
+            <option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option>
+            <option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option>
+            <option value="BEV_TL">BEV Control Point · Top Left</option><option value="BEV_TR">BEV Control Point · Top Right</option>
+            <option value="BEV_BR">BEV Control Point · Bottom Right</option><option value="BEV_BL">BEV Control Point · Bottom Left</option>
+          </select>
+          <button id="clear_selection" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg><span>Clear</span></button>
+        </div>
+        <span class="editor-control-divider" role="separator" aria-orientation="vertical"></span>
+        <div class="editor-control-group editor-view-group" role="group" aria-label="Frame navigation">
+          <button id="center_reset" class="ghost toolbar-icon-button" type="button" title="Fit frame to available space (0)"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
+          <button id="refresh_vals" class="ghost toolbar-icon-button refresh-feed-button" type="button" title="Refresh configuration values and advanced settings" aria-label="Refresh feed and settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6l3 6M4 12l3 6a7 7 0 0 0 11.4-3"/></svg><span class="sr-only">Refresh Feed</span></button>
+        </div>
+        <span class="editor-control-divider" role="separator" aria-orientation="vertical"></span>
+        <div class="editor-control-group editor-settings-group" role="group" aria-label="Overlay and appearance settings">
+          <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
+          <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
+          {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
+        </div>
+        <span id="mode_features" class="sr-only" aria-hidden="true"></span>
+        <div id="frame_mode" class="small status-line" hidden></div>
+      </div>
+      <div class="editor-controls-right" role="group" aria-label="Panel visibility">
+        <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button" aria-expanded="true" aria-label="Hide settings panels" title="Open the left settings menu on mobile or show/hide panels"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
+      </div>
     </div>
     <div class="workspace-main">
 <aside class="left-toolbar" aria-label="Tools">
