@@ -831,6 +831,7 @@ canvas {
   .editor-controls #frame_mode { font-size: 9px; }
 
   .workspace-main {
+    position: relative;
     display: flex !important;
     flex: 1 1 0;
     flex-direction: column;
@@ -991,9 +992,17 @@ canvas {
     overflow: hidden;
   }
   .bottom-console.console-open {
-    flex: 0 1 clamp(105px, 24dvh, 180px);
-    height: clamp(105px, 24dvh, 180px);
-    min-height: 105px;
+    /* Overlay the lower canvas instead of collapsing the main view on short screens. */
+    position: absolute;
+    z-index: 80;
+    left: 0;
+    right: 0;
+    bottom: 48px;
+    flex: 0 0 auto;
+    width: 100%;
+    height: clamp(90px, 30dvh, 165px);
+    min-height: 90px;
+    max-height: min(45dvh, 190px);
   }
   .console-titlebar {
     flex: 0 0 31px;
@@ -1151,7 +1160,10 @@ canvas {
   }
   .workspace-stage-column .workspace-statusbar { flex-basis: 24px; min-height: 24px; max-height: 24px; }
   .bottom-console { flex-basis: 27px; height: 27px; min-height: 27px; }
-  .bottom-console.console-open { flex-basis: 95px; height: 95px; min-height: 95px; }
+  .bottom-console.console-open {
+    position: absolute; left: 0; right: 0; bottom: 42px; z-index: 80;
+    flex-basis: auto; height: 95px; min-height: 95px; max-height: 130px;
+  }
   .console-titlebar { flex-basis: 25px; }
   .container .right-panel {
     top: calc(32px + env(safe-area-inset-top, 0px) + 34px);
