@@ -51,9 +51,6 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <button id="clear_selection" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg><span>Clear</span></button>
       <button id="center_reset" class="ghost toolbar-icon-button" type="button" title="Fit frame to available space (0)"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
       <button id="refresh_vals" class="ghost toolbar-icon-button refresh-feed-button" type="button" title="Refresh configuration values and advanced settings" aria-label="Refresh feed and settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6l3 6M4 12l3 6a7 7 0 0 0 11.4-3"/></svg><span class="sr-only">Refresh Feed</span></button>
-      <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
-      <input id="workspace_zoom_percent" class="zoom-percent" type="text" value="100%" aria-label="View zoom percentage" title="Type 30%–400%, then press Enter or click outside to apply" inputmode="decimal" autocomplete="off" spellcheck="false">
-      <button id="workspace_view_lock" class="ghost toolbar-icon-button view-lock-button" type="button" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg><span id="workspace_view_lock_label">Lock View</span></button>
       <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
       
       <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
@@ -90,8 +87,10 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <span id="cad_cursor_y">Y: — px</span>
       <span id="cad_cursor_u">U: — %</span>
       <span id="cad_cursor_v">V: — %</span>
-      
-      <span id="cad_selected_area" class="cad-area">Object: NONE</span>
+      <span class="workspace-status-spacer" aria-hidden="true"></span>
+      <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
+      <input id="workspace_zoom_percent" class="zoom-percent" type="text" value="100%" aria-label="View zoom percentage" title="Type 30%–400%, then press Enter or click outside to apply" inputmode="decimal" autocomplete="off" spellcheck="false">
+      <span id="cad_selected_area" class="cad-area">Object: None</span>
     </div>
 
 </div>
@@ -104,6 +103,10 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 </div>
 
 <div class="right-panel">
+<div class="side-view-controls" aria-label="Camera view controls">
+  <span class="side-view-controls-title">View</span>
+  <button id="workspace_view_lock" class="ghost toolbar-icon-button view-lock-button" type="button" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg><span id="workspace_view_lock_label">Lock View</span></button>
+</div>
 <details class="dock-panel properties-panel" open><summary class="dock-summary"><span>Properties</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
 <div class="properties-mode" id="properties_mode">RL · ROI bounds</div>
 <label class="property-field" style="margin-bottom:8px;">Object / Point<select id="prop_target"><option value="NONE">No object selected</option><option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option><option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option><option value="BEV_TL">BEV · Top Left</option><option value="BEV_TR">BEV · Top Right</option><option value="BEV_BR">BEV · Bottom Right</option><option value="BEV_BL">BEV · Bottom Left</option></select></label>
