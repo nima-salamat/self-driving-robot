@@ -86,5 +86,34 @@ class SharedMemoryCaptureReaderTests(unittest.TestCase):
         self.assertEqual(capture._last_sequence, 1)
 
 
+    def test_equal_capture_and_resize_shapes_reuse_the_single_frame_copy(self):
+        capture = SharedMemoryCapture.__new__(SharedMemoryCapture)
+        capture.frame_shape = (2, 3, 3)
+        capture.resized_shape = capture.frame_shape
+        capture._raw_nbytes = int(np.prod(capture.frame_shape))
+        capture._shared = SimpleNamespace(buf=bytearray(capture._raw_nbytes))
+        capture._lock = threading.Lock()
+        capture._frame_event = threading.Event()
+        capture._process = _AliveProcess()
+        capture._last_sequence = 0
+        capture._metadata = [
+            1.0, time.monotonic(), 24.0, 1.0, 0.0,
+            1.25, 0.0, 1.0, -1.0, -1.0,
+        ]
+
+        expected = np.arange(capture._raw_nbytes, dtype=np.uint8).reshape(
+            capture.frame_shape
+        )
+        np.ndarray(
+            capture.frame_shape, dtype=np.uint8, buffer=capture._shared.buf
+        )[:] = expected
+
+        frame, resized, state = capture.capture_frame(with_resize=True)
+
+        self.assertTrue(state["valid"])
+        np.testing.assert_array_equal(frame, expected)
+        self.assertIs(frame, resized)
+        self.assertEqual(len(capture._shared.buf), capture._raw_nbytes)
+
 if __name__ == "__main__":
     unittest.main()
