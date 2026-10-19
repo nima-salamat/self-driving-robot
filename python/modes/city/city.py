@@ -902,11 +902,31 @@ class Robot:
                         result["lane_type"],
                     )
                     if not control_ok:
+                        # Keep the vision/debug page live when steering cannot be
+                        # sent; diagnostic rendering must not depend on hardware ACKs.
+                        self.handle_debug_stream(
+                            result,
+                            frame,
+                            angle,
+                            crosswalk,
+                            "control unavailable",
+                            sign_text,
+                        )
                         self._pace_control_loop()
                         continue
                 else:
                     control_ok = self.control.set_angle(result["steering_angle"])
                     if not control_ok:
+                        # Keep the vision/debug page live when steering cannot be
+                        # sent; diagnostic rendering must not depend on hardware ACKs.
+                        self.handle_debug_stream(
+                            result,
+                            frame,
+                            angle,
+                            crosswalk,
+                            "control unavailable",
+                            sign_text,
+                        )
                         self._pace_control_loop()
                         continue
 
