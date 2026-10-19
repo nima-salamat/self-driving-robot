@@ -108,21 +108,21 @@ async function fetchDashboardJson(url, options = {}) {
 
 // Workspace Zoom Variable
 let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,frameSourceWidth=0,frameSourceHeight=0,workspaceTool='select',workspaceViewLocked=false;
-const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
+const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[],workspacePythonLogs=[];
 let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
-function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
+function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel==='api'?'api':'events');}
 let workspaceConsolePaused=false,workspaceConsoleAutoScroll=true,workspaceConsoleQuery='',workspaceConsoleLevel='ALL';
 function renderWorkspaceEventLog(channel='events'){
   if(workspaceConsolePaused)return;
-  const store=channel==='api'?workspaceApiEvents:workspaceEvents;
-  const root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;
+  const store=channel==='api'?workspaceApiEvents:channel==='python'?workspacePythonLogs:workspaceEvents;
+  const root=document.getElementById(channel==='api'?'console_api':channel==='python'?'console_python':'console_events');if(!root)return;
   root.replaceChildren();
   const query=workspaceConsoleQuery.trim().toLowerCase();
   const selected=store.slice().reverse().filter(function(entry){
     const level=String(entry.level||'info').toUpperCase();
     return (workspaceConsoleLevel==='ALL'||level===workspaceConsoleLevel)&&(!query||(String(entry.message||'')+' '+level).toLowerCase().includes(query));
   });
-  if(!selected.length){const e=document.createElement('div');e.className='console-empty';e.textContent=store.length?'No matching console entries.':channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}
+  if(!selected.length){const e=document.createElement('div');e.className='console-empty';e.textContent=store.length?'No matching console entries.':channel==='api'?'No request diagnostics yet.':channel==='python'?'No Python runtime logs yet.':'No events yet.';root.appendChild(e);}
   else for(const entry of selected){
     const row=document.createElement('div');row.className='console-entry';
     const stamp=document.createElement('span');stamp.className='console-time';
@@ -134,7 +134,7 @@ function renderWorkspaceEventLog(channel='events'){
     row.append(stamp,level,msg);root.appendChild(row);
   }
   if(workspaceConsoleAutoScroll)root.scrollTop=0;
-  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';
+  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests · '+workspacePythonLogs.length+' Python logs';
 }
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){
@@ -1286,9 +1286,11 @@ function setDock(open){
   const isNarrow=narrow();
   workspace.classList.toggle('show-dock',isNarrow&&dockIsOpen);
   workspace.classList.toggle('dock-hidden',!isNarrow&&!dockIsOpen);
-  const dockLabel=dockToggle.querySelector('#toggle_dock_label');if(dockLabel)dockLabel.textContent=dockIsOpen?'Hide Panels':'Show Panels';else dockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
+  const dockText=isNarrow?(dockIsOpen?'Close Menu':'Menu'):(dockIsOpen?'Hide Panels':'Show Panels');
+  const dockLabel=dockToggle.querySelector('#toggle_dock_label');if(dockLabel)dockLabel.textContent=dockText;else dockToggle.textContent=dockText;
   dockToggle.setAttribute('aria-expanded',String(dockIsOpen));
-  dockToggle.setAttribute('aria-label',dockIsOpen?'Hide settings panels':'Show settings panels');
+  dockToggle.setAttribute('aria-label',isNarrow?(dockIsOpen?'Close left settings menu':'Open left settings menu'):(dockIsOpen?'Hide settings panels':'Show settings panels'));
+  const drawerBackdrop=document.getElementById('settings_drawer_backdrop');if(drawerBackdrop)drawerBackdrop.hidden=!(isNarrow&&dockIsOpen);
   const menuDockToggle=document.querySelector('[data-action="toggle-properties"]');
   if(menuDockToggle)menuDockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
   window.requestAnimationFrame(()=>{syncCameraCanvasSize();renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();});
@@ -1297,19 +1299,65 @@ window.ensureStreamDockVisible=()=>setDock(true);
 dockToggle.addEventListener('click',()=>{
   const open=!dockIsOpen;
   setDock(open);
-  noteWorkspaceEvent('info','Settings dock '+(open?'shown':'hidden'));
+  noteWorkspaceEvent('info',(narrow()?'Left settings menu ':'Settings dock ')+(open?'shown':'hidden'));
 });
+const drawerBackdrop=document.getElementById('settings_drawer_backdrop');
+if(drawerBackdrop)drawerBackdrop.addEventListener('click',()=>{setDock(false);noteWorkspaceEvent('info','Left settings menu closed');});
 const shortcutDialog=document.getElementById('shortcut_dialog'),shortcutClose=document.getElementById('shortcut_close'),shortcutDone=document.getElementById('shortcut_done');
 if(shortcutClose)shortcutClose.addEventListener('click',closeStreamShortcuts);
 if(shortcutDone)shortcutDone.addEventListener('click',closeStreamShortcuts);
 if(shortcutDialog)shortcutDialog.addEventListener('click',e=>{if(e.target===shortcutDialog)closeStreamShortcuts();});
 window.addEventListener('resize',()=>setDock(dockIsOpen));
 setDock(dockIsOpen);
-function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));}
+let pythonLogPollTimer=null,pythonLogRequestInFlight=false,pythonLogsClearedAfter=0;
+async function refreshPythonLogs(){
+  if(consoleTab!=='python'||!consoleDock.classList.contains('console-open')||!syncActive||workspaceConsolePaused||pythonLogRequestInFlight)return;
+  pythonLogRequestInFlight=true;
+  try{
+    const response=await fetch('/api/logs?limit=200',{cache:'no-store'});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    const payload=await response.json();
+    const items=Array.isArray(payload.items)?payload.items:[];
+    workspacePythonLogs=items.slice().reverse()
+      .filter(entry=>Number(entry.timestamp||0)>=pythonLogsClearedAfter)
+      .map(entry=>({
+        time:new Date(Number(entry.timestamp||0)*1000),
+        level:(String(entry.level||'INFO').toUpperCase()==='WARNING'?'WARN':String(entry.level||'INFO').toUpperCase()==='CRITICAL'?'ERROR':String(entry.level||'INFO').toUpperCase()),
+        message:String(entry.logger||'python')+' · '+String(entry.message||'')
+      }));
+    renderWorkspaceEventLog('python');
+  }catch(error){
+    const root=document.getElementById('console_python');
+    if(root){root.replaceChildren();const empty=document.createElement('div');empty.className='console-empty';empty.textContent='Unable to load Python logs: '+String(error&&error.message||error);root.appendChild(empty);}
+  }finally{pythonLogRequestInFlight=false;}
+}
+function updatePythonLogPolling(){
+  const shouldPoll=consoleTab==='python'&&consoleDock.classList.contains('console-open')&&syncActive&&!workspaceConsolePaused;
+  if(shouldPoll&&!pythonLogPollTimer){refreshPythonLogs();pythonLogPollTimer=setInterval(refreshPythonLogs,2000);}
+  else if(!shouldPoll&&pythonLogPollTimer){clearInterval(pythonLogPollTimer);pythonLogPollTimer=null;}
+}
+function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));updatePythonLogPolling();}
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
-consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared',consoleTab);});
-document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{consoleTab=b.dataset.consoleTab;document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));document.getElementById('console_events').hidden=consoleTab!=='events';document.getElementById('console_api').hidden=consoleTab!=='api';renderWorkspaceEventLog(consoleTab);}));
+consoleClear.addEventListener('click',()=>{
+  if(consoleTab==='api')workspaceApiEvents=[];
+  else if(consoleTab==='python'){workspacePythonLogs=[];pythonLogsClearedAfter=Date.now()/1000+0.01;}
+  else workspaceEvents=[];
+  renderWorkspaceEventLog(consoleTab);
+  if(consoleTab==='python')noteWorkspaceEvent('info','Python log view cleared; server log history is unchanged');
+  else noteWorkspaceEvent('info','Event log cleared',consoleTab);
+});
+document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{
+  consoleTab=b.dataset.consoleTab;
+  document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));
+  document.getElementById('console_events').hidden=consoleTab!=='events';
+  document.getElementById('console_api').hidden=consoleTab!=='api';
+  document.getElementById('console_python').hidden=consoleTab!=='python';
+  if(!consoleDock.classList.contains('console-open'))setConsoleOpen(true);
+  renderWorkspaceEventLog(consoleTab);
+  updatePythonLogPolling();
+}));
 document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
+const consolePause=document.getElementById('console_pause');if(consolePause)consolePause.addEventListener('change',()=>{workspaceConsolePaused=consolePause.checked;updatePythonLogPolling();if(!workspaceConsolePaused)renderWorkspaceEventLog(consoleTab);});
 function setTool(tool){if(tool==='pan'&&workspaceViewLocked){showToast('View is locked. Unlock it to pan.');tool='select';}workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');if(typeof window.onStreamWorkspaceToolChanged==='function')window.onStreamWorkspaceToolChanged(workspaceTool);}
 window.setStreamWorkspaceTool=setTool;
 function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}
@@ -1331,7 +1379,9 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Slash'&&e.shiftKey&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();openStreamShortcuts();return;}
   if(e.code==='Escape'){
     if(document.getElementById('shortcut_dialog')?.classList.contains('is-open')){closeStreamShortcuts();return;}
-    document.querySelectorAll('.menu-group').forEach(m=>m.open=false);return;
+    document.querySelectorAll('.menu-group').forEach(m=>m.open=false);
+    if(narrow()&&dockIsOpen){setDock(false);return;}
+    return;
   }
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.code==='KeyH')setTool('pan');else if(e.code==='KeyV')setTool('select');else if(e.code==='Digit0')fitWorkspaceView();else if(e.code==='KeyO')toggleOverlays();else if(e.code==='KeyF')toggleCameraFullscreen();else if(e.code==='Equal'||e.code==='NumpadAdd')zoomBy(1.2);else if(e.code==='Minus'||e.code==='NumpadSubtract')zoomBy(1/1.2);
