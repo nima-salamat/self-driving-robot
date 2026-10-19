@@ -1319,7 +1319,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("window.syncStreamOverlayControlUI=syncOverlayControlUI", core)
         self.assertIn("window.syncStreamOverlayControlUI()", extensions)
         self.assertIn("view.viewLocked===true", extensions)
-        self.assertIn("lane_center_guide", core) is False
+        self.assertNotIn("lane_center_guide", core)
 
         # No "Live" banner is left below the canvas; frozen/paused states remain.
         self.assertNotIn("Camera frame: Live", core)
