@@ -1276,6 +1276,17 @@ class StreamApiTests(unittest.TestCase):
             "exiting Race loop cleanly",
             race_source,
         )
+        city_source = (
+            PYTHON_ROOT / "modes" / "city" / "city.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "isinstance(e, InterruptedError) and self._shutdown_requested()",
+            city_source,
+        )
+        self.assertIn(
+            "exiting City loop cleanly",
+            city_source,
+        )
         stream_source = (PYTHON_ROOT / "stream" / "__init__.py").read_text(
             encoding="utf-8"
         )
