@@ -236,9 +236,10 @@ class StreamConfigurationMixin:
             advanced[key] = normalized
         if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
                 and advanced.get("RUN_LVL", "STOP") == "MOVE"):
-            raise ValueError(
-                "motion is software-stopped; use the explicit /api/safety resume action"
-            )
+            # Undo/redo may target a snapshot from before the operator stopped
+            # the robot. Restore unrelated settings, but never let a full
+            # configuration restore implicitly resume motion.
+            advanced["RUN_LVL"] = "STOP"
         if advanced.get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False)) and advanced.get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False)):
             raise ValueError("WITH_SIGN and WITH_APRILTAG cannot both be enabled")
 
