@@ -267,7 +267,12 @@ function syncCameraCanvasSize(){
   if(!stage || !canvas)return;
   const active=isCameraStageFullscreen();
   if(button){
-    button.textContent=active?'⤢ Exit Fullscreen':'⛶ Fullscreen';
+    const label=document.getElementById('camera_fullscreen_label');
+    const expandIcon=document.getElementById('camera_fullscreen_expand_icon');
+    const collapseIcon=document.getElementById('camera_fullscreen_collapse_icon');
+    if(label)label.textContent=active?'Exit Fullscreen':'Fullscreen';
+    if(expandIcon)expandIcon.style.display=active?'none':'';
+    if(collapseIcon)collapseIcon.style.display=active?'':'none';
     button.setAttribute('aria-pressed',String(active));
     button.setAttribute('aria-label',active?'Exit camera fullscreen':'Expand camera frame to fullscreen');
     button.title=active?'Exit camera fullscreen (Esc)':'Expand camera frame to fullscreen';
