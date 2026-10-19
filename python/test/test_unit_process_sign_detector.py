@@ -68,7 +68,7 @@ class ProcessSignDetectorTests(unittest.TestCase):
                     final_frame_captured_at if value == 7 else time.monotonic()
                 )
                 latest_request_id = detector.submit(
-                    np.full((8, 10, 3), value, dtype=np.uint8),
+                    np.full((8 + value, 10, 3), value, dtype=np.uint8),
                     frame_captured_at=frame_captured_at,
                 )
                 self.assertIsNotNone(latest_request_id)
@@ -93,6 +93,8 @@ class ProcessSignDetectorTests(unittest.TestCase):
             status = detector.status()
             self.assertGreaterEqual(status["submitted"], 1)
             self.assertEqual(status["queue_depth"], 0)
+            self.assertEqual(status["frame_transport"], "shared_memory")
+            self.assertGreaterEqual(status["shared_memory_frame_bytes"], 15 * 10 * 3)
         finally:
             detector.close()
 
