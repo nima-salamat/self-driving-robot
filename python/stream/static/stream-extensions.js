@@ -1004,7 +1004,7 @@ function enableReadOnlyState(){
 function initializeResize(){
   const container=document.querySelector('.container'),panel=document.querySelector('.right-panel');if(!container||!panel)return;
   let active=false,startX=0,startWidth=315;
-  panel.addEventListener('pointerdown',function(e){const bounds=panel.getBoundingClientRect();if(e.clientX-bounds.left>7||window.innerWidth<721)return;active=true;startX=e.clientX;startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||bounds.width;panel.setPointerCapture(e.pointerId);e.preventDefault();});
+  panel.addEventListener('pointerdown',function(e){const bounds=panel.getBoundingClientRect();if(e.clientX-bounds.left>12||window.innerWidth<721||e.button!==0)return;active=true;startX=e.clientX;startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||bounds.width;panel.setPointerCapture(e.pointerId);e.preventDefault();});
   panel.addEventListener('pointermove',function(e){if(!active)return;const delta=startX-e.clientX;const width=Math.max(250,Math.min(700,startWidth+delta));container.style.setProperty('--right-pane-width',width+'px');});
   panel.addEventListener('pointerup',function(){if(!active)return;active=false;scheduleWorkspaceSave();});
   panel.addEventListener('pointercancel',function(){active=false;});
