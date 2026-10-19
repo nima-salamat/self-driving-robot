@@ -1263,4 +1263,120 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .container .right-panel { transition: none !important; }
 }
+/* Header tool groups: keep object controls left and the panel toggle anchored right. */
+.editor-controls {
+  display: flex !important;
+  align-items: center;
+  flex-wrap: nowrap !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  min-width: 0;
+}
+.editor-controls > .editor-controls-left {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex: 1 1 auto !important;
+  min-width: 0;
+  gap: 9px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.editor-control-group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  white-space: nowrap;
+}
+.editor-selection-group label {
+  white-space: nowrap;
+}
+.editor-controls #variable_select {
+  width: 190px;
+  min-width: 145px;
+  max-width: min(24vw, 260px);
+}
+.editor-control-divider {
+  display: block;
+  flex: 0 0 1px;
+  width: 1px;
+  height: 23px;
+  align-self: center;
+  background: #344457;
+  opacity: .9;
+  margin: 0 1px;
+}
+.editor-controls > .editor-controls-right {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: stretch;
+  margin-left: auto;
+  padding-left: 11px;
+  border-left: 1px solid #344457;
+  background: var(--panel, #101923);
+  position: relative;
+  z-index: 2;
+}
+.editor-controls-right #toggle_dock_btn {
+  margin-left: 0 !important;
+  min-width: 112px;
+  justify-content: center;
+  white-space: nowrap;
+}
+@media (max-width: 980px) {
+  .editor-controls > .editor-controls-left {
+    gap: 6px;
+  }
+  .editor-controls #variable_select {
+    width: 166px;
+    min-width: 138px;
+    max-width: 30vw;
+  }
+  .editor-controls-right #toggle_dock_btn {
+    min-width: 98px;
+  }
+}
+@media (max-width: 720px) {
+  .editor-controls {
+    overflow: hidden !important;
+    padding-bottom: 0;
+  }
+  .editor-controls > .editor-controls-left {
+    flex: 1 1 0 !important;
+    gap: 6px;
+    padding-right: 7px;
+    scrollbar-width: thin;
+  }
+  .editor-controls #variable_select {
+    width: 152px;
+    min-width: 140px;
+    max-width: none;
+  }
+  .editor-control-group {
+    gap: 4px;
+  }
+  .editor-controls > .editor-controls-right {
+    flex: 0 0 auto;
+    margin-left: 0;
+    padding-left: 7px;
+  }
+  .editor-controls-right #toggle_dock_btn {
+    min-width: 40px;
+    width: auto;
+    padding: 0 7px;
+  }
+  .editor-controls-right #toggle_dock_label {
+    font-size: 10px;
+  }
+  .editor-control-divider {
+    height: 20px;
+    opacity: .7;
+  }
+}
 
