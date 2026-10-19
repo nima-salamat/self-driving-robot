@@ -20,7 +20,7 @@ const STREAM_VIEW_ONLY_ACTIONS = new Set([
     'freeze', 'unfreeze', 'help'
 ]);
 const STREAM_VIEW_ONLY_IDS = new Set([
-    'refresh_vals', 'toggle_dock_btn', 'camera_fullscreen_btn',
+    'refresh_vals', 'toggle_dock_btn', 'camera_fullscreen_btn', 'freeze_btn', 'unfreeze_btn',
     'workspace_view_lock', 'workspace_zoom', 'variable_select', 'clear_selection',
     'center_reset', 'prop_target', 'prop_revert_btn', 'tool_overlays_btn',
     'show_rects', 'console_toggle_btn', 'console_clear_btn', 'console_filter',
