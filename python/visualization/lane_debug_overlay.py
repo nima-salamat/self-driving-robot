@@ -25,10 +25,10 @@ def resolve_visual_steering_angle(config, controller_angle, vision_angle):
     The current controller/PID path uses the last successfully applied servo
     angle. Legacy/direct-angle paths continue to show the detector's target.
     """
-    use_controller = (
-        bool(getattr(config, "USE_PID", False))
-        and not bool(getattr(config, "OLD_METHOD", False))
-    )
+    # OLD_METHOD selects the legacy angle calculation. In every newer
+    # path, visualize the controller's last successfully applied angle,
+    # whether it came from PID error or a direct detector target.
+    use_controller = not bool(getattr(config, "OLD_METHOD", False))
     if use_controller:
         return _finite_number(controller_angle)
     return _finite_number(vision_angle)
@@ -193,6 +193,9 @@ def _draw_blsf(canvas, data):
         points = points[valid]
         if len(points) > 1:
             cv2.polylines(canvas, [points], False, (0, 255, 0), 2, cv2.LINE_AA)
+
+    center_x = int(round(width / 2.0))
+    cv2.line(canvas, (center_x, 0), (center_x, height), (0, 0, 255), 1, cv2.LINE_AA)
 
     source_center = _finite_number(data.get("lane_center_x"))
     if source_center is not None:
