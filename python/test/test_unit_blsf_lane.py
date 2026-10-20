@@ -34,6 +34,7 @@ class BLSFLaneDetectorTests(unittest.TestCase):
             np.zeros((120, 160, 3), dtype=np.uint8)
         )
 
+        self.assertIsNone(result["debug"])
         self.assertFalse(result["perception_valid"])
         self.assertEqual(result["lane_type"], "none")
         self.assertEqual(result["lane_detector"], "blsf-beta")

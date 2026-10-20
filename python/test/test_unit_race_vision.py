@@ -54,5 +54,36 @@ class RaceVisionLineExtractionTests(unittest.TestCase):
             VisionProcessor._extract_line(np.array([10, 20, 30], dtype=np.int32))
 
 
+
+class RaceVisionDebugOverlayTests(unittest.TestCase):
+    def test_lane_overlay_rendering_lives_outside_the_vision_processor(self):
+        vision_source = (
+            PYTHON_ROOT / "vision" / "race_vision_processing.py"
+        ).read_text(encoding="utf-8")
+        overlay_source = (
+            PYTHON_ROOT / "visualization" / "lane_debug_overlay.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"kind": "classical"', vision_source)
+        self.assertIn('"lane_center_offset_px": float(lane_center)', vision_source)
+        self.assertNotIn("cv2.line(", vision_source)
+        self.assertNotIn("cv2.putText(", vision_source)
+        self.assertIn('label = "Candidate:"', overlay_source)
+        self.assertIn("lane_center_offset_px", overlay_source)
+        self.assertIn("steering_marker_x", overlay_source)
+
+    def test_debug_payload_is_none_when_debug_and_stream_are_disabled(self):
+        import modes.race.config_race as race_config
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        with patch.object(race_config, "DEBUG", False), patch.object(
+            race_config, "STREAM", False
+        ):
+            result = VisionProcessor().detect(frame)
+
+        self.assertIsNone(result["debug"])
+
+
 if __name__ == "__main__":
     unittest.main()

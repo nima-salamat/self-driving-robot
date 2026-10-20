@@ -10,7 +10,13 @@ DEFAULT_WINDOW_SIZE = 240
 class RuntimeMetrics:
     """Low-overhead runtime measurements for the control process."""
 
-    _TIMERS = ("loop", "camera", "perception", "control", "serial")
+    _TIMERS = (
+        "loop", "camera", "perception", "control", "serial",
+        "lane", "confidence", "sign_submit", "sign_consume",
+        "sign_latency", "sign_input_age",
+        "object", "apriltag", "traffic_light", "debug_stream", "camera_wait",
+        "frame_age", "rate_wait",
+    )
 
     def __init__(self, window_size=DEFAULT_WINDOW_SIZE):
         self.window_size = max(10, int(window_size))
@@ -66,6 +72,10 @@ class RuntimeMetrics:
 
     def record_control(self, duration_ms):
         self._record_timing("control", duration_ms)
+
+    def record_stage(self, name, duration_ms):
+        """Record a named pipeline stage without changing the core counters."""
+        self._record_timing(str(name), duration_ms)
 
     def record_serial(self, duration_ms, success):
         with self._lock:

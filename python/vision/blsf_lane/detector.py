@@ -648,105 +648,6 @@ class BLSFLaneDetector:
         self.last_error = error
         return int(round(target)), float(error)
 
-    def _debug_frame(
-        self,
-        frame,
-        left_model,
-        right_model,
-        lane_center,
-        lane_type,
-        crosswalk,
-        crosswalk_lines,
-        crosswalk_roi,
-    ):
-        vis = frame.copy()
-        height, width = vis.shape[:2]
-        y_values = np.arange(
-            height,
-            dtype=np.float32,
-        )
-
-        for model in (left_model, right_model):
-            if model is None:
-                continue
-
-            x_values = np.polyval(
-                model,
-                y_values,
-            )
-            points = np.column_stack(
-                (x_values, y_values)
-            ).astype(np.int32)
-
-            valid = (
-                (points[:, 0] >= 0)
-                & (points[:, 0] < width)
-                & (points[:, 1] >= 0)
-                & (points[:, 1] < height)
-            )
-            points = points[valid]
-
-            if len(points) > 1:
-                cv2.polylines(
-                    vis,
-                    [points],
-                    False,
-                    (0, 255, 0),
-                    2,
-                )
-
-        center_x = int(width / 2)
-        cv2.line(
-            vis,
-            (center_x, 0),
-            (center_x, height),
-            (0, 0, 255),
-            1,
-        )
-        cv2.line(
-            vis,
-            (int(lane_center), 0),
-            (int(lane_center), height),
-            (255, 0, 255),
-            1,
-        )
-
-        top, bottom, left, right = crosswalk_roi
-        cv2.rectangle(
-            vis,
-            (left, top),
-            (right, bottom),
-            (0, 255, 255),
-            1,
-        )
-
-        for line in crosswalk_lines:
-            x0, y0, x1, y1 = line[0]
-            cv2.line(
-                vis,
-                (left + int(x0), top + int(y0)),
-                (left + int(x1), top + int(y1)),
-                (0, 255, 255),
-                2,
-            )
-
-        cv2.putText(
-            vis,
-            (
-                f"BLSF-BETA lane={lane_type} "
-                f"error={self.last_error:.1f} "
-                f"crosswalk={crosswalk}"
-            ),
-            (10, 24),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (255, 255, 255),
-            1,
-            cv2.LINE_AA,
-        )
-
-        return vis
-
     def detect(self, frame, debug_frame=None):
         started = time.monotonic()
 
@@ -757,7 +658,7 @@ class BLSFLaneDetector:
                 "lane_type": "none",
                 "perception_valid": False,
                 "crosswalk": False,
-                "debug": {"combined": None, "cw_draw": None},
+                "debug": None,
                 "kp": 0,
                 "lane_detector": "blsf-beta",
                 "lane_latency_ms": 0.0,
@@ -832,32 +733,31 @@ class BLSFLaneDetector:
             self._detect_crosswalk(bev)
         )
 
-        debug = {
-            "combined": None,
-            "cw_draw": None,
-            "binary": binary,
-            "histogram": histogram,
-            "segments": segments,
-            "selected_angle_band": band,
-            "angle_votes": votes,
-            "left_model": left_model,
-            "right_model": right_model,
-        }
-
-        if (
-            self._cfg("DEBUG", False)
-            or self._cfg("STREAM", False)
-        ):
-            debug["combined"] = self._debug_frame(
-                bev,
-                left_model,
-                right_model,
-                lane_center,
-                lane_type,
-                crosswalk,
-                crosswalk_lines,
-                crosswalk_roi,
-            )
+        debug = None
+        if self._cfg("DEBUG", False) or self._cfg("STREAM", False):
+            debug = {
+                "combined": bev.copy(),
+                "draw_data": {
+                    "kind": "blsf",
+                    "frame_width": int(bev.shape[1]),
+                    "frame_height": int(bev.shape[0]),
+                    "left_model": left_model,
+                    "right_model": right_model,
+                    "lane_center_x": lane_center,
+                    "lane_type": lane_type,
+                    "crosswalk": crosswalk,
+                    "crosswalk_lines": crosswalk_lines,
+                    "crosswalk_roi": crosswalk_roi,
+                    "lane_error": self.last_error,
+                },
+                "binary": binary,
+                "histogram": histogram,
+                "segments": segments,
+                "selected_angle_band": band,
+                "angle_votes": votes,
+                "left_model": left_model,
+                "right_model": right_model,
+            }
 
         return {
             "steering_angle": steering_angle,

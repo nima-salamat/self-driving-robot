@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <title>Editor Self Driving Robot</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 
 
 
@@ -40,38 +40,50 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <div class="container">
   <div class="card">
     <div class="controls editor-controls" aria-label="Editor controls">
-      <label class="small" for="variable_select">Select Object</label>
-      <select id="variable_select" aria-label="Select logical object">
-        <option value="NONE">No object selected</option>
-        <option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option>
-        <option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option>
-        <option value="BEV_TL">BEV Control Point · Top Left</option><option value="BEV_TR">BEV Control Point · Top Right</option>
-        <option value="BEV_BR">BEV Control Point · Bottom Right</option><option value="BEV_BL">BEV Control Point · Bottom Left</option>
-      </select>
-      <button id="clear_selection" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg><span>Clear</span></button>
-      <button id="center_reset" class="ghost toolbar-icon-button" type="button" title="Fit frame to available space (0)"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
-      <button id="refresh_vals" class="ghost toolbar-icon-button refresh-feed-button" type="button" title="Refresh configuration values and advanced settings" aria-label="Refresh feed and settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6l3 6M4 12l3 6a7 7 0 0 0 11.4-3"/></svg><span class="sr-only">Refresh Feed</span></button>
-      <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
-      <input id="workspace_zoom_percent" class="zoom-percent" type="text" value="100%" aria-label="View zoom percentage" title="Type 30%–400%, then press Enter or click outside to apply" inputmode="decimal" autocomplete="off" spellcheck="false">
-      <button id="workspace_view_lock" class="ghost toolbar-icon-button view-lock-button" type="button" aria-pressed="false" aria-label="Lock zoom and camera position" title="Lock zoom and camera position"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg><span id="workspace_view_lock_label">Lock View</span></button>
-      <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
-      
-      <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
-      <span id="mode_features" class="sr-only" aria-hidden="true"></span>
-      <div id="frame_mode" class="small status-line">Mode: Live</div>
-      {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
-      <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button" aria-expanded="true" aria-label="Hide settings panels" title="Show or hide the right-side panels"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
+      <div class="editor-controls-left" role="group" aria-label="Object selection and frame tools">
+        <div class="editor-control-group editor-selection-group">
+          <label class="small" for="variable_select">Select Object</label>
+          <select id="variable_select" aria-label="Select logical object">
+            <option value="NONE">No object selected</option>
+            <option value="RL">Right Lane ROI (RL)</option><option value="LL">Left Lane ROI (LL)</option>
+            <option value="CW">Crosswalk ROI (CW)</option><option value="ST">Sign / Tag ROI (ST)</option><option value="OBJ">Object ROI (OBJ)</option>
+            <option value="BEV_TL">BEV Control Point · Top Left</option><option value="BEV_TR">BEV Control Point · Top Right</option>
+            <option value="BEV_BR">BEV Control Point · Bottom Right</option><option value="BEV_BL">BEV Control Point · Bottom Left</option>
+          </select>
+          <button id="clear_selection" class="ghost toolbar-icon-button" type="button"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg><span>Clear</span></button>
+        </div>
+        <span class="editor-control-divider" role="separator" aria-orientation="vertical"></span>
+        <div class="editor-control-group editor-view-group" role="group" aria-label="Frame navigation">
+          <button id="center_reset" class="ghost toolbar-icon-button" type="button" title="Fit frame to available space (0)"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/></svg><span>Fit View</span></button>
+          <button id="refresh_vals" class="ghost toolbar-icon-button refresh-feed-button" type="button" title="Refresh configuration values and advanced settings" aria-label="Refresh feed and settings"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6l3 6M4 12l3 6a7 7 0 0 0 11.4-3"/></svg><span class="sr-only">Refresh Feed</span></button>
+        </div>
+        <span class="editor-control-divider" role="separator" aria-orientation="vertical"></span>
+        <div class="editor-control-group editor-settings-group" role="group" aria-label="Overlay and appearance settings">
+          <label class="small editor-overlay-toggle">ROI Overlays <input id="show_rects" type="checkbox" checked></label>
+          <button id="roi_settings_open" type="button" class="ghost toolbar-icon-button" title="Grid, snap and ROI appearance"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--panel)" /><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="11" cy="18" r="2" fill="var(--panel)"/></svg><span>Settings</span></button>
+          {% if encoder_map_enabled %}<a class="encoder-map-link" href="/encoder-map">Odometry Map ↗</a>{% endif %}
+        </div>
+        <span id="mode_features" class="sr-only" aria-hidden="true"></span>
+        <div id="frame_mode" class="small status-line" hidden></div>
+      </div>
+      <div class="editor-controls-right" role="group" aria-label="Panel visibility">
+        <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button" aria-expanded="true" aria-label="Hide settings panels" title="Open the left settings menu on mobile or show/hide panels"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
+      </div>
     </div>
     <div class="workspace-main">
 <aside class="left-toolbar" aria-label="Tools">
-<button type="button" class="tool-button" data-tool="select" aria-pressed="true" title="Select / Edit ROI (V)">↖<span class="tool-tip">Select / Edit ROI · V</span></button>
-<button type="button" class="tool-button" data-tool="pan" aria-pressed="false" title="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" data-action="zoom-in" title="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
-<button type="button" class="tool-button" data-action="zoom-out" title="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
-<button type="button" class="tool-button" data-action="fit-view" title="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" title="Toggle overlays (O)">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
-<button type="button" class="tool-button" data-action="properties" title="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
-<button type="button" class="tool-button" data-action="toggle-console" aria-label="Toggle Event Console" title="Recent events console (Ctrl+Backtick)"><svg class="toolbar-icon toolbar-icon-console" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span class="tool-tip">Event Console · Ctrl+Backtick</span></button></aside>
+<button type="button" class="tool-button" data-tool="select" aria-pressed="true" aria-label="Select / Edit ROI (V)">↖<span class="tool-tip">Select / Edit ROI · V</span></button>
+<button type="button" class="tool-button" data-tool="pan" aria-pressed="false" aria-label="Pan view (H); middle mouse also pans">✋<span class="tool-tip">Hand / Pan · H · Middle mouse</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="zoom-in" aria-label="Zoom in (+)">＋<span class="tool-tip">Zoom In · +</span></button>
+<button type="button" class="tool-button" data-action="zoom-out" aria-label="Zoom out (-)">−<span class="tool-tip">Zoom Out · -</span></button>
+<button type="button" class="tool-button view-lock-button" id="workspace_view_lock" aria-pressed="false" aria-label="Lock zoom and camera position">
+  <svg class="toolbar-icon view-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path id="workspace_lock_shackle" d="M7 10V7a5 5 0 0 1 9.5-2"/><circle cx="12" cy="15" r="1.25" fill="currentColor" stroke="none"/></svg>
+  <span id="workspace_view_lock_label" class="tool-tip">Lock View</span>
+</button>
+<button type="button" class="tool-button" data-action="fit-view" aria-label="Fit view (0)">⌗<span class="tool-tip">Fit / Reset View · 0</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" id="tool_overlays_btn" aria-pressed="true" aria-label="Show ROI overlays">◉<span class="tool-tip">Show / Hide Overlays · O</span></button>
+<button type="button" class="tool-button" data-action="properties" aria-label="Properties panel">☷<span class="tool-tip">Properties Panel</span></button><div class="tool-separator"></div>
+<button type="button" class="tool-button" data-action="toggle-console" aria-label="Open Event Console" aria-pressed="false"><svg class="toolbar-icon toolbar-icon-console" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span class="tool-tip">Event Console · Ctrl+Backtick</span></button></aside>
 <div class="workspace-stage-column">
     <div id="active_tool_banner" class="active-tool-banner" hidden role="status" aria-live="polite">
       <span class="active-tool-dot" aria-hidden="true"></span>
@@ -81,7 +93,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <button type="button" id="active_tool_cancel" title="Exit active tool" aria-label="Exit active tool">×</button>
     </div>
     <div id="canvas_stage" class="canvas-stage">
-      <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen">⛶ Fullscreen</button>
+      <button id="camera_fullscreen_btn" class="canvas-fullscreen-btn" type="button" aria-label="Expand camera frame to fullscreen" aria-pressed="false" title="Expand camera frame to fullscreen"><svg class="toolbar-icon canvas-fullscreen-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path id="camera_fullscreen_expand_icon" d="M8 3H3v5M3 3l6 6M16 3h5v5m0-5-6 6M8 21H3v-5m0 5 6-6m8 6h4v-5m0 5-6-6"/><path id="camera_fullscreen_collapse_icon" d="M8 3v5H3M21 8h-5V3M3 16h5v5M16 21v-5h5" style="display:none"/></svg><span id="camera_fullscreen_label">Fullscreen</span></button>
       <canvas id="video_canvas" width="900" height="600"></canvas>
       <svg id="ext_precision_overlay" aria-hidden="true" focusable="false"></svg>
     </div>
@@ -90,19 +102,23 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <span id="cad_cursor_y">Y: — px</span>
       <span id="cad_cursor_u">U: — %</span>
       <span id="cad_cursor_v">V: — %</span>
-      
-      <span id="cad_selected_area" class="cad-area">Object: NONE</span>
+      <span class="workspace-status-spacer" aria-hidden="true"></span>
+      <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
+      <input id="workspace_zoom_percent" class="zoom-percent" type="text" value="100%" aria-label="View zoom percentage" title="Type 30%–400%, then press Enter or click outside to apply" inputmode="decimal" autocomplete="off" spellcheck="false">
+      <span id="cad_selected_area" class="cad-area">Object: None</span>
     </div>
 
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
-<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><button class="console-tab" type="button" data-console-tab="python" aria-selected="false">Python Log</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
 <div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
 <div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
+<div class="console-body" id="console_python" role="log" aria-live="off" hidden><div class="console-empty">Select Python Log to load recent runtime logs.</div></div>
 </section>
 </div>
 </div>
 
+<button type="button" class="settings-drawer-backdrop" id="settings_drawer_backdrop" aria-label="Close settings menu" hidden></button>
 <div class="right-panel">
 <details class="dock-panel properties-panel" open><summary class="dock-summary"><span>Properties</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
 <div class="properties-mode" id="properties_mode">RL · ROI bounds</div>

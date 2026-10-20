@@ -217,6 +217,31 @@ def parse_args(argv=None):
     )
 
     parser.add_argument(
+        "--multiprocess-camera",
+        "--multiprocess",
+        dest="multiprocess_camera",
+        action="store_true",
+        default=False,
+        help=(
+            "Experimental: isolate camera capture and traffic-sign inference in "
+            "separate processes. Camera frames use a shared-memory latest-frame "
+            "slot; sign inference replaces queued frames instead of building a "
+            "backlog. Disabled by default."
+        ),
+    )
+
+    parser.add_argument(
+        "--sign-intra-op-threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "CPU thread budget for ONNX traffic-sign inference in multiprocessing "
+            "mode (default: 2); requires --multiprocess."
+        ),
+    )
+
+    parser.add_argument(
         "--camera-mode",
         choices=["picam", "webcam", "opencv"],
         default=None,

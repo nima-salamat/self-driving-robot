@@ -1,4 +1,6 @@
+import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -10,7 +12,7 @@ PYTHON_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from stream import WebStreamer, publish_debug_frame
+from stream import WebStreamer, publish_camera_frame_fallback, publish_debug_frame
 
 
 class StreamApiTests(unittest.TestCase):
@@ -154,6 +156,17 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn('data-action="exit-stream"', rendered_html)
         self.assertIn("Exit · Stop Stream Server…", rendered_html)
 
+    def test_fullscreen_exit_uses_a_complete_minimize_icon(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'd="M8 3v5H3M21 8h-5V3M3 16h5v5M16 21v-5h5"',
+            template,
+        )
+        self.assertIn("collapseIcon.style.display=active?'':'none'", core)
+
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
         core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
@@ -170,6 +183,27 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("function setWorkspaceViewLocked(locked,log=true,persist=true)", core)
         self.assertIn('id="workspace_zoom_percent" class="zoom-percent" type="text"', template)
         self.assertIn('aria-label="View zoom percentage"', template)
+        # Zoom controls live in the camera footer, while View Lock is a camera-tool action.
+        self.assertGreater(template.index('id="workspace_zoom_percent"'), template.index('class="workspace-statusbar"'))
+        self.assertGreater(template.index('id="cad_selected_area"'), template.index('id="workspace_zoom_percent"'))
+        tool_start = template.index('<aside class="left-toolbar"')
+        tool_end = template.index('</aside>', tool_start)
+        lock_pos = template.index('id="workspace_view_lock"')
+        self.assertGreater(lock_pos, tool_start)
+        self.assertLess(lock_pos, tool_end)
+        self.assertLess(lock_pos, template.index('data-action="fit-view"', tool_start))
+        self.assertEqual(template.count('id="workspace_view_lock"'), 1)
+        self.assertEqual(template.count('id="workspace_lock_shackle"'), 1)
+        self.assertIn('view-lock-icon', template)
+        self.assertNotIn('side-view-controls', template)
+        self.assertIn('Object: None', template)
+        self.assertIn('viewport-fit=cover', template)
+        self.assertIn('.app-menubar .command-launch-button', css)
+        self.assertIn('.app-menubar .stream-auth-menu button', css)
+        self.assertIn('Mobile workspace: keep every tool reachable', css)
+        self.assertIn('Landscape phones have little vertical room', css)
+        self.assertIn('.left-toolbar .view-lock-button', css)
+        self.assertIn('overscroll-behavior: none', css)
         self.assertIn(r"raw.match(/^(?:([0-9]+(?:\.[0-9]*)?)|(\.[0-9]+))\s*%?$/)", core)
         self.assertIn("zoomPercentInput.addEventListener('focus',function(){this.select();})", core)
         self.assertIn("zoomPercentInput.addEventListener('blur',applyWorkspaceZoomPercent)", core)
@@ -249,7 +283,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn('id="workspace_view_lock"', template)
         self.assertIn('id="workspace_lock_shackle"', template)
         self.assertIn(".view-lock-button.is-locked", css)
-        self.assertGreater(template.index('id="workspace_view_lock"'), template.index('id="workspace_zoom_percent"'))
+        self.assertGreater(template.index('id="workspace_view_lock"'), template.index('data-tool="pan"'))
+        self.assertGreater(template.index('id="workspace_zoom_percent"'), template.index('class="workspace-statusbar"'))
         self.assertGreater(template.index('id="ext_open_palette"'), template.index('id="menu_live_status"'))
         self.assertIn("@keyframes paletteSettingFlash", css)
         self.assertIn('id="shortcut_dialog"', template)
@@ -599,6 +634,88 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(history.status_code, 200)
             self.assertGreaterEqual(len(history.get_json()["items"]), 1)
 
+    def test_full_config_restore_preserves_active_cli_fps_above_live_edit_limit(self):
+        import copy
+        import tempfile
+        from unittest.mock import Mock
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        rate = types.SimpleNamespace(
+            target_fps=100.0,
+            set_target_fps=Mock(),
+        )
+        config.processing_rate_controller = rate
+        config.TARGET_PROCESSING_FPS = 100.0
+        client = WebStreamer(config).app.test_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            original = client.get("/api/config/full").get_json()
+            changed = copy.deepcopy(original)
+            changed["values"]["RL_TOP_ROI"] = 0.25
+
+            applied = client.post("/api/config/full", json=changed)
+            self.assertEqual(applied.status_code, 200, applied.get_data(as_text=True))
+            self.assertEqual(config.RL_TOP_ROI, 0.25)
+
+            # This simulates Undo: the previous full snapshot includes the
+            # startup target FPS, even though Stream only allows live edits
+            # from 1..60. Restoring an unrelated ROI must not try to reset FPS.
+            restored = client.post("/api/config/full", json=original)
+            self.assertEqual(restored.status_code, 200, restored.get_data(as_text=True))
+            self.assertEqual(config.RL_TOP_ROI, original["values"].get("RL_TOP_ROI", 0.0))
+            self.assertEqual(rate.target_fps, 100.0)
+            rate.set_target_fps.assert_not_called()
+
+    def test_full_config_rejects_out_of_range_fps_import_when_it_would_change_runtime(self):
+        import copy
+        from unittest.mock import Mock
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        rate = types.SimpleNamespace(
+            target_fps=30.0,
+            set_target_fps=Mock(),
+        )
+        config.processing_rate_controller = rate
+        config.TARGET_PROCESSING_FPS = 30.0
+        client = WebStreamer(config).app.test_client()
+
+        payload = client.get("/api/config/full").get_json()
+        foreign = copy.deepcopy(payload)
+        foreign["runtime"]["target_processing_fps"] = 100.0
+
+        response = client.post("/api/config/full", json=foreign)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("only be preserved unchanged", response.get_json()["message"])
+        rate.set_target_fps.assert_not_called()
+
+    def test_full_config_undo_restores_settings_without_resuming_software_stop(self):
+        import copy
+        import tempfile
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RUN_LVL = "MOVE"
+        client = WebStreamer(config).app.test_client()
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            before_stop = client.get("/api/config/full").get_json()
+            changed = copy.deepcopy(before_stop)
+            changed["values"]["RL_TOP_ROI"] = 0.25
+            applied = client.post("/api/config/full", json=changed)
+            self.assertEqual(applied.status_code, 200, applied.get_data(as_text=True))
+
+            # Simulate the operator pressing Force Stop after the edit. Undo
+            # must restore the ROI but may not clear the safety stop.
+            config.RUN_LVL = "STOP"
+            restored = client.post("/api/config/full", json=before_stop)
+            self.assertEqual(restored.status_code, 200, restored.get_data(as_text=True))
+            result = restored.get_json()["config"]
+            self.assertEqual(result["values"]["RL_TOP_ROI"], before_stop["values"].get("RL_TOP_ROI", 0.0))
+            self.assertEqual(result["advanced"]["RUN_LVL"], "STOP")
+            self.assertEqual(config.RUN_LVL, "STOP")
+
     def test_full_config_rejects_wrong_mode_and_non_finite_roi(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
@@ -738,7 +855,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertIn("[REDACTED]", serialized)
 
-    def test_config_import_and_advanced_edit_cannot_bypass_software_stop(self):
+    def test_config_restore_preserves_software_stop_but_advanced_edit_cannot_resume(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
         config.RUN_LVL = "STOP"
@@ -747,14 +864,15 @@ class StreamApiTests(unittest.TestCase):
         payload = client.get("/api/config/full").get_json()
         payload["advanced"]["RUN_LVL"] = "MOVE"
         imported = client.post("/api/config/full", json=payload)
-        self.assertEqual(imported.status_code, 400)
+        self.assertEqual(imported.status_code, 200, imported.get_data(as_text=True))
+        self.assertEqual(imported.get_json()["config"]["advanced"]["RUN_LVL"], "STOP")
         self.assertEqual(config.RUN_LVL, "STOP")
 
         edited = client.post("/set_advanced", json={"RUN_LVL": "MOVE"})
         self.assertEqual(edited.status_code, 409)
         self.assertEqual(config.RUN_LVL, "STOP")
 
-        # The dedicated software-safety action remains the explicit resume path.
+        # Only the dedicated software-safety action may explicitly resume motion.
         resumed = client.post("/api/safety", json={"action": "resume"})
         self.assertEqual(resumed.status_code, 200)
         self.assertEqual(config.RUN_LVL, "MOVE")
@@ -1079,6 +1197,46 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertIn("no-store", response.headers["Cache-Control"])
 
+    def test_camera_fallback_publishes_a_preview_before_debug_overlay_exists(self):
+        import cv2
+
+        config = self.make_config()
+        config.debug_frames_list = []
+        config.stream_frame_seq = 0
+        config.stream_frame_timestamps = []
+        camera_frame = np.empty((24, 36, 3), dtype=np.uint8)
+        camera_frame[:] = (17, 73, 129)
+
+        # A fresh annotated frame is preferred, but the first valid camera
+        # frame must be visible even before debug overlay generation finishes.
+        self.assertTrue(publish_camera_frame_fallback(config, camera_frame))
+        self.assertEqual(config.stream_frame_seq, 1)
+
+        response = WebStreamer(config).app.test_client().get("/video_feed_frame")
+        self.assertEqual(response.status_code, 200)
+        decoded = cv2.imdecode(
+            np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        self.assertIsNotNone(decoded)
+        self.assertLessEqual(
+            int(np.max(np.abs(decoded[0, 0].astype(np.int16) - np.array([17, 73, 129])))),
+            2,
+        )
+
+    def test_camera_fallback_does_not_replace_a_fresh_debug_frame(self):
+        config = self.make_config()
+        config.debug_frames_list = []
+        config.stream_frame_seq = 0
+        config.stream_frame_timestamps = []
+        debug_frame = np.full((20, 30, 3), 211, dtype=np.uint8)
+        publish_debug_frame(config, debug_frame)
+        original_sequence = config.stream_frame_seq
+
+        camera_frame = np.zeros((20, 30, 3), dtype=np.uint8)
+        self.assertFalse(publish_camera_frame_fallback(config, camera_frame))
+        self.assertEqual(config.stream_frame_seq, original_sequence)
+        np.testing.assert_array_equal(config.debug_frames_list[-1][0, 0], [211, 211, 211])
+
     def test_stream_jpeg_quality_api_updates_cached_and_live_encoders(self):
         import cv2
 
@@ -1199,6 +1357,152 @@ class StreamApiTests(unittest.TestCase):
             manual_ui,
         )
 
+
+
+    def test_python_log_console_uses_runtime_logs_and_has_a_dedicated_tab(self):
+        import stream
+        import time
+
+        entry = {
+            "timestamp": time.time(),
+            "level": "ERROR",
+            "logger": "modes.race.race",
+            "message": "unit-python-log-console-regression",
+        }
+        with stream._STREAM_LOG_LOCK:
+            stream._STREAM_LOGS.append(entry)
+        try:
+            response = WebStreamer(self.make_config()).app.test_client().get(
+                "/api/logs?limit=20&q=unit-python-log-console-regression"
+            )
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(any(
+                item.get("message") == entry["message"]
+                for item in payload.get("items", [])
+            ))
+        finally:
+            with stream._STREAM_LOG_LOCK:
+                try:
+                    stream._STREAM_LOGS.remove(entry)
+                except ValueError:
+                    pass
+
+        stream_dir = PYTHON_ROOT / "stream"
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+        self.assertIn('data-console-tab="python"', template)
+        self.assertIn('id="console_python"', template)
+        self.assertIn("fetch('/api/logs?limit=200'", core)
+        self.assertIn("workspacePythonLogs", core)
+        self.assertIn("console_python').hidden=consoleTab!=='python'", core)
+        self.assertIn('id="settings_drawer_backdrop"', template)
+        self.assertIn("left: max(4px, env(safe-area-inset-left, 0px))", css)
+        self.assertIn("Mobile polish: a true left-side settings drawer", css)
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("['events','api','python'].forEach(renderWorkspaceEventLog)", extensions)
+        self.assertIn("python_logs:workspacePythonLogs", extensions)
+
+    def test_ctrl_c_interrupted_shared_camera_wait_is_not_marked_as_runtime_fault(self):
+        race_source = (
+            PYTHON_ROOT / "modes" / "race" / "race.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "isinstance(e, InterruptedError) and self._shutdown_requested()",
+            race_source,
+        )
+        self.assertIn(
+            "exiting Race loop cleanly",
+            race_source,
+        )
+        city_source = (
+            PYTHON_ROOT / "modes" / "city" / "city.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "isinstance(e, InterruptedError) and self._shutdown_requested()",
+            city_source,
+        )
+        self.assertIn(
+            "exiting City loop cleanly",
+            city_source,
+        )
+        stream_source = (PYTHON_ROOT / "stream" / "__init__.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "Stream dashboard closed; HTTP server socket released",
+            stream_source,
+        )
+
+
+    def test_toolbar_active_state_tooltips_and_view_permissions_stay_in_sync(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        # The same toolbar pressed-state styling is used by Pan/Select and Console.
+        self.assertIn("toolButton.setAttribute('aria-pressed',String(visible))", core)
+        self.assertIn('.tool-button[aria-pressed="true"]', css)
+        self.assertIn("button.removeAttribute('title')", core)
+        self.assertIn("button.querySelector('.tool-tip')", core)
+        self.assertIn("window.syncStreamOverlayControlUI=syncOverlayControlUI", core)
+        self.assertIn("window.syncStreamOverlayControlUI()", extensions)
+        self.assertIn("view.viewLocked===true", extensions)
+        self.assertNotIn("lane_center_guide", core)
+
+        # No "Live" banner is left below the canvas; frozen/paused states remain.
+        self.assertNotIn("Camera frame: Live", core)
+        self.assertIn("frameModeDisplay.hidden = !paused && !isFrozen", core)
+        self.assertIn("Frozen frame · precise tuning", core)
+
+        # Login and write permission are separate: readonly mode disables writes
+        # immediately while keeping visual inspection controls available.
+        self.assertIn("syncStreamPermissionUI();", core)
+        self.assertIn("document.documentElement.dataset.streamControlPermission=permission", core)
+        self.assertIn("'show_rects'", core)
+        self.assertIn("'ext_overlays'", core)
+        self.assertIn("Read-only dashboard: runtime/configuration changes are disabled", core)
+        toolbar = template.split('<aside class="left-toolbar"', 1)[1].split("</aside>", 1)[0]
+        self.assertNotIn("title=", toolbar)
+        self.assertIn('aria-label="Show ROI overlays"', toolbar)
+        self.assertIn('aria-label="Open Event Console" aria-pressed="false"', toolbar)
+        self.assertIn('id="frame_mode" class="small status-line" hidden></div>', template)
+
+
+    def test_header_controls_stay_left_while_panel_toggle_is_pinned_right(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        template = (stream_dir / "templates" / "stream.html").read_text(
+            encoding="utf-8"
+        )
+        css = (stream_dir / "static" / "stream.css").read_text(
+            encoding="utf-8"
+        )
+
+        header_start = template.index('<div class="controls editor-controls"')
+        header_end = template.index('<div class="workspace-main">', header_start)
+        header = template[header_start:header_end]
+        left_group = header.index('class="editor-controls-left"')
+        right_group = header.index('class="editor-controls-right"')
+        self.assertLess(left_group, right_group)
+        self.assertLess(
+            header.index('id="variable_select"'),
+            header.index('id="toggle_dock_btn"'),
+        )
+        self.assertIn('class="editor-control-group editor-selection-group"', header)
+        self.assertIn('class="editor-control-group editor-view-group"', header)
+        self.assertIn('class="editor-control-group editor-settings-group"', header)
+        self.assertEqual(header.count('class="editor-control-divider"'), 2)
+        self.assertIn('role="separator" aria-orientation="vertical"', header)
+        self.assertIn(".editor-controls > .editor-controls-left", css)
+        self.assertIn(".editor-controls > .editor-controls-right", css)
+        self.assertIn("border-left: 1px solid #344457", css)
+        self.assertIn("@media (max-width: 720px)", css)
+        self.assertIn("flex: 1 1 0 !important;", css)
 
 if __name__ == "__main__":
     unittest.main()

@@ -62,6 +62,16 @@ def _apply_cli_overrides(config, args):
         "STREAM_ALLOW_CONTROL": args.stream_control,
         "CAMERA_MODE": args.camera_mode,
         "USBCAM_ADDR": args.camera_index,
+        # Multiprocessing is a strict CLI opt-in, not a JSON default.
+        # It isolates both camera capture and sign inference while keeping all
+        # steering/control decisions in the owning mode process.
+        "MULTIPROCESS_CAMERA": getattr(args, "multiprocess_camera", False),
+        "MULTIPROCESS_SIGN_DETECTOR": getattr(args, "multiprocess_camera", False),
+        "MULTIPROCESS_SIGN_INTRA_OP_THREADS": (
+            getattr(args, "sign_intra_op_threads", None)
+            if getattr(args, "sign_intra_op_threads", None) is not None
+            else 2
+        ) if getattr(args, "multiprocess_camera", False) else None,
         "ARDUINO_CONFIG": args.arduino_config,
         "ARDUINO_CONTRACT_TIMEOUT": args.arduino_contract_timeout,
         "CITY_LANE_DETECTOR": getattr(args, "city_lane_detector", None),
@@ -138,6 +148,14 @@ def _apply_cli_overrides(config, args):
 
 
 def _validate_opt_in_features(config, args):
+    sign_threads = getattr(args, "sign_intra_op_threads", None)
+    multiprocess_enabled = bool(getattr(args, "multiprocess_camera", False))
+    if sign_threads is not None:
+        if not multiprocess_enabled:
+            raise SystemExit("--sign-intra-op-threads requires --multiprocess")
+        if sign_threads < 1:
+            raise SystemExit("--sign-intra-op-threads must be a positive integer")
+
     def positive(value, name):
         if value is None or not math.isfinite(float(value)) or float(value) <= 0:
             raise SystemExit(f"{name} must be supplied as a positive finite value")

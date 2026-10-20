@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class TrafficSignDetector:
-    def __init__(self, model_path=None):
+    def __init__(self, model_path=None, intra_op_num_threads=None):
         self.SIGNS = [
             "ERROR", "STOP", "TURN RIGHT", "TURN LEFT", "STRAIGHT", "PARK",
             "NOWAY",
@@ -29,8 +29,30 @@ class TrafficSignDetector:
             
         logger.info("Loading ONNX model from %s", self.model_file)
         
-        # Initialize ONNX session (CPU execution only, perfectly safe for Pi)
-        self.session = ort.InferenceSession(self.model_file, providers=['CPUExecutionProvider'])
+        # Keep the legacy thread-pool default unless the caller explicitly
+        # requests a bounded CPU budget (used by the opt-in process worker so
+        # sign inference does not monopolize all Pi CPU cores).
+        if intra_op_num_threads is None:
+            self.session = ort.InferenceSession(
+                self.model_file, providers=["CPUExecutionProvider"]
+            )
+        else:
+            try:
+                thread_count = int(intra_op_num_threads)
+            except (TypeError, ValueError):
+                raise ValueError("intra_op_num_threads must be a positive integer") from None
+            if thread_count < 1:
+                raise ValueError("intra_op_num_threads must be a positive integer")
+            session_options = ort.SessionOptions()
+            session_options.intra_op_num_threads = thread_count
+            # The model graph uses the default sequential execution strategy;
+            # explicitly keep inter-op scheduling to one thread.
+            session_options.inter_op_num_threads = 1
+            self.session = ort.InferenceSession(
+                self.model_file,
+                sess_options=session_options,
+                providers=["CPUExecutionProvider"],
+            )
         
         # Get model input shape automatically
         model_inputs = self.session.get_inputs()

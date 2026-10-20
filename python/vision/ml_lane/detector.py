@@ -158,7 +158,7 @@ class MLLaneDetector:
                 "error": 0,
                 "lane_type": "none",
                 "perception_valid": False,
-                "debug": {"combined": None},
+                "debug": None,
                 "kp": 0,
             }
 
@@ -176,40 +176,18 @@ class MLLaneDetector:
             steering_angle = int(np.clip(self.servo_center - 0.45 * error, self.servo_min, self.servo_max))
             self.last_steering = float(steering_angle)
 
-        vis = frame.copy()
-        if mask is not None:
-            mask_u8 = np.uint8(np.clip(mask, 0.0, 1.0) * 255.0)
-            _, mask_bin = cv2.threshold(mask_u8, 100, 255, cv2.THRESH_BINARY)
-            contours, _ = cv2.findContours(
-                mask_bin,
-                cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE,
-            )
-            cv2.drawContours(vis, contours, -1, (0, 255, 0), 2)
-
-        cv2.line(
-            vis,
-            (int(frame_center), 0),
-            (int(frame_center), vis.shape[0]),
-            (0, 0, 255),
-            1,
-        )
-
-        if center_x is not None:
-            cv2.line(
-                vis,
-                (int(center_x), 0),
-                (int(center_x), vis.shape[0]),
-                (255, 0, 255),
-                1,
-            )
-
-        if debug_frame is not None and debug_frame.shape[:2] != vis.shape[:2]:
-            vis = cv2.resize(
-                vis,
-                (debug_frame.shape[1], debug_frame.shape[0]),
-                interpolation=cv2.INTER_LINEAR,
-            )
+        debug = None
+        if debug_frame is not None:
+            debug = {
+                "combined": debug_frame.copy(),
+                "draw_data": {
+                    "kind": "ml",
+                    "frame_width": int(width),
+                    "frame_height": int(frame.shape[0]),
+                    "mask": mask,
+                    "center_x": center_x,
+                },
+            }
 
         elapsed_ms = (time.monotonic() - started) * 1000.0
         return {
@@ -217,7 +195,7 @@ class MLLaneDetector:
             "error": error,
             "lane_type": lane_type,
             "perception_valid": center_x is not None,
-            "debug": {"combined": vis},
+            "debug": debug,
             "kp": 0.45,
             "ml_model": self.model_name,
             "ml_latency_ms": elapsed_ms,

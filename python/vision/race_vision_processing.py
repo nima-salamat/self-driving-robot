@@ -107,7 +107,10 @@ class VisionProcessor:
 
     def detect(self, frame, debug_frame=None):
         if self.ml_lane_detector is not None:
-            return self.ml_lane_detector.detect(frame, debug_frame)
+            visualization_enabled = bool(conf.DEBUG or conf.STREAM)
+            return self.ml_lane_detector.detect(
+                frame, debug_frame if visualization_enabled else None
+            )
 
         if frame is None:
             return {
@@ -115,7 +118,7 @@ class VisionProcessor:
                 "error": 0,
                 "lane_type": "none",
                 "perception_valid": False,
-                "debug": {"rl_draw": None, "ll_draw": None, "combined": None},
+                "debug": None,
                 "kp": 0
             }
 
@@ -350,103 +353,37 @@ class VisionProcessor:
         # --------------
         # DEBUG DRAWING
         # --------------
-        debug = {
-            "rl_draw": None, "ll_draw": None, "combined": None,
-            "rl_edges": None, "ll_edges": None, "rl_lines": None, "ll_lines": None,
-            "rl_offset": None, "ll_offset": None,
-        }
-        
-        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:    
-            def scale(line_coords):
-                res = []
-                for x in line_coords:
-                    res.append((w_dbg / width) * x)
-                return res
-
-            vis = debug_frame
-            h_dbg, w_dbg = vis.shape[:2]
-            
-            rl_top, rl_bottom = int(conf.RL_TOP_ROI * h_dbg), int(conf.RL_BOTTOM_ROI * h_dbg)
-            rl_left, rl_right = int(conf.RL_LEFT_ROI * w_dbg), int(conf.RL_RIGHT_ROI * w_dbg)
-            ll_top, ll_bottom = int(conf.LL_TOP_ROI * h_dbg), int(conf.LL_BOTTOM_ROI * h_dbg)
-            ll_left, ll_right = int(conf.LL_LEFT_ROI * w_dbg), int(conf.LL_RIGHT_ROI * w_dbg)
-            
-            if ROI_RESIZABLE:
-                rl_right += int((1 - conf.RL_RIGHT_ROI) * w_dbg * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
-                ll_left += int((0 - conf.LL_LEFT_ROI) * w_dbg * 1 / self.max_unseen_counter * self.lroi_unseen_counter)
-
-            rl_draw = debug_frame[rl_top:rl_bottom, rl_left:rl_right].copy()
-            ll_draw = debug_frame[ll_top:ll_bottom, ll_left:ll_right].copy()
-            
-            frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * w_dbg / 2
-            
-            rl_roi_center = abs(rl_left - rl_right) / 2.0
-            ll_roi_center = abs(ll_left - ll_right) / 2.0
-            if rl_x_mid_full is None and ll_x_mid_full is None:
-                lane_center = frame_center
-            else:
-                rl_x_mid_full = (w_dbg / width)*rl_x_mid_full
-                ll_x_mid_full = (w_dbg / width)*ll_x_mid_full
-                lane_center = (rl_roi_center-rl_x_mid_full + ll_roi_center-ll_x_mid_full) / 2.0
-
-            if hasattr(conf, 'LANE_ROI_MODE') and conf.LANE_ROI_MODE == "trapezoid":
-                rl_base_w_dbg = int((conf.RL_RIGHT_ROI - conf.RL_LEFT_ROI) * w_dbg)
-                pts_rl_vis = np.array([[rl_left, rl_top], [rl_left + int(rl_base_w_dbg * conf.RL_TOP_WIDTH_FACTOR), rl_top], [rl_right, rl_bottom], [rl_left, rl_bottom]], np.int32)
-                cv2.polylines(vis, [pts_rl_vis], True, (255, 0, 0), 1)
-                ll_base_w_dbg = int((conf.LL_RIGHT_ROI - conf.LL_LEFT_ROI) * w_dbg)
-                pts_ll_vis = np.array([[ll_right - int(ll_base_w_dbg * conf.LL_TOP_WIDTH_FACTOR), ll_top], [ll_right, ll_top], [ll_right, ll_bottom], [ll_left, ll_bottom]], np.int32)
-                cv2.polylines(vis, [pts_ll_vis], True, (0, 255, 0), 1)
-            else:
-                cv2.rectangle(vis, (rl_left, rl_top), (rl_right, rl_bottom), (255, 0, 0), 1)
-                cv2.rectangle(vis, (ll_left, ll_top), (ll_right, ll_bottom), (0, 255, 0), 1)
-
-            if rl_lines is not None:
-                for line in rl_lines:
-                    lx1, ly1, lx2, ly2 = self._extract_line(line)
-                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
-                    if rl_draw is not None:
-                        cv2.line(rl_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (0, 165, 255), 2, cv2.LINE_AA)
-                    cv2.line(vis, (rl_left + int(sx1), rl_top + int(sy1)), (rl_left + int(sx2), rl_top + int(sy2)), (0, 165, 255), 3, cv2.LINE_AA)
-                if rl_x_mid is not None:
-                    cv2.circle(vis, (rl_left + int(rl_x_mid), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
-
-            if ll_lines is not None:
-                for line in ll_lines:
-                    lx1, ly1, lx2, ly2 = self._extract_line(line)
-                    sx1, sy1, sx2, sy2 = scale([lx1, ly1, lx2, ly2])
-                    if ll_draw is not None:
-                        cv2.line(ll_draw, (int(sx1), int(sy1)), (int(sx2), int(sy2)), (255, 255, 0), 2, cv2.LINE_AA)
-                    cv2.line(vis, (ll_left + int(sx1), ll_top + int(sy1)), (ll_left + int(sx2), ll_top + int(sy2)), (255, 255, 0), 3, cv2.LINE_AA)
-                if ll_x_mid is not None:
-                    cv2.circle(vis, (ll_left_ + int(ll_x_mid), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
-
-            # Make raw Hough output explicit in the live debug feed. These are
-            # candidates only; the green/magenta center guides are estimates.
-            rl_candidate_count = 0 if rl_lines is None else len(rl_lines)
-            ll_candidate_count = 0 if ll_lines is None else len(ll_lines)
-            cv2.putText(
-                vis, f"R Hough candidates: {rl_candidate_count}",
-                (max(4, rl_left + 4), min(h_dbg - 4, rl_top + 20)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 165, 255), 1, cv2.LINE_AA,
-            )
-            cv2.putText(
-                vis, f"L Hough candidates: {ll_candidate_count}",
-                (max(4, ll_left + 4), min(h_dbg - 4, ll_top + 20)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 0), 1, cv2.LINE_AA,
-            )
-
-            cv2.line(vis, (int(frame_center), 0), (int(frame_center), h_dbg), (0,0,255), 1)
-            cv2.line(vis, (int(lane_center), 0), (int(lane_center), h_dbg), (255,0,255), 1)
-                
-            debug["rl_draw"] = rl_draw
-            debug["ll_draw"] = ll_draw
-            debug["combined"] = vis
-            debug["rl_edges"] = rl_edge
-            debug["ll_edges"] = ll_edge
-            debug["rl_lines"] = rl_lines
-            debug["ll_lines"] = ll_lines
-            debug["rl_offset"] = (rl_left, rl_top)
-            debug["ll_offset"] = (ll_left_, ll_top)
+        # Package geometry only; the optional visualization layer draws it later.
+        debug = None
+        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:
+            frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
+            draw_data = {
+                "kind": "classical",
+                "frame_width": int(width),
+                "frame_height": int(height),
+                "roi_bounds": {
+                    "RL": (rl_left, rl_top, rl_right_, rl_bottom),
+                    "LL": (ll_left_, ll_top, ll_right, ll_bottom),
+                },
+                "line_offsets": {
+                    "RL": (rl_left, rl_top),
+                    "LL": (ll_left_, ll_top),
+                },
+                "lines": {"RL": rl_lines, "LL": ll_lines},
+                "midpoints": {"RL": rl_x_mid, "LL": ll_x_mid},
+                "frame_center_x": float(frame_center),
+                "lane_center_offset_px": float(lane_center),
+            }
+            debug = {
+                "combined": debug_frame,
+                "draw_data": draw_data,
+                "rl_edges": rl_edge,
+                "ll_edges": ll_edge,
+                "rl_lines": rl_lines,
+                "ll_lines": ll_lines,
+                "rl_offset": (rl_left, rl_top),
+                "ll_offset": (ll_left_, ll_top),
+            }
 
         # Preserve actual Hough segment geometry in frame coordinates for
         # consumers that can justify camera-local obstacle relationships.

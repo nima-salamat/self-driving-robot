@@ -353,6 +353,7 @@ function applyWorkspace(workspace){
   extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;
   if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
+  if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();
   editorTool=['select','pan','annotate','ruler'].includes(view.tool)?view.tool:'select';
   const layers=workspace.layers||{};extAnnotationsVisible=!layers.ANNOTATIONS||layers.ANNOTATIONS.visible!==false;
   if(typeof window.setWorkspaceViewLocked==='function')window.setWorkspaceViewLocked(view.viewLocked===true,false,false);
@@ -1003,7 +1004,7 @@ function enableReadOnlyState(){
 function initializeResize(){
   const container=document.querySelector('.container'),panel=document.querySelector('.right-panel');if(!container||!panel)return;
   let active=false,startX=0,startWidth=315;
-  panel.addEventListener('pointerdown',function(e){const bounds=panel.getBoundingClientRect();if(e.clientX-bounds.left>7||window.innerWidth<721)return;active=true;startX=e.clientX;startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||bounds.width;panel.setPointerCapture(e.pointerId);e.preventDefault();});
+  panel.addEventListener('pointerdown',function(e){const bounds=panel.getBoundingClientRect();if(e.clientX-bounds.left>12||window.innerWidth<721||e.button!==0)return;active=true;startX=e.clientX;startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||bounds.width;panel.setPointerCapture(e.pointerId);e.preventDefault();});
   panel.addEventListener('pointermove',function(e){if(!active)return;const delta=startX-e.clientX;const width=Math.max(250,Math.min(700,startWidth+delta));container.style.setProperty('--right-pane-width',width+'px');});
   panel.addEventListener('pointerup',function(){if(!active)return;active=false;scheduleWorkspaceSave();});
   panel.addEventListener('pointercancel',function(){active=false;});
@@ -1052,8 +1053,8 @@ function installExtension(){
   if(jpegQualityInput)jpegQualityInput.addEventListener('input',function(){streamQualityDraftDirty=true;const label=$('roi_setting_jpeg_quality_value');if(label)label.textContent=this.value+' / 100';});
   $('ext_snap').addEventListener('change',function(){extSnap=this.checked;scheduleWorkspaceSave();});
   $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);drawPrecisionOverlay();scheduleWorkspaceSave();if(extCrosshair)updateEditorStatus('Crosshair active: click a point inside the camera image to copy normalized U, V coordinates.');});
-  $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;renderWorkspaceCanvas();scheduleWorkspaceSave();});
-  showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;});
+  $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();renderWorkspaceCanvas();scheduleWorkspaceSave();});
+  showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();});
   $('ext_annotate_btn').onclick=function(){setEditorTool(editorTool==='annotate'?'select':'annotate');};
   $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
   $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all notes and ruler measurements from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
@@ -1072,11 +1073,11 @@ function installExtension(){
   $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
-  $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
-  $('console_level').addEventListener('change',function(){workspaceConsoleLevel=this.value;renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');});
-  $('console_pause').addEventListener('change',function(){workspaceConsolePaused=this.checked;if(!workspaceConsolePaused){renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');}});
-  $('console_autoscroll').addEventListener('change',function(){workspaceConsoleAutoScroll=this.checked;if(workspaceConsoleAutoScroll){renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');}});
-  $('console_export_btn').onclick=function(){downloadText(JSON.stringify({exported_at:new Date().toISOString(),events:workspaceEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};}),requests:workspaceApiEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};})},null,2),'roboy-workspace-console.json','application/json');};
+  $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;['events','api','python'].forEach(renderWorkspaceEventLog);});
+  $('console_level').addEventListener('change',function(){workspaceConsoleLevel=this.value;['events','api','python'].forEach(renderWorkspaceEventLog);});
+  $('console_pause').addEventListener('change',function(){workspaceConsolePaused=this.checked;if(!workspaceConsolePaused){['events','api','python'].forEach(renderWorkspaceEventLog);}});
+  $('console_autoscroll').addEventListener('change',function(){workspaceConsoleAutoScroll=this.checked;if(workspaceConsoleAutoScroll){['events','api','python'].forEach(renderWorkspaceEventLog);}});
+  $('console_export_btn').onclick=function(){downloadText(JSON.stringify({exported_at:new Date().toISOString(),events:workspaceEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};}),requests:workspaceApiEvents.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};}),python_logs:workspacePythonLogs.map(function(e){return {time:e.time instanceof Date?e.time.toISOString():e.time,level:e.level,message:e.message};})},null,2),'roboy-workspace-console.json','application/json');};
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String(window.STREAM_BOOTSTRAP.mode || 'mode').toLowerCase()+'-annotations.json','application/json');};
   $('ext_open_palette').onclick=openCommandPalette;

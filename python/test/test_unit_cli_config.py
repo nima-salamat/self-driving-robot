@@ -23,6 +23,19 @@ class CliConfigPrecedenceTests(unittest.TestCase):
             _apply_cli_overrides(config, args)
             self.assertEqual(config.TARGET_PROCESSING_FPS, float(target))
 
+    def test_multiprocess_camera_is_strictly_opt_in(self):
+        config = types.SimpleNamespace(MULTIPROCESS_CAMERA=True)
+
+        args = parse_args([])
+        self.assertFalse(args.multiprocess_camera)
+        _apply_cli_overrides(config, args)
+        self.assertFalse(config.MULTIPROCESS_CAMERA)
+
+        args = parse_args(["--multiprocess-camera"])
+        self.assertTrue(args.multiprocess_camera)
+        _apply_cli_overrides(config, args)
+        self.assertTrue(config.MULTIPROCESS_CAMERA)
+
     def test_target_fps_rejects_invalid_values(self):
         for target in ("0", "-1", "nan", "inf", "-inf", "bad"):
             with self.subTest(target=target), self.assertRaises(SystemExit):
@@ -69,6 +82,50 @@ class CliConfigPrecedenceTests(unittest.TestCase):
         self.assertEqual(args.camera_mode, "webcam")
         self.assertEqual(args.camera_index, 2)
         self.assertEqual(args.arduino_config, "profile.json")
+
+    def test_multiprocess_alias_enables_camera_and_sign_worker(self):
+        for flag in ("--multiprocess-camera", "--multiprocess"):
+            with self.subTest(flag=flag):
+                with patch.object(sys, "argv", ["main.py", flag]):
+                    args = parse_args()
+                config = types.SimpleNamespace(
+                    MULTIPROCESS_CAMERA=False,
+                    MULTIPROCESS_SIGN_DETECTOR=False,
+                )
+                _apply_cli_overrides(config, args)
+                self.assertTrue(args.multiprocess_camera)
+                self.assertTrue(config.MULTIPROCESS_CAMERA)
+                self.assertTrue(config.MULTIPROCESS_SIGN_DETECTOR)
+                self.assertEqual(config.MULTIPROCESS_SIGN_INTRA_OP_THREADS, 2)
+
+    def test_sign_threads_are_opt_in_and_require_multiprocessing(self):
+        from main import _validate_opt_in_features
+
+        args = parse_args(["--multiprocess", "--sign-intra-op-threads", "1"])
+        config = types.SimpleNamespace()
+        _apply_cli_overrides(config, args)
+        self.assertEqual(config.MULTIPROCESS_SIGN_INTRA_OP_THREADS, 1)
+        _validate_opt_in_features(config, args)
+
+        with self.assertRaises(SystemExit):
+            _validate_opt_in_features(
+                config, parse_args(["--sign-intra-op-threads", "1"])
+            )
+        with self.assertRaises(SystemExit):
+            _validate_opt_in_features(
+                config, parse_args(["--multiprocess", "--sign-intra-op-threads", "0"])
+            )
+
+    def test_multiprocess_is_strictly_opt_in_even_if_config_is_true(self):
+        with patch.object(sys, "argv", ["main.py"]):
+            args = parse_args()
+        config = types.SimpleNamespace(
+            MULTIPROCESS_CAMERA=True,
+            MULTIPROCESS_SIGN_DETECTOR=True,
+        )
+        _apply_cli_overrides(config, args)
+        self.assertFalse(config.MULTIPROCESS_CAMERA)
+        self.assertFalse(config.MULTIPROCESS_SIGN_DETECTOR)
 
     def test_stream_is_disabled_unless_flag_is_supplied(self):
         for mode in ("city", "race"):

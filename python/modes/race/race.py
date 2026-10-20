@@ -6,11 +6,13 @@ from utils.config_mode import set_race_mode
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
+from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
 from traffic_sign_detector.yolo_detector import TrafficSignDetector as YOLOTrafficSignDetector
 from traffic_sign_detector.async_detector import AsyncSignDetector
+from traffic_sign_detector.process_detector import ProcessSignDetector
 from traffic_sign_detector.area_filter import (
     accepts_sign_detection,
     normalize_sign_name,
@@ -25,18 +27,56 @@ from controller.adaptive_obstacle import AdaptiveObstaclePlanner
 from modes.race.config_race import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
-from stream import publish_debug_frame, start_stream, stop_stream
+from stream import publish_camera_frame_fallback, publish_debug_frame, start_stream, stop_stream
 import logging
 import cv2
 import math
 import numpy as np
 import time
 import threading
+from functools import wraps
 from utils.fps import FPS
 from utils.processing_rate import ProcessingRateController, DEFAULT_TARGET_FPS
 from utils.roi_manager import crop_image
 
 # Set to False to completely bypass sign and tag processing
+
+def _measure_stage(stage_name):
+    """Collect duration for an expensive method when performance metrics exist."""
+    def decorate(function):
+        @wraps(function)
+        def measured(self, *args, **kwargs):
+            started = time.monotonic()
+            try:
+                return function(self, *args, **kwargs)
+            finally:
+                metrics = getattr(self, "metrics", None)
+                if metrics is not None:
+                    metrics.record_stage(
+                        stage_name, (time.monotonic() - started) * 1000.0
+                    )
+        return measured
+    return decorate
+
+
+def _draw_process_sign_overlay(debug_frame, source_frame, coordinate, label, config):
+    """Draw process-returned ROI coordinates locally to avoid shipping debug frames over IPC."""
+    if debug_frame is None or source_frame is None or not coordinate or not label:
+        return
+    try:
+        top = int(float(getattr(config, "ST_TOP_ROI", 0.0)) * source_frame.shape[0])
+        left = int(float(getattr(config, "ST_LEFT_ROI", 0.0)) * source_frame.shape[1])
+        (x1, y1), (x2, y2) = coordinate
+        p1 = (int(x1) + left, int(y1) + top)
+        p2 = (int(x2) + left, int(y2) + top)
+        cv2.rectangle(debug_frame, p1, p2, (0, 255, 0), 2)
+        cv2.putText(
+            debug_frame, str(label), (p1[0], max(0, p1[1] - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA,
+        )
+    except (TypeError, ValueError, IndexError, AttributeError):
+        logger.debug("Skipping invalid process sign overlay", exc_info=True)
+
 
 logger = logging.getLogger(__name__)
 STOP_SIGN_CLASS_ID = next(
@@ -163,7 +203,21 @@ class Robot:
         self._marker_lock = threading.RLock()
         self.sign_detector = None
         if config_race.WITH_SIGN:
-            self._ensure_sign_detector()
+            try:
+                self._ensure_sign_detector()
+            except Exception:
+                # A process-backed detector can fail during spawn/model load.
+                # Do not leak the already-started camera worker in a failed
+                # Robot constructor.
+                try:
+                    self.camera.release()
+                except Exception:
+                    logger.exception("Failed to release camera after sign-worker startup failure")
+                try:
+                    self.control.connection.close()
+                except Exception:
+                    logger.exception("Failed to close serial after sign-worker startup failure")
+                raise
         # Keep the worker idle until the active-race STOP monitor starts.
         if self.sign_detector is not None and self.race_start_gate is None:
             self.sign_detector.pause()
@@ -185,12 +239,24 @@ class Robot:
     def _ensure_sign_detector(self):
         if self.sign_detector is not None:
             return
-        detector = (
-            SVMTrafficSignDetector()
-            if config_race.SIGN_DETECTOR_METHOD == "svm"
-            else YOLOTrafficSignDetector()
-        )
-        self.sign_detector = AsyncSignDetector(detector)
+        if bool(getattr(config_race, "MULTIPROCESS_SIGN_DETECTOR", False)):
+            camera = getattr(self, "camera", None)
+            frame_width = int(getattr(camera, "width", getattr(config_race, "CAM_WIDTH", 640)))
+            frame_height = int(getattr(camera, "height", getattr(config_race, "CAM_HEIGHT", 480)))
+            self.sign_detector = ProcessSignDetector(
+                config_race.SIGN_DETECTOR_METHOD,
+                intra_op_num_threads=getattr(
+                    config_race, "MULTIPROCESS_SIGN_INTRA_OP_THREADS", 2
+                ),
+                max_frame_bytes=max(1, frame_width * frame_height * 3),
+            )
+        else:
+            detector = (
+                SVMTrafficSignDetector()
+                if config_race.SIGN_DETECTOR_METHOD == "svm"
+                else YOLOTrafficSignDetector()
+            )
+            self.sign_detector = AsyncSignDetector(detector)
         setattr(config_race, "sign_detector", self.sign_detector)
 
     def apply_marker_mode(self, mode):
@@ -222,6 +288,7 @@ class Robot:
         else:
             self._next_control_time = time.monotonic()
 
+    @_measure_stage("rate_wait")
     def _wait_for_processing_slot(self):
         if not getattr(self, "processing_rate", None):
             self.processing_rate = ProcessingRateController(
@@ -390,6 +457,7 @@ class Robot:
             self._pace_control_loop()
             return
 
+        publish_camera_frame_fallback(config_race, frame)
         debug_frame = frame.copy() if (config_race.STREAM or config_race.DEBUG) else None
         sign_text, _, _, _ = self.handle_read_sign_or_tag(
             frame,
@@ -618,21 +686,33 @@ class Robot:
                     self.control.stop()
                     self._pace_control_loop()
                     continue
+                publish_camera_frame_fallback(config_race, frame)
                 if config_race.STREAM or config_race.DEBUG:
                     debug_frame = frame.copy()
                 else:
                     debug_frame = None
                 
                 perception_started = time.monotonic()
+                lane_started = time.monotonic()
                 result = self.vision.detect(frame_resized, debug_frame)
-                observation_at = getattr(self.camera, "last_capture_at", None)
+                if self.metrics is not None:
+                    self.metrics.record_stage(
+                        "lane", (time.monotonic() - lane_started) * 1000.0
+                    )
+                observation_at = getattr(getattr(self, "camera", None), "last_capture_at", None)
                 confidence = None
                 if getattr(self, "confidence_estimator", None) is not None:
+                    confidence_started = time.monotonic()
                     confidence = self.confidence_estimator.evaluate(
                         result, frame_valid=self.camera.last_capture_valid,
                         frame_at=observation_at,
                         observation_token=getattr(self.camera, "frame_sequence", observation_at),
                     )
+                    if self.metrics is not None:
+                        self.metrics.record_stage(
+                            "confidence",
+                            (time.monotonic() - confidence_started) * 1000.0,
+                        )
                     config_race.perception_confidence = confidence
                 if self.metrics is not None:
                     self.metrics.record_perception(
@@ -695,9 +775,6 @@ class Robot:
                 if config_race.DETECT_OBJECT:
                     self.handle_detect_object(frame)
 
-                # Publish the current debug frame regardless of marker configuration.
-                self.handle_debug_stream(result, frame, angle, status, sign_text)
-                    
                 if config_race.AUTO_UPDATE_KP:
                     self.control.update_kp(result["kp"])
                 
@@ -711,11 +788,23 @@ class Robot:
                         result["lane_type"],
                     )
                     if not control_ok:
+                        # Diagnostic streaming must keep publishing frames even when
+                        # an actuator command is unavailable or rejected (for example,
+                        # the intentional --without-arduino Windows runtime).
+                        self.handle_debug_stream(
+                            result, frame, angle, "control unavailable", sign_text
+                        )
                         self._pace_control_loop()
                         continue
                 else:
                     control_ok = self.control.set_angle(result["steering_angle"])
                     if not control_ok:
+                        # Diagnostic streaming must keep publishing frames even when
+                        # an actuator command is unavailable or rejected (for example,
+                        # the intentional --without-arduino Windows runtime).
+                        self.handle_debug_stream(
+                            result, frame, angle, "control unavailable", sign_text
+                        )
                         self._pace_control_loop()
                         continue
 
@@ -743,10 +832,12 @@ class Robot:
                         self._pace_control_loop()
                         continue
                     self._run_adaptive_obstacle_cycle(result, target_speed, confidence)
+                    self.handle_debug_stream(result, frame, angle, status, sign_text)
                     if self.metrics is not None:
                         self.metrics.record_control((time.monotonic() - control_started) * 1000.0)
                     self._pace_control_loop()
                     continue
+                self.handle_debug_stream(result, frame, angle, status, sign_text)
                 self.control.set_speed(target_speed)
                 if self.metrics is not None:
                     self.metrics.record_control(
@@ -755,25 +846,38 @@ class Robot:
                 self._pace_control_loop()
 
         except KeyboardInterrupt:
-            logger.error("error KeyboardInterrupt")
-            
+            # A keyboard interrupt is an operator-requested shutdown, not a
+            # runtime fault. Keep normal shutdown quiet and deterministic.
+            logger.info("Keyboard interrupt received; shutting down Race loop cleanly")
+
         except Exception as e:
-            self.runtime_exception = e
-            if self.health is not None:
-                from utils.health import FaultSeverity
-                self.health.set_fault(
-                    "robot_loop",
-                    True,
-                    severity=FaultSeverity.CRITICAL,
-                    message=f"{type(e).__name__}: {e}",
+            # Windows/Python can raise InterruptedError from multiprocessing
+            # Event.wait() when Ctrl+C is delivered to the parent process. The
+            # signal handler sets SHUTDOWN_EVENT, so treat that specific
+            # interrupted wait as an orderly shutdown rather than a robot fault.
+            if isinstance(e, InterruptedError) and self._shutdown_requested():
+                logger.info(
+                    "Shutdown requested while waiting for a shared-memory camera frame; "
+                    "exiting Race loop cleanly"
                 )
-            logger.exception("Unhandled robot loop exception")
+            else:
+                self.runtime_exception = e
+                if self.health is not None:
+                    from utils.health import FaultSeverity
+                    self.health.set_fault(
+                        "robot_loop",
+                        True,
+                        severity=FaultSeverity.CRITICAL,
+                        message=f"{type(e).__name__}: {e}",
+                    )
+                logger.exception("Unhandled robot loop exception")
         finally:
             # A fatal loop error must stop hardware control but keep the
             # dashboard alive so the health endpoint can report the fault.
             self.close(keep_dashboard=self.runtime_exception is not None)
             logger.info("exited")
 
+    @_measure_stage("object")
     def handle_detect_object(self, frame):
         object_frame = crop_image(frame, 
                                     config_race.OBJ_TOP_ROI, 
@@ -1035,6 +1139,7 @@ class Robot:
             return
         self.control.set_speed(decision["speed"])
 
+    @_measure_stage("sign_consume")
     def handle_read_sign_or_tag(self, frame, debug_frame, force_check=False, phase_only=None):
         # A latched STOP keeps using the detector that originally found it,
         # even if the dashboard's marker-mode toggle changes during the hold.
@@ -1071,10 +1176,16 @@ class Robot:
         detector_kind = None
 
         if use_apriltag:
+            apriltag_started = time.monotonic()
             _, debug_frame, largest_tag, coordinate = self.apriltag_detector.detect(
                 sign_tag_frame,
                 debug_frame,
             )
+            if self.metrics is not None:
+                self.metrics.record_stage(
+                    "apriltag",
+                    (time.monotonic() - apriltag_started) * 1000.0,
+                )
             # AprilTag detection is synchronous, so every captured frame is a
             # fresh presence/absence observation while STOP hold is active.
             self.last_sign_observation_fresh = True
@@ -1094,9 +1205,13 @@ class Robot:
             if self.sign_detector is None:
                 self._ensure_sign_detector()
 
-            should_submit = bool(force_check)
-            if force_check:
-                # No READ_SIGN_THRESHOLD gate in the latched STOP state.
+            multiprocess_signs = bool(
+                getattr(config_race, "MULTIPROCESS_SIGN_DETECTOR", False)
+            )
+            should_submit = bool(force_check or multiprocess_signs)
+            if force_check or multiprocess_signs:
+                # The process worker replaces a queued frame with the newest
+                # one, so this mode does not need READ_SIGN_THRESHOLD throttling.
                 self.read_sign_counter = 0
             else:
                 self.read_sign_counter += 1
@@ -1112,11 +1227,22 @@ class Robot:
                         getattr(config_race, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2)
                     )
                     submit_options["target_sign_types"] = (STOP_SIGN_CLASS_ID,)
-                self.sign_detector.submit(
-                    sign_tag_frame.copy(),
-                    debug_frame.copy() if debug_frame is not None else None,
-                    **submit_options,
+                submit_frame = sign_tag_frame if multiprocess_signs else sign_tag_frame.copy()
+                submit_debug = (
+                    None if multiprocess_signs
+                    else debug_frame.copy() if debug_frame is not None else None
                 )
+                submit_started = time.monotonic()
+                submit_options["frame_captured_at"] = getattr(
+                    self.camera, "last_capture_at", None
+                )
+                self.sign_detector.submit(
+                    submit_frame, submit_debug, **submit_options,
+                )
+                if self.metrics is not None:
+                    self.metrics.record_stage(
+                        "sign_submit", (time.monotonic() - submit_started) * 1000.0
+                    )
 
             # Submission is throttled, but a completed result is consumed on
             # every loop iteration so READ_SIGN_THRESHOLD cannot delay STOP.
@@ -1134,6 +1260,20 @@ class Robot:
                 and latest_sign[0] > self.last_sign_result_id
             ):
                 self.last_sign_result_id = latest_sign[0]
+                if self.metrics is not None and len(latest_sign) >= 4:
+                    frame_captured_at = (
+                        latest_sign[4]
+                        if len(latest_sign) >= 5 and latest_sign[4] is not None
+                        else latest_sign[2]
+                    )
+                    self.metrics.record_stage(
+                        "sign_latency",
+                        max(0.0, (latest_sign[3] - frame_captured_at) * 1000.0),
+                    )
+                    self.metrics.record_stage(
+                        "sign_input_age",
+                        max(0.0, (time.monotonic() - frame_captured_at) * 1000.0),
+                    )
                 sign_result = latest_sign[1]
                 debug_frame = sign_result.get("debug_frame", debug_frame)
                 confidence = sign_result.get("confidence")
@@ -1157,10 +1297,19 @@ class Robot:
                     # While held, a completed but filtered result is still a
                     # fresh observation that contains no accepted STOP.
                     self.last_sign_observation_fresh = True
-                    self.last_sign_observation_at = latest_sign[2]
+                    self.last_sign_observation_at = (
+                        latest_sign[4]
+                        if len(latest_sign) >= 5 and latest_sign[4] is not None
+                        else latest_sign[2]
+                    )
 
                 if detection_accepted:
                     coordinate = sign_result.get("coordinate")
+                    if getattr(self.sign_detector, "multiprocess", False):
+                        _draw_process_sign_overlay(
+                            debug_frame, frame, coordinate, sign_result.get("text", ""),
+                            config_race,
+                        )
 
                     sign_label = normalize_sign_name(sign_result.get("text", ""))
                     if phase_only in {"start", "monitor"}:
@@ -1192,8 +1341,15 @@ class Robot:
         return tag_id, stop_seen, debug_frame, coordinate
 
 
+    @_measure_stage("debug_stream")
     def handle_debug_stream(self, result, frame, angle, status, sign_text):
-        if getattr(config_race, "STREAM", False):
+        if not (config_race.DEBUG or config_race.STREAM):
+            return
+        debug = result.get("debug")
+        if not isinstance(debug, dict):
+            debug = {}
+            result["debug"] = debug
+        if config_race.STREAM:
             diagnostics = []
             confidence = getattr(config_race, "perception_confidence", None)
             if confidence:
@@ -1201,7 +1357,18 @@ class Robot:
             obstacle = getattr(config_race, "obstacle_diagnostics", None)
             if obstacle:
                 diagnostics.append(f"Obstacle:{obstacle['state']} {obstacle['reason']}")
-            result.setdefault("debug", {})["runtime_diagnostics"] = diagnostics
+            debug["runtime_diagnostics"] = diagnostics
+        source_frame = debug.get("combined")
+        if source_frame is None:
+            source_frame = frame
+        controller_angle = getattr(getattr(self, "control", None), "last_angle", None)
+        visual_angle = resolve_visual_steering_angle(
+            config_race, controller_angle, angle
+        )
+        if source_frame is not None:
+            debug["combined"] = render_lane_debug_overlay(
+                source_frame, debug.get("draw_data"), config_race, visual_angle
+            )
         if config_race.DEBUG:
             debug = result.get("debug") or {}
             if debug.get("combined") is not None:
@@ -1218,20 +1385,31 @@ class Robot:
             if source_frame is None:
                 return
             display_frame = source_frame.copy()
+            selected_angle = visual_angle
             angle_text = (
+                f"{selected_angle:.1f}"
+                if isinstance(selected_angle, (int, float, np.number))
+                else "N/A"
+            )
+            vision_angle_text = (
                 f"{angle:.1f}"
                 if isinstance(angle, (int, float, np.number))
                 else "N/A"
             )
-            real_angle = self.control.last_angle
+            real_angle = controller_angle
             real_angle_text = (
                 f"{real_angle:.1f}"
                 if isinstance(real_angle, (int, float, np.number))
                 else "N/A"
             )
+            angle_details = (
+                f"Angle:{angle_text}, RealAngle:{real_angle_text}"
+                if bool(getattr(config_race, "OLD_METHOD", False))
+                else f"Angle:{angle_text}, VisionAngle:{vision_angle_text}"
+            )
             texts = [
                 f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, {status}",
-                f"Angle:{angle_text}, RealAngle:{real_angle_text}, Sign:{sign_text}, LastTag:{self.last_tag}",
+                f"{angle_details}, Sign:{sign_text}, LastTag:{self.last_tag}",
             ]
 
             font = cv2.FONT_HERSHEY_SIMPLEX

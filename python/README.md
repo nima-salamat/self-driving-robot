@@ -39,7 +39,9 @@ usage: main.py [-h] [--mode {city,race}] [--debug]
                [--read-arduino-output] [--arduino-config PATH]
                [--arduino-contract-timeout SECONDS]
                [--camera-mode {picam,webcam,opencv}]
-               [--camera-index INDEX]
+               [--camera-index INDEX] [--target-fps N]
+               [--multiprocess | --multiprocess-camera]
+               [--sign-intra-op-threads N]
                [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
 
 Self-driving robot runtime.
@@ -73,9 +75,33 @@ options:
                         OpenCV VideoCapture
   --camera-index INDEX
                         OpenCV camera index when using webcam/opencv
+  --target-fps N        Maximum desired rate of complete vision-processing
+                        cycles per second; does not set camera sensor FPS
+  --multiprocess, --multiprocess-camera
+                        Run camera capture and traffic-sign inference in
+                        separate processes using latest-frame handoff
+  --sign-intra-op-threads N
+                        CPU thread budget for ONNX sign inference in
+                        multiprocessing mode (default: 2)
   --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
                         Enable ML lane detection with the selected model
 ~~~
+
+## Multiprocess camera and traffic-sign inference
+
+The experimental process-isolated path remains off unless explicitly requested. `--multiprocess` and `--multiprocess-camera` are aliases. They run camera capture in a shared-memory latest-frame producer and sign inference in a separate process, while the main process still owns lane perception, STOP/phase handling, steering, speed decisions and Arduino I/O.
+
+The sign worker keeps one inference in flight and at most one waiting ROI descriptor. ROI pixels are handed off through a shared-memory latest-frame slot; only sequence/shape metadata and inference options cross the process queue. The worker snapshots the shared slot under a short lock and performs inference after releasing it. In this mode every active main-loop frame may be submitted; `READ_SIGN_THRESHOLD` is bypassed only as a frame-submission cadence limit. Detector confidence thresholds, Race STOP confidence checks, area filters and control safety rules are unchanged. Stale waiting descriptors are replaced or skipped rather than forming a backlog.
+
+Example (do not actuate Arduino during an initial performance comparison):
+
+```bash
+python main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
+```
+
+Compare against the same command without `--multiprocess`. The multiprocessing YOLO worker defaults to two ONNX intra-op CPU threads to limit contention with capture and lane processing; test `--sign-intra-op-threads 1`, `2` and `3` on the Pi to find the best trade-off. This setting does not affect the legacy threaded detector. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait, synchronous AprilTag detection, and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
+
+See [Multiprocessing Camera and Sign Inference Experiment](../docs/MULTIPROCESSING_EXPERIMENT.md) for design details and the current limitations.
 
 ## Stream request logging
 
@@ -105,7 +131,7 @@ python main.py --mode city --stream
 ~~~
 
 The CAD-style workspace includes:
-- Fixed operational ROI / BEV point editing, layer visibility/color/opacity, zoom/pan, grid, snap, and crosshair.
+- Fixed operational ROI / BEV point editing, layer visibility/color/opacity, zoom/pan, grid, snap, and crosshair. On phones, the tool dock becomes a horizontally scrollable touch toolbar; View Lock sits beside Select/Pan/Zoom, while zoom percentage and the selected-object label stay in the footer below the camera frame.
 - Note/marker annotations and a live-preview pixel ruler. Operational ROI regions (RL/LL/CW/ST/OBJ) are edited directly through Properties; custom preview-only ROI drawing is intentionally not offered because it does not affect perception or steering.
 - Full mode-specific configuration JSON import/export, preset save/apply/compare, configuration history, and undo/redo.
 - Runtime-health charts/details, Arduino telemetry, sign-worker status, confidence/obstacle diagnostics, City traffic-light or Race lifecycle status, and an embedded encoder map when `--encoder-map` is enabled.
@@ -249,6 +275,31 @@ Other optional settings, such as camera mode, continue to use the normal configu
 ~~~bash
 python main.py --mode race --camera-mode webcam
 ~~~
+
+## Experimental multiprocessing camera capture
+
+The optional --multiprocess-camera flag starts one child process that owns the camera,
+performs the existing capture/calibration/resize path, and publishes the latest raw
+and resized frame pair through multiprocessing.shared_memory. City/Race perception,
+steering and stop decisions, Arduino communications, and the main control loop remain
+in the existing process. The shared slot is protected by a short lock; stale frames
+are skipped instead of building an unbounded queue. Small camera-setting commands use
+a multiprocessing queue, but frame bytes never do. Picamera2 runtime controls are
+forwarded to the camera-owning child process.
+
+The feature is off by default. It is an experiment for reducing camera-I/O stalls,
+not a guarantee that total perception FPS will increase. Compare the same mode,
+resolution, target FPS, lane model, and debug/stream settings with and without it.
+Start with Arduino communication disabled so no motor commands are sent:
+
+```bash
+python python/main.py --mode race --without-arduino --performance --target-fps 40
+python python/main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess-camera
+```
+
+Repeat each run for the same duration and compare measured camera FPS, complete-loop
+FPS, and camera/perception p95 latency. Hardware-free tests cannot validate a physical
+camera backend; test on the target Raspberry Pi before considering a merge.
 
 ## Camera configuration
 

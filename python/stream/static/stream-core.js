@@ -13,11 +13,52 @@ let advanced = window.STREAM_BOOTSTRAP.advanced;
 const STREAM_CONTROL_ALLOWED = !!window.STREAM_BOOTSTRAP.streamControl;
 
 const controlNotice = document.getElementById('control_notice');
-if (controlNotice) {
-    controlNotice.textContent = STREAM_CONTROL_ALLOWED
-        ? 'Dashboard control is enabled.'
-        : 'Dashboard is read-only. Enable STREAM_ALLOW_CONTROL or restart without --stream-read-only to allow runtime changes.';
+const STREAM_VIEW_ONLY_ACTIONS = new Set([
+    'export-config', 'refresh-config', 'clear-selection', 'properties',
+    'toggle-properties', 'zoom-in', 'zoom-out', 'fit-view', 'toggle-fullscreen',
+    'toggle-overlays', 'toggle-console', 'tool-select', 'tool-pan',
+    'freeze', 'unfreeze', 'help'
+]);
+const STREAM_VIEW_ONLY_IDS = new Set([
+    'refresh_vals', 'toggle_dock_btn', 'camera_fullscreen_btn', 'freeze_btn', 'unfreeze_btn',
+    'workspace_view_lock', 'workspace_zoom', 'variable_select', 'clear_selection',
+    'center_reset', 'prop_target', 'prop_revert_btn', 'tool_overlays_btn',
+    'show_rects', 'console_toggle_btn', 'console_clear_btn', 'console_filter',
+    'console_level', 'console_pause', 'console_autoscroll', 'roi_settings_open',
+    'roi_settings_close', 'roi_settings_cancel', 'roi_settings_reset',
+    'roi_settings_apply', 'roi_setting_grid_mode', 'roi_setting_grid_spacing',
+    'roi_setting_grid_opacity', 'roi_setting_grid_thickness',
+    'roi_setting_grid_dot_size', 'roi_setting_grid_color',
+    'roi_setting_keyboard_nudge', 'roi_setting_stream_fps', 'roi_setting_snap',
+    'roi_setting_label_size', 'roi_setting_label_weight',
+    'roi_setting_outline_thickness', 'roi_setting_handle_size',
+    'ext_grid', 'ext_overlays', 'ext_snap', 'ext_crosshair'
+]);
+function syncStreamPermissionUI(){
+    const permission=STREAM_CONTROL_ALLOWED?'enabled':'read-only';
+    document.documentElement.dataset.streamControlPermission=permission;
+    if(controlNotice){
+        controlNotice.textContent=STREAM_CONTROL_ALLOWED
+            ? 'Dashboard control is enabled.'
+            : 'Read-only dashboard: runtime/configuration changes are disabled; viewing, zoom, overlays and console tools remain available.';
+        controlNotice.setAttribute('role','status');
+        controlNotice.dataset.permission=permission;
+    }
+    if(STREAM_CONTROL_ALLOWED)return;
+    document.querySelectorAll('button[data-action]').forEach(function(button){
+        if(!STREAM_VIEW_ONLY_ACTIONS.has(button.dataset.action))button.disabled=true;
+    });
+    document.querySelectorAll('button,input,select').forEach(function(control){
+        const viewOnlyAction=control.hasAttribute('data-action')&&STREAM_VIEW_ONLY_ACTIONS.has(control.dataset.action);
+        if(!STREAM_VIEW_ONLY_IDS.has(control.id)
+            && !control.hasAttribute('data-tool')
+            && !control.hasAttribute('data-console-tab')
+            && !viewOnlyAction){
+            control.disabled=true;
+        }
+    });
 }
+syncStreamPermissionUI();
 
 let selectedVar = 'NONE';
 let markerHighlight = null;
@@ -108,21 +149,21 @@ async function fetchDashboardJson(url, options = {}) {
 
 // Workspace Zoom Variable
 let workspaceZoom=1,viewPanX=0,viewPanY=0,viewPanState=null,lastFrameImage=null,frameSourceWidth=0,frameSourceHeight=0,workspaceTool='select',workspaceViewLocked=false;
-const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[];
+const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[],workspacePythonLogs=[];
 let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
-function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel);}
+function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel==='api'?'api':'events');}
 let workspaceConsolePaused=false,workspaceConsoleAutoScroll=true,workspaceConsoleQuery='',workspaceConsoleLevel='ALL';
 function renderWorkspaceEventLog(channel='events'){
   if(workspaceConsolePaused)return;
-  const store=channel==='api'?workspaceApiEvents:workspaceEvents;
-  const root=document.getElementById(channel==='api'?'console_api':'console_events');if(!root)return;
+  const store=channel==='api'?workspaceApiEvents:channel==='python'?workspacePythonLogs:workspaceEvents;
+  const root=document.getElementById(channel==='api'?'console_api':channel==='python'?'console_python':'console_events');if(!root)return;
   root.replaceChildren();
   const query=workspaceConsoleQuery.trim().toLowerCase();
   const selected=store.slice().reverse().filter(function(entry){
     const level=String(entry.level||'info').toUpperCase();
     return (workspaceConsoleLevel==='ALL'||level===workspaceConsoleLevel)&&(!query||(String(entry.message||'')+' '+level).toLowerCase().includes(query));
   });
-  if(!selected.length){const e=document.createElement('div');e.className='console-empty';e.textContent=store.length?'No matching console entries.':channel==='api'?'No request diagnostics yet.':'No events yet.';root.appendChild(e);}
+  if(!selected.length){const e=document.createElement('div');e.className='console-empty';e.textContent=store.length?'No matching console entries.':channel==='api'?'No request diagnostics yet.':channel==='python'?'No Python runtime logs yet.':'No events yet.';root.appendChild(e);}
   else for(const entry of selected){
     const row=document.createElement('div');row.className='console-entry';
     const stamp=document.createElement('span');stamp.className='console-time';
@@ -134,7 +175,7 @@ function renderWorkspaceEventLog(channel='events'){
     row.append(stamp,level,msg);root.appendChild(row);
   }
   if(workspaceConsoleAutoScroll)root.scrollTop=0;
-  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests';
+  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests · '+workspacePythonLogs.length+' Python logs';
 }
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){
@@ -154,7 +195,7 @@ function updateWorkspaceViewLockUI(){
   const shackle=document.getElementById('workspace_lock_shackle');
   const label=document.getElementById('workspace_view_lock_label');
   const message=workspaceViewLocked?'Unlock view (allow zoom and pan)':'Lock zoom and camera position';
-  if(button){button.setAttribute('aria-pressed',String(workspaceViewLocked));button.setAttribute('aria-label',message);button.title=message;button.classList.toggle('is-locked',workspaceViewLocked);}
+  if(button){button.setAttribute('aria-pressed',String(workspaceViewLocked));button.setAttribute('aria-label',message);button.classList.toggle('is-locked',workspaceViewLocked);}
   if(shackle)shackle.setAttribute('d',workspaceViewLocked?'M7 10V7a5 5 0 0 1 10 0v3':'M7 10V7a5 5 0 0 1 9.5-2');
   if(label)label.textContent=workspaceViewLocked?'View Locked':'Lock View';
   if(slider)slider.disabled=workspaceViewLocked;
@@ -226,7 +267,12 @@ function syncCameraCanvasSize(){
   if(!stage || !canvas)return;
   const active=isCameraStageFullscreen();
   if(button){
-    button.textContent=active?'⤢ Exit Fullscreen':'⛶ Fullscreen';
+    const label=document.getElementById('camera_fullscreen_label');
+    const expandIcon=document.getElementById('camera_fullscreen_expand_icon');
+    const collapseIcon=document.getElementById('camera_fullscreen_collapse_icon');
+    if(label)label.textContent=active?'Exit Fullscreen':'Fullscreen';
+    if(expandIcon)expandIcon.style.display=active?'none':'';
+    if(collapseIcon)collapseIcon.style.display=active?'':'none';
     button.setAttribute('aria-pressed',String(active));
     button.setAttribute('aria-label',active?'Exit camera fullscreen':'Expand camera frame to fullscreen');
     button.title=active?'Exit camera fullscreen (Esc)':'Expand camera frame to fullscreen';
@@ -309,7 +355,9 @@ function varColorByKey(key){
   return 'rgba(' + parseInt(parts[1],16) + ',' + parseInt(parts[2],16) + ',' + parseInt(parts[3],16) + ',' + Math.max(0,Math.min(1,opacity)) + ')';
 }
 function updateFrameModeText(){
-    frameModeDisplay.textContent = !syncActive ? 'Dashboard requests: PAUSED' : (isFrozen ? 'Camera frame: Frozen (for precise tuning)' : 'Camera frame: Live');
+    const paused=!syncActive;
+    frameModeDisplay.textContent = paused ? 'Dashboard requests: PAUSED' : (isFrozen ? 'Frozen frame · precise tuning' : '');
+    frameModeDisplay.hidden = !paused && !isFrozen;
 }
 function sendAdvanced(payload) {
     if(!syncActive) return showToast('Requests are stopped!');
@@ -418,64 +466,106 @@ function fetchFrameOnce(){
     if(Date.now() < frameRetryAt) return;
 
     frameRequestInFlight = true;
-    const img = new Image();
-    img.decoding = 'async';
+    let objectUrl = null;
 
-    img.onload = () => {
-        try {
-            if(!syncActive) return;
-
-            // Keep source dimensions separate from the viewport backing store.
-            // This preserves the camera aspect ratio inside a stage-sized canvas.
-            const frameWidth = img.naturalWidth || img.width;
-            const frameHeight = img.naturalHeight || img.height;
-            if(frameWidth <= 0 || frameHeight <= 0) return;
-            frameSourceWidth=frameWidth;
-            frameSourceHeight=frameHeight;
-            lastFrameImage=img;
-            syncCameraCanvasSize();
-            const rect = canvas.getBoundingClientRect();
-            if(rect.width <= 0 || rect.height <= 0) return;
-            renderWorkspaceCanvas();
-
-            hasRenderedFrame = true;
-            frameRequestFailures = 0;
-            frameRetryAt = 0;
-        } catch(err) {
-            console.error('Failed to render camera frame:', err);
-            showCameraConnectionState('Camera frame received, but display failed.');
-        } finally {
-            frameRequestInFlight = false;
-        }
-    };
-
-    img.onerror = () => {
+    const failFrameRequest = (error) => {
         frameRequestFailures += 1;
         frameRetryAt = Date.now() + Math.min(
             5000,
             250 * Math.pow(2, Math.min(frameRequestFailures - 1, 5))
         );
 
-        try {
-            // Keep the last good image. A transient 204/no-frame response must not
-            // blank a working preview; keep retrying until a valid frame arrives.
-            if(!hasRenderedFrame) {
-                showCameraConnectionState(
-                    frameRequestFailures > 3
-                        ? 'Waiting for camera frames...'
-                        : 'Connecting to camera...'
-                );
-            }
-        } catch(err) {
-            console.error('Failed to update camera connection state:', err);
-        } finally {
-            frameRequestInFlight = false;
+        const detail = error && error.message
+            ? error.message
+            : 'Unknown frame request error';
+        if(!hasRenderedFrame) {
+            showCameraConnectionState(
+                frameRequestFailures > 3
+                    ? 'Waiting for camera frames... ' + detail
+                    : 'Connecting to camera... ' + detail
+            );
         }
+        if(objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+        }
+        frameRequestInFlight = false;
     };
 
-    // Register callbacks before setting src so fast local responses cannot
-    // complete before the browser has installed the handlers.
-    img.src = '/video_feed_frame?t=' + Date.now();
+    // Fetch the JPEG as a response first so 204 (no published frame), HTTP
+    // errors, auth redirects and non-image responses are visible in the UI
+    // instead of all collapsing into an opaque Image.onerror event.
+    fetch('/video_feed_frame?t=' + Date.now(), {
+        cache: 'no-store',
+        headers: { 'Accept': 'image/jpeg' }
+    }).then(response => {
+        if(response.status === 204) {
+            throw new Error('The Stream server has not published a frame yet (HTTP 204).');
+        }
+        if(!response.ok) {
+            throw new Error('Camera frame endpoint returned HTTP ' + response.status + '.');
+        }
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if(contentType && !contentType.startsWith('image/')) {
+            throw new Error('Camera frame endpoint returned ' + contentType + ', not an image.');
+        }
+        return response.blob();
+    }).then(blob => {
+        if(!blob || blob.size === 0) {
+            throw new Error('Camera frame response was empty.');
+        }
+
+        objectUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.decoding = 'async';
+
+        img.onload = () => {
+            try {
+                if(syncActive) {
+                    const frameWidth = img.naturalWidth || img.width;
+                    const frameHeight = img.naturalHeight || img.height;
+                    if(frameWidth <= 0 || frameHeight <= 0) {
+                        throw new Error('Decoded camera frame has invalid dimensions.');
+                    }
+
+                    // Keep source dimensions separate from the viewport backing
+                    // store so aspect-fit and zoom/pan use native frame geometry.
+                    frameSourceWidth = frameWidth;
+                    frameSourceHeight = frameHeight;
+                    lastFrameImage = img;
+                    syncCameraCanvasSize();
+                    const rect = canvas.getBoundingClientRect();
+                    if(rect.width <= 0 || rect.height <= 0) {
+                        throw new Error('Camera canvas has no visible size.');
+                    }
+                    renderWorkspaceCanvas();
+                    hasRenderedFrame = true;
+                    frameRequestFailures = 0;
+                    frameRetryAt = 0;
+                }
+            } catch(error) {
+                console.error('Failed to render camera frame:', error);
+                failFrameRequest(new Error(
+                    'Camera frame received, but display failed: ' +
+                    (error && error.message ? error.message : String(error))
+                ));
+                return;
+            }
+
+            if(objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+                objectUrl = null;
+            }
+            frameRequestInFlight = false;
+        };
+
+        img.onerror = () => {
+            failFrameRequest(new Error('The response could not be decoded as an image.'));
+        };
+        img.src = objectUrl;
+    }).catch(error => {
+        failFrameRequest(error);
+    });
 }
 
 /* ---------- Overlays (Shapes & Rects) ---------- */
@@ -500,6 +590,21 @@ function drawPolygon(points,color,isHighlight,labelText,r,fillAlpha=0.35){
       ctx.fillStyle=color;ctx.fillRect(r.x+4*z,r.y+4*z,w,h);ctx.fillStyle='#012';ctx.textBaseline='top';ctx.fillText(labelText,r.x+8*z,r.y+6*z);
     }
 }
+
+function syncOverlayControlUI(){
+    const button=document.getElementById('tool_overlays_btn');
+    const visible=!!showRectsCheckbox.checked;
+    if(button){
+        button.setAttribute('aria-pressed',String(visible));
+        button.setAttribute('aria-label',visible?'Hide ROI overlays':'Show ROI overlays');
+        const tip=button.querySelector('.tool-tip');
+        if(tip)tip.textContent=visible?'Hide ROI Overlays · O':'Show ROI Overlays · O';
+    }
+    const topToggle=document.querySelector('.editor-overlay-toggle');
+    if(topToggle)topToggle.setAttribute('data-overlay-state',visible?'visible':'hidden');
+}
+window.syncStreamOverlayControlUI=syncOverlayControlUI;
+syncOverlayControlUI();
 
 function drawOverlays(){
     const showRects = showRectsCheckbox.checked;
@@ -1251,11 +1356,7 @@ function loadModeFeatures(){
             [document.getElementById('with_apriltag'), !c.supports_apriltag, 'AprilTag processing is not supported by the active mode.']
         ];
         controls.forEach(item=>disable(item[0], item[1], item[2]));
-        if(!STREAM_CONTROL_ALLOWED){
-            document.querySelectorAll('button,input,select').forEach(el=>{
-                if(!['refresh_vals','toggle_dock_btn','camera_fullscreen_btn','workspace_view_lock','workspace_zoom','variable_select','clear_selection','center_reset','prop_target','prop_revert_btn','tool_overlays_btn','console_toggle_btn','console_clear_btn','roi_settings_open','roi_settings_close','roi_settings_cancel','roi_settings_reset','roi_settings_apply','roi_setting_grid_mode','roi_setting_grid_spacing','roi_setting_grid_opacity','roi_setting_grid_thickness','roi_setting_grid_dot_size','roi_setting_grid_color','roi_setting_keyboard_nudge','roi_setting_stream_fps','roi_setting_snap','roi_setting_label_size','roi_setting_label_weight','roi_setting_outline_thickness','roi_setting_handle_size','ext_grid','ext_snap','ext_crosshair'].includes(el.id)&&!el.hasAttribute('data-tool')&&!el.hasAttribute('data-action')&&!el.hasAttribute('data-console-tab'))el.disabled=true;
-            });
-        }
+        syncStreamPermissionUI();
         document.querySelectorAll('input[name^="CW_"]').forEach(el=>disable(el, !c.supports_crosswalk, 'Crosswalk ROI is not consumed by the active mode.'));
         document.querySelectorAll('input[name^="OBJ_"]').forEach(el=>disable(el, !c.supports_object_detection, 'Object detection ROI is not used by the active mode.'));
     }).catch(()=>{});
@@ -1278,6 +1379,12 @@ window.openStreamShortcuts=openStreamShortcuts;
 window.closeStreamShortcuts=closeStreamShortcuts;
 function setupCadWorkspace(){
 const workspace=document.querySelector('.container'),dockToggle=document.getElementById('toggle_dock_btn'),consoleDock=document.getElementById('bottom_console'),consoleToggle=document.getElementById('console_toggle_btn'),consoleClear=document.getElementById('console_clear_btn'),propTarget=document.getElementById('prop_target');let consoleTab='events';
+document.querySelectorAll('.left-toolbar .tool-button[title]').forEach(function(button){
+  if(button.querySelector('.tool-tip')){
+    if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',button.title);
+    button.removeAttribute('title');
+  }
+});
 const narrow=()=>window.matchMedia('(max-width:720px)').matches;
 let dockIsOpen=!narrow();
 const dockVisible=()=>dockIsOpen;
@@ -1286,9 +1393,11 @@ function setDock(open){
   const isNarrow=narrow();
   workspace.classList.toggle('show-dock',isNarrow&&dockIsOpen);
   workspace.classList.toggle('dock-hidden',!isNarrow&&!dockIsOpen);
-  const dockLabel=dockToggle.querySelector('#toggle_dock_label');if(dockLabel)dockLabel.textContent=dockIsOpen?'Hide Panels':'Show Panels';else dockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
+  const dockText=isNarrow?(dockIsOpen?'Close Menu':'Menu'):(dockIsOpen?'Hide Panels':'Show Panels');
+  const dockLabel=dockToggle.querySelector('#toggle_dock_label');if(dockLabel)dockLabel.textContent=dockText;else dockToggle.textContent=dockText;
   dockToggle.setAttribute('aria-expanded',String(dockIsOpen));
-  dockToggle.setAttribute('aria-label',dockIsOpen?'Hide settings panels':'Show settings panels');
+  dockToggle.setAttribute('aria-label',isNarrow?(dockIsOpen?'Close left settings menu':'Open left settings menu'):(dockIsOpen?'Hide settings panels':'Show settings panels'));
+  const drawerBackdrop=document.getElementById('settings_drawer_backdrop');if(drawerBackdrop)drawerBackdrop.hidden=!(isNarrow&&dockIsOpen);
   const menuDockToggle=document.querySelector('[data-action="toggle-properties"]');
   if(menuDockToggle)menuDockToggle.textContent=dockIsOpen?'Hide Panels':'Show Panels';
   window.requestAnimationFrame(()=>{syncCameraCanvasSize();renderWorkspaceCanvas();if(typeof window.drawPrecisionOverlay==='function')window.drawPrecisionOverlay();});
@@ -1297,23 +1406,80 @@ window.ensureStreamDockVisible=()=>setDock(true);
 dockToggle.addEventListener('click',()=>{
   const open=!dockIsOpen;
   setDock(open);
-  noteWorkspaceEvent('info','Settings dock '+(open?'shown':'hidden'));
+  noteWorkspaceEvent('info',(narrow()?'Left settings menu ':'Settings dock ')+(open?'shown':'hidden'));
 });
+const drawerBackdrop=document.getElementById('settings_drawer_backdrop');
+if(drawerBackdrop)drawerBackdrop.addEventListener('click',()=>{setDock(false);noteWorkspaceEvent('info','Left settings menu closed');});
 const shortcutDialog=document.getElementById('shortcut_dialog'),shortcutClose=document.getElementById('shortcut_close'),shortcutDone=document.getElementById('shortcut_done');
 if(shortcutClose)shortcutClose.addEventListener('click',closeStreamShortcuts);
 if(shortcutDone)shortcutDone.addEventListener('click',closeStreamShortcuts);
 if(shortcutDialog)shortcutDialog.addEventListener('click',e=>{if(e.target===shortcutDialog)closeStreamShortcuts();});
 window.addEventListener('resize',()=>setDock(dockIsOpen));
 setDock(dockIsOpen);
-function setConsoleOpen(open){consoleDock.classList.toggle('console-open',open);consoleToggle.setAttribute('aria-expanded',String(open));}
+let pythonLogPollTimer=null,pythonLogRequestInFlight=false,pythonLogsClearedAfter=0;
+async function refreshPythonLogs(){
+  if(consoleTab!=='python'||!consoleDock.classList.contains('console-open')||!syncActive||workspaceConsolePaused||pythonLogRequestInFlight)return;
+  pythonLogRequestInFlight=true;
+  try{
+    const response=await fetch('/api/logs?limit=200',{cache:'no-store'});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    const payload=await response.json();
+    const items=Array.isArray(payload.items)?payload.items:[];
+    workspacePythonLogs=items.slice().reverse()
+      .filter(entry=>Number(entry.timestamp||0)>=pythonLogsClearedAfter)
+      .map(entry=>({
+        time:new Date(Number(entry.timestamp||0)*1000),
+        level:(String(entry.level||'INFO').toUpperCase()==='WARNING'?'WARN':String(entry.level||'INFO').toUpperCase()==='CRITICAL'?'ERROR':String(entry.level||'INFO').toUpperCase()),
+        message:String(entry.logger||'python')+' · '+String(entry.message||'')
+      }));
+    renderWorkspaceEventLog('python');
+  }catch(error){
+    const root=document.getElementById('console_python');
+    if(root){root.replaceChildren();const empty=document.createElement('div');empty.className='console-empty';empty.textContent='Unable to load Python logs: '+String(error&&error.message||error);root.appendChild(empty);}
+  }finally{pythonLogRequestInFlight=false;}
+}
+function updatePythonLogPolling(){
+  const shouldPoll=consoleTab==='python'&&consoleDock.classList.contains('console-open')&&syncActive&&!workspaceConsolePaused;
+  if(shouldPoll&&!pythonLogPollTimer){refreshPythonLogs();pythonLogPollTimer=setInterval(refreshPythonLogs,2000);}
+  else if(!shouldPoll&&pythonLogPollTimer){clearInterval(pythonLogPollTimer);pythonLogPollTimer=null;}
+}
+function setConsoleOpen(open){
+  const visible=!!open;
+  consoleDock.classList.toggle('console-open',visible);
+  consoleToggle.setAttribute('aria-expanded',String(visible));
+  const toolButton=document.querySelector('.left-toolbar [data-action="toggle-console"]');
+  if(toolButton){
+    toolButton.setAttribute('aria-pressed',String(visible));
+    toolButton.setAttribute('aria-label',visible?'Close Event Console':'Open Event Console');
+  }
+  updatePythonLogPolling();
+}
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
-consoleClear.addEventListener('click',()=>{if(consoleTab==='api')workspaceApiEvents=[];else workspaceEvents=[];renderWorkspaceEventLog(consoleTab);noteWorkspaceEvent('info','Event log cleared',consoleTab);});
-document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{consoleTab=b.dataset.consoleTab;document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));document.getElementById('console_events').hidden=consoleTab!=='events';document.getElementById('console_api').hidden=consoleTab!=='api';renderWorkspaceEventLog(consoleTab);}));
+setConsoleOpen(consoleDock.classList.contains('console-open'));
+consoleClear.addEventListener('click',()=>{
+  if(consoleTab==='api')workspaceApiEvents=[];
+  else if(consoleTab==='python'){workspacePythonLogs=[];pythonLogsClearedAfter=Date.now()/1000+0.01;}
+  else workspaceEvents=[];
+  renderWorkspaceEventLog(consoleTab);
+  if(consoleTab==='python')noteWorkspaceEvent('info','Python log view cleared; server log history is unchanged');
+  else noteWorkspaceEvent('info','Event log cleared',consoleTab);
+});
+document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('click',()=>{
+  consoleTab=b.dataset.consoleTab;
+  document.querySelectorAll('[data-console-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===b)));
+  document.getElementById('console_events').hidden=consoleTab!=='events';
+  document.getElementById('console_api').hidden=consoleTab!=='api';
+  document.getElementById('console_python').hidden=consoleTab!=='python';
+  if(!consoleDock.classList.contains('console-open'))setConsoleOpen(true);
+  renderWorkspaceEventLog(consoleTab);
+  updatePythonLogPolling();
+}));
 document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
+const consolePause=document.getElementById('console_pause');if(consolePause)consolePause.addEventListener('change',()=>{workspaceConsolePaused=consolePause.checked;updatePythonLogPolling();if(!workspaceConsolePaused)renderWorkspaceEventLog(consoleTab);});
 function setTool(tool){if(tool==='pan'&&workspaceViewLocked){showToast('View is locked. Unlock it to pan.');tool='select';}workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');if(typeof window.onStreamWorkspaceToolChanged==='function')window.onStreamWorkspaceToolChanged(workspaceTool);}
 window.setStreamWorkspaceTool=setTool;
 function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}
-function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;document.getElementById('tool_overlays_btn').setAttribute('aria-pressed',String(showRectsCheckbox.checked));renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
+function toggleOverlays(){showRectsCheckbox.checked=!showRectsCheckbox.checked;syncOverlayControlUI();renderWorkspaceCanvas();noteWorkspaceEvent('info','Overlays '+(showRectsCheckbox.checked?'shown':'hidden'));}
 function toggleProperties(){const p=document.querySelector('.properties-panel');if(!dockVisible()){setDock(true);if(p)p.open=true;noteWorkspaceEvent('info','Properties panel shown');return;}if(p){p.open=!p.open;noteWorkspaceEvent('info','Properties panel '+(p.open?'opened':'closed'));}}
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{switch(b.dataset.action){
@@ -1331,7 +1497,9 @@ document.addEventListener('keydown',e=>{
   if(e.code==='Slash'&&e.shiftKey&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();openStreamShortcuts();return;}
   if(e.code==='Escape'){
     if(document.getElementById('shortcut_dialog')?.classList.contains('is-open')){closeStreamShortcuts();return;}
-    document.querySelectorAll('.menu-group').forEach(m=>m.open=false);return;
+    document.querySelectorAll('.menu-group').forEach(m=>m.open=false);
+    if(narrow()&&dockIsOpen){setDock(false);return;}
+    return;
   }
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.code==='KeyH')setTool('pan');else if(e.code==='KeyV')setTool('select');else if(e.code==='Digit0')fitWorkspaceView();else if(e.code==='KeyO')toggleOverlays();else if(e.code==='KeyF')toggleCameraFullscreen();else if(e.code==='Equal'||e.code==='NumpadAdd')zoomBy(1.2);else if(e.code==='Minus'||e.code==='NumpadSubtract')zoomBy(1/1.2);
@@ -1345,7 +1513,7 @@ function syncPropertiesSelection(target){
  if(st.kind==='none'){
   selectedVar='NONE';select.value='NONE';markerHighlight=null;document.getElementById('properties_mode').textContent='No object selected';
   ['prop_left','prop_top','prop_right','prop_bottom','prop_point_x','prop_point_y'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('prop_hint').textContent='Select an ROI or BEV control point to inspect or edit.';document.getElementById('cad_selected_area').textContent='Object: NONE';return;
+  document.getElementById('prop_hint').textContent='Select an ROI or BEV control point to inspect or edit.';document.getElementById('cad_selected_area').textContent='Object: None';return;
  }
  if(st.kind==='roi'){
   selectedVar=st.group;select.value=st.group;const n=names(st.group);

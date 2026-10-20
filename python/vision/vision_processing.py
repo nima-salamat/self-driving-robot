@@ -154,58 +154,38 @@ class VisionProcessor:
             steering_angle = 150
         steering_angle = int(max(MIN_SERVO_ANGLE, min(MAX_SERVO_ANGLE, steering_angle)))
 
-        # -------------------------
-        # DEBUG DRAWING
-        # -------------------------
-        debug = {"rl_draw": None, "ll_draw": None, "combined": None, "crosswalk_draw": cw_debug}
-
+        # Rendering is opt-in and delegated to visualization.lane_debug_overlay.
+        debug = None
         if base_config.DEBUG:
-            vis = frame.copy()
-
-            # ROI boxes
-            cv2.rectangle(vis, (rl_left, rl_top), (rl_right, rl_bottom), (255, 0, 0), 1)
-            cv2.rectangle(vis, (ll_left, ll_top), (ll_right, ll_bottom), (0, 255, 0), 1)
-            cv2.rectangle(vis, (cw_left, cw_top), (cw_right, cw_bottom), (0, 255, 255), 1)
-
-            # draw Hough lines from RL ROI (into global image)
-            if rl_lines is not None:
-                for line in rl_lines:
-                    x1, y1, x2, y2 = line[0]
-                    # draw on rl ROI copy if available
-                    if rl_draw is not None:
-                        cv2.line(rl_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                    # draw on global vis (with offset)
-                    cv2.line(vis, (rl_left + int(x1), rl_top + int(y1)), (rl_left + int(x2), rl_top + int(y2)), (0,255,0), 2)
-                if rl_x_mid_full is not None:
-                    cv2.circle(vis, (int(rl_x_mid_full), int((rl_top + rl_bottom)/2)), 4, (0,255,0), -1)
-
-            # draw Hough lines from LL ROI
-            if ll_lines is not None:
-                for line in ll_lines:
-                    x1, y1, x2, y2 = line[0]
-                    if ll_draw is not None:
-                        cv2.line(ll_draw, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 1)
-                    cv2.line(vis, (ll_left + int(x1), ll_top + int(y1)), (ll_left + int(x2), ll_top + int(y2)), (0,255,0), 2)
-                if ll_x_mid_full is not None:
-                    cv2.circle(vis, (int(ll_x_mid_full), int((ll_top + ll_bottom)/2)), 4, (0,255,0), -1)
-
-            # show lane center / frame center
-            cv2.line(vis, (int(frame_center), 0), (int(frame_center), height), (0,0,255), 1)
-            cv2.line(vis, (int(lane_center), 0), (int(lane_center), height), (255,0,255), 1)
-
-            # crosswalk text and paste cw_debug into the cw ROI for inspection
-            cv2.putText(vis, f"crosswalk:{crosswalk}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-
-            # if cw_debug is not None:
-            #     try:
-            #         vis[cw_top:cw_bottom, cw_left:cw_right] = cv2.resize(cw_debug, (cw_right - cw_left, cw_bottom - cw_top))
-            #     except Exception:
-            #         # if paste fails, ignore (still keep vis)
-            #         pass
-
-            debug["rl_draw"] = rl_draw
-            debug["ll_draw"] = ll_draw
-            debug["combined"] = vis
+            crosswalk_lines = lines if cw_frame is not None else None
+            debug = {
+                "combined": frame.copy(),
+                "draw_data": {
+                    "kind": "classical",
+                    "frame_width": int(width),
+                    "frame_height": int(height),
+                    "roi_bounds": {
+                        "RL": (rl_left, rl_top, rl_right, rl_bottom),
+                        "LL": (ll_left, ll_top, ll_right, ll_bottom),
+                        "CW": (cw_left, cw_top, cw_right, cw_bottom),
+                    },
+                    "line_offsets": {
+                        "RL": (rl_left, rl_top),
+                        "LL": (ll_left, ll_top),
+                        "CW": (cw_left, cw_top),
+                    },
+                    "lines": {
+                        "RL": rl_lines, "LL": ll_lines, "CW": crosswalk_lines,
+                    },
+                    "midpoints": {
+                        "RL": (rl_x_mid_full - rl_left) if rl_x_mid_full is not None else None,
+                        "LL": (ll_x_mid_full - ll_left) if ll_x_mid_full is not None else None,
+                    },
+                    "frame_center_x": float(frame_center),
+                    "lane_center_x": float(lane_center),
+                    "crosswalk": crosswalk,
+                },
+            }
 
         return {
             "steering_angle": steering_angle,
