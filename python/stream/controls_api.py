@@ -16,9 +16,16 @@ class StreamControlsMixin:
 
     def get_all_advanced(self):
         res = {}
+        active_mode = str(getattr(self.config, "MODE", "mode")).lower()
         for k, default_v in ADVANCED_VARS.items():
+            if active_mode != "city" and k in CITY_ONLY_ADVANCED_VARS:
+                continue
             val = getattr(self.config, k, default_v)
-            if type(default_v) == bool: res[k] = bool(val)
+            if k == "OUTPUT_LIMITS":
+                if not isinstance(val, (tuple, list)) or len(val) != 2:
+                    val = default_v
+                res[k] = [float(val[0]), float(val[1])]
+            elif type(default_v) == bool: res[k] = bool(val)
             elif type(default_v) == int: res[k] = int(val)
             elif type(default_v) == float: res[k] = float(val)
             else: res[k] = str(val)

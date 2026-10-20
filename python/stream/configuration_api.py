@@ -2,7 +2,8 @@
 import sys as _sys
 
 # These methods were moved from WebStreamer without changing their behavior.
-# Bind shared Stream globals at import time; BASE_DIR is deliberately resolved
+# Bind shared Stream globals at import time
+from utils.json_config import validate_pulse_sequence, PULSE_SEQUENCE_KEYS; BASE_DIR is deliberately resolved
 # dynamically so existing tests/configuration patching of stream.BASE_DIR remains valid.
 _stream_module = _sys.modules[__package__]
 for _global_name, _global_value in vars(_stream_module).items():
@@ -161,8 +162,14 @@ class StreamConfigurationMixin:
             raise ValueError("values, advanced, and ui must be objects")
         unknown_values = sorted(set(raw_values) - set(VARIABLES))
         unknown_advanced = sorted(set(raw_advanced) - set(ADVANCED_VARS))
+        city_only_in_race = (
+            sorted(set(raw_advanced) & CITY_ONLY_ADVANCED_VARS)
+            if self._mode_slug() != "city" else []
+        )
         if unknown_values or unknown_advanced:
             raise ValueError("unknown configuration keys: " + ", ".join(unknown_values + unknown_advanced))
+        if city_only_in_race:
+            raise ValueError("City crosswalk settings are not available in Race mode: " + ", ".join(city_only_in_race))
         values = {}
         for key, value in raw_values.items():
             if isinstance(value, bool):
@@ -180,7 +187,7 @@ class StreamConfigurationMixin:
                 and not capabilities.get("supports_bev", False)
                 and bool(raw_advanced["USE_BEV"]) != bool(getattr(self.config, "USE_BEV", False))):
             raise ValueError("USE_BEV cannot be changed by the active perception pipeline")
-        crosswalk_keys = {"CROSSWALK_THRESHOLD", "CROSSWALK_SLEEP", "CROSSWALK_THRESH_SPEND", "CW_TRAPEZOID_MODE", "CW_TOP_WIDTH_FACTOR"}
+        crosswalk_keys = {"CROSSWALK_THRESHOLD", "CROSSWALK_SLEEP", "CROSSWALK_THRESH_SPEND", "CW_TRAPEZOID_MODE", "CW_TOP_WIDTH_FACTOR", "CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES", "CITY_CROSSWALK_TURN_RIGHT_SEQUENCE", "CITY_CROSSWALK_TURN_LEFT_SEQUENCE", "CITY_CROSSWALK_STRAIGHT_SEQUENCE"}
         lane_shape_keys = {"LANE_ROI_MODE", "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR"}
         changed_crosswalk = any(
             key in raw_advanced and raw_advanced[key] != getattr(self.config, key, ADVANCED_VARS[key])
@@ -198,7 +205,17 @@ class StreamConfigurationMixin:
         advanced = {}
         for key, value in raw_advanced.items():
             default = ADVANCED_VARS[key]
-            if type(default) is bool:
+            if key == "OUTPUT_LIMITS":
+                if not isinstance(value, (list, tuple)) or len(value) != 2:
+                    raise ValueError("OUTPUT_LIMITS must contain two numeric values")
+                if any(isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(float(item)) for item in value):
+                    raise ValueError("OUTPUT_LIMITS must contain two finite numbers")
+                normalized = [float(value[0]), float(value[1])]
+                if not -255.0 <= normalized[0] < normalized[1] <= 255.0:
+                    raise ValueError("OUTPUT_LIMITS must be ordered and within -255..255")
+            elif key in PULSE_SEQUENCE_KEYS:
+                normalized = validate_pulse_sequence(key, value)
+            elif type(default) is bool:
                 if not isinstance(value, bool):
                     raise ValueError(f"{key} must be boolean")
                 normalized = value
@@ -225,6 +242,16 @@ class StreamConfigurationMixin:
                 normalized = str(value)
             if key in {"LANE_THRESHOLD", "CROSSWALK_THRESHOLD"} and not 0 <= normalized <= 255:
                 raise ValueError(f"{key} must be between 0 and 255")
+            numeric_ranges = {
+                "KP": (-100.0, 100.0), "KI": (-100.0, 100.0),
+                "KD": (-100.0, 100.0), "KT": (0.0, 10.0),
+                "PID_MIN_DT": (0.0001, 1.0), "PID_MAX_DT": (0.001, 5.0),
+                "PID_DERIVATIVE_FILTER": (0.0, 1.0),
+            }
+            if key in numeric_ranges and not numeric_ranges[key][0] <= normalized <= numeric_ranges[key][1]:
+                raise ValueError(f"{key} must be between {numeric_ranges[key][0]} and {numeric_ranges[key][1]}")
+            if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 1 <= normalized <= 1000:
+                raise ValueError(f"{key} must be between 1 and 1000")
             if key == "LANE_ROI_MODE" and normalized not in {"rectangle", "trapezoid"}:
                 raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
             if key == "RUN_LVL" and normalized not in {"MOVE", "STOP"}:
@@ -240,6 +267,10 @@ class StreamConfigurationMixin:
             # the robot. Restore unrelated settings, but never let a full
             # configuration restore implicitly resume motion.
             advanced["RUN_LVL"] = "STOP"
+        pid_min_dt = float(advanced.get("PID_MIN_DT", getattr(self.config, "PID_MIN_DT", 0.001)))
+        pid_max_dt = float(advanced.get("PID_MAX_DT", getattr(self.config, "PID_MAX_DT", 0.2)))
+        if pid_max_dt < pid_min_dt:
+            raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
         if advanced.get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False)) and advanced.get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False)):
             raise ValueError("WITH_SIGN and WITH_APRILTAG cannot both be enabled")
 
@@ -344,9 +375,31 @@ class StreamConfigurationMixin:
         return {"schema_version": 1, "mode": self._mode_slug(), "values": values,
                 "advanced": advanced, "ui": ui, "runtime": normalized_runtime}
 
+    def _sync_live_pid_settings(self):
+        """Replace the PID object from validated active-mode settings."""
+        controller = getattr(self.config, "robot_controller", None)
+        if controller is None:
+            return
+        from controller.pid_controller import PIDController
+        limits = getattr(self.config, "OUTPUT_LIMITS", (-80, 80))
+        if not isinstance(limits, (tuple, list)) or len(limits) != 2:
+            raise ValueError("OUTPUT_LIMITS must contain two values")
+        controller.pid = PIDController(
+            float(getattr(self.config, "KP", 0.35)),
+            float(getattr(self.config, "KI", 0.0)),
+            float(getattr(self.config, "KD", 0.01)),
+            float(getattr(self.config, "KT", 0.01)),
+            output_limits=(float(limits[0]), float(limits[1])),
+            min_dt=float(getattr(self.config, "PID_MIN_DT", 0.001)),
+            max_dt=float(getattr(self.config, "PID_MAX_DT", 0.2)),
+            derivative_filter=float(getattr(self.config, "PID_DERIVATIVE_FILTER", 0.25)),
+        )
+
     def _apply_full_config(self, payload, label="configuration restore"):
         normalized = self._normalize_full_config(payload)
         before = self._full_config_snapshot()
+        pid_keys = {"USE_PID", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS", "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER"}
+        pid_changed = any(key in normalized["advanced"] and normalized["advanced"][key] != before.get("advanced", {}).get(key) for key in pid_keys)
         try:
             for key, value in normalized["values"].items():
                 setattr(self.config, key, value)
@@ -357,6 +410,8 @@ class StreamConfigurationMixin:
                 sign = normalized["advanced"].get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False))
                 tag = normalized["advanced"].get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False))
                 set_marker_mode(self.config, "sign" if sign else "apriltag" if tag else "none")
+            if pid_changed:
+                self._sync_live_pid_settings()
             self.ui_settings = normalized["ui"]
             if not self.save_ui_settings():
                 raise RuntimeError("failed to persist UI settings")
@@ -385,6 +440,11 @@ class StreamConfigurationMixin:
                 set_marker_mode(self.config, "sign" if before["advanced"].get("WITH_SIGN") else "apriltag" if before["advanced"].get("WITH_APRILTAG") else "none")
             except Exception:
                 logger.exception("Could not roll back marker mode after failed import")
+            if pid_changed:
+                try:
+                    self._sync_live_pid_settings()
+                except Exception:
+                    logger.exception("Could not roll back live PID state after failed import")
             before_runtime = before.get("runtime", {})
             old_rate = before_runtime.get("target_processing_fps")
             rate = getattr(self.config, "processing_rate_controller", None)

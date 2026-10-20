@@ -1457,6 +1457,12 @@ function setConsoleOpen(open){
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
 setConsoleOpen(consoleDock.classList.contains('console-open'));
 consoleClear.addEventListener('click',()=>{
+  if(consoleTab==='arduino'){
+    const output=document.getElementById('arduino_output');
+    if(output)output.textContent='';
+    noteWorkspaceEvent('info','Arduino serial output view cleared; the next poll may show buffered firmware output again');
+    return;
+  }
   if(consoleTab==='api')workspaceApiEvents=[];
   else if(consoleTab==='python'){workspacePythonLogs=[];pythonLogsClearedAfter=Date.now()/1000+0.01;}
   else workspaceEvents=[];
@@ -1470,12 +1476,14 @@ document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('c
   document.getElementById('console_events').hidden=consoleTab!=='events';
   document.getElementById('console_api').hidden=consoleTab!=='api';
   document.getElementById('console_python').hidden=consoleTab!=='python';
+  const arduinoPane=document.getElementById('console_arduino');
+  if(arduinoPane)arduinoPane.hidden=consoleTab!=='arduino';
   if(!consoleDock.classList.contains('console-open'))setConsoleOpen(true);
-  renderWorkspaceEventLog(consoleTab);
+  if(consoleTab!=='arduino')renderWorkspaceEventLog(consoleTab);
   updatePythonLogPolling();
 }));
 document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
-const consolePause=document.getElementById('console_pause');if(consolePause)consolePause.addEventListener('change',()=>{workspaceConsolePaused=consolePause.checked;updatePythonLogPolling();if(!workspaceConsolePaused)renderWorkspaceEventLog(consoleTab);});
+const consolePause=document.getElementById('console_pause');if(consolePause)consolePause.addEventListener('change',()=>{workspaceConsolePaused=consolePause.checked;updatePythonLogPolling();if(!workspaceConsolePaused&&consoleTab!=='arduino')renderWorkspaceEventLog(consoleTab);});
 function setTool(tool){if(tool==='pan'&&workspaceViewLocked){showToast('View is locked. Unlock it to pan.');tool='select';}workspaceTool=tool==='pan'?'pan':'select';document.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===workspaceTool)));canvas.style.cursor=workspaceTool==='pan'?'grab':'default';noteWorkspaceEvent('info',workspaceTool==='pan'?'Hand / Pan tool selected':'Select / Edit ROI tool selected');if(typeof window.onStreamWorkspaceToolChanged==='function')window.onStreamWorkspaceToolChanged(workspaceTool);}
 window.setStreamWorkspaceTool=setTool;
 function zoomBy(f){setWorkspaceZoom(workspaceZoom*f,canvas.width/2,canvas.height/2);}

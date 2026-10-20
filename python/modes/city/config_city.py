@@ -108,6 +108,13 @@ SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 # --- Speed Config ---
 SPEED = 175  # Normal City cruising PWM command (0-255)
 HARDCODE_SPEED = 220  # Crosswalk maneuver PWM command
+# Arduino lane-change sequences sent during startup; format: f|b PWM PULSES SERVO.
+OBSTACLE_LANE_LEFT_SEQUENCE = "b 170 110 70 b 170 80 125"  # [JSON] startup sequence for the left lane maneuver
+OBSTACLE_LANE_RIGHT_SEQUENCE = "f 170 70 125 f 170 70 70"  # [JSON] startup sequence for the right lane maneuver
+# City pedestrian/crosswalk routes (f=forward, b=reverse; each command has four tokens).
+CITY_CROSSWALK_TURN_RIGHT_SEQUENCE = "f 220 80 95 f 220 80 120 b 220 80 65 f 220 85 110"  # [JSON] route for TURN RIGHT tags
+CITY_CROSSWALK_TURN_LEFT_SEQUENCE = "f 220 110 95 f 220 130 65"  # [JSON] route for TURN LEFT tags
+CITY_CROSSWALK_STRAIGHT_SEQUENCE = "f 220 220 95"  # [JSON] route for STRAIGHT tags
 MOTOR_COMMAND_REFRESH_INTERVAL = 0.1  # Retry steady motor setpoints every 100 ms
 
 # --- Crosswalk Setting ---
@@ -139,6 +146,8 @@ LANE_WIDTH = 30 # cm
 # Static Threshold
 LANE_THRESHOLD = 180  # [JSON] pixel-intensity threshold used by classical lane detection
 CROSSWALK_THRESHOLD = 180  # [JSON] pixel threshold used by crosswalk detection
+CROSSWALK_VERTICAL_MIN_LINES = 6  # [JSON] minimum vertical line segments required to classify a crosswalk
+CROSSWALK_HORIZONTAL_MIN_LINES = 3  # [JSON] minimum horizontal line segments required to classify a crosswalk
 
 # Run Level 
 RUN_LVL = "MOVE"  # [JSON] runtime level selected by legacy/dashboard controls: MOVE or STOP
@@ -190,9 +199,9 @@ MOTION_HISTORY_MAX_PULSES = 200
 MOTION_HISTORY_MAX_EVENTS = 128
 
 # PID timing protection
-PID_MIN_DT = 0.001
-PID_MAX_DT = 0.2
-PID_DERIVATIVE_FILTER = 0.25
+PID_MIN_DT = 0.001  # [JSON] minimum accepted PID sample interval in seconds
+PID_MAX_DT = 0.2  # [JSON] maximum accepted PID sample interval in seconds
+PID_DERIVATIVE_FILTER = 0.25  # [JSON] derivative smoothing factor, from 0 to 1
 
 
 # Control-loop target period (seconds)
@@ -203,14 +212,14 @@ DELAY = 0.005
 # show fps
 SHOW_FPS = False
 
-# PID parameters
-USE_PID = True
-KP = 0.38
-KI = 0
-KD = 0.01
-KT = 0.01
-OUTPUT_LIMITS = (-80, 80)
-AUTO_UPDATE_KP = False
+# PID parameters — editable in Stream and persisted in the mode JSON.
+USE_PID = True  # [JSON] enable or bypass PID steering correction
+KP = 0.38  # [JSON] proportional gain
+KI = 0  # [JSON] integral gain
+KD = 0.01  # [JSON] derivative gain
+KT = 0.01  # [JSON] nominal PID sample period in seconds
+OUTPUT_LIMITS = (-80, 80)  # [JSON] lower and upper steering-correction limits
+AUTO_UPDATE_KP = False  # [JSON] legacy option; not consumed by the current PID controller
 
 # lane detection method
 OLD_METHOD = False

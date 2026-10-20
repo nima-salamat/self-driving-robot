@@ -1383,3 +1383,40 @@ canvas {
   }
 }
 
+
+
+/* Wide editor dialogs for hardware maneuver sequences and PID tuning. */
+.maneuver-config-modal .maneuver-config-card,
+.pid-config-modal .pid-config-card {
+  width: min(1120px, 96vw); max-width: 1120px;
+  max-height: min(92dvh, 1060px); overflow: auto;
+  overscroll-behavior: contain; padding: clamp(16px, 2.4vw, 30px);
+}
+.maneuver-config-modal .settings-section, .pid-config-modal .settings-section { margin-top: 18px; }
+.maneuver-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; align-items:stretch; }
+.maneuver-grid-two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.sequence-card { display:flex; flex-direction:column; gap:9px; min-width:0; padding:14px; border:1px solid #314256; border-radius:10px; background:linear-gradient(155deg,rgba(26,42,59,.72),rgba(10,18,29,.86)); color:var(--txt,#e6edf5); }
+.sequence-title { display:flex; align-items:center; gap:9px; min-height:28px; font-weight:650; letter-spacing:.01em; }
+.maneuver-icon { flex:0 0 30px; width:30px; height:30px; fill:none; stroke:#79d9e8; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.maneuver-config-modal textarea { width:100%; min-width:0; min-height:76px; resize:vertical; padding:10px 11px; border:1px solid #40546a; border-radius:7px; background:#050b13; color:#e4f3ff; font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.maneuver-warning { margin-top:16px; padding:12px 14px; border:1px solid rgba(245,158,11,.42); border-radius:8px; background:rgba(120,70,8,.14); color:#f3d7a0; line-height:1.55; font-size:13px; }
+.sequence-help { padding:13px 15px; border:1px solid #2b4053; border-radius:8px; background:rgba(8,16,27,.75); line-height:1.65; font-size:13px; }
+.sequence-help p { margin:0 0 9px; } .sequence-help p:last-child { margin-bottom:0; }
+.sequence-help code { padding:2px 5px; border-radius:4px; background:#07101b; color:#8ce7ef; font:12px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.pid-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:13px; align-items:end; }
+.pid-grid-two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.pid-grid>label,.pid-limit-inputs>label { display:flex; flex-direction:column; gap:7px; min-width:0; color:var(--txt,#e6edf5); font-size:12px; }
+.pid-grid input:not([type=checkbox]),.pid-limit-inputs input { box-sizing:border-box; width:100%; min-width:0; min-height:38px; padding:7px 9px; border:1px solid #3a4e63; border-radius:6px; background:#060d17; color:var(--txt,#e6edf5); font:13px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.pid-limits-group { min-width:0; grid-column:span 2; } .pid-limit-inputs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:8px; }
+.pid-legacy-control { opacity:.7; margin-top:15px; }
+.maneuver-config-card .settings-header h2,.pid-config-card .settings-header h2 { font-size:clamp(19px,2vw,25px); }
+.maneuver-config-card .settings-note,.pid-config-card .settings-note { line-height:1.55; }
+.console-arduino-body { padding:8px 11px; }
+.console-arduino-body #arduino_output { margin:0; min-height:100%; color:#b9f5ce; background:#050b13; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.console-arduino-body .console-empty { padding:4px 0 8px; color:var(--muted,#9bacbd); }
+@media(max-width:900px){ .maneuver-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .pid-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:560px){
+ .maneuver-config-modal .maneuver-config-card,.pid-config-modal .pid-config-card { width:100%; max-width:none; max-height:94dvh; padding:13px; }
+ .maneuver-grid,.maneuver-grid-two,.pid-grid { grid-template-columns:minmax(0,1fr); }
+ .pid-limits-group { grid-column:auto; } .sequence-card { padding:11px; } .maneuver-warning { font-size:12px; }
+}

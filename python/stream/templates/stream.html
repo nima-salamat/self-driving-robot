@@ -110,10 +110,11 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
-<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><button class="console-tab" type="button" data-console-tab="python" aria-selected="false">Python Log</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><button class="console-tab" type="button" data-console-tab="python" aria-selected="false">Python Log</button><button class="console-tab" type="button" data-console-tab="arduino" aria-selected="false">Arduino</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
 <div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
 <div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
 <div class="console-body" id="console_python" role="log" aria-live="off" hidden><div class="console-empty">Select Python Log to load recent runtime logs.</div></div>
+<div class="console-body console-arduino-body" id="console_arduino" role="log" aria-live="off" hidden><div class="console-empty">Waiting for Arduino serial output…</div><pre id="arduino_output" aria-label="Arduino serial log"></pre></div>
 </section>
 </div>
 </div>
@@ -131,7 +132,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div id="control_notice" class="notice" style="margin-bottom:10px;"></div>
       <div class="section-title">Arduino Telemetry</div>
       <div id="arduino_status" class="small status-line">Waiting for serial state...</div>
-      <pre id="arduino_output" style="max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;background:#050b15;border-radius:8px;color:var(--txt);font-size:12px;white-space:pre-wrap"></pre>
+      <div class="small-muted" style="margin-top:8px">Full serial output is available in Event Console → Arduino.</div>
     </div></details>
 
   
@@ -284,6 +285,16 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="form-row"><select id="ext_history_select" style="width:100%"><option value="">No history entries</option></select></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_history_restore">Restore Selected Snapshot</button></div>
       <div class="small-muted">History and presets are mode-specific files on the robot. Import is validated against the active mode and supported controls.</div>
+    </div></details>
+
+
+    <details class="dock-panel" id="ext_motion_config_panel"><summary class="dock-summary"><span>Maneuvers &amp; PID Tuning</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Arduino Maneuver Sequences</div>
+      <p class="small-muted">Sequences are saved into this mode’s JSON. Arduino startup sequences are transmitted when the robot initializes, not immediately.</p>
+      <button type="button" class="ghost" id="ext_maneuver_settings_open" style="width:100%;justify-content:center">↗ Open Maneuver Sequence Editor</button>
+      <div class="section-title" style="margin-top:12px">PID Steering Controller</div>
+      <p class="small-muted">PID settings are isolated between City and Race.</p>
+      <button type="button" class="ghost" id="ext_pid_settings_open" style="width:100%;justify-content:center">⚙ Open PID Tuning</button>
     </div></details>
 
     <details class="dock-panel" open id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
@@ -440,6 +451,65 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><div><div class="small-muted">Saved snapshot</div><img id="ext_compare_old" alt="Saved frame" style="width:100%;background:#02070c"></div><div><div class="small-muted">Current frame</div><img id="ext_compare_live" alt="Current frame" style="width:100%;background:#02070c"></div></div>
   </div>
 </div>
+
+<div id="ext_maneuver_settings_dialog" class="settings-modal maneuver-config-modal" aria-hidden="true">
+  <section class="settings-card maneuver-config-card" role="dialog" aria-modal="true" aria-labelledby="ext_maneuver_title" aria-describedby="ext_maneuver_description">
+    <header class="settings-header"><div><h2 id="ext_maneuver_title">Maneuver Sequence Editor</h2><p id="ext_maneuver_description">Edit and validate the Arduino motion sequences used by this mode.</p></div><button type="button" class="ghost" id="ext_maneuver_settings_close" aria-label="Close maneuver editor">×</button></header>
+    <div class="maneuver-warning"><strong>Hardware safety:</strong> these edits are persisted immediately to the active mode JSON, but startup lane-change sequences reach Arduino only at the next robot initialization. Stop the robot or lift the wheels before testing changes.</div>
+    <div class="settings-section">
+      <h3>Obstacle Avoidance · Arduino Lane Sequences</h3>
+      <p class="settings-note">Available in both City and Race. These are loaded by the Python controller when it starts and configured on Arduino; they are not the City pedestrian-turn routes below.</p>
+      <div class="maneuver-grid maneuver-grid-two">
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M19 19V10a5 5 0 0 0-5-5H5"/><path d="m9 1-4 4 4 4"/></svg><span>Lane sequence · LEFT</span></span><textarea id="maneuver_obstacle_left" rows="3" spellcheck="false" aria-label="Arduino left lane-change sequence"></textarea><span class="small-muted">Used for the configured left-side lane maneuver.</span></label>
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M5 19V10a5 5 0 0 1 5-5h9"/><path d="m15 1 4 4-4 4"/></svg><span>Lane sequence · RIGHT</span></span><textarea id="maneuver_obstacle_right" rows="3" spellcheck="false" aria-label="Arduino right lane-change sequence"></textarea><span class="small-muted">Used for the configured right-side / return lane maneuver.</span></label>
+      </div>
+    </div>
+    {% if mode == 'city' %}
+    <div class="settings-section">
+      <h3>City · Pedestrian / Crosswalk Routes</h3>
+      <p class="settings-note">These routes are selected from the detected direction tag in City mode. This section is intentionally absent in Race mode.</p>
+      <div class="maneuver-grid">
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M5 20V12a7 7 0 0 1 7-7h7"/><path d="m14 1 5 4-5 4"/></svg><span>Turn RIGHT</span></span><textarea id="maneuver_city_right" rows="3" spellcheck="false" aria-label="City pedestrian right-turn sequence"></textarea><span class="small-muted">Sequence used for TURN RIGHT.</span></label>
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M19 20V12a7 7 0 0 0-7-7H5"/><path d="m10 1-5 4 5 4"/></svg><span>Turn LEFT</span></span><textarea id="maneuver_city_left" rows="3" spellcheck="false" aria-label="City pedestrian left-turn sequence"></textarea><span class="small-muted">Sequence used for TURN LEFT.</span></label>
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M12 22V3"/><path d="m5 10 7-7 7 7"/></svg><span>Go STRAIGHT</span></span><textarea id="maneuver_city_straight" rows="3" spellcheck="false" aria-label="City pedestrian straight sequence"></textarea><span class="small-muted">Sequence used for STRAIGHT and the fallback route.</span></label>
+      </div>
+      <h3 style="margin-top:18px">Crosswalk Line-count Thresholds</h3>
+      <p class="settings-note">The detector checks how many vertical and horizontal line segments appear in the crosswalk region, then performs its existing lowest-horizontal-line position check. Defaults preserve the current condition: at least 6 vertical and 3 horizontal lines.</p>
+      <div class="pid-grid pid-grid-two"><label>Minimum vertical lines<input id="maneuver_crosswalk_vertical_min" type="number" min="1" max="1000" step="1"></label><label>Minimum horizontal lines<input id="maneuver_crosswalk_horizontal_min" type="number" min="1" max="1000" step="1"></label></div>
+    </div>
+    {% endif %}
+    <div class="settings-section"><h3>Command Format Help</h3><div class="sequence-help">
+      <p><code>f</code> = forward, <code>b</code> = reverse. Then give <strong>PWM</strong> (0–255), <strong>encoder pulse count</strong> (1–10000), and <strong>servo angle</strong> (0–180°).</p>
+      <p>Every motion command has four whitespace-separated tokens. Append another group to continue. Example: <code>f 220 80 95 f 220 80 120</code>.</p>
+      <p>Saving validates token groups, directions and numeric ranges. It cannot determine whether a maneuver is physically safe, so test in a clear controlled area with wheels lifted when appropriate.</p>
+    </div></div>
+    <footer class="settings-footer"><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="ext_maneuver_settings_cancel">Cancel</button><button type="button" class="btn" id="ext_maneuver_settings_apply">Validate &amp; Save</button></footer>
+  </section>
+</div>
+
+<div id="ext_pid_settings_dialog" class="settings-modal pid-config-modal" aria-hidden="true">
+  <section class="settings-card pid-config-card" role="dialog" aria-modal="true" aria-labelledby="ext_pid_title" aria-describedby="ext_pid_description">
+    <header class="settings-header"><div><h2 id="ext_pid_title">{{ mode|capitalize }} · PID Tuning</h2><p id="ext_pid_description">Tune the active mode’s steering correction gains and timing safeguards.</p></div><button type="button" class="ghost" id="ext_pid_settings_close" aria-label="Close PID tuning">×</button></header>
+    <div class="maneuver-warning"><strong>Driving safety:</strong> PID edits are applied to the live controller and reset its accumulated PID state. Adjust while stationary or with the wheels safely lifted, and tune gradually.</div>
+    <div class="settings-section">
+      <label class="settings-check"><input type="checkbox" id="pid_use_enabled"> Enable PID steering correction (USE_PID)</label>
+      <div class="pid-grid">
+        <label>Proportional gain · KP<input id="pid_kp" type="number" min="-100" max="100" step="0.001"></label>
+        <label>Integral gain · KI<input id="pid_ki" type="number" min="-100" max="100" step="0.001"></label>
+        <label>Derivative gain · KD<input id="pid_kd" type="number" min="-100" max="100" step="0.001"></label>
+        <label>Nominal sample period · KT (seconds)<input id="pid_kt" type="number" min="0" max="10" step="0.001"></label>
+        <label>Minimum dt (seconds)<input id="pid_min_dt" type="number" min="0.0001" max="1" step="0.0001"></label>
+        <label>Maximum dt (seconds)<input id="pid_max_dt" type="number" min="0.001" max="5" step="0.001"></label>
+        <label>Derivative smoothing (0–1)<input id="pid_derivative_filter" type="number" min="0" max="1" step="0.01"></label>
+        <div class="pid-limits-group"><div class="sequence-title">Output correction limits</div><div class="pid-limit-inputs"><label>Minimum<input id="pid_output_min" type="number" min="-255" max="255" step="1"></label><label>Maximum<input id="pid_output_max" type="number" min="-255" max="255" step="1"></label></div></div>
+      </div>
+      <label class="settings-check pid-legacy-control"><input type="checkbox" id="pid_auto_update_kp" disabled> AUTO_UPDATE_KP (legacy setting; the current PID controller does not consume it)</label>
+      <p class="settings-note">KP/KI/KD are P/I/D gains. KT is the nominal controller sample period. Minimum/maximum dt protect calculations when frames stall or arrive too quickly. Derivative smoothing controls how much of the new derivative is used. Output limits cap the correction before servo-angle clamping. Each mode stores its own PID settings in its JSON file.</p>
+    </div>
+    <footer class="settings-footer"><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="ext_pid_settings_cancel">Cancel</button><button type="button" class="btn" id="ext_pid_settings_apply">Apply PID Settings</button></footer>
+  </section>
+</div>
+
 <div id="ext_command_palette" aria-hidden="true">
   <div class="palette-box" role="dialog" aria-modal="true" aria-labelledby="ext_palette_title">
     <header class="palette-header">

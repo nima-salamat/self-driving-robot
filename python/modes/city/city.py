@@ -130,8 +130,8 @@ class Robot:
         # SET-based lane configuration is independent of the optional handshake.
         if not getattr(config_city, "WITHOUT_ARDUINO", False):
             self.control.configure_lane_sequences(
-                "b 170 110 70 b 170 80 125",
-                "f 170 70 125 f 170 70 70",
+                config_city.OBSTACLE_LANE_LEFT_SEQUENCE,
+                config_city.OBSTACLE_LANE_RIGHT_SEQUENCE,
                 persist=False,
                 command_delay_s=0.4,
             )
@@ -530,7 +530,7 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 80 95  f {HARDCODE_SPEED} 80 120 b {HARDCODE_SPEED} 80 65 f {HARDCODE_SPEED} 85 110",
+                        config_city.CITY_CROSSWALK_TURN_RIGHT_SEQUENCE,
                         event="crosswalk_turn_right",
                         metadata={"tag": self.last_tag},
                     )
@@ -545,7 +545,7 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 110 95 f {HARDCODE_SPEED} 130 65",
+                        config_city.CITY_CROSSWALK_TURN_LEFT_SEQUENCE,
                         event="crosswalk_turn_left",
                         metadata={"tag": self.last_tag},
                     )
@@ -557,7 +557,7 @@ class Robot:
                     if self._shutdown_requested():
                         return
                     self.control.forward_pulse(
-                        f"f {HARDCODE_SPEED} 220 95",
+                        config_city.CITY_CROSSWALK_STRAIGHT_SEQUENCE,
                         event="crosswalk_straight",
                         metadata={"tag": self.last_tag},
                     )
@@ -568,7 +568,7 @@ class Robot:
                         return
                     if self._shutdown_requested():
                         return
-                    self.control.forward_pulse(f"f {HARDCODE_SPEED}  220 95")
+                    self.control.forward_pulse(config_city.CITY_CROSSWALK_STRAIGHT_SEQUENCE)
                     if self._sleep_interruptible(0.1):
                         return
 

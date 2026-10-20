@@ -1037,6 +1037,104 @@ function installCoordinatePairPaste(){
     });
   });
 }
+
+function setConfigDialogOpen(id,open){
+  const modal=$(id);if(!modal)return;
+  modal.classList.toggle('is-open',!!open);
+  modal.setAttribute('aria-hidden',open?'false':'true');
+  if(open){
+    modal.querySelectorAll('input,textarea,select').forEach(function(control){
+      if(control.id==='pid_auto_update_kp'){control.disabled=true;return;}
+      control.disabled=!STREAM_CONTROL_ALLOWED;
+    });
+    const apply=modal.querySelector('button[id$="_apply"]');if(apply)apply.disabled=!STREAM_CONTROL_ALLOWED;
+  }
+}
+async function openManeuverConfigDialog(){
+  try{
+    const fresh=await readConfig();currentConfig=jsonClone(fresh);
+    const a=fresh.advanced||{};
+    [
+      ['maneuver_obstacle_left','OBSTACLE_LANE_LEFT_SEQUENCE'],
+      ['maneuver_obstacle_right','OBSTACLE_LANE_RIGHT_SEQUENCE'],
+      ['maneuver_city_right','CITY_CROSSWALK_TURN_RIGHT_SEQUENCE'],
+      ['maneuver_city_left','CITY_CROSSWALK_TURN_LEFT_SEQUENCE'],
+      ['maneuver_city_straight','CITY_CROSSWALK_STRAIGHT_SEQUENCE'],
+      ['maneuver_crosswalk_vertical_min','CROSSWALK_VERTICAL_MIN_LINES'],
+      ['maneuver_crosswalk_horizontal_min','CROSSWALK_HORIZONTAL_MIN_LINES']
+    ].forEach(function(pair){const input=$(pair[0]);if(input&&a[pair[1]]!=null)input.value=String(a[pair[1]]);});
+    setConfigDialogOpen('ext_maneuver_settings_dialog',true);
+    const first=$('maneuver_obstacle_left');if(first&&!first.disabled)first.focus();
+  }catch(error){showToast('Could not load maneuver configuration: '+error.message);}
+}
+async function saveManeuverConfigDialog(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const fresh=await readConfig();currentConfig=jsonClone(fresh);
+  const body=jsonClone(fresh);body.advanced=body.advanced||{};
+  const isCity=String(window.STREAM_BOOTSTRAP.mode||'').toLowerCase()==='city';
+  const required=[
+    ['maneuver_obstacle_left','OBSTACLE_LANE_LEFT_SEQUENCE'],
+    ['maneuver_obstacle_right','OBSTACLE_LANE_RIGHT_SEQUENCE']
+  ];
+  if(isCity)required.push(
+    ['maneuver_city_right','CITY_CROSSWALK_TURN_RIGHT_SEQUENCE'],
+    ['maneuver_city_left','CITY_CROSSWALK_TURN_LEFT_SEQUENCE'],
+    ['maneuver_city_straight','CITY_CROSSWALK_STRAIGHT_SEQUENCE']
+  );
+  required.forEach(function(pair){
+    const input=$(pair[0]);if(!input)return;
+    if(!input.value.trim())throw new Error(pair[1]+' cannot be empty.');
+    body.advanced[pair[1]]=input.value.trim();
+  });
+  if(isCity){
+    [['maneuver_crosswalk_vertical_min','CROSSWALK_VERTICAL_MIN_LINES'],['maneuver_crosswalk_horizontal_min','CROSSWALK_HORIZONTAL_MIN_LINES']].forEach(function(pair){
+      const value=Number($(pair[0]).value);
+      if(!Number.isInteger(value)||value<1||value>1000)throw new Error(pair[1]+' must be an integer from 1 to 1000.');
+      body.advanced[pair[1]]=value;
+    });
+  }
+  await applyFullConfig(body,isCity?'Updated City maneuvers and crosswalk thresholds':'Updated Race obstacle sequences',true);
+  setConfigDialogOpen('ext_maneuver_settings_dialog',false);
+  showToast(isCity?'Saved to city.json. Arduino startup lane sequences are sent at the next robot initialization.':'Saved to race.json. Arduino startup lane sequences are sent at the next robot initialization.');
+}
+async function openPidConfigDialog(){
+  try{
+    const fresh=await readConfig();currentConfig=jsonClone(fresh);
+    const a=fresh.advanced||{};
+    [['pid_kp','KP'],['pid_ki','KI'],['pid_kd','KD'],['pid_kt','KT'],['pid_min_dt','PID_MIN_DT'],['pid_max_dt','PID_MAX_DT'],['pid_derivative_filter','PID_DERIVATIVE_FILTER']]
+      .forEach(function(pair){if($(pair[0])&&a[pair[1]]!=null)$(pair[0]).value=String(a[pair[1]]);});
+    const limits=Array.isArray(a.OUTPUT_LIMITS)?a.OUTPUT_LIMITS:[-80,80];
+    $('pid_output_min').value=String(limits[0]);$('pid_output_max').value=String(limits[1]);
+    $('pid_use_enabled').checked=!!a.USE_PID;$('pid_auto_update_kp').checked=!!a.AUTO_UPDATE_KP;
+    setConfigDialogOpen('ext_pid_settings_dialog',true);
+    if($('pid_kp')&&!$('pid_kp').disabled)$('pid_kp').focus();
+  }catch(error){showToast('Could not load PID settings: '+error.message);}
+}
+async function savePidConfigDialog(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const fields=[
+    ['pid_kp','KP',-100,100],['pid_ki','KI',-100,100],['pid_kd','KD',-100,100],
+    ['pid_kt','KT',0,10],['pid_min_dt','PID_MIN_DT',0.0001,1],
+    ['pid_max_dt','PID_MAX_DT',0.001,5],['pid_derivative_filter','PID_DERIVATIVE_FILTER',0,1]
+  ];
+  const values={};
+  fields.forEach(function(row){
+    const value=Number($(row[0]).value);
+    if(!Number.isFinite(value)||value<row[2]||value>row[3])throw new Error(row[1]+' must be between '+row[2]+' and '+row[3]+'.');
+    values[row[1]]=value;
+  });
+  if(values.PID_MAX_DT<values.PID_MIN_DT)throw new Error('PID_MAX_DT must be greater than or equal to PID_MIN_DT.');
+  const low=Number($('pid_output_min').value),high=Number($('pid_output_max').value);
+  if(!Number.isFinite(low)||!Number.isFinite(high)||low< -255||high>255||low>=high)throw new Error('Output limits must be ordered numbers within -255 to 255.');
+  const fresh=await readConfig();currentConfig=jsonClone(fresh);
+  const body=jsonClone(fresh);body.advanced=body.advanced||{};
+  Object.keys(values).forEach(function(key){body.advanced[key]=values[key];});
+  body.advanced.OUTPUT_LIMITS=[low,high];body.advanced.USE_PID=$('pid_use_enabled').checked;
+  await applyFullConfig(body,'Updated '+String(window.STREAM_BOOTSTRAP.mode||'mode').toUpperCase()+' PID settings',true);
+  setConfigDialogOpen('ext_pid_settings_dialog',false);
+  showToast('PID settings saved to the active mode JSON and applied to the live controller.');
+}
+
 function installExtension(){
   const stage=$('canvas_stage');if(stage&&canvas){
     let svg=$('ext_precision_overlay');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);}
@@ -1081,6 +1179,20 @@ function installExtension(){
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String(window.STREAM_BOOTSTRAP.mode || 'mode').toLowerCase()+'-annotations.json','application/json');};
   $('ext_open_palette').onclick=openCommandPalette;
+  $('ext_maneuver_settings_open').onclick=function(){openManeuverConfigDialog();};
+  $('ext_maneuver_settings_close').onclick=function(){setConfigDialogOpen('ext_maneuver_settings_dialog',false);};
+  $('ext_maneuver_settings_cancel').onclick=function(){setConfigDialogOpen('ext_maneuver_settings_dialog',false);};
+  $('ext_maneuver_settings_apply').onclick=function(){saveManeuverConfigDialog().catch(function(error){showToast('Could not save maneuver settings: '+error.message);});};
+  $('ext_maneuver_settings_dialog').addEventListener('click',function(event){if(event.target===this)setConfigDialogOpen('ext_maneuver_settings_dialog',false);});
+  $('ext_pid_settings_open').onclick=function(){openPidConfigDialog();};
+  $('ext_pid_settings_close').onclick=function(){setConfigDialogOpen('ext_pid_settings_dialog',false);};
+  $('ext_pid_settings_cancel').onclick=function(){setConfigDialogOpen('ext_pid_settings_dialog',false);};
+  $('ext_pid_settings_apply').onclick=function(){savePidConfigDialog().catch(function(error){showToast('Could not save PID settings: '+error.message);});};
+  $('ext_pid_settings_dialog').addEventListener('click',function(event){if(event.target===this)setConfigDialogOpen('ext_pid_settings_dialog',false);});
+  document.addEventListener('keydown',function(event){
+    if(event.key!=='Escape')return;
+    ['ext_maneuver_settings_dialog','ext_pid_settings_dialog'].forEach(function(id){const modal=$(id);if(modal&&modal.classList.contains('is-open')){event.preventDefault();setConfigDialogOpen(id,false);}});
+  });
   $('ext_stream_exit_close').onclick=closeStreamExitDialog;
   $('ext_stream_exit_cancel').onclick=closeStreamExitDialog;
   $('ext_stream_exit_confirm').onclick=function(){requestStreamShutdown().catch(function(){});};

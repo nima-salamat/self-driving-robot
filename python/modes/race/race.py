@@ -155,14 +155,10 @@ class Robot:
         else:
             self.obstacle_planner = None
             # Preserve legacy sequence configuration and EEPROM persistence.
-            lane_width, robot_width, safe_margin, pulse_cm = 30, 12, 3, 0.5
-            lateral_shift_cm = (lane_width / 2) - (robot_width / 2) + safe_margin
-            theta_radians = math.radians(30)
-            travel_pulse = int((lateral_shift_cm / math.sin(theta_radians)) / pulse_cm)
-            # Preserve the checked-in legacy EEPROM sequence angles exactly.
-            left_angle, right_angle = 60, 120
-            cmd_avoid_left = f"f 230 {travel_pulse} {left_angle} f 230 {travel_pulse} {right_angle}"
-            cmd_return_right = f"f 230 {travel_pulse} {right_angle} f 230 {travel_pulse} {left_angle}"
+            # Preserve the previous geometry-derived default exactly (48 pulses; servo angles 60/120).
+            # Values now come from this mode's JSON-backed settings.
+            cmd_avoid_left = config_race.OBSTACLE_LANE_LEFT_SEQUENCE
+            cmd_return_right = config_race.OBSTACLE_LANE_RIGHT_SEQUENCE
             if not getattr(config_race, "WITHOUT_ARDUINO", False) and not self._shutdown_requested():
                 self.control.configure_lane_sequences(cmd_avoid_left, cmd_return_right,
                                                       persist=True, command_delay_s=0.4)

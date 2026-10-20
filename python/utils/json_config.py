@@ -28,6 +28,8 @@ RANGES = {
     "PID_MIN_DT": (0.0001, 1.0),
     "PID_MAX_DT": (0.001, 5.0),
     "PID_DERIVATIVE_FILTER": (0.0, 1.0),
+    "CROSSWALK_VERTICAL_MIN_LINES": (1, 1000),
+    "CROSSWALK_HORIZONTAL_MIN_LINES": (1, 1000),
     "MIN_SERVO_ANGLE": (0.0, 180.0),
     "MAX_SERVO_ANGLE": (0.0, 180.0),
     "CAM_WIDTH": (32, 4096),
@@ -60,10 +62,45 @@ BOOL_KEYS = {
 INT_KEYS = {
     "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
     "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
+    "CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES",
 }
+
+PULSE_SEQUENCE_KEYS = frozenset({
+    "OBSTACLE_LANE_LEFT_SEQUENCE", "OBSTACLE_LANE_RIGHT_SEQUENCE",
+    "CITY_CROSSWALK_TURN_RIGHT_SEQUENCE", "CITY_CROSSWALK_TURN_LEFT_SEQUENCE",
+    "CITY_CROSSWALK_STRAIGHT_SEQUENCE",
+})
+
+
+def validate_pulse_sequence(name, value):
+    """Validate direction/PWM/pulses/servo command groups sent to Arduino."""
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a command sequence string")
+    sequence = value.strip()
+    if not sequence or len(sequence) > 512:
+        raise ValueError(f"{name} must contain 1-512 characters")
+    parts = sequence.split()
+    if len(parts) % 4 != 0 or len(parts) > 64:
+        raise ValueError(f"{name} must contain groups of four tokens: f|b PWM PULSES SERVO")
+    for offset in range(0, len(parts), 4):
+        direction, raw_pwm, raw_pulses, raw_servo = parts[offset:offset + 4]
+        if direction not in {"f", "b"}:
+            raise ValueError(f"{name}: direction must be f (forward) or b (reverse)")
+        if not all(part.isdigit() for part in (raw_pwm, raw_pulses, raw_servo)):
+            raise ValueError(f"{name}: PWM, pulse count and servo angle must be non-negative integers")
+        pwm, pulses, servo = int(raw_pwm), int(raw_pulses), int(raw_servo)
+        if not 0 <= pwm <= 255:
+            raise ValueError(f"{name}: PWM must be between 0 and 255")
+        if not 1 <= pulses <= 10000:
+            raise ValueError(f"{name}: pulse count must be between 1 and 10000")
+        if not 0 <= servo <= 180:
+            raise ValueError(f"{name}: servo angle must be between 0 and 180")
+    return sequence
 
 
 def _validate(name, value):
+    if name in PULSE_SEQUENCE_KEYS:
+        return validate_pulse_sequence(name, value)
     if name in {"ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM"}:
         if value is None:
             return value

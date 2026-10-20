@@ -107,6 +107,9 @@ SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 # --- Speed Config ---
 SPEED = 255
 HARDCODE_SPEED = 220
+# Arduino lane-change sequences sent during startup; format: f|b PWM PULSES SERVO.
+OBSTACLE_LANE_LEFT_SEQUENCE = "f 230 48 60 f 230 48 120"  # [JSON] left/pass sequence; preserves the previous 48-pulse default
+OBSTACLE_LANE_RIGHT_SEQUENCE = "f 230 48 120 f 230 48 60"  # [JSON] right/return sequence; preserves the previous 48-pulse default
 
 # --- Crosswalk Setting ---
 CROSSWALK_SLEEP = 3  # [JSON] delay after handling a crosswalk, in seconds
@@ -193,9 +196,9 @@ MOTION_HISTORY_MAX_PULSES = 200
 MOTION_HISTORY_MAX_EVENTS = 128
 
 # PID timing protection
-PID_MIN_DT = 0.001
-PID_MAX_DT = 0.2
-PID_DERIVATIVE_FILTER = 0.25
+PID_MIN_DT = 0.001  # [JSON] minimum accepted PID sample interval in seconds
+PID_MAX_DT = 0.2  # [JSON] maximum accepted PID sample interval in seconds
+PID_DERIVATIVE_FILTER = 0.25  # [JSON] derivative smoothing factor, from 0 to 1
 
 
 # Control-loop target period (seconds)
@@ -206,14 +209,14 @@ DELAY = 0.005
 # show fps
 SHOW_FPS = False
 
-# PID parameters
-USE_PID = True
-KP = 0.35
-KI = 0.0
-KD = 0.01
-KT = 0.01
-OUTPUT_LIMITS = (-80, 80)
-AUTO_UPDATE_KP = False
+# PID parameters — editable in Stream and persisted in the mode JSON.
+USE_PID = True  # [JSON] enable or bypass PID steering correction
+KP = 0.35  # [JSON] proportional gain
+KI = 0.0  # [JSON] integral gain
+KD = 0.01  # [JSON] derivative gain
+KT = 0.01  # [JSON] nominal PID sample period in seconds
+OUTPUT_LIMITS = (-80, 80)  # [JSON] lower and upper steering-correction limits
+AUTO_UPDATE_KP = False  # [JSON] legacy option; not consumed by the current PID controller
 
 # lane detection method
 OLD_METHOD = False
