@@ -75,35 +75,56 @@ class FPS:
             else ""
         )
         logger.info(
-            "performance: fps=%.1f loop_mean=%.2fms loop_p95=%.2fms "
-            "loop_max=%.2fms camera_p95=%.2fms perception_p95=%.2fms "
-            "control_p95=%.2fms serial_p95=%.2fms%s",
+            "performance: fps=%.1f loop_mean=%.2fms "
+            "loop_p50=%.2fms loop_p95=%.2fms loop_p99=%.2fms loop_max=%.2fms "
+            "camera_p50=%.2fms camera_p95=%.2fms camera_p99=%.2fms "
+            "perception_p50=%.2fms perception_p95=%.2fms perception_p99=%.2fms "
+            "control_p50=%.2fms control_p95=%.2fms control_p99=%.2fms "
+            "serial_p50=%.2fms serial_p95=%.2fms serial_p99=%.2fms%s",
             self.second_fps,
             timing["loop"]["mean_ms"],
+            timing["loop"]["p50_ms"],
             timing["loop"]["p95_ms"],
+            timing["loop"]["p99_ms"],
             timing["loop"]["max_ms"],
+            timing["camera"]["p50_ms"],
             timing["camera"]["p95_ms"],
+            timing["camera"]["p99_ms"],
+            timing["perception"]["p50_ms"],
             timing["perception"]["p95_ms"],
+            timing["perception"]["p99_ms"],
+            timing["control"]["p50_ms"],
             timing["control"]["p95_ms"],
+            timing["control"]["p99_ms"],
+            timing["serial"]["p50_ms"],
             timing["serial"]["p95_ms"],
+            timing["serial"]["p99_ms"],
             vision_rate,
         )
 
-        # Stage timers show where wall time is actually spent. Keep this
-        # separate from the headline line so it remains readable on the Pi.
-        stage_names = (
-            "lane", "confidence", "sign_submit", "sign_consume",
-            "sign_latency", "sign_input_age", "object", "apriltag",
-            "traffic_light", "debug_stream",
-            "camera_wait", "frame_age", "rate_wait",
+        # Keep stage distributions on separate lines so the periodic output is
+        # useful on the Pi without producing one oversized log entry.
+        stage_groups = (
+            ("performance vision stages", (
+                "lane", "confidence", "object", "apriltag", "traffic_light",
+            )),
+            ("performance sign stages", (
+                "sign_submit", "sign_consume", "sign_latency", "sign_input_age",
+            )),
+            ("performance runtime stages", (
+                "camera_wait", "frame_age", "rate_wait", "debug_stream",
+            )),
         )
-        stage_items = [
-            f"{name}_p95_ms={timing[name]['p95_ms']:.2f}"
-            for name in stage_names
-            if name in timing and timing[name]["count"] > 0
-        ]
-        if stage_items:
-            logger.info("performance stages: %s", " ".join(stage_items))
+        for label, stage_names in stage_groups:
+            stage_items = [
+                f"{name}_p50_ms={timing[name]['p50_ms']:.2f} "
+                f"{name}_p95_ms={timing[name]['p95_ms']:.2f} "
+                f"{name}_p99_ms={timing[name]['p99_ms']:.2f}"
+                for name in stage_names
+                if name in timing and timing[name]["count"] > 0
+            ]
+            if stage_items:
+                logger.info("%s: %s", label, " ".join(stage_items))
 
         robot = getattr(self.config, "runtime_robot", None)
         camera = getattr(robot, "camera", None)

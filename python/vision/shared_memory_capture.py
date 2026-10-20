@@ -341,7 +341,7 @@ class SharedMemoryCapture:
                 initialized = int(self._metadata[_INITIALIZED]) == 1
                 if sequence > self._last_sequence:
                     state = _state(self._metadata)
-                    self.frames_skipped += max(0, sequence - self._last_sequence - 1)
+                    self.frames_skipped = getattr(self, "frames_skipped", 0) + max(0, sequence - self._last_sequence - 1)
                     self._last_sequence = sequence
                     if state["valid"] and initialized:
                         frame = np.ndarray(
