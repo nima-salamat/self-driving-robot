@@ -1121,7 +1121,7 @@ class Robot:
                 and latest_sign[0] > self.last_sign_result_id
             ):
                 self.last_sign_result_id = latest_sign[0]
-                if self.metrics is not None and len(latest_sign) >= 4:
+                if getattr(self, "metrics", None) is not None and len(latest_sign) >= 4:
                     frame_captured_at = (
                         latest_sign[4]
                         if len(latest_sign) >= 5 and latest_sign[4] is not None
@@ -1143,9 +1143,16 @@ class Robot:
                     targets=getattr(config_city, "SIGN_AREA_FILTER_TARGETS", []),
                     minimum_area_px2=getattr(config_city, "SIGN_AREA_MIN_PX2", 0),
                 )
-                if detection_accepted or (hold_active and force_check):
-                    # While held, a completed but filtered result is still a
-                    # fresh observation that contains no accepted STOP.
+                filtered_stop_candidate = (
+                    normalize_sign_name(sign_result.get("text", "")) == "STOP"
+                    and not detection_accepted
+                )
+                if (
+                    not filtered_stop_candidate
+                    and (detection_accepted or (hold_active and force_check))
+                ):
+                    # A rejected STOP candidate is not proof that STOP is absent.
+                    # Do not let a tiny/filtered STOP count toward hold clearance.
                     self.last_sign_observation_fresh = True
                     self.last_sign_observation_at = (
                         latest_sign[4]

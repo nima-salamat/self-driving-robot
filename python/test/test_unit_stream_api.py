@@ -478,7 +478,7 @@ class StreamApiTests(unittest.TestCase):
 
         # JavaScript was externalized from HTML; validate the served asset.
         self.assertIn(
-            "output.textContent = (j.lines || []).join('\\n');",
+            r"output.textContent = (j.lines || []).join('\\n');",
             core,
         )
         self.assertNotIn(
