@@ -63,15 +63,25 @@ class ProcessSignDetectorTests(unittest.TestCase):
         latest_request_id = None
         try:
             final_frame_captured_at = time.monotonic() - 0.1
-            for value in range(8):
-                frame_captured_at = (
-                    final_frame_captured_at if value == 7 else time.monotonic()
-                )
-                latest_request_id = detector.submit(
+            for value in range(7):
+                # Intermediate frames are replaceable under bounded
+                # latest-frame backpressure; a rejected frame is counted.
+                detector.submit(
                     np.full((8 + value, 10, 3), value, dtype=np.uint8),
-                    frame_captured_at=frame_captured_at,
+                    frame_captured_at=time.monotonic(),
                 )
-                self.assertIsNotNone(latest_request_id)
+
+            latest_request_id = None
+            submit_deadline = time.monotonic() + 1.0
+            final_frame = np.full((15, 10, 3), 7, dtype=np.uint8)
+            while latest_request_id is None and time.monotonic() < submit_deadline:
+                latest_request_id = detector.submit(
+                    final_frame,
+                    frame_captured_at=final_frame_captured_at,
+                )
+                if latest_request_id is None:
+                    time.sleep(0.005)
+            self.assertIsNotNone(latest_request_id)
 
             deadline = time.monotonic() + 8.0
             result = None

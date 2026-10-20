@@ -469,37 +469,40 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("Pause Dashboard Requests", html)
         self.assertIn('id="roi_setting_jpeg_quality"', html)
         self.assertIn("This only changes JPEG encoding for dashboard frames", html)
+        self.assertIn('/static/stream-core.js', html)
+        self.assertIn('/static/stream-extensions.js', html)
+        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
         extensions = (PYTHON_ROOT / "stream" / "static" / "stream-extensions.js").read_text(encoding="utf-8")
         self.assertIn("refreshStreamJpegQualityFromServer()", extensions)
         self.assertIn("nativeFetch('/api/stream/quality'", extensions)
 
-        # HTML_TEMPLATE is a Python triple-quoted string. The rendered
-        # JavaScript must contain a backslash+n escape, not a literal newline
-        # inside a single-quoted JavaScript string.
+        # JavaScript was externalized from HTML; validate the served asset.
         self.assertIn(
             "output.textContent = (j.lines || []).join('\\n');",
-            html,
+            core,
         )
         self.assertNotIn(
             "output.textContent = (j.lines || []).join('\n');",
-            html,
+            core,
         )
 
     def test_dashboard_polling_uses_backoff_when_server_is_unreachable(self):
         response = WebStreamer(self.make_config()).app.test_client().get("/")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
+        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
 
-        self.assertIn("async function fetchDashboardJson", html)
-        self.assertIn("dashboardApiRetryAt", html)
-        self.assertRegex(html, r"Math\.min\(\s*30000")
-        self.assertIn("fetchDashboardJson('/api/health')", html)
-        self.assertIn("fault.message", html)
-        self.assertIn("details.join(' | ')", html)
-        self.assertIn("fetchDashboardJson('/api/arduino-output')", html)
-        self.assertIn("fetchDashboardJson('/get_values')", html)
-        self.assertIn("let frameRetryAt = 0;", html)
-        self.assertIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", html)
+        self.assertIn('/static/stream-core.js', html)
+        self.assertIn("async function fetchDashboardJson", core)
+        self.assertIn("dashboardApiRetryAt", core)
+        self.assertRegex(core, r"Math\.min\(\s*30000")
+        self.assertIn("fetchDashboardJson('/api/health')", core)
+        self.assertIn("fault.message", core)
+        self.assertIn("details.join(' | ')", core)
+        self.assertIn("fetchDashboardJson('/api/arduino-output')", core)
+        self.assertIn("fetchDashboardJson('/get_values')", core)
+        self.assertIn("let frameRetryAt = 0;", core)
+        self.assertIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", core)
 
     def test_camera_canvas_preserves_source_frame_aspect_ratio(self):
         import re
@@ -507,19 +510,21 @@ class StreamApiTests(unittest.TestCase):
         response = WebStreamer(self.make_config()).app.test_client().get("/")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
+        css = (PYTHON_ROOT / "stream" / "static" / "stream.css").read_text(encoding="utf-8")
+        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
 
-        canvas_css = re.search(r"(?m)^canvas\s*\{([^}]*)\}", html)
+        self.assertIn('/static/stream.css', html)
+        canvas_css = re.search(r"(?m)^canvas\s*\{([^}]*)\}", css)
         self.assertIsNotNone(canvas_css, "Expected a canvas CSS rule")
         self.assertIn("width: auto;", canvas_css.group(1))
         self.assertIn("height: auto;", canvas_css.group(1))
         self.assertNotIn("aspect-ratio: 3 / 2", canvas_css.group(1))
 
-        # The drawing buffer tracks each frame's true dimensions rather than
-        # the display box dimensions, preserving the source aspect ratio.
-        self.assertIn("const frameWidth = img.naturalWidth || img.width;", html)
-        self.assertIn("const frameHeight = img.naturalHeight || img.height;", html)
-        self.assertNotIn("canvas.width !== dispW", html)
-        self.assertNotIn("canvas.height !== dispH", html)
+        # Drawing-buffer dimensions follow the decoded source frame, not the viewport.
+        self.assertIn("const frameWidth = img.naturalWidth || img.width;", core)
+        self.assertIn("const frameHeight = img.naturalHeight || img.height;", core)
+        self.assertNotIn("canvas.width !== dispW", core)
+        self.assertNotIn("canvas.height !== dispH", core)
 
     def test_rendered_inline_javascript_passes_node_syntax_check(self):
         import re
@@ -535,7 +540,10 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         scripts = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
-        self.assertGreaterEqual(len(scripts), 2, "Expected dashboard and extension inline scripts")
+        self.assertEqual(len(scripts), 1, "Only the JSON bootstrap should remain inline")
+        self.assertIn("window.STREAM_BOOTSTRAP", scripts[0])
+        self.assertIn('/static/stream-core.js', html)
+        self.assertIn('/static/stream-extensions.js', html)
         scripts.extend(
             (PYTHON_ROOT / "stream" / "static" / filename).read_text(encoding="utf-8")
             for filename in ("stream-core.js", "stream-extensions.js")
