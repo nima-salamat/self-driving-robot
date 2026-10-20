@@ -111,6 +111,7 @@ HARDCODE_SPEED = 220  # Crosswalk maneuver PWM command
 # Arduino lane-change sequences sent during startup; format: f|b PWM PULSES SERVO.
 OBSTACLE_LANE_LEFT_SEQUENCE = "b 170 110 70 b 170 80 125"  # [JSON] startup sequence for the left lane maneuver
 OBSTACLE_LANE_RIGHT_SEQUENCE = "f 170 70 125 f 170 70 70"  # [JSON] startup sequence for the right lane maneuver
+SEND_AUTOMATIC_ARDUINO_COMMANDS = True  # [JSON] allow automatic Python control/config commands; manual Stream commands bypass this gate
 # City pedestrian/crosswalk routes (f=forward, b=reverse; each command has four tokens).
 CITY_CROSSWALK_TURN_RIGHT_SEQUENCE = "f 220 80 95 f 220 80 120 b 220 80 65 f 220 85 110"  # [JSON] route for TURN RIGHT tags
 CITY_CROSSWALK_TURN_LEFT_SEQUENCE = "f 220 110 95 f 220 130 65"  # [JSON] route for TURN LEFT tags

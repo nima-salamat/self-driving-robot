@@ -38,6 +38,10 @@ class StreamControlsMixin:
         for key, value in snapshot.items():
             if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
                 setattr(self.config, key, value)
+        connection = getattr(self.config, "arduino_connection", None)
+        policy_setter = getattr(connection, "set_automatic_commands_enabled", None)
+        if callable(policy_setter) and "SEND_AUTOMATIC_ARDUINO_COMMANDS" in snapshot:
+            policy_setter(bool(snapshot["SEND_AUTOMATIC_ARDUINO_COMMANDS"]))
         try:
             set_marker_mode(
                 self.config,
@@ -236,6 +240,11 @@ class StreamControlsMixin:
                     else: val = str(val)
 
                     setattr(self.config, k, val)
+                    if k == "SEND_AUTOMATIC_ARDUINO_COMMANDS":
+                        connection = getattr(self.config, "arduino_connection", None)
+                        policy_setter = getattr(connection, "set_automatic_commands_enabled", None)
+                        if callable(policy_setter):
+                            policy_setter(val)
 
             if "RUN_LVL" in data:
                 setattr(self.config, "RUN_LVL", data["RUN_LVL"] if data["RUN_LVL"] in ("MOVE","STOP") else "MOVE")

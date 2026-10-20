@@ -110,6 +110,7 @@ HARDCODE_SPEED = 220
 # Arduino lane-change sequences sent during startup; format: f|b PWM PULSES SERVO.
 OBSTACLE_LANE_LEFT_SEQUENCE = "f 230 48 60 f 230 48 120"  # [JSON] left/pass sequence; preserves the previous 48-pulse default
 OBSTACLE_LANE_RIGHT_SEQUENCE = "f 230 48 120 f 230 48 60"  # [JSON] right/return sequence; preserves the previous 48-pulse default
+SEND_AUTOMATIC_ARDUINO_COMMANDS = True  # [JSON] allow automatic Python control/config commands; manual Stream commands bypass this gate
 
 # --- Crosswalk Setting ---
 CROSSWALK_SLEEP = 3  # [JSON] delay after handling a crosswalk, in seconds

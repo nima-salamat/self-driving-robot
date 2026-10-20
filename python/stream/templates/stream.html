@@ -110,11 +110,29 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 
 </div>
 <section class="bottom-console" id="bottom_console" aria-label="Recent workspace events">
-<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><button class="console-tab" type="button" data-console-tab="python" aria-selected="false">Python Log</button><button class="console-tab" type="button" data-console-tab="arduino" aria-selected="false">Arduino</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
+<div class="console-titlebar"><button class="console-toggle" id="console_toggle_btn" type="button" aria-expanded="false" aria-label="Toggle Event Console"><svg class="console-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M4 9h16M7 13h3M7 16h6"/></svg><span>EVENT CONSOLE</span></button><button class="console-tab" type="button" data-console-tab="events" aria-selected="true">Events</button><button class="console-tab" type="button" data-console-tab="api" aria-selected="false">Requests</button><button class="console-tab" type="button" data-console-tab="python" aria-selected="false">Python Log</button><button class="console-tab" type="button" data-console-tab="arduino" aria-selected="false">Arduino</button><button class="console-tab" type="button" data-console-tab="arduino-commands" aria-selected="false">Arduino Commands</button><span class="console-count" id="console_count">0 events</span><input id="console_filter" type="search" placeholder="Filter console…" aria-label="Filter console" style="width:135px;min-width:80px;font-size:10px;padding:4px"><select id="console_level" aria-label="Console log level" style="font-size:10px;padding:3px"><option value="ALL">All levels</option><option value="INFO">Info</option><option value="WARN">Warn</option><option value="ERROR">Error</option></select><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_pause">Pause</label><label class="small-muted" style="display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="console_autoscroll" checked>Auto-scroll</label><button class="console-clear" id="console_export_btn" type="button">Export</button><span class="console-flex"></span><button class="console-clear" id="console_clear_btn" type="button">Clear</button></div>
 <div class="console-body" id="console_events" role="log" aria-live="off"><div class="console-empty">Waiting for workspace events…</div></div>
 <div class="console-body" id="console_api" role="log" aria-live="off" hidden><div class="console-empty">Request diagnostics will appear here.</div></div>
 <div class="console-body" id="console_python" role="log" aria-live="off" hidden><div class="console-empty">Select Python Log to load recent runtime logs.</div></div>
 <div class="console-body console-arduino-body" id="console_arduino" role="log" aria-live="off" hidden><div class="console-empty">Waiting for Arduino serial output…</div><pre id="arduino_output" aria-label="Arduino serial log"></pre></div>
+<div class="console-body console-command-body" id="console_arduino_commands" hidden>
+  <div class="arduino-command-panel">
+    <div class="arduino-command-policy">
+      <label><input type="checkbox" id="arduino_auto_commands_enabled" checked> Send automatic Python control/configuration commands</label>
+      <span id="arduino_command_policy_status" role="status">Automatic commands are enabled.</span>
+    </div>
+    <p class="arduino-command-note">When unchecked, normal commands generated by the Python controller are suppressed. Commands sent from this tab always bypass that setting. The low-level heartbeat and reconnection safety traffic remain active.</p>
+    <form id="arduino_command_form" autocomplete="off">
+      <label for="arduino_custom_command">Custom Arduino command</label>
+      <div class="arduino-command-input-row">
+        <input id="arduino_custom_command" name="command" type="text" maxlength="256" spellcheck="false" placeholder="Enter one command, e.g. servo 95" aria-label="Custom Arduino command">
+        <button type="submit" class="btn" id="arduino_command_send_btn">Send to Arduino</button>
+      </div>
+      <div class="small-muted">Send sends one ASCII command line. The automatic-command toggle does not block manual sends.</div>
+    </form>
+    <div class="arduino-command-feedback" id="arduino_command_feedback" role="status" aria-live="polite">Ready. Connect Arduino and stop/lift the wheels before testing motion commands.</div>
+  </div>
+</div>
 </section>
 </div>
 </div>

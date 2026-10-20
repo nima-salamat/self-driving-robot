@@ -31,6 +31,7 @@ class ArduinoConnection:
         heartbeat_interval=0.1,
         servo_center=95,
         enabled=True,
+        automatic_commands_enabled=True,
     ):
         self.port = port
         self.baudrate = baudrate
@@ -42,6 +43,7 @@ class ArduinoConnection:
         self.command_write_timeout = max(0.01, float(command_write_timeout))
         self.heartbeat_interval = max(0.05, float(heartbeat_interval))
         self.enabled = bool(enabled)
+        self.automatic_commands_enabled = bool(automatic_commands_enabled)
         self.servo_center = int(servo_center)
 
         self.serial_connection = None
@@ -397,8 +399,24 @@ class ArduinoConnection:
             self._send_heartbeat()
             self._stop_event.wait(self.heartbeat_interval)
 
+    def set_automatic_commands_enabled(self, enabled):
+        """Enable or suppress ordinary Python-generated serial commands."""
+        self.automatic_commands_enabled = bool(enabled)
+        return self.automatic_commands_enabled
+
     @if_is_not_windows
     def send_command(self, command):
+        """Send an ordinary runtime command, subject to the automatic-command gate."""
+        if not self.automatic_commands_enabled:
+            return False
+        return self._send_serial_command(command)
+
+    @if_is_not_windows
+    def send_custom_command(self, command):
+        """Send an explicit Stream-terminal command even when automatic sends are disabled."""
+        return self._send_serial_command(command)
+
+    def _send_serial_command(self, command):
         if not self.enabled:
             return False
 
@@ -420,11 +438,11 @@ class ArduinoConnection:
                 connection.flush()
             return True
         except (serial.SerialException, OSError, TimeoutError) as exc:
-            self._mark_disconnected(exc, expected_connection=connection)
+            self._mark_disconnected(exc, expected_connection=self.serial_connection)
             return False
         except Exception as exc:
             logger.exception("Arduino command failed")
-            self._mark_disconnected(exc, expected_connection=connection)
+            self._mark_disconnected(exc, expected_connection=self.serial_connection)
             return False
 
     @if_is_not_windows

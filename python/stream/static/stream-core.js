@@ -1299,6 +1299,16 @@ function updateArduinoOutput(){
             if(!j) return;
             const status = document.getElementById('arduino_status');
             const output = document.getElementById('arduino_output');
+            const automaticToggle = document.getElementById('arduino_auto_commands_enabled');
+            if (automaticToggle && typeof j.automatic_commands_enabled === 'boolean' && automaticToggle.dataset.pending !== 'true') {
+                automaticToggle.checked = j.automatic_commands_enabled;
+            }
+            const policyStatus = document.getElementById('arduino_command_policy_status');
+            if (policyStatus && typeof j.automatic_commands_enabled === 'boolean' && automaticToggle?.dataset.pending !== 'true') {
+                policyStatus.textContent = j.automatic_commands_enabled
+                    ? 'Automatic Python commands are enabled.'
+                    : 'Automatic Python commands are suppressed; manual commands still work.';
+            }
             const arduinoStateText = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
             status.textContent = arduinoStateText;
             if(lastLoggedArduinoState !== arduinoStateText) {
@@ -1465,6 +1475,12 @@ consoleClear.addEventListener('click',()=>{
     noteWorkspaceEvent('info','Arduino serial output view cleared; the next poll may show buffered firmware output again');
     return;
   }
+  if(consoleTab==='arduino-commands'){
+    const feedback=document.getElementById('arduino_command_feedback');
+    if(feedback)feedback.textContent='Command feedback cleared.';
+    noteWorkspaceEvent('info','Arduino command feedback cleared');
+    return;
+  }
   if(consoleTab==='api')workspaceApiEvents=[];
   else if(consoleTab==='python'){workspacePythonLogs=[];pythonLogsClearedAfter=Date.now()/1000+0.01;}
   else workspaceEvents=[];
@@ -1480,8 +1496,15 @@ document.querySelectorAll('[data-console-tab]').forEach(b=>b.addEventListener('c
   document.getElementById('console_python').hidden=consoleTab!=='python';
   const arduinoPane=document.getElementById('console_arduino');
   if(arduinoPane)arduinoPane.hidden=consoleTab!=='arduino';
+  const arduinoCommandPane=document.getElementById('console_arduino_commands');
+  if(arduinoCommandPane)arduinoCommandPane.hidden=consoleTab!=='arduino-commands';
   if(!consoleDock.classList.contains('console-open'))setConsoleOpen(true);
-  if(consoleTab!=='arduino')renderWorkspaceEventLog(consoleTab);
+  if(consoleTab!=='arduino'&&consoleTab!=='arduino-commands')renderWorkspaceEventLog(consoleTab);
+  if(consoleTab==='arduino-commands'){
+    updateArduinoOutput();
+    const commandInput=document.getElementById('arduino_custom_command');
+    if(commandInput)commandInput.focus();
+  }
   updatePythonLogPolling();
 }));
 document.querySelectorAll('.menu-group').forEach(m=>m.addEventListener('toggle',()=>{if(m.open)document.querySelectorAll('.menu-group').forEach(o=>{if(o!==m)o.open=false;});}));document.addEventListener('click',e=>{if(!e.target.closest('.menu-group'))document.querySelectorAll('.menu-group').forEach(m=>m.open=false);});
@@ -1621,3 +1644,80 @@ function mapGroupToDefaultVar(g){
     if(g==='OBJ') return 'OBJ_TOP_ROI'; 
     return 'RL_TOP_ROI'; 
 }
+
+
+// Manual Arduino command console. This endpoint intentionally bypasses the
+// automatic Python-command gate while retaining dashboard control permissions.
+(function bindArduinoCommandConsole(){
+  const policyToggle=document.getElementById('arduino_auto_commands_enabled');
+  const policyStatus=document.getElementById('arduino_command_policy_status');
+  const form=document.getElementById('arduino_command_form');
+  const input=document.getElementById('arduino_custom_command');
+  const sendButton=document.getElementById('arduino_command_send_btn');
+  const feedback=document.getElementById('arduino_command_feedback');
+
+  if(policyToggle){
+    policyToggle.addEventListener('change',async()=>{
+      const requested=policyToggle.checked;
+      policyToggle.disabled=true;
+      policyToggle.dataset.pending='true';
+      if(policyStatus)policyStatus.textContent='Saving automatic-command policy…';
+      try{
+        const response=await fetch('/set_advanced',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({SEND_AUTOMATIC_ARDUINO_COMMANDS:requested})
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok||!result.success)throw new Error(result.message||('HTTP '+response.status));
+        const saved=!!result.advanced.SEND_AUTOMATIC_ARDUINO_COMMANDS;
+        policyToggle.checked=saved;
+        if(policyStatus)policyStatus.textContent=saved
+          ?'Automatic Python commands are enabled.'
+          :'Automatic Python commands are suppressed; manual commands still work.';
+        noteWorkspaceEvent('info',saved
+          ?'Automatic Python Arduino commands enabled'
+          :'Automatic Python Arduino commands suppressed');
+      }catch(error){
+        policyToggle.checked=!requested;
+        if(policyStatus)policyStatus.textContent='Could not save policy: '+(error.message||error);
+        showToast('Could not save Arduino command policy');
+      }finally{
+        delete policyToggle.dataset.pending;
+        policyToggle.disabled=false;
+      }
+    });
+  }
+
+  if(form&&input&&sendButton){
+    form.addEventListener('submit',async(event)=>{
+      event.preventDefault();
+      const command=input.value.trim();
+      if(!command){
+        if(feedback)feedback.textContent='Enter a command before sending.';
+        input.focus();
+        return;
+      }
+      sendButton.disabled=true;
+      if(feedback)feedback.textContent='Sending custom command…';
+      try{
+        const response=await fetch('/api/arduino-command',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({command})
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok||!result.success)throw new Error(result.message||('HTTP '+response.status));
+        if(feedback)feedback.textContent='Sent: '+result.command;
+        input.value='';
+        noteWorkspaceEvent('info','Custom Arduino command sent: '+result.command,'arduino-commands');
+      }catch(error){
+        if(feedback)feedback.textContent='Command failed: '+(error.message||error);
+        noteWorkspaceEvent('error','Custom Arduino command failed: '+(error.message||error),'arduino-commands');
+      }finally{
+        sendButton.disabled=false;
+        input.focus();
+      }
+    });
+  }
+})();

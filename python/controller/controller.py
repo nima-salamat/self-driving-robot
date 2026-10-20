@@ -48,6 +48,9 @@ class RobotController:
             heartbeat_interval=getattr(self.config, "HOST_HEARTBEAT_INTERVAL", 0.1),
             servo_center=int(getattr(self.config, "SERVO_CENTER", 95)),
             enabled=not self.without_arduino,
+            automatic_commands_enabled=bool(
+                getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+            ),
         )
         self.connection.set_print_telemetry(
             bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))

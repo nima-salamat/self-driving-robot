@@ -505,10 +505,66 @@ class StreamRuntimeMixin:
     def arduino_output(self):
         connection = getattr(self.config, "arduino_connection", None)
         if connection is None:
-            return jsonify(enabled=False, connected=False, state="DISCONNECTED", lines=[])
+            return jsonify(
+                enabled=False,
+                connected=False,
+                state="DISCONNECTED",
+                lines=[],
+                automatic_commands_enabled=bool(
+                    getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+                ),
+            )
         status = connection.telemetry_status(limit=50)
         status["enabled"] = bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
+        status["automatic_commands_enabled"] = bool(
+            getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+        )
         return jsonify(status)
+
+    def arduino_command_api(self):
+        """Send one operator-entered command, bypassing the automatic-send gate."""
+        if not self._control_allowed():
+            return self._control_denied()
+
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="request body must be a JSON object"), 400
+
+        command = body.get("command")
+        if not isinstance(command, str):
+            return jsonify(success=False, message="command must be a string"), 400
+        command = command.strip()
+        if not command:
+            return jsonify(success=False, message="command must not be empty"), 400
+        if len(command) > 256:
+            return jsonify(success=False, message="command must be at most 256 characters"), 400
+        if any(ord(char) < 32 or ord(char) == 127 for char in command):
+            return jsonify(success=False, message="command must be a single line without control characters"), 400
+        try:
+            command.encode("ascii")
+        except UnicodeEncodeError:
+            return jsonify(success=False, message="Arduino commands must use ASCII characters"), 400
+
+        connection = getattr(self.config, "arduino_connection", None)
+        if connection is None:
+            return jsonify(success=False, message="Arduino serial connection is unavailable"), 409
+        if not bool(getattr(connection, "connected", False)):
+            return jsonify(success=False, message="Arduino is not connected; command was not sent"), 409
+
+        sender = getattr(connection, "send_custom_command", None)
+        if not callable(sender):
+            return jsonify(success=False, message="custom Arduino command sending is unavailable"), 409
+        if not sender(command + "\n"):
+            return jsonify(success=False, message="Arduino command transmission failed"), 503
+
+        logger.info("Custom Arduino command sent from Stream terminal: %r", command)
+        return jsonify(
+            success=True,
+            command=command,
+            automatic_commands_enabled=bool(
+                getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+            ),
+        )
 
     def mode(self):
         mode = getattr(self.config, "MODE", "mode")
@@ -553,6 +609,7 @@ def register_runtime_routes(app, streamer):
     """Register stream runtime routes on the shared Flask app."""
     app.add_url_rule("/api/mode", "mode", streamer.mode)
     app.add_url_rule("/api/arduino-output", "arduino_output", streamer.arduino_output)
+    app.add_url_rule("/api/arduino-command", "arduino_command_api", streamer.arduino_command_api, methods=["POST"])
     app.add_url_rule("/api/health", "health", streamer.health)
     app.add_url_rule("/api/logs", "server_logs", streamer.server_logs)
     app.add_url_rule("/api/traffic-lights", "traffic_lights_api", streamer.traffic_lights_api)
