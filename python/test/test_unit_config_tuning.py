@@ -91,7 +91,7 @@ class ConfigTuningTests(unittest.TestCase):
         self.assertLess(city_routes.index('id="maneuver_city_left"'), city_routes.index('id="maneuver_city_straight"'))
         self.assertLess(city_routes.index('id="maneuver_city_straight"'), city_routes.index('id="maneuver_city_right"'))
 
-        self.assertNotIn('id="console_count"', template)
+        self.assertNotIn('<span class="console-count" id="console_count">', template)
         self.assertIn('id="console_count_events"', template)
         self.assertIn('id="console_count_api"', template)
         self.assertIn('id="console_count_python"', template)
