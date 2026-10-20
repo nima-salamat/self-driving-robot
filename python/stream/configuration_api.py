@@ -2,8 +2,9 @@
 import sys as _sys
 
 # These methods were moved from WebStreamer without changing their behavior.
-# Bind shared Stream globals at import time
-from utils.json_config import validate_pulse_sequence, PULSE_SEQUENCE_KEYS; BASE_DIR is deliberately resolved
+from utils.json_config import validate_pulse_sequence, PULSE_SEQUENCE_KEYS
+
+# Bind shared Stream globals at import time; BASE_DIR is deliberately resolved
 # dynamically so existing tests/configuration patching of stream.BASE_DIR remains valid.
 _stream_module = _sys.modules[__package__]
 for _global_name, _global_value in vars(_stream_module).items():
