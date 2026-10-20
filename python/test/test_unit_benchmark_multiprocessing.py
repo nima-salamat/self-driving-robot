@@ -10,7 +10,7 @@ class MultiprocessingBenchmarkParsingTests(unittest.TestCase):
             "performance: fps=29.5 loop_mean=30.0ms loop_p95=35.2ms loop_p99=45.0ms"
         )
         self.assertEqual(parsed["fps"], 29.5)
-        self.assertEqual(parsed["loop_mean"], "30.0ms")
+        self.assertEqual(parsed["loop_mean"], 30.0)
 
     def test_parses_stage_and_string_source_values(self):
         parsed = parse_performance_line(
@@ -20,6 +20,10 @@ class MultiprocessingBenchmarkParsingTests(unittest.TestCase):
         self.assertEqual(parsed["sign_worker"], "process")
         self.assertEqual(parsed["sign_alive"], "True")
         self.assertEqual(parsed["sign_queue"], 0.0)
+        stages = parse_performance_line(
+            "performance vision stages: lane_p50_ms=8.0 lane_p95_ms=12.5 lane_p99_ms=20.0"
+        )
+        self.assertEqual(stages["lane_p95_ms"], 12.5)
 
     def test_ignores_non_performance_lines(self):
         self.assertEqual(parse_performance_line("INFO camera initialized"), {})

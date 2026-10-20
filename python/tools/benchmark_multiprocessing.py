@@ -41,8 +41,9 @@ def parse_performance_line(line: str) -> dict[str, float | str]:
         return {}
     parsed: dict[str, float | str] = {}
     for key, raw in _PAIR_RE.findall(line):
+        numeric = raw[:-2] if raw.endswith("ms") else raw[:-1] if raw.endswith("%") else raw
         try:
-            value = float(raw)
+            value = float(numeric)
         except ValueError:
             parsed[key] = raw
             continue
