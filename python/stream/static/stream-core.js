@@ -1307,6 +1307,8 @@ function updateArduinoOutput(){
             }
             output.textContent = (j.lines || []).join('\\n');
             output.scrollTop = output.scrollHeight;
+            const placeholder = output.parentElement && output.parentElement.querySelector('.console-empty');
+            if (placeholder) placeholder.hidden = (j.lines || []).length > 0;
         })
         .catch(()=>{});
 }
