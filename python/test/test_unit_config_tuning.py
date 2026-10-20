@@ -83,6 +83,22 @@ class ConfigTuningTests(unittest.TestCase):
         self.assertIn("config_race.OBSTACLE_LANE_LEFT_SEQUENCE", race_source)
         self.assertIn("{% if mode == 'city' %}", template)
 
+        # City route cards are arranged like road directions: left, straight, right.
+        heading = template.index("<h3>City · Pedestrian / Crosswalk Routes</h3>")
+        grid_start = template.index('<div class="maneuver-grid">', heading)
+        grid_end = template.index('<h3 style="margin-top:18px">Crosswalk Line-count Thresholds</h3>', grid_start)
+        city_routes = template[grid_start:grid_end]
+        self.assertLess(city_routes.index('id="maneuver_city_left"'), city_routes.index('id="maneuver_city_straight"'))
+        self.assertLess(city_routes.index('id="maneuver_city_straight"'), city_routes.index('id="maneuver_city_right"'))
+
+        self.assertNotIn('id="console_count"', template)
+        self.assertIn('id="console_count_events"', template)
+        self.assertIn('id="console_count_api"', template)
+        self.assertIn('id="console_count_python"', template)
+        stream_core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
+        self.assertIn("function updateConsoleTabCounts()", stream_core)
+        self.assertIn("count>99?'+99':String(count)", stream_core)
+
 
 if __name__ == "__main__":
     unittest.main()

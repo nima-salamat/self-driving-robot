@@ -153,7 +153,22 @@ const WORKSPACE_EVENT_LIMIT=250;let workspaceEvents=[],workspaceApiEvents=[],wor
 let lastLoggedHealthState=null,lastLoggedFaultSignature=null,lastLoggedArduinoState=null,lastLoggedModeSignature=null;
 function noteWorkspaceEvent(level,message,channel='events'){const entry={time:new Date(),level:String(level||'info').toLowerCase(),message:String(message||'')};const store=channel==='api'?workspaceApiEvents:workspaceEvents;store.push(entry);if(store.length>WORKSPACE_EVENT_LIMIT)store.splice(0,store.length-WORKSPACE_EVENT_LIMIT);renderWorkspaceEventLog(channel==='api'?'api':'events');}
 let workspaceConsolePaused=false,workspaceConsoleAutoScroll=true,workspaceConsoleQuery='',workspaceConsoleLevel='ALL';
+function updateConsoleTabCounts(){
+  const counters=[
+    ['console_count_events',workspaceEvents.length,'events'],
+    ['console_count_api',workspaceApiEvents.length,'requests'],
+    ['console_count_python',workspacePythonLogs.length,'Python logs']
+  ];
+  for(const [id,count,label] of counters){
+    const badge=document.getElementById(id);
+    if(!badge)continue;
+    badge.textContent=count>99?'+99':String(count);
+    badge.title=String(count)+' '+label;
+    badge.setAttribute('aria-label',String(count)+' '+label);
+  }
+}
 function renderWorkspaceEventLog(channel='events'){
+  updateConsoleTabCounts();
   if(workspaceConsolePaused)return;
   const store=channel==='api'?workspaceApiEvents:channel==='python'?workspacePythonLogs:workspaceEvents;
   const root=document.getElementById(channel==='api'?'console_api':channel==='python'?'console_python':'console_events');if(!root)return;
@@ -175,7 +190,6 @@ function renderWorkspaceEventLog(channel='events'){
     row.append(stamp,level,msg);root.appendChild(row);
   }
   if(workspaceConsoleAutoScroll)root.scrollTop=0;
-  const c=document.getElementById('console_count');if(c)c.textContent=workspaceEvents.length+' events · '+workspaceApiEvents.length+' requests · '+workspacePythonLogs.length+' Python logs';
 }
 function recordApiEvent(level,message){noteWorkspaceEvent(level,message,'api');}
 function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){
