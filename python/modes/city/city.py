@@ -489,7 +489,7 @@ class Robot:
                         logger.exception("Traffic-light detector failed; holding")
                         color = None
                     finally:
-                        if self.metrics is not None:
+                        if getattr(self, "metrics", None) is not None:
                             self.metrics.record_stage(
                                 "traffic_light",
                                 (time.monotonic() - traffic_started) * 1000.0,
@@ -694,7 +694,7 @@ class Robot:
                     perception_started = time.monotonic()
                     lane_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
-                    if self.metrics is not None:
+                    if getattr(self, "metrics", None) is not None:
                         self.metrics.record_stage(
                             "lane", (time.monotonic() - lane_started) * 1000.0
                         )
@@ -716,13 +716,13 @@ class Robot:
                             frame_at=self.camera.last_capture_at,
                             observation_token=self.camera.last_capture_at,
                         )
-                        if self.metrics is not None:
+                        if getattr(self, "metrics", None) is not None:
                             self.metrics.record_stage(
                                 "confidence",
                                 (time.monotonic() - confidence_started) * 1000.0,
                             )
                         config_city.perception_confidence = confidence
-                    if self.metrics is not None:
+                    if getattr(self, "metrics", None) is not None:
                         self.metrics.record_perception(
                             (time.monotonic() - perception_started) * 1000.0,
                             bool(result.get("perception_valid", False)),
@@ -823,7 +823,7 @@ class Robot:
                         perception_started = time.monotonic()
                         lane_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
-                        if self.metrics is not None:
+                        if getattr(self, "metrics", None) is not None:
                             self.metrics.record_stage(
                                 "lane", (time.monotonic() - lane_started) * 1000.0
                             )
@@ -835,13 +835,13 @@ class Robot:
                                 frame_at=self.camera.last_capture_at,
                                 observation_token=self.camera.last_capture_at,
                             )
-                            if self.metrics is not None:
+                            if getattr(self, "metrics", None) is not None:
                                 self.metrics.record_stage(
                                     "confidence",
                                     (time.monotonic() - confidence_started) * 1000.0,
                                 )
                             config_city.perception_confidence = confidence
-                        if self.metrics is not None:
+                        if getattr(self, "metrics", None) is not None:
                             self.metrics.record_perception(
                                 (time.monotonic() - perception_started) * 1000.0,
                                 bool(result.get("perception_valid", False)),
@@ -945,7 +945,7 @@ class Robot:
                     target_speed, reason = self.confidence_limiter.limit(target_speed, confidence)
                     config_city.speed_decision = {"target": target_speed, "reason": reason}
                 self.control.set_speed(target_speed)
-                if self.metrics is not None:
+                if getattr(self, "metrics", None) is not None:
                     self.metrics.record_control(
                         (time.monotonic() - control_started) * 1000.0
                     )
@@ -1054,7 +1054,7 @@ class Robot:
                 sign_tag_frame,
                 debug_frame,
             )
-            if self.metrics is not None:
+            if getattr(self, "metrics", None) is not None:
                 self.metrics.record_stage(
                     "apriltag",
                     (time.monotonic() - apriltag_started) * 1000.0,
@@ -1106,7 +1106,7 @@ class Robot:
                 self.sign_detector.submit(
                     submit_frame, submit_debug, **submit_options
                 )
-                if self.metrics is not None:
+                if getattr(self, "metrics", None) is not None:
                     self.metrics.record_stage(
                         "sign_submit", (time.monotonic() - submit_started) * 1000.0
                     )
@@ -1121,7 +1121,7 @@ class Robot:
                 and latest_sign[0] > self.last_sign_result_id
             ):
                 self.last_sign_result_id = latest_sign[0]
-                if self.metrics is not None and len(latest_sign) >= 4:
+                if getattr(self, "metrics", None) is not None and len(latest_sign) >= 4:
                     frame_captured_at = (
                         latest_sign[4]
                         if len(latest_sign) >= 5 and latest_sign[4] is not None
@@ -1143,9 +1143,16 @@ class Robot:
                     targets=getattr(config_city, "SIGN_AREA_FILTER_TARGETS", []),
                     minimum_area_px2=getattr(config_city, "SIGN_AREA_MIN_PX2", 0),
                 )
-                if detection_accepted or (hold_active and force_check):
-                    # While held, a completed but filtered result is still a
-                    # fresh observation that contains no accepted STOP.
+                filtered_stop_candidate = (
+                    normalize_sign_name(sign_result.get("text", "")) == "STOP"
+                    and not detection_accepted
+                )
+                if (
+                    not filtered_stop_candidate
+                    and (detection_accepted or (hold_active and force_check))
+                ):
+                    # A rejected STOP candidate is not proof that STOP is absent.
+                    # Do not let a tiny/filtered STOP count toward hold clearance.
                     self.last_sign_observation_fresh = True
                     self.last_sign_observation_at = (
                         latest_sign[4]

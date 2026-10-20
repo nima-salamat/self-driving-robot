@@ -87,24 +87,33 @@ class RuntimeMetrics:
 
     @staticmethod
     def _statistics(values):
+        """Summarize a rolling sample with nearest-rank percentiles."""
         if not values:
             return {
                 "count": 0,
                 "mean_ms": 0.0,
                 "min_ms": 0.0,
                 "max_ms": 0.0,
+                "p50_ms": 0.0,
                 "p95_ms": 0.0,
+                "p99_ms": 0.0,
             }
 
         ordered = sorted(values)
         count = len(ordered)
-        p95_index = min(count - 1, max(0, math.ceil(count * 0.95) - 1))
+
+        def percentile(percent):
+            index = min(count - 1, max(0, math.ceil(count * percent) - 1))
+            return ordered[index]
+
         return {
             "count": count,
             "mean_ms": sum(ordered) / count,
             "min_ms": ordered[0],
             "max_ms": ordered[-1],
-            "p95_ms": ordered[p95_index],
+            "p50_ms": percentile(0.50),
+            "p95_ms": percentile(0.95),
+            "p99_ms": percentile(0.99),
         }
 
     def snapshot(self):

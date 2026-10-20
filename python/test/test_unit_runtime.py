@@ -72,6 +72,13 @@ class RuntimeMetricsTests(unittest.TestCase):
         self.assertEqual(timing["lane"]["p95_ms"], 12.5)
         self.assertEqual(timing["sign_latency"]["p95_ms"], 34.0)
 
+    def test_percentile_statistics_use_nearest_rank(self):
+        statistics = RuntimeMetrics._statistics(list(range(1, 101)))
+        self.assertEqual(statistics["count"], 100)
+        self.assertEqual(statistics["p50_ms"], 50)
+        self.assertEqual(statistics["p95_ms"], 95)
+        self.assertEqual(statistics["p99_ms"], 99)
+
     def test_statistics_and_counters(self):
         metrics = RuntimeMetrics(window_size=3)
         metrics.record_loop(10)
@@ -83,7 +90,9 @@ class RuntimeMetricsTests(unittest.TestCase):
         self.assertEqual(snapshot["counters"]["frames"], 3)
         self.assertEqual(snapshot["counters"]["camera_failures"], 1)
         self.assertEqual(snapshot["timing"]["loop"]["max_ms"], 30)
+        self.assertEqual(snapshot["timing"]["loop"]["p50_ms"], 20)
         self.assertEqual(snapshot["timing"]["loop"]["p95_ms"], 30)
+        self.assertEqual(snapshot["timing"]["loop"]["p99_ms"], 30)
 
 
 class HealthTests(unittest.TestCase):

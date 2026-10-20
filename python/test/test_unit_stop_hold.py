@@ -106,12 +106,15 @@ class StopSignHoldStateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             StopSignHold(minimum_duration_s=-0.01)
 
-    def test_default_stop_releases_after_first_fresh_absence(self):
+    def test_default_stop_requires_minimum_duration_after_fresh_absence(self):
         state = StopSignHold()
         self.start(state)
         self.absent(state, 10.1, now=10.1)
-        self.assertTrue(state.can_release(now=10.1))
-        self.assertTrue(state.release(now=10.1))
+        self.assertFalse(state.can_release(now=10.1))
+        self.assertFalse(state.release(now=10.1))
+        self.assertTrue(state.active)
+        self.assertTrue(state.can_release(now=13.1))
+        self.assertTrue(state.release(now=13.1))
         self.assertFalse(state.active)
 
     def test_timer_alone_never_releases_stop(self):
@@ -154,13 +157,16 @@ class StopSignHoldStateTests(unittest.TestCase):
         self.assertEqual(state.clear_observations, 1)
         self.assertTrue(state.active)
 
-    def test_default_does_not_wait_after_a_fresh_absence(self):
+    def test_default_hold_remains_active_until_minimum_duration_elapses(self):
         state = StopSignHold()
         self.start(state)
         self.absent(state, 10.1, now=10.1)
         self.assertEqual(state.clear_observations, 1)
-        self.assertTrue(state.can_release(now=10.1))
-        self.assertTrue(state.release(now=10.1))
+        self.assertFalse(state.can_release(now=13.09))
+        self.assertFalse(state.release(now=13.09))
+        self.assertTrue(state.active)
+        self.assertTrue(state.can_release(now=13.1))
+        self.assertTrue(state.release(now=13.1))
         self.assertFalse(state.active)
 
 
@@ -180,6 +186,12 @@ class StopHoldModeTests(unittest.TestCase):
         robot._last_stop_release_attempt_at = None
         robot._mcu_stop_latched = False
         robot._stop_connection_state = None
+        robot.metrics = None
+        robot.camera = types.SimpleNamespace(last_capture_at=None)
+        # Normal Race sign reads are gated to start/finish phases or an active
+        # STOP hold; this fixture models the inactive mid-race phase.
+        robot.race_finish = types.SimpleNamespace(finishing=False)
+        robot._race_timer_started = False
         robot.control = FakeControl()
         return robot
 

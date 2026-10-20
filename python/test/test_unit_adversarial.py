@@ -748,12 +748,14 @@ class SignInputFreshnessAdversarialTests(unittest.TestCase):
                 self._wait(lambda: worker.latest() is not None)
             )
             with worker._lock:
-                request_id, result, _submitted, completed = worker._latest
+                request_id, result, _submitted, completed, _captured = worker._latest
+                old_capture_at = time.monotonic() - 2.0
                 worker._latest = (
                     request_id,
                     result,
                     time.monotonic() - 2.0,
                     completed,
+                    old_capture_at,
                 )
             self.assertIsNone(worker.latest(max_age_s=0.75))
         finally:

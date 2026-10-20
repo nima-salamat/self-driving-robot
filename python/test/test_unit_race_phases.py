@@ -229,6 +229,9 @@ class RacePhaseModeTests(unittest.TestCase):
 
     def test_finish_stop_hold_releases_when_stop_disappears(self):
         robot = self.make_robot("TURN LEFT")
+        # This test checks finish-phase STOP observation routing, not the
+        # independently tested 3-second StopSignHold timing policy.
+        robot.stop_hold.minimum_duration_s = 0.0
         self.run_phase_result(robot, "TURN LEFT")
         self.assertEqual(robot.control.stops, [])
 
