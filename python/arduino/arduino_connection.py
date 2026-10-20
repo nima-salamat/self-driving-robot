@@ -429,6 +429,7 @@ class ArduinoConnection:
             self._request_reconnect()
             return False
 
+        connection = None
         try:
             with self._serial_lock:
                 connection = self.serial_connection
@@ -438,11 +439,11 @@ class ArduinoConnection:
                 connection.flush()
             return True
         except (serial.SerialException, OSError, TimeoutError) as exc:
-            self._mark_disconnected(exc, expected_connection=self.serial_connection)
+            self._mark_disconnected(exc, expected_connection=connection)
             return False
         except Exception as exc:
             logger.exception("Arduino command failed")
-            self._mark_disconnected(exc, expected_connection=self.serial_connection)
+            self._mark_disconnected(exc, expected_connection=connection)
             return False
 
     @if_is_not_windows
