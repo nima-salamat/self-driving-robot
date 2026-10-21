@@ -90,6 +90,61 @@ class LaneDebugOverlayTests(unittest.TestCase):
         np.testing.assert_array_equal(frame, original)
         self.assertGreater(np.count_nonzero(rendered), 0)
 
+    def test_classical_overlay_handles_missing_left_and_right_candidates(self):
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        draw_data = {
+            "kind": "classical",
+            "frame_width": 160,
+            "frame_height": 120,
+            "roi_bounds": {
+                "RL": (90, 30, 150, 110),
+                "LL": (10, 30, 70, 110),
+                "CW": (20, 70, 140, 118),
+            },
+            "line_offsets": {"RL": (90, 30), "LL": (10, 30), "CW": (20, 70)},
+            "lines": {
+                "RL": None,
+                "LL": np.empty((0, 1, 4), dtype=np.int32),
+                "CW": None,
+            },
+            "midpoints": {"RL": None, "LL": None},
+            "frame_center_x": 80.0,
+            "lane_center_offset_px": 80.0,
+        }
+
+        rendered = render_lane_debug_overlay(
+            frame, draw_data, self.config, steering_angle=None
+        )
+
+        self.assertEqual(rendered.shape, frame.shape)
+        self.assertGreater(np.count_nonzero(rendered), 0)
+
+    def test_classical_overlay_skips_malformed_candidate_instead_of_crashing(self):
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        draw_data = {
+            "kind": "classical",
+            "frame_width": 160,
+            "frame_height": 120,
+            "roi_bounds": {
+                "RL": (90, 30, 150, 110),
+                "LL": (10, 30, 70, 110),
+            },
+            "line_offsets": {"RL": (90, 30), "LL": (10, 30)},
+            "lines": {
+                "RL": [np.array([10, 20, 30], dtype=np.int32)],
+                "LL": [np.array([10, 20, 30, 40], dtype=np.int32)],
+            },
+            "midpoints": {"RL": None, "LL": None},
+            "frame_center_x": 80.0,
+            "lane_center_offset_px": 0.0,
+        }
+
+        rendered = render_lane_debug_overlay(
+            frame, draw_data, self.config, steering_angle=None
+        )
+
+        self.assertEqual(rendered.shape, frame.shape)
+
     def test_servo_guide_can_be_disabled_by_stream_settings(self):
         from unittest.mock import patch
 
