@@ -28,6 +28,7 @@ class RuntimeMetrics:
         }
         self._counters = {
             "frames": 0,
+            "loop_iterations": 0,
             "camera_failures": 0,
             "perception_failures": 0,
             "serial_failures": 0,
@@ -50,9 +51,10 @@ class RuntimeMetrics:
             self._timings[name].append(duration_ms)
 
     def record_loop(self, duration_ms):
+        """Record one outer control-loop iteration, not a processed camera frame."""
         with self._lock:
-            self._counters["frames"] += 1
-            self._last["frame_at"] = time.monotonic()
+            self._counters["loop_iterations"] += 1
+            self._last["loop_started_at"] = time.monotonic()
         self._record_timing("loop", duration_ms)
 
     def record_camera(self, duration_ms, valid):
@@ -64,7 +66,10 @@ class RuntimeMetrics:
 
     def record_perception(self, duration_ms, valid):
         with self._lock:
-            self._last["perception_at"] = time.monotonic()
+            now = time.monotonic()
+            self._counters["frames"] += 1
+            self._last["frame_at"] = now
+            self._last["perception_at"] = now
             self._last["last_perception_valid"] = bool(valid)
             if not valid:
                 self._counters["perception_failures"] += 1
