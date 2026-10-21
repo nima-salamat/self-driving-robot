@@ -209,8 +209,10 @@ class StreamApiTests(unittest.TestCase):
             self.assertIn('data-menu-id="' + menu_id + '"', template)
             self.assertIn('<span class="menu-mnemonic">' + mnemonic + '</span>', template)
 
-        for code in ("KeyP", "KeyC", "KeyW", "KeyS", "KeyA", "KeyD", "KeyR", "KeyF", "KeyE", "KeyV", "KeyT", "KeyH"):
+        for code in ("KeyP", "KeyC", "KeyW", "KeyS", "KeyA", "KeyD", "KeyR"):
             self.assertIn("'" + code + "'", extensions)
+        for code, menu_id in (("KeyF", "file"), ("KeyE", "edit"), ("KeyV", "view"), ("KeyT", "tools"), ("KeyH", "help")):
+            self.assertIn(code + ":'" + menu_id + "'", extensions)
         self.assertIn("function installWorkspaceKeyboardShortcuts()", extensions)
         self.assertIn("event.preventDefault();event.stopPropagation();", extensions)
         self.assertIn("function focusPanelNavigation()", extensions)
