@@ -752,7 +752,7 @@ class Robot:
                     self._pace_control_loop()
                     continue
                 if is_camera_frame_obscured(frame):
-                    self._handle_camera_obscured_frame(frame)
+                    self._handle_camera_obscured_frame(frame_resized)
                     self._pace_control_loop()
                     continue
                 self._clear_camera_obscured_state()
