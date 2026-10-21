@@ -81,7 +81,7 @@ class RuntimeMetricsTests(unittest.TestCase):
         self.assertEqual(statistics["p99_ms"], 99)
 
     def test_processing_fps_counts_perception_cycles_not_outer_loop_iterations(self):
-        metrics = RuntimeMetrics()
+        metrics = types.SimpleNamespace(record_loop=Mock())
         fps = FPS(config=types.SimpleNamespace(
             runtime_metrics=metrics,
             PERFORMANCE=False,
@@ -95,8 +95,8 @@ class RuntimeMetricsTests(unittest.TestCase):
 
         self.assertAlmostEqual(fps.instant_fps, 1.0 / 0.033)
         self.assertEqual(fps._num_frames, 1)
-        self.assertEqual(len(metrics._timings["loop"]), 1)
-        self.assertAlmostEqual(metrics._timings["loop"][0], 10.0)
+        metrics.record_loop.assert_called_once()
+        self.assertAlmostEqual(metrics.record_loop.call_args.args[0], 10.0)
 
     def test_processing_fps_clears_after_perception_stalls(self):
         fps = FPS(config=types.SimpleNamespace(runtime_metrics=None, PERFORMANCE=False))
