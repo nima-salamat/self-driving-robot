@@ -344,6 +344,140 @@ class StreamVisionMixin:
             logger.exception("Vision preview failed")
             return jsonify(success=False,message="could not analyze this frame"),500
 
+    @staticmethod
+    def _live_json_value(value, depth=0):
+        if depth > 5:
+            return None
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, np.ndarray):
+            if value.size <= 120:
+                return value.tolist()
+            return {"shape": list(value.shape), "dtype": str(value.dtype)}
+        if isinstance(value, dict):
+            return {str(key): StreamVisionMixin._live_json_value(item, depth + 1)
+                    for key, item in list(value.items())[:80]}
+        if isinstance(value, (tuple, list)):
+            return [StreamVisionMixin._live_json_value(item, depth + 1) for item in value[:120]]
+        if isinstance(value, (str, bool, int, float)) or value is None:
+            if isinstance(value, float) and not math.isfinite(value):
+                return None
+            return value
+        return str(value)[:160]
+
+    def live_vision_debug_api(self):
+        """Expose actual latest runtime debug stages; this endpoint never re-runs perception."""
+        lock = getattr(self.config, "stream_vision_debug_lock", None)
+        if lock is None:
+            snapshot = getattr(self.config, "stream_vision_debug_snapshot", None)
+        else:
+            with lock:
+                snapshot = getattr(self.config, "stream_vision_debug_snapshot", None)
+        if not isinstance(snapshot, dict):
+            return jsonify(success=True, available=False, reason="The active mode has not published a detector result yet.", stages=[])
+        debug = snapshot.get("debug") if isinstance(snapshot.get("debug"), dict) else None
+        try:
+            age_ms = max(0.0, (time.monotonic() - float(snapshot.get("monotonic_at", time.monotonic()))) * 1000.0)
+        except (TypeError, ValueError, OverflowError):
+            age_ms = None
+        result = snapshot.get("result", {}) if isinstance(snapshot.get("result"), dict) else {}
+        summary = {
+            "mode": snapshot.get("mode", self._mode_slug()),
+            "captured_at": snapshot.get("timestamp"),
+            "age_ms": age_ms,
+            "result": self._live_json_value(result),
+        }
+        if not debug:
+            summary["no_lane_reason"] = "The live detector reported lane_type=none." if result.get("lane_type") == "none" else None
+            return jsonify(success=True, available=False,
+                           reason="The runtime result is available, but this detector did not publish intermediate images. Enable Stream/DEBUG or use snapshot preview.",
+                           summary=summary, stages=[])
+        stage_images = {}
+        for key, value in debug.items():
+            if isinstance(value, np.ndarray) and value.ndim in (2, 3) and value.size:
+                stage_images[str(key)] = value
+        combined = debug.get("combined")
+        draw_data = debug.get("draw_data")
+        if isinstance(combined, np.ndarray) and combined.size and isinstance(draw_data, dict):
+            try:
+                from visualization.lane_debug_overlay import render_lane_debug_overlay
+                annotated = render_lane_debug_overlay(combined, draw_data, self.config, steering_angle=result.get('steering_angle'))
+                if isinstance(annotated, np.ndarray) and annotated.size:
+                    stage_images["annotated"] = annotated
+            except Exception:
+                logger.debug("Could not render live geometry overlay", exc_info=True)
+        segments = debug.get("segments")
+        if isinstance(segments, (tuple, list)) and isinstance(combined, np.ndarray) and combined.ndim == 3:
+            candidates = combined.copy()
+            filtered = combined.copy()
+            band = debug.get("selected_angle_band")
+            for item in segments[:1500]:
+                try:
+                    coords = np.asarray(item, dtype=np.float64).reshape(-1)
+                    if coords.size < 4 or not np.all(np.isfinite(coords[:4])):
+                        continue
+                    p1 = (int(round(coords[0])), int(round(coords[1])))
+                    p2 = (int(round(coords[2])), int(round(coords[3])))
+                    cv2.line(candidates, p1, p2, (60, 220, 90), 1, cv2.LINE_AA)
+                    angle = float(coords[5]) if coords.size >= 6 else None
+                    if band is not None and angle is not None and float(band[0]) <= angle <= float(band[1]):
+                        cv2.line(filtered, p1, p2, (255, 150, 30), 2, cv2.LINE_AA)
+                except (TypeError, ValueError, OverflowError, IndexError):
+                    continue
+            stage_images["candidates"] = candidates
+            if band is not None:
+                stage_images["angle_filtered_segments"] = filtered
+        elif isinstance(combined, np.ndarray) and isinstance(draw_data, dict):
+            line_sets = draw_data.get("lines", {})
+            if isinstance(line_sets, dict) and any(value is not None for value in line_sets.values()):
+                candidates = combined.copy()
+                offsets = draw_data.get("line_offsets", {})
+                for side, color in (("LL", (255, 100, 30)), ("RL", (30, 165, 255)), ("CW", (0, 220, 220))):
+                    rows = line_sets.get(side)
+                    offset = offsets.get(side, (0, 0))
+                    if rows is None:
+                        continue
+                    try:
+                        ox, oy = int(offset[0]), int(offset[1])
+                    except (TypeError, ValueError, IndexError):
+                        ox, oy = 0, 0
+                    for line in list(rows)[:800]:
+                        try:
+                            coords = np.asarray(line, dtype=np.float64).reshape(-1)
+                            if coords.size < 4 or not np.all(np.isfinite(coords[:4])):
+                                continue
+                            p1 = (int(round(coords[0] + ox)), int(round(coords[1] + oy)))
+                            p2 = (int(round(coords[2] + ox)), int(round(coords[3] + oy)))
+                            cv2.line(candidates, p1, p2, color, 1, cv2.LINE_AA)
+                        except (TypeError, ValueError, OverflowError):
+                            continue
+                stage_images["candidates"] = candidates
+        line_counts = {}
+        if isinstance(draw_data, dict):
+            lines = draw_data.get("lines", {})
+            if isinstance(lines, dict):
+                for key, value in lines.items():
+                    try:
+                        line_counts[str(key)] = 0 if value is None else len(value)
+                    except TypeError:
+                        line_counts[str(key)] = 0
+            summary["geometry"] = self._live_json_value({key: draw_data[key] for key in (
+                "kind", "frame_width", "frame_height", "roi_bounds", "midpoints",
+                "frame_center_x", "lane_center_x", "lane_center_offset_px", "lane_type",
+                "crosswalk", "lane_error") if key in draw_data})
+        summary["debug_kind"] = draw_data.get("kind") if isinstance(draw_data, dict) else None
+        summary["line_counts"] = line_counts
+        summary["candidate_segments"] = len(segments) if isinstance(segments, (tuple, list)) else sum(line_counts.values())
+        summary["no_lane_reason"] = ("The live detector reported lane_type=none; inspect the stage images and ROI/candidate counts." if result.get("lane_type") == "none" else None)
+        stages = sorted(stage_images)
+        requested_stage = str(request.args.get("stage", "annotated")).strip()
+        stage = requested_stage if requested_stage in stage_images else ("annotated" if "annotated" in stage_images else (stages[0] if stages else None))
+        if stage is None:
+            return jsonify(success=True, available=False, reason="A live result exists, but no image-shaped debug stages were published.", summary=summary, stages=stages)
+        return jsonify(success=True, available=True, stage=stage, requested_stage_available=(requested_stage == stage),
+                       stages=stages, stage_image=self._stage_data_url(stage_images[stage]), summary=summary,
+                       source="actual runtime perception result; this endpoint does not re-run the detector")
+
     def diagnostic_bundle_api(self):
         body=request.get_json(silent=True) or {}
         try:
@@ -377,4 +511,5 @@ class StreamVisionMixin:
 def register_vision_routes(app,streamer):
     app.add_url_rule("/api/vision/tuning","vision_tuning_api",streamer.vision_tuning_api,methods=["GET","POST"])
     app.add_url_rule("/api/vision/preview","vision_preview_api",streamer.vision_preview_api,methods=["POST"])
+    app.add_url_rule("/api/vision/live","live_vision_debug_api",streamer.live_vision_debug_api,methods=["GET"])
     app.add_url_rule("/api/diagnostics/bundle","diagnostic_bundle_api",streamer.diagnostic_bundle_api,methods=["POST"])
