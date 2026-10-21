@@ -42,9 +42,13 @@ class StreamControlsMixin:
         policy_setter = getattr(connection, "set_automatic_commands_enabled", None)
         if callable(policy_setter) and "SEND_AUTOMATIC_ARDUINO_COMMANDS" in snapshot:
             policy_setter(bool(snapshot["SEND_AUTOMATIC_ARDUINO_COMMANDS"]))
+        if "SERVO_CENTER" in snapshot:
+            try:
+                self._sync_live_servo_center()
+            except Exception:
+                logger.exception("Could not restore live servo-center state")
         try:
             set_marker_mode(
-                self.config,
                 "sign" if snapshot.get("WITH_SIGN", False)
                 else "apriltag" if snapshot.get("WITH_APRILTAG", False)
                 else "none",
@@ -233,6 +237,24 @@ class StreamControlsMixin:
                 message="unsupported controls for active mode",
                 unsupported=unsupported,
             ), 409
+        if "SERVO_CENTER" in data:
+            raw_center = data["SERVO_CENTER"]
+            if isinstance(raw_center, bool):
+                return jsonify(success=False, message="SERVO_CENTER must be an integer"), 400
+            try:
+                center = int(raw_center)
+                if float(raw_center) != center:
+                    raise ValueError
+            except (TypeError, ValueError, OverflowError):
+                return jsonify(success=False, message="SERVO_CENTER must be an integer"), 400
+            minimum = float(getattr(self.config, "MIN_SERVO_ANGLE", 55))
+            maximum = float(getattr(self.config, "MAX_SERVO_ANGLE", 125))
+            if not minimum < center < maximum:
+                return jsonify(success=False, message=f"SERVO_CENTER must be strictly between {minimum:g} and {maximum:g}"), 400
+            if center != int(getattr(self.config, "SERVO_CENTER", 95)) and str(getattr(self.config, "RUN_LVL", "MOVE")).upper() != "STOP":
+                return jsonify(success=False, message="Set RUN_LVL=STOP before changing SERVO_CENTER."), 409
+        if any(key in data for key in ("CAMERA_CALIBRATION_FILE", "APPLY_CAMERA_CALIBRATION")):
+            return jsonify(success=False, message="Use the Camera Calibration Profile controls to validate and apply calibration files."), 409
         if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
                 and "RUN_LVL" in data and data.get("RUN_LVL") != "STOP"):
             return jsonify(
@@ -296,6 +318,8 @@ class StreamControlsMixin:
         if not self.save_conf_to_json():
             self._restore_advanced_values(before.get("advanced", {}))
             return jsonify(success=False, message="could not persist advanced settings; previous values restored"), 500
+        if "SERVO_CENTER" in data:
+            self._sync_live_servo_center()
         self._record_config_history("before advanced settings update", before)
         self._record_config_history("advanced settings updated")
         return jsonify(success=True, advanced=self.get_all_advanced())

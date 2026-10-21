@@ -471,7 +471,7 @@ class Robot:
         if config_race.STREAM or config_race.DEBUG:
             status = "STOP HOLD" if still_holding else "STOP CLEARED - resuming next frame"
             result = {
-                "steering_angle": SERVO_CENTER,
+                "steering_angle": int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                 "error": 0,
                 "lane_type": "stop_hold" if still_holding else "stop_cleared",
                 "perception_valid": True,
@@ -481,7 +481,7 @@ class Robot:
             self.handle_debug_stream(
                 result,
                 frame,
-                SERVO_CENTER,
+                int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                 status,
                 "STOP" if still_holding else "STOP CLEARED",
             )
@@ -594,7 +594,7 @@ class Robot:
         if held_angle is None:
             held_angle = getattr(self.control, "current_angle", None)
         if held_angle is None:
-            held_angle = SERVO_CENTER
+            held_angle = int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER))
 
         result["steering_angle"] = int(held_angle)
         logger.debug(
@@ -638,14 +638,14 @@ class Robot:
                         frame, _ = self.camera.capture_frame(with_resize=False)
                         if self.camera.last_capture_valid:
                             result = {
-                                "steering_angle": SERVO_CENTER,
+                                "steering_angle": int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                                 "error": 0,
                                 "lane_type": "stopped",
                                 "perception_valid": True,
                                 "debug": {"combined": frame},
                             }
                             self.handle_debug_stream(
-                                result, frame, SERVO_CENTER,
+                                result, frame, int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                                 False, "stopped"
                             )
                     self._pace_control_loop()
@@ -676,7 +676,7 @@ class Robot:
                 if not self._wait_for_processing_slot():
                     break
                 
-                angle = SERVO_CENTER
+                angle = int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER))
             
                 frame, frame_resized = self.camera.capture_frame(with_resize=True)
                 self.camera.last_frame = frame

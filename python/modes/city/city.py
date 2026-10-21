@@ -443,7 +443,7 @@ class Robot:
         if config_city.STREAM or config_city.DEBUG:
             status = "STOP HOLD" if still_holding else "STOP CLEARED - resuming next frame"
             result = {
-                "steering_angle": SERVO_CENTER,
+                "steering_angle": int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                 "error": 0,
                 "lane_type": "stop_hold" if still_holding else "stop_cleared",
                 "perception_valid": True,
@@ -453,7 +453,7 @@ class Robot:
             self.handle_debug_stream(
                 result,
                 frame,
-                SERVO_CENTER,
+                int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                 False,
                 status,
                 "STOP" if still_holding else "STOP CLEARED",
@@ -639,14 +639,14 @@ class Robot:
                         frame, _ = self.camera.capture_frame(with_resize=False)
                         if self.camera.last_capture_valid:
                             result = {
-                                "steering_angle": SERVO_CENTER,
+                                "steering_angle": int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                                 "error": 0,
                                 "lane_type": "stopped",
                                 "perception_valid": True,
                                 "debug": {"combined": frame},
                             }
                             self.handle_debug_stream(
-                                result, frame, SERVO_CENTER, False, "stopped", ""
+                                result, frame, int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)), False, "stopped", ""
                             )
                     self._pace_control_loop()
                     continue
@@ -676,7 +676,7 @@ class Robot:
                 # deliberately serviced without this limiter.
                 if not self._wait_for_processing_slot():
                     break
-                angle=SERVO_CENTER
+                angle=int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER))
                 crosswalk = False
                 confidence = None
                 
@@ -773,7 +773,7 @@ class Robot:
                         if held_angle is None:
                             held_angle = self.control.current_angle
                         if held_angle is None:
-                            held_angle = SERVO_CENTER
+                            held_angle = int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER))
                         result["steering_angle"] = int(held_angle)
                         self._log_lane_detection_state(True, held_angle)
                     else:
@@ -811,7 +811,7 @@ class Robot:
                         continue
                     publish_camera_frame_fallback(config_city, frame)
                     result = {
-                        "steering_angle": SERVO_CENTER,
+                        "steering_angle": int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                         "error": 0,
                         "lane_type": "crosswalk",
                         "perception_valid": True,
@@ -863,7 +863,7 @@ class Robot:
                             self.handle_debug_stream(
                                 result,
                                 frame,
-                                SERVO_CENTER,
+                                int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                                 False,
                                 "STOP HOLD",
                                 "STOP",
