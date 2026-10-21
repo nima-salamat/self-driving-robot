@@ -12,6 +12,7 @@ if str(PYTHON_ROOT) not in sys.path:
 from visualization.lane_debug_overlay import (
     render_lane_debug_overlay,
     resolve_visual_steering_angle,
+    normalize_display_frame,
     roi_color_bgr,
     steering_marker_x,
 )
@@ -61,6 +62,17 @@ class LaneDebugOverlayTests(unittest.TestCase):
         self.assertEqual(roi_color_bgr(self.config, "RL"), (0x56, 0x34, 0x12))
         self.assertEqual(roi_color_bgr(self.config, "LL"), (0xef, 0xcd, 0xab))
         self.assertEqual(roi_color_bgr(self.config, "CW"), (0x7b, 0xd2, 0xff))
+
+    def test_display_frame_is_normalized_to_camera_preview_dimensions(self):
+        config = SimpleNamespace(camera=SimpleNamespace(resize_width=160, resize_height=120))
+        raw = np.zeros((480, 640, 3), dtype=np.uint8)
+        normalized = normalize_display_frame(raw, config)
+        self.assertEqual(normalized.shape, (120, 160, 3))
+
+    def test_display_frame_is_not_resized_twice_when_already_normalized(self):
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        config = SimpleNamespace(camera=SimpleNamespace(resize_width=160, resize_height=120))
+        self.assertIs(normalize_display_frame(frame, config), frame)
 
     def test_renderer_returns_annotated_copy_and_preserves_source(self):
         frame = np.zeros((120, 160, 3), dtype=np.uint8)

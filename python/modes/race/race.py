@@ -6,7 +6,7 @@ from utils.config_mode import set_race_mode
 from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
-from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle, roi_color_bgr
+from visualization.lane_debug_overlay import render_lane_debug_overlay, normalize_display_frame, resolve_visual_steering_angle, roi_color_bgr
 from visualization.frame_telemetry import build_frame_telemetry
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
@@ -467,9 +467,6 @@ class Robot:
             except Exception:
                 logger.exception("Retrying the camera-occlusion stop command failed")
 
-        if bool(getattr(config_race, "STREAM", False)):
-            # Publish first so a stale annotated frame is never retained during occlusion.
-            publish_debug_frame(config_race, frame)
         if config_race.STREAM or config_race.DEBUG:
             center = int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER))
             angle = getattr(self.control, "last_angle", None)
@@ -508,7 +505,7 @@ class Robot:
         self._clear_camera_obscured_state()
         publish_camera_frame_fallback(config_race, frame)
         debug_frame = frame.copy() if (config_race.STREAM or config_race.DEBUG) else None
-        sign_text, _, _, _ = self.handle_read_sign_or_tag(
+        sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
             frame,
             debug_frame,
             force_check=True,
@@ -527,11 +524,11 @@ class Robot:
                 "lane_type": "stop_hold" if still_holding else "stop_cleared",
                 "perception_valid": True,
                 "crosswalk": False,
-                "debug": {"combined": frame},
+                "debug": {"combined": debug_frame if debug_frame is not None else frame_resized},
             }
             self.handle_debug_stream(
                 result,
-                frame,
+                frame_resized,
                 int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                 status,
                 "STOP" if still_holding else "STOP CLEARED",
@@ -1419,6 +1416,7 @@ class Robot:
     def handle_debug_stream(self, result, frame, angle, status, sign_text):
         if not (config_race.DEBUG or config_race.STREAM):
             return
+        frame = normalize_display_frame(frame, config_race)
         debug = result.get("debug")
         if not isinstance(debug, dict):
             debug = {}
@@ -1435,6 +1433,8 @@ class Robot:
         source_frame = debug.get("combined")
         if source_frame is None:
             source_frame = frame
+        else:
+            source_frame = normalize_display_frame(source_frame, config_race)
         controller_angle = getattr(getattr(self, "control", None), "last_angle", None)
         visual_angle = resolve_visual_steering_angle(
             config_race, controller_angle, angle

@@ -15,6 +15,7 @@ from werkzeug.serving import WSGIRequestHandler, make_server
 from .template import HTML_TEMPLATE
 from .capabilities import mode_capabilities, marker_mode, set_marker_mode
 from base_config import BASE_DIR
+from visualization.lane_debug_overlay import normalize_display_frame
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +379,7 @@ def publish_debug_frame(config, frame):
     """Publish only the newest frame, preserving the legacy list API."""
     if frame is None:
         return
+    frame = normalize_display_frame(frame, config)
     lock = getattr(config, "stream_frame_lock", None)
     if lock is None:
         lock = threading.RLock()

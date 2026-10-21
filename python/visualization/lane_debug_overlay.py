@@ -37,6 +37,37 @@ def roi_color_bgr(config, key):
 
 
 
+
+def normalize_display_frame(frame, config):
+    """Normalize debug/Stream frames to the camera's configured preview size.
+
+    The normal vision path generally uses a resized frame; STOP, marker
+    handling and fallback publication can still receive the raw sensor image.
+    Normalizing at the display boundary keeps text and annotations consistent.
+    """
+    if frame is None:
+        return None
+    try:
+        if getattr(frame, "size", 0) == 0 or len(frame.shape) < 2:
+            return frame
+        camera = getattr(config, "camera", None) if config is not None else None
+        target_width = int(getattr(camera, "resize_width", 0) or 0)
+        target_height = int(getattr(camera, "resize_height", 0) or 0)
+        if target_width <= 0 or target_height <= 0:
+            return frame
+        height, width = frame.shape[:2]
+        if width == target_width and height == target_height:
+            return frame
+        interpolation = (
+            cv2.INTER_AREA
+            if width > target_width or height > target_height
+            else cv2.INTER_LINEAR
+        )
+        return cv2.resize(frame, (target_width, target_height), interpolation=interpolation)
+    except (AttributeError, TypeError, ValueError, OverflowError, cv2.error):
+        return frame
+
+
 def _finite_number(value):
     try:
         number = float(value)
