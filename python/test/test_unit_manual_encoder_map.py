@@ -50,8 +50,7 @@ class ManualEncoderMapTests(unittest.TestCase):
         self.calibration = {
             "pulse_distance_cm": 0.5,
             "wheelbase_cm": 20.0,
-            "road_angle_min_deg": -20.0,
-            "road_angle_max_deg": 15.0,
+            "max_wheel_angle_deg": 25.0,
         }
         self.tracker = ManualEncoderMap(
             self.controller,
