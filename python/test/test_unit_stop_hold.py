@@ -233,6 +233,96 @@ class StopHoldModeTests(unittest.TestCase):
         self.assertEqual(args[5], "")
         robot.close.assert_called_once()
 
+    def test_lane_overlay_exception_keeps_raw_stream_frame_available(self):
+        frame = np.full((48, 64, 3), 32, dtype=np.uint8)
+
+        for name, mode_module, config in MODE_CASES:
+            with self.subTest(mode=name):
+                robot = mode_module.Robot.__new__(mode_module.Robot)
+                robot.control = types.SimpleNamespace(last_angle=95, current_speed=0)
+                robot.fps = types.SimpleNamespace(
+                    instant_fps=30.0, second_fps=30.0, avg_fps=30.0
+                )
+                robot.last_tag = None
+                robot.output = Mock()
+                robot.output.is_recording.return_value = False
+                robot.update_debug_frames = Mock()
+                result = {
+                    "error": 0,
+                    "lane_type": "none",
+                    "crosswalk": False,
+                    "debug": {
+                        "combined": frame.copy(),
+                        "draw_data": {
+                            "kind": "classical",
+                            "roi_bounds": {},
+                            "lines": {"RL": None, "LL": None},
+                        },
+                    },
+                }
+
+                with patch.object(config, "STREAM", True), patch.object(
+                    config, "DEBUG", False
+                ), patch.object(
+                    mode_module,
+                    "render_lane_debug_overlay",
+                    side_effect=RuntimeError("simulated overlay failure"),
+                ):
+                    with self.assertLogs(mode_module.__name__, level="ERROR"):
+                        if name == "city":
+                            robot.handle_debug_stream(
+                                result, frame, 95, False, "running", ""
+                            )
+                        else:
+                            robot.handle_debug_stream(result, frame, 95, "running", "")
+
+                robot.update_debug_frames.assert_called_once()
+                self.assertEqual(
+                    robot.update_debug_frames.call_args.args[0].shape,
+                    frame.shape,
+                )
+
+    def test_inhibited_diagnostic_cycle_keeps_sensing_without_motion_commands(self):
+        frame = np.full((48, 64, 3), 32, dtype=np.uint8)
+        result = {
+            "steering_angle": 95,
+            "error": 0,
+            "lane_type": "both",
+            "perception_valid": True,
+            "crosswalk": False,
+            "debug": {"combined": frame.copy()},
+        }
+
+        for name, mode_module, config in MODE_CASES:
+            with self.subTest(mode=name):
+                robot = self.make_robot(mode_module)
+                robot.health = None
+                robot.metrics = Mock()
+                robot.fps = Mock()
+                robot.camera = Mock()
+                robot.camera.capture_frame.return_value = (frame.copy(), frame.copy())
+                robot.camera.last_capture_valid = True
+                robot.camera.last_capture_at = time.monotonic()
+                robot.camera.frame_sequence = 1
+                robot.vision = Mock()
+                robot.vision.detect.return_value = result.copy()
+                robot.handle_debug_stream = Mock()
+                robot.confidence_estimator = None
+
+                with patch.object(config, "STREAM", True), patch.object(
+                    config, "DEBUG", False
+                ), patch.object(config, "WITH_SIGN", False), patch.object(
+                    config, "WITH_APRILTAG", False
+                ), patch.object(mode_module, "publish_camera_frame_fallback"):
+                    robot._run_inhibited_diagnostic_cycle(update_sign=False)
+
+                robot.camera.capture_frame.assert_called_once_with(with_resize=True)
+                robot.vision.detect.assert_called_once()
+                robot.handle_debug_stream.assert_called_once()
+                self.assertEqual(robot.control.motion_calls, [])
+                self.assertEqual(robot.control.commands, [])
+                robot.fps.update.assert_called_once()
+
     def test_completed_stop_is_consumed_without_threshold_submission_and_blocks_motion(self):
         frame = np.full((240, 320, 3), 32, dtype=np.uint8)
 
