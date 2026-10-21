@@ -148,7 +148,7 @@ class ManualEncoderMapTests(unittest.TestCase):
         self.assertEqual(last["signed_pulses"], 4)
         self.assertEqual(last["pulse_delta"], 4)
         self.assertEqual(last["servo_command"], 115)
-        self.assertAlmostEqual(self.tracker.snapshot()["road_wheel_angle_deg"], 12.5)
+        self.assertAlmostEqual(self.tracker.snapshot()["road_wheel_angle_deg"], 25.0 * (115 - 95) / (125 - 95))
 
     def test_effective_wheel_angle_is_derived_from_servo_command_and_editable_limit(self):
         self.tracker.set_calibration({
