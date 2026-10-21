@@ -720,7 +720,7 @@ async function toggleMotionSafetyFromKeyboard(){
     const state=await response.json();
     if(!response.ok)throw new Error(state.message||('HTTP '+response.status));
     if(!state.controls_enabled)throw new Error('Dashboard is read-only.');
-    const action=state.software_stop_active?'resume':'stop';
+    const action=String(state.run_level||'MOVE').trim().toUpperCase()==='STOP'?'resume':'stop';
     await safetyAction(action,{skipConfirm:action==='stop',source:'keyboard'});
   }finally{motionHotkeyActionInFlight=false;}
 }
@@ -1041,6 +1041,71 @@ function initializeResize(){
   panel.addEventListener('pointerup',function(){if(!active)return;active=false;scheduleWorkspaceSave();});
   panel.addEventListener('pointercancel',function(){active=false;});
 }
+function initializeConsoleResize(){
+  const consoleDock=$('bottom_console'),handle=$('console_resize_handle');
+  if(!consoleDock||!handle)return;
+  let active=false,startY=0,startHeight=178;
+  function limits(){
+    const mobile=window.matchMedia('(max-width: 720px)').matches;
+    const shortLandscape=window.matchMedia('(max-width: 900px) and (orientation: landscape) and (max-height: 520px)').matches;
+    const minimum=mobile?84:96;
+    const maximum=Math.max(minimum,Math.min(
+      shortLandscape?200:(mobile?360:520),
+      window.innerHeight*(shortLandscape?0.42:(mobile?0.55:0.62)),
+      window.innerHeight-(mobile?80:120)
+    ));
+    return {minimum:minimum,maximum:maximum};
+  }
+  function announceSize(height){
+    const bounds=limits();
+    handle.setAttribute('aria-valuemin',String(Math.round(bounds.minimum)));
+    handle.setAttribute('aria-valuemax',String(Math.round(bounds.maximum)));
+    handle.setAttribute('aria-valuenow',String(Math.round(height)));
+    handle.setAttribute('aria-valuetext',Math.round(height)+' pixels tall');
+  }
+  function setHeight(requested){
+    const bounds=limits();
+    const height=Math.round(Math.min(bounds.maximum,Math.max(bounds.minimum,Number(requested)||178)));
+    consoleDock.style.setProperty('--console-resize-height',height+'px');
+    announceSize(height);
+  }
+  function finishResize(){
+    if(!active)return;
+    active=false;
+    consoleDock.classList.remove('console-resizing');
+  }
+  handle.addEventListener('pointerdown',function(event){
+    if(!consoleDock.classList.contains('console-open'))return;
+    if(event.button!==0&&event.pointerType!=='touch')return;
+    active=true;
+    startY=event.clientY;
+    startHeight=consoleDock.getBoundingClientRect().height;
+    consoleDock.classList.add('console-resizing');
+    handle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  handle.addEventListener('pointermove',function(event){
+    if(!active)return;
+    setHeight(startHeight-(event.clientY-startY));
+  });
+  handle.addEventListener('pointerup',finishResize);
+  handle.addEventListener('pointercancel',finishResize);
+  handle.addEventListener('keydown',function(event){
+    if(!consoleDock.classList.contains('console-open'))return;
+    const bounds=limits();
+    const current=consoleDock.getBoundingClientRect().height;
+    if(event.key==='ArrowUp'){event.preventDefault();setHeight(current+24);}
+    else if(event.key==='ArrowDown'){event.preventDefault();setHeight(current-24);}
+    else if(event.key==='Home'){event.preventDefault();setHeight(bounds.minimum);}
+    else if(event.key==='End'){event.preventDefault();setHeight(bounds.maximum);}
+  });
+  window.addEventListener('resize',function(){
+    const saved=parseFloat(consoleDock.style.getPropertyValue('--console-resize-height'));
+    if(Number.isFinite(saved))setHeight(saved);
+    else announceSize(consoleDock.getBoundingClientRect().height);
+  });
+  announceSize(consoleDock.getBoundingClientRect().height);
+}
 function installCoordinatePairPaste(){
   ['prop_left','prop_top','prop_right','prop_bottom','prop_point_x','prop_point_y'].forEach(function(id){
     const field=$(id);if(!field)return;
@@ -1238,7 +1303,7 @@ function installExtension(){
   $('ext_encoder_reset').onclick=async function(){if(!confirm('Reset only the displayed odometry origin? Hardware counters will not be reset.'))return;const r=await nativeFetch('/api/encoder-map/reset-origin',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));showToast('Displayed odometry origin reset');};
   $('ext_frame_compare_close').onclick=function(){$('ext_frame_compare').style.display='none';};
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
-  $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();enableReadOnlyState();
+  $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();initializeConsoleResize();enableReadOnlyState();
   document.addEventListener('keydown',function(e){
     // Toggle robot motion with Ctrl+Shift+Space: stop while moving; resume while stopped.
     // Resume still requires confirmation. This is separate from /api/sign-requests.

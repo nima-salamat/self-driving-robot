@@ -205,6 +205,31 @@ class StopHoldModeTests(unittest.TestCase):
             time.monotonic(),
         )
 
+    def test_city_operator_stop_keeps_debug_stream_signature_valid(self):
+        robot = self.make_robot(city_module)
+        frame = np.zeros((48, 64, 3), dtype=np.uint8)
+        robot.fps = Mock()
+        robot.camera = Mock()
+        robot.camera.capture_frame.return_value = (frame, None)
+        robot.camera.last_capture_valid = True
+        robot.handle_debug_stream = Mock()
+        robot._pace_control_loop = Mock()
+        robot.close = Mock()
+
+        with patch.object(city_module.config_city, "RUN_LVL", "STOP"), patch.object(
+            city_module.config_city, "STREAM", True
+        ), patch.object(city_module.config_city, "DEBUG", False), patch.object(
+            robot, "_shutdown_requested", side_effect=[False, True]
+        ):
+            robot.run()
+
+        robot.handle_debug_stream.assert_called_once()
+        args = robot.handle_debug_stream.call_args.args
+        self.assertEqual(len(args), 6)
+        self.assertEqual(args[4], "stopped")
+        self.assertEqual(args[5], "")
+        robot.close.assert_called_once()
+
     def test_completed_stop_is_consumed_without_threshold_submission_and_blocks_motion(self):
         frame = np.zeros((240, 320, 3), dtype=np.uint8)
 

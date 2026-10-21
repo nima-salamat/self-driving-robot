@@ -644,7 +644,7 @@ class Robot:
                                 "debug": {"combined": frame},
                             }
                             self.handle_debug_stream(
-                                result, frame, SERVO_CENTER, False, "stopped"
+                                result, frame, SERVO_CENTER, False, "stopped", ""
                             )
                     self._pace_control_loop()
                     continue

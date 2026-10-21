@@ -167,6 +167,28 @@ class StreamApiTests(unittest.TestCase):
         )
         self.assertIn("collapseIcon.style.display=active?'':'none'", core)
 
+    def test_event_console_supports_bounded_pointer_and_keyboard_resize(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="console_resize_handle"', template)
+        self.assertIn('role="separator" aria-orientation="horizontal"', template)
+        self.assertIn('function initializeConsoleResize()', extensions)
+        self.assertIn("handle.addEventListener('pointerdown'", extensions)
+        self.assertIn("handle.addEventListener('pointermove'", extensions)
+        self.assertIn("event.key==='ArrowUp'", extensions)
+        self.assertIn("event.key==='ArrowDown'", extensions)
+        self.assertIn("event.key==='Home'", extensions)
+        self.assertIn("event.key==='End'", extensions)
+        self.assertIn("shortLandscape?200:(mobile?360:520)", extensions)
+        self.assertIn("initializeConsoleResize();", extensions)
+        self.assertIn(".bottom-console.console-resizing", css)
+        self.assertIn("max-height: min(62dvh, 520px)", css)
+        self.assertIn("max-height: min(55dvh, 360px)", css)
+        self.assertIn("max-height: min(42dvh, 200px)", css)
+
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
         core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
@@ -256,7 +278,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("Ctrl+Shift+Space", extensions)
         self.assertIn("stop:function(){safetyAction('stop',{skipConfirm:true,source:'command-palette'})", extensions)
         self.assertIn("async function toggleMotionSafetyFromKeyboard()", extensions)
-        self.assertIn("const action=state.software_stop_active?'resume':'stop';", extensions)
+        self.assertIn("const action=String(state.run_level||'MOVE').trim().toUpperCase()==='STOP'?'resume':'stop';", extensions)
         self.assertIn("await safetyAction(action,{skipConfirm:action==='stop',source:'keyboard'});", extensions)
         self.assertIn("['Toggle Robot Motion (RUN_LVL)','toggle-motion','Ctrl+Shift+Space']", extensions)
         self.assertIn("'toggle-motion':toggleMotionSafetyFromKeyboard", extensions)

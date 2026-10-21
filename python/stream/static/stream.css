@@ -1498,3 +1498,46 @@ canvas {
   .editor-safety-controls button { min-width: 33px; width: 34px; padding: 3px 2px; font-size: 9px; }
   .editor-controls-right #toggle_dock_btn { min-width: 36px; padding: 0 5px; }
 }
+
+
+/* Event Console resize grip and viewport-bounded height. */
+.bottom-console.console-open {
+  height: var(--console-resize-height, 178px);
+  max-height: min(62dvh, 520px);
+}
+.bottom-console.console-resizing { transition: none !important; user-select: none; }
+.console-resize-handle {
+  flex: 0 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  height: 8px;
+  min-height: 8px;
+  padding: 0;
+  background: #0b141f;
+  border-bottom: 1px solid #233446;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  outline-offset: -2px;
+}
+.console-resize-handle span {
+  display: block;
+  width: 46px;
+  max-width: 25%;
+  height: 3px;
+  border-radius: 3px;
+  background: #607d98;
+}
+.console-resize-handle:hover span,
+.console-resize-handle:focus-visible span { background: #67d9e8; }
+.bottom-console:not(.console-open) .console-resize-handle { display: none; }
+@media (max-width: 720px) {
+  .bottom-console.console-open { max-height: min(55dvh, 360px); }
+  .console-resize-handle { flex-basis: 10px; height: 10px; min-height: 10px; }
+}
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 520px) {
+  .bottom-console.console-open { max-height: min(42dvh, 200px); }
+}
