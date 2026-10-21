@@ -1,8 +1,9 @@
 """Manual-drive encoder telemetry adapter for the standalone encoder map page.
 
 The displayed XY trajectory is an odometry estimate, not ground-truth localization.
-A pulse-distance calibration is required for distance; steering geometry is additionally
-required for a meaningful two-dimensional trajectory.
+A pulse-distance calibration is required for distance; wheelbase and an editable effective
+steering-angle estimate are additionally required for a meaningful two-dimensional trajectory.
+Each history sample preserves the signed pulse total/delta and the reported servo command.
 """
 import math
 import time
