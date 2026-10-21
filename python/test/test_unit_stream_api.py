@@ -1,3 +1,5 @@
+import io
+import json
 import os
 import sys
 import tempfile
@@ -13,6 +15,7 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 from stream import WebStreamer, publish_camera_frame_fallback, publish_debug_frame
+from calibration.asset_store import CALIBRATION_ASSET_RELATIVE_DIR
 
 
 class StreamApiTests(unittest.TestCase):
@@ -74,6 +77,7 @@ class StreamApiTests(unittest.TestCase):
             ("/api/traffic-lights", "traffic_lights_api"),
             ("/api/race", "race_status_api"),
             ("/api/camera/settings", "camera_settings_api"),
+            ("/api/camera/calibrations", "camera_calibrations_api"),
             ("/api/processing-rate", "processing_rate_api"),
             ("/api/safety", "safety_api"),
             ("/api/sign-requests", "sign_requests_api"),
@@ -224,6 +228,155 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("Focus panel navigation; use ↑/↓, Space or Enter", template)
         self.assertIn("Increase / decrease console height by one step", template)
         self.assertIn("Refresh configuration values &amp; advanced settings", template)
+
+    def _valid_camera_calibration_bytes(self):
+        payload = io.BytesIO()
+        metadata = {
+            "format_version": 3,
+            "calibration_model": "pinhole",
+            "image_width": 640,
+            "image_height": 480,
+            "quality_status": "pass",
+            "acceptable_for_runtime": True,
+        }
+        np.savez(
+            payload,
+            cameraMatrix=np.asarray(
+                [[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]],
+                dtype=np.float64,
+            ),
+            distCoeffs=np.zeros((5, 1), dtype=np.float64),
+            imageSize=np.asarray([640, 480], dtype=np.int32),
+            metadata=json.dumps(metadata),
+        )
+        return payload.getvalue()
+
+    def test_servo_center_update_reaches_live_controller_connection_and_vision(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RUN_LVL = "STOP"
+        config.SERVO_CENTER = 95
+        config.MIN_SERVO_ANGLE = 55.0
+        config.MAX_SERVO_ANGLE = 125.0
+        config.SERVO_DIRECTION = "ltr"
+        connection = types.SimpleNamespace(servo_center=95)
+        controller = types.SimpleNamespace(servo_center=95, connection=connection)
+        vision = types.SimpleNamespace(
+            servo_center=95.0, last_steering=95.0, ml_lane_detector=None
+        )
+        config.robot_controller = controller
+        config.vision_processor = vision
+
+        client = WebStreamer(config).app.test_client()
+        payload = client.get("/api/config/full").get_json()
+        payload["advanced"]["SERVO_CENTER"] = 103
+        response = client.post("/api/config/full", json=payload)
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(config.SERVO_CENTER, 103)
+        self.assertEqual(controller.servo_center, 103)
+        self.assertEqual(connection.servo_center, 103)
+        self.assertEqual(vision.servo_center, 103.0)
+        self.assertEqual(vision.last_steering, 103.0)
+
+    def test_servo_center_generic_advanced_api_requires_stop_and_syncs_on_success(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RUN_LVL = "MOVE"
+        config.SERVO_CENTER = 95
+        config.MIN_SERVO_ANGLE = 55.0
+        config.MAX_SERVO_ANGLE = 125.0
+        config.SERVO_DIRECTION = "ltr"
+        controller = types.SimpleNamespace(servo_center=95, connection=types.SimpleNamespace(servo_center=95))
+        config.robot_controller = controller
+        client = WebStreamer(config).app.test_client()
+
+        rejected = client.post("/set_advanced", json={"SERVO_CENTER": 101})
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(config.SERVO_CENTER, 95)
+
+        config.RUN_LVL = "STOP"
+        applied = client.post("/set_advanced", json={"SERVO_CENTER": 101})
+        self.assertEqual(applied.status_code, 200, applied.get_json())
+        self.assertEqual(config.SERVO_CENTER, 101)
+        self.assertEqual(controller.servo_center, 101)
+        self.assertEqual(controller.connection.servo_center, 101)
+
+    def test_camera_calibration_upload_validate_select_and_stop_gate(self):
+        from calibration import asset_store
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RUN_LVL = "STOP"
+        config.CAMERA_CALIBRATION_FILE = CALIBRATION_ASSET_RELATIVE_DIR + "/camera_calibration.npz"
+        config.APPLY_CAMERA_CALIBRATION = True
+        asset_dir = Path(self._stream_test_directory.name) / "camera_calibrations"
+        asset_dir.mkdir()
+        previous_file = asset_dir / "camera_calibration.npz"
+        previous_file.write_bytes(self._valid_camera_calibration_bytes())
+
+        class FakeCamera:
+            pi_mode = False
+            picam = None
+
+            def __init__(self):
+                self.selected = None
+
+            def set_camera_calibration_file(self, reference, enabled=True):
+                self.selected = (reference, enabled)
+                return {"enabled": enabled, "filename": reference.rsplit("/", 1)[-1]}
+
+        camera = FakeCamera()
+        config.camera = camera
+        client = WebStreamer(config).app.test_client()
+
+        with patch.object(asset_store, "CALIBRATION_ASSET_DIR", asset_dir):
+            listed = client.get("/api/camera/calibrations")
+            self.assertEqual(listed.status_code, 200, listed.get_json())
+            self.assertTrue(listed.get_json()["active_calibration"]["valid"])
+
+            uploaded = client.post(
+                "/api/camera/calibrations",
+                data={"file": (io.BytesIO(self._valid_camera_calibration_bytes()), "alternate profile.npz")},
+                content_type="multipart/form-data",
+            )
+            self.assertEqual(uploaded.status_code, 200, uploaded.get_json())
+            upload_data = uploaded.get_json()
+            self.assertFalse(upload_data["active_changed"])
+            reference = upload_data["reference"]
+            self.assertIn("alternate_profile", reference)
+
+            applied = client.post(
+                "/api/camera/calibrations",
+                json={"action": "select", "reference": reference, "enabled": True},
+            )
+            self.assertEqual(applied.status_code, 200, applied.get_json())
+            self.assertEqual(camera.selected, (reference, True))
+            self.assertEqual(config.CAMERA_CALIBRATION_FILE, reference)
+            self.assertTrue(config.APPLY_CAMERA_CALIBRATION)
+
+            config.RUN_LVL = "MOVE"
+            denied = client.post(
+                "/api/camera/calibrations",
+                json={"action": "select", "reference": reference, "enabled": False},
+            )
+            self.assertEqual(denied.status_code, 409)
+            self.assertEqual(camera.selected, (reference, True))
+
+    def test_frame_overlay_preferences_persist_and_update_runtime_config(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        client = WebStreamer(config).app.test_client()
+        response = client.post(
+            "/set_ui",
+            json={"frame_overlay": {"fps": False, "status": True, "servo_center": True}},
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertFalse(config.stream_ui_settings["frame_overlay"]["fps"])
+        self.assertTrue(config.stream_ui_settings["frame_overlay"]["servo_center"])
+        saved = json.loads((Path(self._stream_test_directory.name) / "city_ui.json").read_text(encoding="utf-8"))
+        self.assertFalse(saved["frame_overlay"]["fps"])
+        self.assertTrue(saved["frame_overlay"]["servo_center"])
 
     def test_settings_panel_has_visible_bounded_keyboard_resizer(self):
         stream_dir = PYTHON_ROOT / "stream"
