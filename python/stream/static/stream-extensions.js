@@ -1094,9 +1094,9 @@ function initializeResize(){
   announceWidth(parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||panel.getBoundingClientRect().width);
 }
 function initializeConsoleResize(){
-  const consoleDock=$('bottom_console'),handle=$('console_resize_handle');
-  if(!consoleDock||!handle)return;
-  let active=false,startY=0,startHeight=178;
+  const consoleDock=$('bottom_console'),handle=$('console_resize_handle'),toggle=$('console_toggle_btn');
+  if(!consoleDock||!handle||!toggle)return;
+  let active=false,startY=0,startHeight=178,startedClosed=false;
   function limits(){
     const mobile=window.matchMedia('(max-width: 720px)').matches;
     const shortLandscape=window.matchMedia('(max-width: 900px) and (orientation: landscape) and (max-height: 520px)').matches;
@@ -1106,52 +1106,82 @@ function initializeConsoleResize(){
       window.innerHeight*(shortLandscape?0.42:(mobile?0.55:0.62)),
       window.innerHeight-(mobile?80:120)
     ));
-    return {minimum:minimum,maximum:maximum};
+    return {minimum:minimum,maximum:maximum,mobile:mobile};
   }
   function announceSize(height){
-    const bounds=limits();
+    const bounds=limits(),isOpen=consoleDock.classList.contains('console-open');
     handle.setAttribute('aria-valuemin',String(Math.round(bounds.minimum)));
     handle.setAttribute('aria-valuemax',String(Math.round(bounds.maximum)));
-    handle.setAttribute('aria-valuenow',String(Math.round(height)));
-    handle.setAttribute('aria-valuetext',Math.round(height)+' pixels tall');
+    handle.setAttribute('aria-valuenow',String(Math.round(isOpen?Math.max(bounds.minimum,Math.min(bounds.maximum,height)):bounds.minimum)));
+    handle.setAttribute('aria-valuetext',isOpen?Math.round(height)+' pixels tall':'Closed. Drag upward to open and resize.');
   }
-  function setHeight(requested){
+  function setHeight(requested,allowOpeningHeight){
     const bounds=limits();
-    const height=Math.round(Math.min(bounds.maximum,Math.max(bounds.minimum,Number(requested)||178)));
+    const closedHeight=bounds.mobile?38:42;
+    const minimum=allowOpeningHeight?closedHeight:bounds.minimum;
+    const height=Math.round(Math.min(bounds.maximum,Math.max(minimum,Number(requested)||bounds.minimum)));
     consoleDock.style.setProperty('--console-resize-height',height+'px');
     announceSize(height);
+    return height;
+  }
+  function openConsole(){
+    if(!consoleDock.classList.contains('console-open'))toggle.click();
   }
   function finishResize(){
     if(!active)return;
+    if(consoleDock.classList.contains('console-open')){
+      setHeight(consoleDock.getBoundingClientRect().height,false);
+    }
     active=false;
+    startedClosed=false;
     consoleDock.classList.remove('console-resizing');
   }
   handle.addEventListener('pointerdown',function(event){
-    if(!consoleDock.classList.contains('console-open'))return;
     if(event.button!==0&&event.pointerType!=='touch')return;
     active=true;
+    startedClosed=!consoleDock.classList.contains('console-open');
     startY=event.clientY;
     startHeight=consoleDock.getBoundingClientRect().height;
     consoleDock.classList.add('console-resizing');
-    handle.setPointerCapture(event.pointerId);
+    try{handle.setPointerCapture(event.pointerId);}catch(_error){}
     event.preventDefault();
   });
   handle.addEventListener('pointermove',function(event){
     if(!active)return;
-    setHeight(startHeight-(event.clientY-startY));
+    const bounds=limits();
+    const delta=startY-event.clientY;
+    if(startedClosed&&!consoleDock.classList.contains('console-open')){
+      /* Only an intentional upward pull opens a collapsed console. */
+      if(delta<6)return;
+      setHeight(startHeight+delta,true);
+      openConsole();
+      /* Keep the pointer and top edge moving together from the collapsed height. */
+      setHeight(startHeight+delta,true);
+      return;
+    }
+    setHeight(startHeight-(event.clientY-startY),startedClosed);
   });
   handle.addEventListener('pointerup',finishResize);
   handle.addEventListener('pointercancel',finishResize);
   handle.addEventListener('keydown',function(event){
-    if(!consoleDock.classList.contains('console-open'))return;
-    const bounds=limits();
-    const current=consoleDock.getBoundingClientRect().height;
+    const bounds=limits(),isOpen=consoleDock.classList.contains('console-open');
+    const current=isOpen?consoleDock.getBoundingClientRect().height:bounds.minimum;
+    if(!isOpen){
+      if(event.key==='ArrowUp'){event.preventDefault();setHeight(bounds.minimum+24);openConsole();}
+      else if(event.key==='Home'){event.preventDefault();setHeight(bounds.minimum);openConsole();}
+      else if(event.key==='End'){event.preventDefault();setHeight(bounds.maximum);openConsole();}
+      return;
+    }
     if(event.key==='ArrowUp'){event.preventDefault();setHeight(current+24);}
     else if(event.key==='ArrowDown'){event.preventDefault();setHeight(current-24);}
     else if(event.key==='Home'){event.preventDefault();setHeight(bounds.minimum);}
     else if(event.key==='End'){event.preventDefault();setHeight(bounds.maximum);}
   });
   window.addEventListener('resize',function(){
+    if(!consoleDock.classList.contains('console-open')){
+      announceSize(consoleDock.getBoundingClientRect().height);
+      return;
+    }
     const saved=parseFloat(consoleDock.style.getPropertyValue('--console-resize-height'));
     if(Number.isFinite(saved))setHeight(saved);
     else announceSize(consoleDock.getBoundingClientRect().height);
