@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Manual Drive · Encoder Map</title>
+<style>
+:root{color-scheme:dark;--bg:#071117;--panel:#101f28;--line:#263b48;--text:#e8f1f5;--muted:#95aab5;--mint:#63e6b0;--blue:#65b8ff;--warn:#ffcc76;--red:#ff7979}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+body{padding:16px;display:flex;flex-direction:column;gap:12px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.brand{display:flex;align-items:center;gap:12px}.brand-icon{width:42px;height:42px;border-radius:12px;background:#153b3b;color:var(--mint);display:grid;place-items:center;font-size:23px}.eyebrow{color:var(--mint);letter-spacing:.12em;text-transform:uppercase;font-size:10px;font-weight:800}.title{font-size:21px;font-weight:800;letter-spacing:-.02em}.actions{display:flex;gap:8px;flex-wrap:wrap}
+button,a.button{border:1px solid var(--line);background:#172934;color:var(--text);padding:9px 12px;border-radius:9px;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}button.primary{background:var(--mint);border-color:var(--mint);color:#042219}button.danger{border-color:#6d3037;color:#ffc0c0;background:#321a20}button:disabled{opacity:.55;cursor:not-allowed}
+.statusbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px}.dot.ok{background:var(--mint)}.status-text{color:var(--muted)}.status-text strong{color:var(--text)}.spacer{flex:1}
+.metrics{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px}.metric{min-width:0;background:var(--panel);border:1px solid var(--line);padding:12px;border-radius:12px}.metric .name{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.metric .value{font-size:22px;font-variant-numeric:tabular-nums;font-weight:800;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.unit{color:var(--muted);font-size:11px;margin-left:4px}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:12px;flex:1;min-height:440px}.map-panel,.side-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-width:0}.panel-heading{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}.panel-heading h2{font-size:13px;margin:0;letter-spacing:.03em}.panel-heading span{font-size:11px;color:var(--muted)}.canvas-wrap{position:relative;height:calc(100% - 48px);min-height:390px;background:#09161d}.canvas-wrap canvas{display:block;width:100%;height:100%}.canvas-overlay{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:28px;color:var(--muted);pointer-events:none}.canvas-overlay strong{display:block;color:var(--text);font-size:15px;margin-bottom:6px}.side-content{padding:14px;display:flex;flex-direction:column;gap:12px}.note{font-size:12px;color:var(--muted);padding:10px 11px;background:#0b1a22;border:1px solid var(--line);border-radius:9px}.note.warn{color:#ffe0a8;border-color:#59492e}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:flex;flex-direction:column;gap:5px;min-width:0}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}.field input{width:100%;background:#08151d;border:1px solid #304550;border-radius:8px;color:var(--text);padding:9px;font:inherit;font-variant-numeric:tabular-nums}.field input:focus{outline:2px solid #307b70;border-color:var(--mint)}.calib-actions{display:flex;gap:8px;flex-wrap:wrap}.calib-actions button{flex:1}.foot{color:var(--muted);font-size:11px;padding:0 2px}
+@media(max-width:1000px){.main{grid-template-columns:1fr}.side-panel{order:2}.metrics{grid-template-columns:repeat(3,minmax(100px,1fr))}.canvas-wrap{height:52vh;min-height:320px}.side-content{display:grid;grid-template-columns:1fr 1fr;align-items:start}.side-content>*{min-width:0}.side-content .note:last-child{grid-column:1/-1}}
+@media(max-width:560px){body{padding:8px}.title{font-size:17px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.metric{padding:9px}.metric .value{font-size:19px}.main{min-height:0}.canvas-wrap{min-height:300px;height:50vh}.side-content{display:flex}.actions{width:100%}.actions>*{flex:1;text-align:center}.statusbar{font-size:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><div class="brand-icon">⌁</div><div><div class="eyebrow">Manual Drive / Telemetry</div><div class="title">Encoder Movement Map</div></div></div>
+  <div class="actions"><a class="button" href="/">← Back to driving</a><button id="refresh" type="button">Refresh now</button><button class="danger" id="resetOrigin" type="button">Reset map origin</button></div>
+</header>
+<div class="statusbar">
+  <span><i id="connectionDot" class="dot"></i><strong id="connectionStatus">Checking Arduino…</strong></span>
+  <span class="status-text" id="telemetryStatus">Waiting for encoder data</span>
+  <span class="spacer"></span>
+  <span class="status-text">Sample age: <strong id="sampleAge">—</strong></span>
+</div>
+<section class="metrics">
+  <div class="metric"><div class="name">Signed pulses</div><div class="value" id="pulses">—</div></div>
+  <div class="metric"><div class="name">Travel distance</div><div class="value"><span id="travel">—</span><span class="unit">cm</span></div></div>
+  <div class="metric"><div class="name">X position</div><div class="value"><span id="xpos">—</span><span class="unit">cm</span></div></div>
+  <div class="metric"><div class="name">Y position</div><div class="value"><span id="ypos">—</span><span class="unit">cm</span></div></div>
+  <div class="metric"><div class="name">Heading</div><div class="value"><span id="heading">—</span><span class="unit">°</span></div></div>
+</section>
+<main class="main">
+  <section class="map-panel">
+    <div class="panel-heading"><h2>TOP-DOWN PATH ESTIMATE</h2><span id="mapSubheading">Waiting for calibrated telemetry</span></div>
+    <div class="canvas-wrap">
+      <canvas id="mapCanvas" aria-label="Encoder-based estimated movement path"></canvas>
+      <div class="canvas-overlay" id="mapOverlay"><div><strong>Waiting for encoder</strong>Connect the Arduino and enable ODOM1 telemetry to start recording movement.</div></div>
+    </div>
+  </section>
+  <aside class="side-panel">
+    <div class="panel-heading"><h2>ENCODER CALIBRATION</h2><span>saved locally</span></div>
+    <div class="side-content">
+      <div class="note warn" id="calibrationNotice">A 2D trajectory is only an estimate. Pulse distance and steering geometry must be calibrated first.</div>
+      <form id="calibrationForm" class="form-grid">
+        <div class="field full"><label for="pulseDistance">Distance per encoder pulse (cm)</label><input id="pulseDistance" name="pulse_distance_cm" type="number" min="0.0001" step="any" placeholder="Required for distance"></div>
+        <div class="field full"><label for="wheelbase">Wheelbase (cm)</label><input id="wheelbase" name="wheelbase_cm" type="number" min="0.0001" step="any" placeholder="Required for 2D path"></div>
+        <div class="field"><label for="roadMin">Road-wheel angle at servo MIN (°)</label><input id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="-0.0001" step="any" placeholder="Negative"></div>
+        <div class="field"><label for="roadMax">Road-wheel angle at servo MAX (°)</label><input id="roadMax" name="road_angle_max_deg" type="number" min="0.0001" max="45" step="any" placeholder="Positive"></div>
+        <div class="field full"><div class="note">Servo command endpoints: <strong id="servoRange">—</strong>. Measure pulse distance and road-wheel angles physically; do not guess these values.</div></div>
+        <div class="field full calib-actions"><button type="submit" class="primary">Save calibration</button><button type="button" id="enableTelemetry">Enable encoder</button></div>
+      </form>
+      <div class="note" id="mapMessage">The map origin reset only affects the displayed estimate. It never resets the Arduino encoder counter or issues motor commands.</div>
+      <div class="note">Limitations: single-channel signed-pulse estimates can drift due to wheel slip, coasting, backlash, missed pulses and unobserved motion during disconnects. Use this page for debugging, not ground-truth localization.</div>
+    </div>
+  </aside>
+</main>
+<div class="foot">Updates every 500 ms · Uses live ODOM1 telemetry from the selected Arduino firmware · No motor commands are sent from this page.</div>
+<script>
+(function(){
+  "use strict";
+  var canvas=byId("mapCanvas"), ctx=canvas.getContext("2d");
+  var latest=null, refreshBusy=false, userMessage="", calibrationForm=byId("calibrationForm"), calibrationLoaded=false;
+  function byId(id){return document.getElementById(id);}
+  function numberText(value,digits){
+    if(value===null||value===undefined||!Number.isFinite(Number(value)))return "—";
+    return Number(value).toFixed(digits===undefined?2:digits);
+  }
+  function fmtAge(value){return value===null||value===undefined?"—":(Number(value)*1000).toFixed(0)+" ms";}
+  function fillCalibration(c){
+    if(calibrationLoaded&&document.activeElement&&document.activeElement.tagName==="INPUT")return;
+    c=c||{};
+    byId("pulseDistance").value=c.pulse_distance_cm==null?"":c.pulse_distance_cm;
+    byId("wheelbase").value=c.wheelbase_cm==null?"":c.wheelbase_cm;
+    byId("roadMin").value=c.road_angle_min_deg==null?"":c.road_angle_min_deg;
+    byId("roadMax").value=c.road_angle_max_deg==null?"":c.road_angle_max_deg;
+    calibrationLoaded=true;
+  }
+  function metric(id,value){byId(id).textContent=value;}
+  function resizeCanvas(){
+    var r=canvas.getBoundingClientRect(), dpr=Math.max(1,window.devicePixelRatio||1);
+    canvas.width=Math.max(1,Math.round(r.width*dpr));
+    canvas.height=Math.max(1,Math.round(r.height*dpr));
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    drawMap();
+  }
+  function drawMap(){
+    if(!ctx)return;
+    var r=canvas.getBoundingClientRect(), w=r.width, h=r.height;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle="#09161d";ctx.fillRect(0,0,w,h);
+    var s=latest||{}, history=Array.isArray(s.history)?s.history:[];
+    var pts=[];
+    history.forEach(function(p){
+      if(p&&!p.gap&&p.valid&&Number.isFinite(Number(p.x_cm))&&Number.isFinite(Number(p.y_cm))){
+        pts.push({x:Number(p.x_cm),y:Number(p.y_cm),heading:Number(p.heading_rad)||0,valid:true});
+      }
+    });
+    if(s.trajectory_available&&Number.isFinite(Number(s.x_cm))&&Number.isFinite(Number(s.y_cm))){
+      var cur={x:Number(s.x_cm),y:Number(s.y_cm),heading:Number(s.heading_rad)||0,valid:true};
+      if(!pts.length||pts[pts.length-1].x!==cur.x||pts[pts.length-1].y!==cur.y)pts.push(cur);
+    }
+    var minX=0,maxX=0,minY=0,maxY=0;
+    pts.forEach(function(p){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);});
+    var spanX=Math.max(20,maxX-minX),spanY=Math.max(20,maxY-minY);
+    var scale=Math.min((w-72)/spanX,(h-72)/spanY);
+    scale=Math.max(0.05,Math.min(18,scale));
+    var cx=w/2,cy=h/2,worldCX=(minX+maxX)/2,worldCY=(minY+maxY)/2;
+    function sx(x){return cx+(x-worldCX)*scale;}
+    function sy(y){return cy-(y-worldCY)*scale;}
+    var gridCm=10, gridPx=gridCm*scale;
+    if(gridPx<16)gridCm=100;
+    else if(gridPx>160)gridCm=5;
+    gridPx=gridCm*scale;
+    ctx.strokeStyle="rgba(103,144,161,.14)";ctx.lineWidth=1;
+    var offsetX=((cx-worldCX*scale)%gridPx+gridPx)%gridPx;
+    var offsetY=((cy+worldCY*scale)%gridPx+gridPx)%gridPx;
+    for(var gx=offsetX;gx<w;gx+=gridPx){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,h);ctx.stroke();}
+    for(var gy=offsetY;gy<h;gy+=gridPx){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(w,gy);ctx.stroke();}
+    ctx.strokeStyle="rgba(160,195,209,.35)";ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,h);ctx.moveTo(0,cy);ctx.lineTo(w,cy);ctx.stroke();
+    ctx.fillStyle="#829aa7";ctx.font="11px system-ui";ctx.fillText("X →",w-38,cy-8);ctx.fillText("Y ↑",cx+7,14);
+    if(s.trajectory_available&&pts.length){
+      ctx.lineWidth=2.6;ctx.strokeStyle="#63e6b0";ctx.lineJoin="round";ctx.lineCap="round";
+      ctx.beginPath();
+      var drawing=false;
+      history.forEach(function(p){
+        if(!p||p.gap||!p.valid||!Number.isFinite(Number(p.x_cm))||!Number.isFinite(Number(p.y_cm))){drawing=false;return;}
+        var x=sx(Number(p.x_cm)),y=sy(Number(p.y_cm));
+        if(!drawing){ctx.moveTo(x,y);drawing=true;}else{ctx.lineTo(x,y);}
+      });
+      ctx.stroke();
+      var start=pts[0];ctx.fillStyle="#65b8ff";ctx.beginPath();ctx.arc(sx(start.x),sy(start.y),4,0,Math.PI*2);ctx.fill();
+      var end=pts[pts.length-1],ex=sx(end.x),ey=sy(end.y);
+      ctx.save();ctx.translate(ex,ey);ctx.rotate(-end.heading);
+      ctx.fillStyle="#63e6b0";ctx.beginPath();ctx.moveTo(11,0);ctx.lineTo(-7,-6);ctx.lineTo(-5,0);ctx.lineTo(-7,6);ctx.closePath();ctx.fill();ctx.restore();
+      ctx.fillStyle="#d4e2e8";ctx.fillText("START",sx(start.x)+8,sy(start.y)-8);
+      ctx.fillStyle="#63e6b0";ctx.fillText("ROBOT",ex+10,ey-10);
+    }
+    var overlay=byId("mapOverlay");
+    if(!s.telemetry_available||!s.telemetry_fresh){
+      overlay.style.display="grid";
+      overlay.innerHTML="<div><strong>Encoder data is not live</strong>"+escapeHtml(s.message||"Waiting for fresh ODOM1 telemetry.")+"</div>";
+    }else if(!s.trajectory_available){
+      overlay.style.display="grid";
+      overlay.innerHTML="<div><strong>2D path needs calibration</strong>"+escapeHtml(s.message||"Enter distance per pulse, wheelbase and road-wheel angle endpoints.")+"</div>";
+    }else{
+      overlay.style.display="none";
+    }
+    byId("mapSubheading").textContent=s.trajectory_available?(pts.length+" plotted samples · estimated pose"):"Calibration required for XY path";
+  }
+  function escapeHtml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+  async function refresh(){
+    if(refreshBusy)return;refreshBusy=true;
+    try{
+      var response=await fetch("/api/encoder-map",{cache:"no-store"});
+      var data=await response.json();
+      if(!response.ok)throw new Error(data.message||("HTTP "+response.status));
+      latest=data;
+      byId("connectionStatus").textContent=data.connected?"Arduino connected":("Arduino "+(data.connection_state||"disconnected"));
+      byId("connectionDot").classList.toggle("ok",!!data.connected&&!!data.telemetry_fresh);
+      byId("telemetryStatus").textContent=data.message||"";
+      byId("sampleAge").textContent=fmtAge(data.sample_age_s);
+      metric("pulses",data.signed_pulses==null?"—":String(data.signed_pulses));
+      metric("travel",numberText(data.travel_cm));
+      metric("xpos",numberText(data.x_cm));
+      metric("ypos",numberText(data.y_cm));
+      metric("heading",data.heading_rad==null?"—":numberText(Number(data.heading_rad)*180/Math.PI,1));
+      byId("servoRange").textContent=numberText(data.servo_min,0)+" – "+numberText(data.servo_max,0)+" (center "+numberText(data.servo_center,0)+")";
+      fillCalibration(data.calibration);
+      byId("calibrationNotice").textContent=data.trajectory_available
+        ?"Calibration active. The displayed trace is an estimated path and can drift."
+        :"A 2D trajectory is only an estimate. A pulse-distance calibration is required for distance; wheelbase and steering calibration are required for XY.";
+      byId("calibrationNotice").classList.toggle("warn",!data.trajectory_available);
+      if(data.last_error)userMessage=data.last_error;
+      if(userMessage)byId("mapMessage").textContent=userMessage;
+      drawMap();
+    }catch(err){
+      byId("connectionStatus").textContent="Dashboard unavailable";
+      byId("telemetryStatus").textContent=err.message||String(err);
+      byId("connectionDot").classList.remove("ok");
+    }finally{refreshBusy=false;}
+  }
+  byId("calibrationForm").addEventListener("submit",async function(e){
+    e.preventDefault();
+    var payload={
+      pulse_distance_cm:byId("pulseDistance").value.trim()===""?null:Number(byId("pulseDistance").value),
+      wheelbase_cm:byId("wheelbase").value.trim()===""?null:Number(byId("wheelbase").value),
+      road_angle_min_deg:byId("roadMin").value.trim()===""?null:Number(byId("roadMin").value),
+      road_angle_max_deg:byId("roadMax").value.trim()===""?null:Number(byId("roadMax").value)
+    };
+    try{
+      var r=await fetch("/api/encoder-map/calibration",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      var d=await r.json();
+      if(!r.ok||!d.success)throw new Error(d.message||"Calibration rejected");
+      userMessage="Calibration saved. The displayed odometry origin was restarted; the Arduino counter and motors were not changed.";
+      await refresh();
+    }catch(err){userMessage=err.message||String(err);byId("mapMessage").textContent=userMessage;}
+  });
+  byId("enableTelemetry").addEventListener("click",async function(){
+    byId("enableTelemetry").disabled=true;
+    try{
+      var r=await fetch("/api/encoder-map/enable",{method:"POST"});
+      var d=await r.json();
+      if(!r.ok||!d.success)throw new Error(d.message||"Could not enable encoder telemetry");
+      userMessage="Encoder telemetry enabled.";
+    }catch(err){userMessage=err.message||String(err);}
+    finally{byId("enableTelemetry").disabled=false;byId("mapMessage").textContent=userMessage;refresh();}
+  });
+  byId("resetOrigin").addEventListener("click",async function(){
+    if(!confirm("Reset the displayed path origin? The Arduino counter and motors will not be changed."))return;
+    try{
+      var r=await fetch("/api/encoder-map/reset-origin",{method:"POST"});
+      var d=await r.json();
+      if(!r.ok||!d.success)throw new Error(d.message||"Could not reset map origin");
+      userMessage="Display origin reset. The encoder counter and motors were not changed.";
+      await refresh();
+    }catch(err){userMessage=err.message||String(err);byId("mapMessage").textContent=userMessage;}
+  });
+  byId("refresh").addEventListener("click",refresh);
+  window.addEventListener("resize",resizeCanvas);
+  resizeCanvas();refresh();setInterval(refresh,500);
+})();
+</script>
+</body>
+</html>
