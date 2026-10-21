@@ -16,6 +16,7 @@ from traffic_sign_detector.async_detector import AsyncSignDetector
 from utils.health import FaultSeverity, HealthMonitor, HealthState
 from utils.json_config import _validate
 from utils.runtime_metrics import RuntimeMetrics
+from utils.fps import FPS
 
 
 class ArduinoContractCliPolicyTests(unittest.TestCase):
@@ -79,6 +80,34 @@ class RuntimeMetricsTests(unittest.TestCase):
         self.assertEqual(statistics["p95_ms"], 95)
         self.assertEqual(statistics["p99_ms"], 99)
 
+    def test_processing_fps_counts_perception_cycles_not_outer_loop_iterations(self):
+        metrics = RuntimeMetrics()
+        fps = FPS(config=types.SimpleNamespace(
+            runtime_metrics=metrics,
+            PERFORMANCE=False,
+        ))
+
+        with patch("utils.fps.time.monotonic", side_effect=[0.0, 0.010, 0.020, 0.033]):
+            fps.start()
+            fps.loop_update()
+            fps.loop_update()
+            fps.update()
+
+        self.assertAlmostEqual(fps.instant_fps, 1.0 / 0.033)
+        self.assertEqual(fps._num_frames, 1)
+        self.assertEqual(len(metrics._timings["loop"]), 1)
+        self.assertAlmostEqual(metrics._timings["loop"][0], 10.0)
+
+    def test_processing_fps_clears_after_perception_stalls(self):
+        fps = FPS(config=types.SimpleNamespace(runtime_metrics=None, PERFORMANCE=False))
+        with patch("utils.fps.time.monotonic", side_effect=[0.0, 0.033, 1.040]):
+            fps.start()
+            fps.update()
+            fps.loop_update()
+
+        self.assertEqual(fps.instant_fps, 0.0)
+        self.assertEqual(fps.second_fps, 0.0)
+
     def test_statistics_and_counters(self):
         metrics = RuntimeMetrics(window_size=3)
         metrics.record_loop(10)
@@ -115,6 +144,80 @@ class HealthTests(unittest.TestCase):
             snapshot["faults"]["arduino_serial"]["severity"],
             FaultSeverity.CRITICAL,
         )
+
+    def test_stale_sign_result_is_suppressed_when_worker_is_intentionally_paused(self):
+        monitor = HealthMonitor()
+        monitor.set_lifecycle(HealthState.RUNNING)
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            MODE="race",
+            RUN_LVL="MOVE",
+            WITH_SIGN=True,
+            sign_detector=types.SimpleNamespace(status=lambda: {
+                "worker_alive": True,
+                "paused": True,
+                "requests_enabled": True,
+                "inference_in_flight": False,
+                "last_result_age_s": 30.0,
+            }),
+        )
+
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertNotIn("sign_result_stale", snapshot["faults"])
+
+    def test_stale_sign_result_is_reported_when_detection_is_enabled(self):
+        monitor = HealthMonitor()
+        monitor.set_lifecycle(HealthState.RUNNING)
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            MODE="city",
+            RUN_LVL="MOVE",
+            WITH_SIGN=True,
+            sign_detector=types.SimpleNamespace(status=lambda: {
+                "worker_alive": True,
+                "paused": False,
+                "requests_enabled": True,
+                "inference_in_flight": False,
+                "last_result_age_s": 30.0,
+            }),
+        )
+
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertIn("sign_result_stale", snapshot["faults"])
+
+    def test_operator_stop_suppresses_age_faults_for_inactive_pipelines(self):
+        monitor = HealthMonitor()
+        monitor.set_lifecycle(HealthState.RUNNING)
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=True,
+            MODE="city",
+            RUN_LVL="STOP",
+            STREAM=False,
+            DEBUG=False,
+            WITH_SIGN=True,
+            camera=types.SimpleNamespace(
+                camera_initialized=True,
+                last_capture_valid=True,
+                last_capture_at=time.monotonic() - 30.0,
+                consecutive_failures=0,
+            ),
+            runtime_metrics=types.SimpleNamespace(snapshot=lambda: {
+                "last_perception_valid": True,
+                "last_perception_age_ms": 30000.0,
+            }),
+            sign_detector=types.SimpleNamespace(status=lambda: {
+                "worker_alive": True,
+                "paused": False,
+                "requests_enabled": True,
+                "inference_in_flight": False,
+                "last_result_age_s": 30.0,
+            }),
+        )
+
+        snapshot = monitor.snapshot_runtime(config)
+        self.assertNotIn("camera_stale", snapshot["faults"])
+        self.assertNotIn("perception_stale", snapshot["faults"])
+        self.assertNotIn("sign_result_stale", snapshot["faults"])
 
     def test_ready_without_fault(self):
         monitor = HealthMonitor()
