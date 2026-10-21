@@ -13,6 +13,7 @@ DEFAULT_IMAGE_DIR = (
 DEFAULT_OUTPUT_FILE = (
     Path(__file__).resolve().parents[1]
     / "assets"
+    / "camera_calibrations"
     / "camera_calibration.npz"
 )
 
