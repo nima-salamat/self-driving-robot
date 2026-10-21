@@ -249,7 +249,9 @@ function onCustomPointerDown(event){
   let label=window.prompt('Annotation label (optional):','');if(label===null)return;label=String(label).trim().slice(0,80);
   extAnnotations.push({kind:label?'note':'marker',space:p.space,u:p.space==='image'?p.u:p.canvasU,v:p.space==='image'?p.v:p.canvasV,label:label,color:'#fbbf24'});
   if(extAnnotations.length>250)extAnnotations.shift();refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();updateEditorStatus('Marker placed in '+p.space+' coordinate space.');
- }else if(!rulerStart){rulerStart=p;rulerHoverPoint=p;updateEditorStatus('Ruler start set. Click again to finish; points may be inside or outside the image.');updateActiveToolBanner();drawPrecisionOverlay();}
+ }else if(!rulerStart){
+  // Ruler start marked. Move the pointer to preview distance; click the second point to finish.
+  rulerStart=p;rulerHoverPoint=p;updateEditorStatus('Ruler start set. Click again to finish; points may be inside or outside the image.');updateActiveToolBanner();drawPrecisionOverlay();}
  else{
   const a=rulerStart,same=a.space==='image'&&p.space==='image';rulerStart=null;const space=same?'image':'canvas',u=same?a.u:a.canvasU,v=same?a.v:a.canvasV,u2=same?p.u:p.canvasU,v2=same?p.v:p.canvasV,dist=rulerDistance(a,p);
   extAnnotations.push({kind:'ruler',space:space,u:u,v:v,u2:u2,v2:v2,distancePx:dist,color:'#22d3ee'});rulerHoverPoint=null;updateEditorStatus('Ruler saved: '+formatRulerDistance(dist,space)+'.');updateActiveToolBanner();syncLayerControls();
