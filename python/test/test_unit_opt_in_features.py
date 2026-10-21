@@ -153,8 +153,7 @@ class OptInFeatureTests(unittest.TestCase):
 
     def test_odometry_counts_signed_distance_gaps_and_calibrated_path(self):
         odom = EncoderOdometry(0.5, wheelbase_cm=20, servo_center=95,
-            servo_min=55, servo_max=125, road_angle_min_deg=-20,
-            road_angle_max_deg=20)
+            servo_min=55, servo_max=125, max_wheel_angle_deg=20)
         self.assertTrue(odom.ingest({"extended": True, "valid": True,
                                      "epoch": 1, "signed_pulses": 0, "servo": 95}, 1.0))
         self.assertTrue(odom.ingest({"extended": True, "valid": True,
@@ -169,8 +168,7 @@ class OptInFeatureTests(unittest.TestCase):
 
     def test_odometry_exposes_calibrated_road_wheel_angle_from_servo_command(self):
         odom = EncoderOdometry(0.5, wheelbase_cm=20, servo_center=95,
-            servo_min=55, servo_max=125, road_angle_min_deg=-20,
-            road_angle_max_deg=20)
+            servo_min=55, servo_max=125, max_wheel_angle_deg=20)
         self.assertTrue(odom.ingest({"extended": True, "valid": True,
             "epoch": 1, "signed_pulses": 0, "servo": 95}, 1.0))
         self.assertTrue(odom.ingest({"extended": True, "valid": True,
