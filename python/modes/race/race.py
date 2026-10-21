@@ -7,6 +7,7 @@ from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.race_vision_processing import VisionProcessor
 from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle
+from visualization.frame_telemetry import build_frame_telemetry
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
 from traffic_sign_detector.svm_detector import TrafficSignDetector as SVMTrafficSignDetector
@@ -1408,10 +1409,22 @@ class Robot:
                 if bool(getattr(config_race, "OLD_METHOD", False))
                 else f"Angle:{angle_text}, VisionAngle:{vision_angle_text}"
             )
-            texts = [
-                f"FPS: {self.fps.instant_fps:.1f}, RealFPS: {self.fps.second_fps:.1f}, {status}",
-                f"{angle_details}, Sign:{sign_text}, LastTag:{self.last_tag}",
-            ]
+            texts = build_frame_telemetry(
+                config_race,
+                instant_fps=getattr(self.fps, "instant_fps", None),
+                real_fps=getattr(self.fps, "second_fps", None),
+                status=status,
+                applied_angle=controller_angle,
+                vision_angle=angle,
+                crosswalk=result.get("crosswalk"),
+                sign=sign_text,
+                last_tag=getattr(self, "last_tag", None),
+                error=result.get("error"),
+                lane_type=result.get("lane_type"),
+                speed=getattr(getattr(self, "control", None), "current_speed", None),
+                confidence=getattr(config_race, "perception_confidence", None),
+                obstacle=getattr(config_race, "obstacle_diagnostics", None),
+            )
 
             font = cv2.FONT_HERSHEY_SIMPLEX
             scale = 0.3

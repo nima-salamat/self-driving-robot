@@ -61,7 +61,14 @@ class StreamControlsMixin:
         default_ui = {
             "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef", "ST":"#bf7bff", "OBJ":"#ff5757"},
             "visible": {"RL":True, "LL":True, "CW":True, "BEV":True, "ST":True, "OBJ":True},
-            "opacity": {"RL":1.0, "LL":1.0, "CW":1.0, "BEV":0.8, "ST":1.0, "OBJ":1.0}
+            "opacity": {"RL":1.0, "LL":1.0, "CW":1.0, "BEV":0.8, "ST":1.0, "OBJ":1.0},
+            "frame_overlay": {
+            "fps": True, "realfps": False, "status": True,
+            "applied_angle": True, "vision_angle": True, "servo_center": True,
+            "crosswalk": False, "sign": False, "last_tag": False,
+            "error": False, "lane_type": False, "speed": False,
+            "confidence": False, "obstacle": False,
+        }
         }
         if os.path.exists(fname):
             try:
@@ -70,8 +77,18 @@ class StreamControlsMixin:
                     ui = {
                         "colors": data.get("colors", default_ui["colors"]),
                         "visible": data.get("visible", default_ui["visible"]),
-                        "opacity": data.get("opacity", default_ui["opacity"])
+                        "opacity": data.get("opacity", default_ui["opacity"]),
+                        "frame_overlay": data.get("frame_overlay", default_ui["frame_overlay"]),
                     }
+                    if not isinstance(ui["frame_overlay"], dict):
+                        ui["frame_overlay"] = dict(default_ui["frame_overlay"])
+                    else:
+                        ui["frame_overlay"] = {
+                            key: ui["frame_overlay"].get(key, default)
+                            if isinstance(ui["frame_overlay"].get(key, default), bool)
+                            else default
+                            for key, default in default_ui["frame_overlay"].items()
+                        }
                     for key in default_ui["colors"]:
                         if key not in ui["colors"]: ui["colors"][key] = default_ui["colors"][key]
                     for key in default_ui["visible"]:
@@ -292,7 +309,7 @@ class StreamControlsMixin:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify(success=False, message="request body must be a JSON object"), 400
-        for group in ("colors", "visible", "opacity"):
+        for group in ("colors", "visible", "opacity", "frame_overlay"):
             if group in data and not isinstance(data[group], dict):
                 return jsonify(success=False, message=f"{group} must be a JSON object"), 400
         before = self._full_config_snapshot()
@@ -304,6 +321,9 @@ class StreamControlsMixin:
             for key, value in data.get("visible", {}).items():
                 if key not in self.ui_settings["visible"] or not isinstance(value, bool):
                     raise ValueError("visible must contain boolean values for known layers")
+            for key, value in data.get("frame_overlay", {}).items():
+                if key not in self.ui_settings["frame_overlay"] or not isinstance(value, bool):
+                    raise ValueError("frame_overlay must contain boolean values for known telemetry fields")
             for key, value in data.get("opacity", {}).items():
                 if key not in self.ui_settings["visible"] or isinstance(value, bool):
                     raise ValueError("opacity must contain numeric values for known layers")
@@ -313,17 +333,22 @@ class StreamControlsMixin:
             self.ui_settings["colors"].update({k:v.lower() for k,v in data.get("colors", {}).items()})
             self.ui_settings["visible"].update(data.get("visible", {}))
             self.ui_settings.setdefault("opacity", {}).update({k:float(v) for k,v in data.get("opacity", {}).items()})
+            self.ui_settings.setdefault("frame_overlay", {}).update(data.get("frame_overlay", {}))
+            setattr(self.config, "stream_ui_settings", self.ui_settings)
             if not self.save_ui_settings():
                 self.ui_settings = previous_ui
+                setattr(self.config, "stream_ui_settings", self.ui_settings)
                 return jsonify(success=False, message="failed to persist UI settings; values were rolled back"), 500
             self._record_config_history("before layer update", before)
             self._record_config_history("layer visibility/color/opacity update")
             return jsonify(success=True, ui=self.ui_settings)
         except (TypeError, ValueError) as exc:
             self.ui_settings = previous_ui
+            setattr(self.config, "stream_ui_settings", self.ui_settings)
             return jsonify(success=False, message=str(exc)), 400
         except Exception:
             self.ui_settings = previous_ui
+            setattr(self.config, "stream_ui_settings", self.ui_settings)
             self.save_ui_settings()
             logger.exception("Failed to persist dashboard layer settings")
             return jsonify(success=False, message="failed to persist layer settings; values were rolled back"), 500

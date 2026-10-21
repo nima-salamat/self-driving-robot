@@ -169,6 +169,7 @@ class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin
         self._initialize_stream_auth(os.path.join(str(BASE_DIR), ".env"))
 
         self.ui_settings = self.load_ui_settings()
+        setattr(self.config, "stream_ui_settings", self.ui_settings)
 
         self._jpeg_cache_lock = threading.Lock()
         self._frame_lock = getattr(config, "stream_frame_lock", None)

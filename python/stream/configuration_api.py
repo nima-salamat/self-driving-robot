@@ -298,8 +298,9 @@ class StreamConfigurationMixin:
 
         ui = json.loads(json.dumps(self.ui_settings))
         colors, visible, opacity = raw_ui.get("colors", {}), raw_ui.get("visible", {}), raw_ui.get("opacity", {})
-        if not all(isinstance(obj, dict) for obj in (colors, visible, opacity)):
-            raise ValueError("ui.colors, ui.visible, and ui.opacity must be objects")
+        frame_overlay = raw_ui.get("frame_overlay", ui.get("frame_overlay", {}))
+        if not all(isinstance(obj, dict) for obj in (colors, visible, opacity, frame_overlay)):
+            raise ValueError("ui.colors, ui.visible, ui.opacity, and ui.frame_overlay must be objects")
         ui.setdefault("opacity", {key: 1.0 for key in ui["visible"]})
         for key, value in colors.items():
             if key not in ui["colors"] or not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
@@ -309,6 +310,12 @@ class StreamConfigurationMixin:
             if key not in ui["visible"] or not isinstance(value, bool):
                 raise ValueError(f"invalid UI visibility for {key}")
             ui["visible"][key] = value
+        overlay_defaults = ui.get("frame_overlay", {})
+        for key, value in frame_overlay.items():
+            if key not in overlay_defaults or not isinstance(value, bool):
+                raise ValueError(f"invalid frame telemetry overlay value for {key}")
+            overlay_defaults[key] = value
+        ui["frame_overlay"] = overlay_defaults
         for key, value in opacity.items():
             if key not in ui["visible"] or isinstance(value, bool):
                 raise ValueError(f"invalid layer opacity for {key}")
@@ -467,6 +474,7 @@ class StreamConfigurationMixin:
             if servo_center_changed:
                 self._sync_live_servo_center()
             self.ui_settings = normalized["ui"]
+            setattr(self.config, "stream_ui_settings", self.ui_settings)
             if not self.save_ui_settings():
                 raise RuntimeError("failed to persist UI settings")
             if "target_processing_fps" in normalized["runtime"]:
@@ -490,6 +498,8 @@ class StreamConfigurationMixin:
             for key, value in before.get("advanced", {}).items():
                 if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
                     setattr(self.config, key, value)
+            self.ui_settings = before.get("ui", self.ui_settings)
+            setattr(self.config, "stream_ui_settings", self.ui_settings)
             try:
                 set_marker_mode(self.config, "sign" if before["advanced"].get("WITH_SIGN") else "apriltag" if before["advanced"].get("WITH_APRILTAG") else "none")
             except Exception:
