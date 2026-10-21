@@ -73,6 +73,7 @@ class StreamControlsMixin:
             "crosswalk": False, "sign": False, "last_tag": False,
             "error": False, "lane_type": False, "speed": False,
             "confidence": False, "obstacle": False,
+                "servo_guide": True, "candidate_labels": True,
         }
         }
         if os.path.exists(fname):

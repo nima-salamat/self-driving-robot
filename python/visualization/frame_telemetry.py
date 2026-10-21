@@ -19,6 +19,8 @@ DEFAULT_FRAME_OVERLAY = {
     "speed": False,
     "confidence": False,
     "obstacle": False,
+    "servo_guide": True,
+    "candidate_labels": True,
 }
 FRAME_OVERLAY_LABELS = {
     "fps": "Processing FPS",
@@ -35,6 +37,8 @@ FRAME_OVERLAY_LABELS = {
     "speed": "Commanded speed",
     "confidence": "Perception confidence",
     "obstacle": "Obstacle planner state",
+    "servo_guide": "Servo steering guide",
+    "candidate_labels": "Lane ROI candidate labels",
 }
 
 

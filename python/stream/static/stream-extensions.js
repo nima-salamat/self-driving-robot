@@ -879,7 +879,7 @@ async function applyCameraCalibrationSelection(){
 }
 async function saveFrameOverlaySettings(){
   if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
-  const keys=['fps','realfps','status','applied_angle','vision_angle','servo_center','crosswalk','sign','last_tag','error','lane_type','speed','confidence','obstacle'];
+  const keys=['fps','realfps','status','applied_angle','vision_angle','servo_center','crosswalk','sign','last_tag','error','lane_type','speed','confidence','obstacle','servo_guide','candidate_labels'];
   const frame_overlay={};
   keys.forEach(function(key){
     const input=$('ext_overlay_'+key);

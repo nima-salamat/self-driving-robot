@@ -147,9 +147,13 @@ def _draw_classical(canvas, data, config):
 
     font_scale = max(0.24, min(0.38, height / 1400.0))
     thickness = max(1, int(round(height / 720.0)))
+    settings = getattr(config, "stream_ui_settings", {}) if config is not None else {}
+    selected = settings.get("frame_overlay", {}) if isinstance(settings, dict) else {}
+    show_candidate_labels = selected.get("candidate_labels", True) is not False
     label = "Candidate:"
     (_, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-    for key, color in (("RL", (0, 165, 255)), ("LL", (255, 255, 0))):
+    candidate_label_items = (("RL", (0, 165, 255)), ("LL", (255, 255, 0))) if show_candidate_labels else ()
+    for key, color in candidate_label_items:
         box = boxes.get(key)
         if not box:
             continue
@@ -177,14 +181,6 @@ def _draw_classical(canvas, data, config):
         perception_x = int(round((perception_center - center_offset) * sx))
         perception_x = int(np.clip(perception_x, 0, width - 1))
         cv2.line(canvas, (perception_x, 0), (perception_x, height), (180, 0, 255), 1, cv2.LINE_AA)
-
-    if "crosswalk" in data:
-        cv2.putText(
-            canvas, "crosswalk:{}".format(bool(data.get("crosswalk"))),
-            (10, max(20, min(height - 4, 30))),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2, cv2.LINE_AA,
-        )
-
 
 def _draw_blsf(canvas, data):
     height, width = canvas.shape[:2]
@@ -224,22 +220,6 @@ def _draw_blsf(canvas, data):
             (int(roi[2]), int(roi[0])),
             sx, sy, (0, 255, 255), 2,
         )
-    cv2.putText(
-        canvas,
-        "BLSF-BETA lane={} error={:.1f} crosswalk={}".format(
-            data.get("lane_type", "none"),
-            float(data.get("lane_error", 0.0)),
-            bool(data.get("crosswalk", False)),
-        ),
-        (10, max(20, min(height - 4, 24))),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,
-        (255, 255, 255),
-        1,
-        cv2.LINE_AA,
-    )
-
-
 def _draw_ml(canvas, data):
     height, width = canvas.shape[:2]
     source_width = max(1, int(data.get("frame_width", width)))
@@ -331,5 +311,8 @@ def render_lane_debug_overlay(frame, draw_data=None, config=None, steering_angle
     elif kind == "ml":
         _draw_ml(canvas, data)
     if config is not None:
-        _draw_servo_guide(canvas, config, steering_angle)
+        settings = getattr(config, "stream_ui_settings", {})
+        selected = settings.get("frame_overlay", {}) if isinstance(settings, dict) else {}
+        if selected.get("servo_guide", True) is not False:
+            _draw_servo_guide(canvas, config, steering_angle)
     return canvas

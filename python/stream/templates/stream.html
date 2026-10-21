@@ -391,6 +391,8 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <label><input type="checkbox" id="ext_overlay_speed" {% if ui.get('frame_overlay', {}).get('speed', false) %}checked{% endif %}> Commanded speed</label>
         <label><input type="checkbox" id="ext_overlay_confidence" {% if ui.get('frame_overlay', {}).get('confidence', false) %}checked{% endif %}> Perception confidence</label>
         <label><input type="checkbox" id="ext_overlay_obstacle" {% if ui.get('frame_overlay', {}).get('obstacle', false) %}checked{% endif %}> Obstacle planner</label>
+        <label><input type="checkbox" id="ext_overlay_servo_guide" {% if ui.get('frame_overlay', {}).get('servo_guide', true) %}checked{% endif %}> Servo direction guide</label>
+        <label><input type="checkbox" id="ext_overlay_candidate_labels" {% if ui.get('frame_overlay', {}).get('candidate_labels', true) %}checked{% endif %}> Lane candidate labels</label>
       </div>
       <div class="form-row"><button type="button" class="btn" id="ext_overlay_apply" {% if not stream_control %}disabled{% endif %}>Apply Frame Overlay</button><span id="ext_overlay_status" class="small-muted" role="status" aria-live="polite">Saved per mode.</span></div>
     </div></details>
