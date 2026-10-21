@@ -122,6 +122,32 @@ class ManualEncoderMapTests(unittest.TestCase):
         self.tracker.poll_once()
         self.assertAlmostEqual(self.tracker.snapshot()["travel_cm"], 3.0)
 
+    def test_reversed_servo_direction_accepts_positive_min_and_negative_max(self):
+        calibration = {
+            "pulse_distance_cm": 0.4,
+            "wheelbase_cm": 25.0,
+            "road_angle_min_deg": 20.0,
+            "road_angle_max_deg": -15.0,
+        }
+        self.tracker.set_calibration(calibration)
+        odometry = self.tracker._odometry
+
+        self.assertTrue(odometry.calibrated)
+        self.assertAlmostEqual(odometry._road_wheel_angle(55), 20.0)
+        self.assertAlmostEqual(odometry._road_wheel_angle(95), 0.0)
+        self.assertAlmostEqual(odometry._road_wheel_angle(125), -15.0)
+
+    def test_servo_endpoints_must_still_have_opposite_signs(self):
+        for min_angle, max_angle in ((10.0, 20.0), (-10.0, -20.0), (0.0, 20.0), (10.0, 0.0)):
+            with self.subTest(min_angle=min_angle, max_angle=max_angle):
+                with self.assertRaises(ValueError):
+                    self.tracker.set_calibration({
+                        "pulse_distance_cm": 0.4,
+                        "wheelbase_cm": 25.0,
+                        "road_angle_min_deg": min_angle,
+                        "road_angle_max_deg": max_angle,
+                    })
+
     def test_invalid_calibration_is_rejected(self):
         for values in (
             {"pulse_distance_cm": 0},
