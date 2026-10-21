@@ -57,13 +57,18 @@ class EncoderOdometry:
             return False
 
     def _road_wheel_angle(self, servo):
-        # Linear interpolation is only the supplied calibration model; command
-        # degrees are never treated as wheel angles.
-        span = self.servo_max - self.servo_min
-        ratio = (float(servo) - self.servo_min) / span
-        return float(self.road_angle_min_deg) + ratio * (
-            float(self.road_angle_max_deg) - float(self.road_angle_min_deg)
-        )
+        # Calibrate each side against the actual servo center. The servo center
+        # need not be halfway between MIN and MAX (e.g. 50..130 with center 95).
+        # Linear interpolation across the full MIN..MAX span creates a false
+        # steering angle at straight ahead and bends the estimated path over time.
+        command = max(self.servo_min, min(self.servo_max, float(servo)))
+        if command <= self.servo_center:
+            span = self.servo_center - self.servo_min
+            ratio = (self.servo_center - command) / span
+            return ratio * float(self.road_angle_min_deg)
+        span = self.servo_max - self.servo_center
+        ratio = (command - self.servo_center) / span
+        return ratio * float(self.road_angle_max_deg)
 
     def ingest(self, sample, received_at=None):
         """Accept one parsed ODOM1 record; repeated pulse totals add no travel."""

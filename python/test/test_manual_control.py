@@ -347,6 +347,7 @@ _hardware_command_lock=threading.Lock()
 _last_hw_speed=None
 _last_hw_angle=None
 _last_priority_stop_at=0.0
+_last_neutral_stop_attempt_at=0.0
 _priority_stop_was_active=False
 
 def _connection_snapshot():
@@ -366,7 +367,7 @@ def broadcaster():
 
 def control_loop():
     global pid_angle,pid_speed,_last_hw_speed,_last_hw_angle
-    global _last_priority_stop_at,_priority_stop_was_active
+    global _last_priority_stop_at,_priority_stop_was_active,_last_neutral_stop_attempt_at
     last=time.monotonic()
     while not _stop.is_set():
         now=time.monotonic();dt=max(1e-4,now-last);last=now
@@ -421,9 +422,19 @@ def control_loop():
                         if angle!=_last_hw_angle:
                             result=hw.set_angle(angle);_last_hw_angle=None if result is False else angle
                         if speed==0:
-                            if _last_hw_speed!=0:hw.stop(reason="manual_neutral_or_deadman")
-                            _last_hw_speed=0
-                        else:hw.set_speed(speed);_last_hw_speed=speed
+                            # A failed STOP must not be cached as a successful neutral state.
+                            # Retry failed writes at 10 Hz, while preserving immediate transition stops.
+                            should_attempt_stop = _last_hw_speed != 0 and (
+                                _last_hw_speed is not None
+                                or now - _last_neutral_stop_attempt_at >= PRIORITY_STOP_REFRESH_INTERVAL
+                            )
+                            if should_attempt_stop:
+                                _last_neutral_stop_attempt_at = now
+                                result = hw.stop(reason="manual_neutral_or_deadman")
+                                _last_hw_speed = 0 if result is not False else None
+                        else:
+                            result = hw.set_speed(speed)
+                            _last_hw_speed = None if result is False else speed
             except Exception:
                 _last_hw_speed=_last_hw_angle=None;log.exception("Manual hardware command failed")
         else:
@@ -889,6 +900,18 @@ window.addEventListener('keydown', (e)=>{
   if(k==='a' || e.code==='ArrowLeft') keyState.left = true;
   if(k==='d' || e.code==='ArrowRight') keyState.right = true;
 });
+function forceKeyboardThrottleStop(){
+  // Clear the keyboard ramp even when another input method currently owns the actuators.
+  keyAccel.forward=0;
+  if(pointerId!==null || pedalActive || gamepadActive || keyState.stop)return;
+  target.forward=0;
+  current.forward=0;
+  sendInput({forward:0,steer:current.steer,speed_scale:0,speed_immediate:true});
+  // Steering can remain active independently; the motor throttle cannot.
+  lastInputActive=Boolean(keyState.left||keyState.right||
+    Math.abs(keyAccel.steer)>.01||Math.abs(target.steer)>.01||Math.abs(current.steer)>.01);
+}
+
 window.addEventListener('keyup', (e)=>{
   if(e.code==='Space'){
     e.preventDefault();
@@ -907,6 +930,9 @@ window.addEventListener('keyup', (e)=>{
   if(k==='s' || e.code==='ArrowDown') keyState.down = false;
   if(k==='a' || e.code==='ArrowLeft') keyState.left = false;
   if(k==='d' || e.code==='ArrowRight') keyState.right = false;
+  // Throttle is a dead-man control: releasing the last forward/back key sends neutral now,
+  // rather than waiting for the gradual ramp to decay over several seconds.
+  if(!keyState.up&&!keyState.down)forceKeyboardThrottleStop();
 });
 
 /* Gamepad: ignore centered axes and yield to touch input. */
@@ -924,7 +950,7 @@ function releaseAllInputs(){
  if(typeof keyAccel!=="undefined"){keyAccel.forward=0;keyAccel.steer=0;}
  target.forward=target.steer=current.forward=current.steer=0;pointerId=null;joyRect=origin=maxR=joyCaptureTarget=null;
  pedalActive=false;pedalPointerId=null;pedalCaptureTarget=null;pedalRect=null;knob.style.transform="translate(0,0)";pedalVal.textContent="0%";
- sendInput({forward:0,steer:0,speed_scale:0});
+ sendInput({forward:0,steer:0,speed_scale:0,speed_immediate:true,steering_immediate:true});
 }
 window.addEventListener("blur",releaseAllInputs);document.addEventListener("visibilitychange",()=>{if(document.hidden)releaseAllInputs();});
 

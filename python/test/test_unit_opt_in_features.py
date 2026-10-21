@@ -178,7 +178,10 @@ class OptInFeatureTests(unittest.TestCase):
         snapshot = odom.snapshot(1.1)
         self.assertEqual(snapshot["servo_command"], 112.5)
         self.assertEqual(snapshot["steering_angle_source"], "arduino_servo_command")
-        self.assertAlmostEqual(snapshot["road_wheel_angle_deg"], 12.8571428571, places=5)
+        self.assertAlmostEqual(snapshot["road_wheel_angle_deg"], 11.6666666667, places=5)
+        self.assertAlmostEqual(odom._road_wheel_angle(95), 0.0, places=7)
+        self.assertAlmostEqual(odom._road_wheel_angle(55), -20.0, places=7)
+        self.assertAlmostEqual(odom._road_wheel_angle(125), 20.0, places=7)
         self.assertGreater(snapshot["heading_rad"], 0.0)
 
     def test_odometry_ignores_replayed_and_out_of_order_records(self):
