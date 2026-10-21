@@ -1,4 +1,6 @@
 """StreamRuntime endpoints and state operations for the Stream dashboard."""
+import os
+import tempfile
 import sys as _sys
 
 # These methods were moved from WebStreamer without changing their behavior.
@@ -80,6 +82,254 @@ class StreamRuntimeMixin:
                        sign_observation_fresh=bool(getattr(robot, "last_sign_observation_fresh", False)),
                        stop_detector=getattr(robot, "stop_hold_detector_kind", None),
                        run_level=str(getattr(self.config, "RUN_LVL", "MOVE")))
+
+    def camera_calibrations_api(self):
+        """List, upload, and select validated camera intrinsic calibration assets."""
+        from calibration.asset_store import (
+            CALIBRATION_ASSET_DIR,
+            CALIBRATION_ASSET_RELATIVE_DIR,
+            MAX_UPLOAD_BYTES,
+            calibration_path_from_reference,
+            safe_upload_name,
+            validate_calibration_file,
+        )
+
+        camera = getattr(self.config, "camera", None)
+        active_reference = str(
+            getattr(
+                self.config,
+                "CAMERA_CALIBRATION_FILE",
+                "assets/camera_calibrations/camera_calibration.npz",
+            )
+        )
+        active_enabled = bool(
+            getattr(self.config, "APPLY_CAMERA_CALIBRATION", True)
+        )
+        run_level = str(getattr(self.config, "RUN_LVL", "MOVE")).strip().upper()
+
+        def list_assets():
+            items = []
+            CALIBRATION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+            for path in sorted(
+                (item for item in CALIBRATION_ASSET_DIR.glob("*.npz") if item.is_file()),
+                key=lambda item: item.name.casefold(),
+            ):
+                reference = CALIBRATION_ASSET_RELATIVE_DIR + "/" + path.name
+                try:
+                    item = validate_calibration_file(path)
+                    item.update({"reference": reference, "valid": True})
+                except Exception as exc:
+                    item = {
+                        "filename": path.name,
+                        "reference": reference,
+                        "size_bytes": path.stat().st_size,
+                        "valid": False,
+                        "error": str(exc)[:240],
+                        "quality_status": "invalid",
+                    }
+                item["active"] = reference == active_reference
+                items.append(item)
+            return items
+
+        if request.method == "GET":
+            assets = list_assets()
+            active = next(
+                (item for item in assets if item["reference"] == active_reference),
+                None,
+            )
+            return jsonify(
+                mode=self._mode_slug(),
+                controls_enabled=self._control_allowed(),
+                run_level=run_level,
+                active_reference=active_reference,
+                enabled=active_enabled,
+                camera_available=camera is not None,
+                runtime_applied=camera is not None,
+                active_calibration=active,
+                files=assets,
+                upload_limit_bytes=MAX_UPLOAD_BYTES,
+            )
+
+        if not self._control_allowed():
+            return self._control_denied()
+
+        # Upload stores and validates a new candidate only. It never activates a
+        # file as a side effect, so merely uploading cannot change live camera frames.
+        if request.mimetype == "multipart/form-data":
+            uploaded = request.files.get("file")
+            if uploaded is None or not uploaded.filename:
+                return jsonify(success=False, message="Choose a .npz calibration file to upload."), 400
+
+            temporary_path = None
+            try:
+                requested_name = safe_upload_name(uploaded.filename)
+                CALIBRATION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+                written = 0
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    prefix=".calibration-upload-",
+                    suffix=".npz",
+                    dir=CALIBRATION_ASSET_DIR,
+                    delete=False,
+                ) as temporary:
+                    temporary_path = temporary.name
+                    while True:
+                        chunk = uploaded.stream.read(64 * 1024)
+                        if not chunk:
+                            break
+                        written += len(chunk)
+                        if written > MAX_UPLOAD_BYTES:
+                            raise ValueError("Calibration upload exceeds the 16 MiB limit.")
+                        temporary.write(chunk)
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                if written <= 0:
+                    raise ValueError("Uploaded calibration file is empty.")
+
+                validation = validate_calibration_file(temporary_path)
+                stem = requested_name[:-4]
+                final_path = CALIBRATION_ASSET_DIR / requested_name
+                suffix = 2
+                while final_path.exists():
+                    final_path = CALIBRATION_ASSET_DIR / (
+                        stem[:76] + "-" + str(suffix) + ".npz"
+                    )
+                    suffix += 1
+
+                os.replace(temporary_path, final_path)
+                temporary_path = None
+                reference = CALIBRATION_ASSET_RELATIVE_DIR + "/" + final_path.name
+                validation["filename"] = final_path.name
+                logger.info(
+                    "Stored validated camera calibration %s (%d bytes)",
+                    final_path.name,
+                    written,
+                )
+                return jsonify(
+                    success=True,
+                    uploaded=True,
+                    active_changed=False,
+                    reference=reference,
+                    file=validation,
+                    message="Calibration validated and stored. Select it and press Apply to activate it.",
+                )
+            except (TypeError, ValueError, OSError) as exc:
+                return jsonify(success=False, message=str(exc)), 400
+            except Exception:
+                logger.exception("Camera calibration upload failed")
+                return jsonify(success=False, message="Camera calibration upload failed."), 500
+            finally:
+                if temporary_path:
+                    try:
+                        os.remove(temporary_path)
+                    except OSError:
+                        logger.warning("Could not remove temporary camera calibration upload")
+
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or body.get("action") != "select":
+            return jsonify(success=False, message="action must be select"), 400
+        reference = body.get("reference")
+        enabled = body.get("enabled", active_enabled)
+        if not isinstance(enabled, bool):
+            return jsonify(success=False, message="enabled must be boolean"), 400
+
+        try:
+            path = calibration_path_from_reference(reference, require_exists=True)
+            calibration_info = validate_calibration_file(path)
+        except (TypeError, ValueError, OSError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+
+        if (str(reference) != active_reference or enabled != active_enabled) and run_level != "STOP":
+            return jsonify(
+                success=False,
+                message="Set RUN_LVL=STOP before changing or enabling/disabling camera calibration.",
+                run_level=run_level,
+                active_reference=active_reference,
+                enabled=active_enabled,
+            ), 409
+
+        before = self._full_config_snapshot()
+        previous_reference = active_reference
+        previous_enabled = active_enabled
+        switched_camera = False
+        try:
+            if camera is not None:
+                switch = getattr(camera, "set_camera_calibration_file", None)
+                if not callable(switch):
+                    return jsonify(
+                        success=False,
+                        message="The active camera does not support live calibration switching.",
+                    ), 409
+                switch(str(reference), enabled=enabled)
+                switched_camera = True
+
+            setattr(self.config, "CAMERA_CALIBRATION_FILE", str(reference))
+            setattr(self.config, "APPLY_CAMERA_CALIBRATION", enabled)
+            if not self.save_conf_to_json():
+                setattr(self.config, "CAMERA_CALIBRATION_FILE", previous_reference)
+                setattr(self.config, "APPLY_CAMERA_CALIBRATION", previous_enabled)
+                if switched_camera:
+                    try:
+                        camera.set_camera_calibration_file(
+                            previous_reference, enabled=previous_enabled
+                        )
+                    except Exception:
+                        logger.exception("Could not roll back camera calibration after persistence failure")
+                return jsonify(
+                    success=False,
+                    message="Could not persist calibration settings; previous selection restored.",
+                ), 500
+
+            self._record_config_history("before camera calibration selection", before)
+            self._record_config_history("camera calibration selected")
+            logger.info(
+                "Camera calibration selected: mode=%s file=%s enabled=%s",
+                self._mode_slug(),
+                path.name,
+                enabled,
+            )
+            return jsonify(
+                success=True,
+                persisted=True,
+                mode=self._mode_slug(),
+                reference=str(reference),
+                enabled=enabled,
+                file=calibration_info,
+                runtime_applied=switched_camera,
+                restart_required=camera is None,
+                run_level=run_level,
+                message=(
+                    "Calibration applied to the live camera and saved."
+                    if switched_camera
+                    else "Calibration saved; restart this mode to apply it to the camera."
+                ),
+            )
+        except (TypeError, ValueError) as exc:
+            setattr(self.config, "CAMERA_CALIBRATION_FILE", previous_reference)
+            setattr(self.config, "APPLY_CAMERA_CALIBRATION", previous_enabled)
+            if switched_camera:
+                try:
+                    camera.set_camera_calibration_file(
+                        previous_reference, enabled=previous_enabled
+                    )
+                except Exception:
+                    logger.exception("Could not restore previous camera calibration")
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Could not apply camera calibration selection")
+            setattr(self.config, "CAMERA_CALIBRATION_FILE", previous_reference)
+            setattr(self.config, "APPLY_CAMERA_CALIBRATION", previous_enabled)
+            if switched_camera:
+                try:
+                    camera.set_camera_calibration_file(
+                        previous_reference, enabled=previous_enabled
+                    )
+                except Exception:
+                    logger.exception("Could not restore previous camera calibration")
+            return jsonify(
+                success=False,
+                message="Could not apply calibration; previous selection restored.",
+            ), 502
 
     def camera_settings_api(self):
         camera = getattr(self.config, "camera", None)
@@ -656,6 +906,7 @@ def register_runtime_routes(app, streamer):
     app.add_url_rule("/api/traffic-lights", "traffic_lights_api", streamer.traffic_lights_api)
     app.add_url_rule("/api/race", "race_status_api", streamer.race_status_api)
     app.add_url_rule("/api/camera/settings", "camera_settings_api", streamer.camera_settings_api, methods=["GET","POST"])
+    app.add_url_rule("/api/camera/calibrations", "camera_calibrations_api", streamer.camera_calibrations_api, methods=["GET", "POST"])
     app.add_url_rule("/api/processing-rate", "processing_rate_api", streamer.processing_rate_api, methods=["GET","POST"])
     app.add_url_rule("/api/safety", "safety_api", streamer.safety_api, methods=["GET","POST"])
     app.add_url_rule("/api/sign-requests", "sign_requests_api", streamer.sign_requests_api, methods=["GET","POST"])
