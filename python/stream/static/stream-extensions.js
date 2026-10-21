@@ -110,6 +110,7 @@ function drawPrecisionOverlay(){
  svg.setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);svg.replaceChildren();
  const b=extImageBounds(),visibleGrid=gridMode!=='off'&&extGrid&&(!currentConfig||!currentConfig.ui||!currentConfig.ui.visible||currentConfig.ui.visible.GRID!==false);
  if(visibleGrid){
+  // Replaces the image-only getGridStepX() grid with a square grid spanning the canvas.
   const step=Math.max(gridMode==='dots'?10:8,Math.max(.025,Math.min(.25,Number(gridSpacing)||.05))*b.ih),stroke=/^#[0-9a-f]{6}$/i.test(gridColor)?gridColor:'#69bed2',alpha=Math.max(.05,Math.min(1,Number(gridOpacity)||.35));
   const fc=Math.floor((0-b.ix)/step),lc=Math.ceil((canvas.width-b.ix)/step),fr=Math.floor((0-b.iy)/step),lr=Math.ceil((canvas.height-b.iy)/step);
   if(gridMode==='dots'){
