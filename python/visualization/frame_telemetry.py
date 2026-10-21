@@ -100,7 +100,7 @@ def build_frame_telemetry(
     if enabled["status"]:
         tokens.append("Status:" + _safe_text(status, 22))
     if enabled["applied_angle"]:
-        tokens.append("Servo:" + _format_number(applied_angle))
+        tokens.append("Applied:" + _format_number(applied_angle))
     if enabled["vision_angle"]:
         tokens.append("Target:" + _format_number(vision_angle))
     if enabled["servo_center"]:

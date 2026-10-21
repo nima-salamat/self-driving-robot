@@ -83,6 +83,8 @@ class LaneDebugOverlayTests(unittest.TestCase):
             render_lane_debug_overlay(frame, {}, self.config, steering_angle=103)
         self.assertTrue(put_text.called)
         self.assertIn("CENTER", put_text.call_args.args[1])
+        self.assertIn("Applied 103", put_text.call_args.args[1])
+        self.assertIn("Center 103", put_text.call_args.args[1])
 
     def test_candidate_labels_can_be_disabled(self):
         from unittest.mock import patch

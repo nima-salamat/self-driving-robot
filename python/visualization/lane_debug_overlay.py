@@ -282,7 +282,7 @@ def _draw_servo_guide(canvas, config, steering_angle):
     cv2.line(canvas, (center_x, height - 10), (marker_x, marker_y), (255, 0, 255), 2, cv2.LINE_AA)
     direction_delta = (angle - center) * (-1 if str(getattr(config, "SERVO_DIRECTION", "ltr")).lower() == "rtl" else 1)
     direction_label = "CENTER" if abs(direction_delta) < 0.5 else ("RIGHT" if direction_delta > 0 else "LEFT")
-    label = "SERVO {:.1f} deg - {}".format(angle, direction_label)
+    label = "Applied {:.0f} deg | Center {:.0f} deg | {}".format(angle, center, direction_label)
     font_scale = max(0.35, min(0.65, height / 800.0))
     thickness = max(1, int(round(height / 480.0)))
     (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
