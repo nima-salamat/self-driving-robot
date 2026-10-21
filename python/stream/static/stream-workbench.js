@@ -5,7 +5,7 @@ const mode=String(window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.mode||'city')
 const writable=!!(window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.streamControl);
 const hough=[['LANE_THRESHOLD','wb_lane_threshold'],['HOUGH_THRESHOLD','wb_hough_threshold'],['HOUGH_MIN_LINE_LENGTH','wb_hough_min_len'],['HOUGH_MAX_LINE_GAP','wb_hough_gap'],['HOUGH_BLUR_KERNEL','wb_hough_blur']];
 const blsf=[['BLSF_RANDOM_SEED','wb_blsf_seed'],['BLSF_MIN_SEGMENT_LENGTH','wb_blsf_min_segment'],['BLSF_ANGLE_LIMIT_DEG','wb_blsf_angle'],['BLSF_STRAIGHT_BAND_DEG','wb_blsf_straight'],['BLSF_MIN_ANGLE_VOTE','wb_blsf_vote'],['BLSF_MEDIAN_KERNEL','wb_blsf_median'],['BLSF_LOCAL_THRESHOLD','wb_blsf_local'],['BLSF_NUM_WINDOWS','wb_blsf_windows'],['BLSF_WINDOW_WIDTH_FACTOR','wb_blsf_width'],['BLSF_RANSAC_ITERATIONS','wb_blsf_iterations'],['BLSF_RANSAC_INLIER_THRESHOLD','wb_blsf_ransac'],['BLSF_MIN_FIT_POINTS','wb_blsf_fit_points'],['BLSF_DEFAULT_LANE_WIDTH','wb_blsf_lane_width'],['BLSF_FALLBACK_HALF_LANE_WIDTH','wb_blsf_half_width'],['BLSF_STEERING_KP','wb_blsf_kp'],['BLSF_STEERING_SMOOTHING','wb_blsf_smoothing'],['BLSF_NO_LANE_STEERING','wb_blsf_no_lane']];
-let previewImages={};
+let previewImages={},liveTimer=null,liveRequest=false;
 async function api(url,options){const r=await nativeFetch(url,Object.assign({cache:'no-store'},options||{})),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.reason||('HTTP '+r.status));return j;}
 function msg(id,value,error){const node=$(id);if(node){node.textContent=value;node.dataset.tone=error?'error':'normal';}}
 function fill(fields,data){fields.forEach(([key,id])=>{if($(id)&&data[key]!=null)$(id).value=String(data[key]);});}
@@ -50,6 +50,36 @@ async function preview(){
   msg('wb_preview_summary',JSON.stringify(d.summary,null,2));msg('wb_preview_status','Preview complete. Diagnostics correspond to this submitted frame, not a nonstop live detector stream.');
  }catch(e){msg('wb_preview_status','Preview failed: '+e.message,true);}
  finally{$('wb_preview_btn').disabled=false;}
+}
+async function refreshLiveDebug(){
+ if(liveRequest)return;
+ liveRequest=true;
+ try{
+  const requested=$('wb_live_stage').value||'annotated';
+  const d=await api('/api/vision/live?stage='+encodeURIComponent(requested));
+  const select=$('wb_live_stage'),available=Array.isArray(d.stages)?d.stages:[];
+  if(available.length){
+   const current=select.value;select.replaceChildren();
+   const labels={annotated:'Rendered runtime geometry',combined:'Detector frame',rl_edges:'Right ROI edges',ll_edges:'Left ROI edges',cw_edges:'Crosswalk edges',binary:'BLSF binary mask',candidates:'Runtime candidates',angle_filtered_segments:'BLSF angle-filtered segments'};
+   available.forEach(key=>{const option=document.createElement('option');option.value=key;option.textContent=labels[key]||key.replace(/_/g,' ');select.appendChild(option);});
+   select.value=available.includes(current)?current:(available.includes('annotated')?'annotated':available[0]);
+  }
+  const image=$('wb_live_image');
+  if(!d.available){image.hidden=true;image.removeAttribute('src');msg('wb_live_status',d.reason||'No image-shaped runtime diagnostics are available yet.');msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));return;}
+  if(d.stage&&select.value!==d.stage)select.value=d.stage;
+  image.src=d.stage_image;image.hidden=false;
+  const age=Number(d.summary&&d.summary.age_ms);
+  msg('wb_live_status','Actual runtime stage: '+d.stage+(Number.isFinite(age)?' · result age '+age.toFixed(0)+' ms':'')+(d.requested_stage_available===false?' · requested stage unavailable; showing fallback':''));
+  msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));
+ }catch(error){msg('wb_live_status','Live debug unavailable: '+error.message,true);}
+ finally{liveRequest=false;}
+}
+function updateLiveTimer(){
+ if(liveTimer){clearInterval(liveTimer);liveTimer=null;}
+ const auto=$('wb_live_auto'),panel=$('ext_vision_lab_panel');
+ if(auto&&auto.checked&&panel&&panel.open){
+  liveTimer=setInterval(function(){if(document.visibilityState==='visible'&&$('wb_live_auto').checked&&$('ext_vision_lab_panel').open)refreshLiveDebug();},1500);
+ }
 }
 async function refreshProfiles(){
  try{
@@ -113,12 +143,17 @@ function bind(id,fn,target){if($(id))$(id).addEventListener('click',()=>Promise.
 document.addEventListener('DOMContentLoaded',function(){
  if($('wb_detector'))$('wb_detector').addEventListener('change',()=>$('wb_blsf_fields').hidden=mode!=='city'||$('wb_detector').value!=='blsf-beta');
  bind('wb_vision_apply',applyVision,'wb_vision_status');bind('wb_preview_btn',preview,'wb_preview_status');
+ bind('wb_live_refresh',refreshLiveDebug,'wb_live_status');
+ if($('wb_live_stage'))$('wb_live_stage').addEventListener('change',refreshLiveDebug);
+ if($('wb_live_auto'))$('wb_live_auto').addEventListener('change',function(){updateLiveTimer();if(this.checked)refreshLiveDebug();});
+ if($('ext_vision_lab_panel'))$('ext_vision_lab_panel').addEventListener('toggle',function(){updateLiveTimer();if(this.open)refreshLiveDebug();});
+ document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&$('wb_live_auto')&&$('wb_live_auto').checked)refreshLiveDebug();});
  bind('wb_profile_save',saveProfile,'wb_profile_status');bind('wb_profile_load',loadProfile,'wb_profile_status');bind('wb_profile_delete',deleteProfile,'wb_profile_status');bind('wb_profile_export',exportProfile,'wb_profile_status');
  bind('wb_profile_import',()=>$('wb_profile_file').click(),'wb_profile_status');
  if($('wb_profile_file'))$('wb_profile_file').addEventListener('change',function(){const f=this.files&&this.files[0];if(f)importProfile(f).catch(e=>msg('wb_profile_status',e.message,true));this.value='';});
  bind('wb_diagnostics_btn',diagnostics,'wb_diagnostics_status');
  if(!writable)['wb_vision_apply','wb_profile_save','wb_profile_load','wb_profile_delete','wb_profile_import'].forEach(id=>{if($(id))$(id).disabled=true;});
  const c=$('video_canvas');if(c){c.addEventListener('pointermove',cursor);c.addEventListener('pointerleave',()=>{[['cad_cursor_x','X: —'],['cad_cursor_y','Y: —'],['cad_cursor_u','U: —'],['cad_cursor_v','V: —'],['cad_cursor_z','Z: —']].forEach(([id,value])=>{if($(id))$(id).textContent=value;});});}
- refreshVision();refreshProfiles();
+ refreshVision();refreshProfiles();refreshLiveDebug();
 });
 })();
