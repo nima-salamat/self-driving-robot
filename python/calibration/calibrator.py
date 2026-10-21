@@ -1149,6 +1149,7 @@ class CameraCalibration:
             calibration_file = (
                 Path(__file__).resolve().parents[1]
                 / "assets"
+                / "camera_calibrations"
                 / "camera_calibration.npz"
             )
 
