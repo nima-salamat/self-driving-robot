@@ -167,6 +167,8 @@ hw=_DummyHW()
 camera_lock=threading.RLock()
 camera_frame_lock=threading.RLock()
 latest_camera_frame=None
+latest_camera_jpeg=None
+latest_camera_jpeg_at=0.0
 manual_encoder_map=ManualEncoderMap(controller=hw,servo_center=SERVO_CENTER,servo_min=SERVO_MIN,
     servo_max=SERVO_MAX,calibration=settings["encoder_calibration"])
 
@@ -432,7 +434,10 @@ def control_loop():
                                 _last_neutral_stop_attempt_at = now
                                 result = hw.stop(reason="manual_neutral_or_deadman")
                                 _last_hw_speed = 0 if result is not False else None
-                        else:
+                        elif speed != _last_hw_speed:
+                            # Avoid writing the same PWM command at 60 Hz when the
+                            # target is steady; redundant serial traffic adds queueing
+                            # delay to steering, STOP and telemetry replies.
                             result = hw.set_speed(speed)
                             _last_hw_speed = None if result is False else speed
             except Exception:
@@ -449,14 +454,25 @@ def _capture_frame_once():
     return frame if frame is not None and bool(getattr(cam,"last_capture_valid",frame is not None)) else None
 
 def camera_capture_loop():
-    global latest_camera_frame
+    global latest_camera_frame, latest_camera_jpeg, latest_camera_jpeg_at
     while not _stop.is_set():
+        started = time.monotonic()
         try:
-            frame=_capture_frame_once()
+            frame = _capture_frame_once()
             if frame is not None:
-                with camera_frame_lock:latest_camera_frame=frame.copy()
-        except Exception:log.debug("Manual camera capture failed",exc_info=True)
-        _stop.wait(1.0/30.0)
+                quality = max(10, min(95, int(state["settings"].get("jpeg_quality", 70))))
+                ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+                if ok:
+                    # Encode once per captured frame, not once per HTTP client/request.
+                    # Every viewer gets the newest available frame without creating an
+                    # unbounded per-client encode workload.
+                    with camera_frame_lock:
+                        latest_camera_frame = frame.copy()
+                        latest_camera_jpeg = encoded.tobytes()
+                        latest_camera_jpeg_at = started
+        except Exception:
+            log.debug("Manual camera capture/encode failed", exc_info=True)
+        _stop.wait(max(0.0, (1.0 / 30.0) - (time.monotonic() - started)))
 
 def encoder_poll_loop():
     retry=0.0
@@ -469,14 +485,16 @@ def encoder_poll_loop():
         _stop.wait(.05)
 
 def mjpeg_stream():
+    last_frame_at = 0.0
     while not _stop.is_set():
-        with camera_frame_lock:frame=latest_camera_frame.copy() if latest_camera_frame is not None else None
-        if frame is None or cv2 is None:
-            _stop.wait(.05);continue
-        quality=max(10,min(95,int(state["settings"].get("jpeg_quality",70))))
-        ok,jpg=cv2.imencode(".jpg",frame,[int(cv2.IMWRITE_JPEG_QUALITY),quality])
-        if not ok:_stop.wait(.02);continue
-        yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"+jpg.tobytes()+b"\r\n"
+        with camera_frame_lock:
+            frame_jpeg = latest_camera_jpeg
+            frame_at = latest_camera_jpeg_at
+        if frame_jpeg is None or frame_at <= last_frame_at:
+            _stop.wait(.005)
+            continue
+        last_frame_at = frame_at
+        yield b"--frame\r\nContent-Type: image/jpeg\r\nCache-Control: no-store\r\n\r\n" + frame_jpeg + b"\r\n"
 
 
 # ---------- UI (full HTML + JS) ----------
@@ -495,8 +513,9 @@ INDEX_HTML = r"""
   --radius:12px; --glass-2: rgba(255,255,255,0.02);
 }
 *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
-html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg0),#062431);color:var(--text);overflow:hidden}
-img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;z-index:0;background:#000}
+html,body{height:100%;height:100dvh;margin:0;background:linear-gradient(180deg,var(--bg0),#062431);color:var(--text);overflow:hidden;overscroll-behavior:none}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;z-index:0;background:#000;user-select:none;-webkit-user-select:none;pointer-events:none}
 
 /* HUD */
 .hud{position:fixed;left:16px;top:16px;background:rgba(0,0,0,0.45);padding:10px 14px;border-radius:14px;z-index:40;display:flex;gap:16px;align-items:center;font-weight:700}
@@ -510,12 +529,12 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;objec
 .small-btn{padding:6px 8px;font-size:13px;border-radius:8px}
 
 /* JOYSTICK */
-.joy{position:fixed;left:14px;bottom:14px;width:180px;height:180px;border-radius:50%;background:linear-gradient(180deg,var(--glass-2),rgba(0,0,0,0.05));z-index:45;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
+.joy{position:fixed;left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));width:180px;height:180px;border-radius:50%;background:linear-gradient(180deg,var(--glass-2),rgba(0,0,0,0.05));z-index:45;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
 .joy-caption{position:absolute;top:16px;left:0;right:0;text-align:center;font-weight:800;letter-spacing:.12em;font-size:11px;color:var(--muted);pointer-events:none}
 .knob{width:64px;height:64px;border-radius:50%;background:var(--accent);box-shadow:0 8px 22px rgba(0,0,0,0.6);transform:translate(0,0);transition:transform 0.02s linear}
 
 /* PEDAL */
-.pedal{position:fixed;right:14px;top:50%;bottom:auto;transform:translateY(-50%);width:100px;height:min(38vh,250px);min-height:190px;border-radius:12px;background:var(--glass);z-index:45;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
+.pedal{position:fixed;right:max(14px,env(safe-area-inset-right));top:50%;bottom:auto;transform:translateY(-50%);width:100px;height:min(38vh,250px);min-height:190px;border-radius:12px;background:var(--glass);z-index:45;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
 .pedal .track{position:relative;width:44px;height:100%;min-height:125px;background:linear-gradient(to bottom,rgba(28,190,113,.24),rgba(28,190,113,.08) 44%,rgba(255,255,255,.07) 50%,rgba(255,128,55,.08) 56%,rgba(255,88,70,.25));border:1px solid rgba(255,255,255,.12);border-radius:22px;overflow:hidden}
 .pedal .thumb{position:absolute;left:50%;transform:translate(-50%,0);width:56px;height:36px;border-radius:10px;background:linear-gradient(180deg,var(--accent),#0aa9c0);box-shadow:0 6px 18px rgba(0,0,0,0.6)}
 .pedal .label{font-size:13px;color:var(--muted)}
@@ -555,7 +574,34 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;objec
   .hud{left:8px;top:8px;gap:8px;padding:8px 10px}.hud .item{font-size:10px}.hud .item strong{font-size:12px}
   .top-controls{right:8px;top:66px;gap:5px}.small-btn{font-size:11px;padding:7px 8px}
   .pedal{right:8px;width:82px;height:35vh;min-height:170px}.estop{right:8px;bottom:10px}.estop button{font-size:11px;padding:10px;min-width:84px}
-  .quick{max-width:calc(100vw - 140px)}
+  .quick{max-width:calc(100vw - 140px);padding:8px 10px;bottom:env(safe-area-inset-bottom)}
+  .joy{width:clamp(116px,27vw,150px);height:clamp(116px,27vw,150px);bottom:max(10px,env(safe-area-inset-bottom))}
+  .pedal{height:clamp(150px,42dvh,250px);min-height:0;top:50%;transform:translateY(-50%);bottom:auto;padding:8px}
+  .hud{max-width:calc(100vw - 16px);flex-wrap:wrap;gap:6px 10px}
+  .top-controls{top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));}
+}
+@media(max-width:560px){
+  .joy{left:max(8px,env(safe-area-inset-left));width:clamp(108px,31vw,138px);height:clamp(108px,31vw,138px)}
+  .knob{width:46px;height:46px}
+  .pedal{right:max(8px,env(safe-area-inset-right));width:68px;height:38dvh;max-height:220px}
+  .pedal .track{width:34px}
+  .pedal .thumb{width:46px;height:32px}
+  .estop{right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom))}
+  .estop button{min-width:68px;padding:10px 8px}
+  .top-controls{top:auto;bottom:calc(10px + env(safe-area-inset-bottom));left:50%;right:auto;transform:translateX(-50%);max-width:calc(100vw - 230px);flex-wrap:wrap;justify-content:center}
+  .top-controls .btn{font-size:10px;padding:7px 8px}
+  .quick{max-width:calc(100vw - 16px);bottom:env(safe-area-inset-bottom)}
+  .hud{top:calc(6px + env(safe-area-inset-top));left:6px;padding:6px 8px;gap:5px 8px}
+  .hud .item strong{margin-top:1px}
+}
+@media(max-height:500px) and (orientation:landscape){
+  .hud{top:4px;left:4px;padding:5px 7px;gap:4px 8px}
+  .hud .item{font-size:9px}.hud .item strong{font-size:11px}
+  .top-controls{top:4px;right:4px}
+  .joy{width:clamp(96px,25vh,132px);height:clamp(96px,25vh,132px);left:max(8px,env(safe-area-inset-left));bottom:max(8px,env(safe-area-inset-bottom))}
+  .pedal{height:70dvh;max-height:210px;min-height:0}
+  .estop{bottom:max(8px,env(safe-area-inset-bottom))}
+  .quick{padding:5px 8px}
 }
 </style>
 </head>
