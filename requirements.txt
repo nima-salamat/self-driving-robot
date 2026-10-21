@@ -4,3 +4,4 @@ opencv-python
 pyserial
 onnxruntime
 ncnn
+flask-socketio

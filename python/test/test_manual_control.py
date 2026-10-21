@@ -7,13 +7,15 @@ sys.path.append(prev_dir)
 import os
 import time
 import json
+import math
+import secrets
 import threading
 import logging
 import signal
 from math import hypot
 from pathlib import Path
 
-from flask import Flask, Response, render_template_string, request
+from flask import Flask, Response, jsonify, render_template_string, request, send_from_directory
 from flask_socketio import SocketIO, emit, disconnect
 
 try:
@@ -24,49 +26,53 @@ except Exception:
 try:
     import modes.city.config_city as config_city
 except Exception:
-    class _Cfg: pass
-    config_city = _Cfg()
-    config_city.SERVO_CENTER = 95
-    config_city.SPEED = 255
-
-# Camera adapter: try project camera, else dummy
+    class _Cfg:
+        MODE="city"; SERVO_CENTER=95; MIN_SERVO_ANGLE=50; MAX_SERVO_ANGLE=130; SPEED=255; WITHOUT_ARDUINO=True
+    config_city=_Cfg()
 try:
-    from vision.camera import Camera
+    from vision.camera import Camera as ProjectCamera
 except Exception:
-    try:
-        import numpy as np
-    except Exception:
-        np = None
-    class Camera:
-        def __init__(self):
-            self._w, self._h = 640, 360
-        def capture_frame(self, resize=False):
-            if np is None or cv2 is None:
-                return None
-            return (50 * np.ones((self._h, self._w, 3), dtype='uint8'))
-        def release(self): pass
-
-# Controller adapter: try project controller, else dummy
+    ProjectCamera=None
 try:
-    from controller import controller as hw
+    from controller.controller import RobotController as ProjectController
 except Exception:
-    class _DummyHW:
-        def set_angle(self, a): logging.getLogger().info("DHW angle=%s", a)
-        def set_speed(self, s): logging.getLogger().info("DHW speed=%s", s)
-        def stop(self): logging.getLogger().info("DHW STOP")
-        @property
-        def connection(self): return None
-    hw = _DummyHW()
+    ProjectController=None
+from controller.manual_encoder_map import ManualEncoderMap
+
+class _UnavailableCamera:
+    camera_initialized=False
+    last_capture_valid=False
+    def capture_frame(self,*args,**kwargs): return None,None
+    def release(self): return None
+class _DummyConnection:
+    connected=False
+    state="DISCONNECTED"
+    last_error="Project controller could not be initialized"
+class _DummyHW:
+    without_arduino=True
+    min_servo_angle=50; max_servo_angle=130; servo_center=95
+    connection=_DummyConnection()
+    def set_angle(self,_angle): return False
+    def set_speed(self,_speed): return False
+    def stop(self,reason=None): return False
+    def encoder_telemetry(self,limit=100): return []
+    def request_encoder_telemetry(self,timeout=.5): return False
+    def close(self): return None
+
 
 # ---------- Config ----------
-HOST = os.getenv('MANUAL_HOST', '0.0.0.0')
-PORT = int(os.getenv('MANUAL_PORT', '5010'))
-MANUAL_TOKEN = os.getenv('MANUAL_TOKEN', 'changeme')
-STATE_FILE = os.getenv('MANUAL_STATE_FILE', 'manual_enterprise_settings.json')
-Path('.').mkdir(parents=True, exist_ok=True)
-
-SERVO_CENTER = getattr(config_city, 'SERVO_CENTER', 95)
-DEFAULT_MAX_SPEED = getattr(config_city, 'SPEED', 255)
+HOST=os.getenv("MANUAL_HOST","0.0.0.0")
+PORT=int(os.getenv("MANUAL_PORT","5010"))
+MANUAL_TOKEN=os.getenv("MANUAL_TOKEN") or secrets.token_urlsafe(18)
+STATE_FILE=os.getenv("MANUAL_STATE_FILE",str(Path(__file__).with_name("manual_enterprise_settings.json")))
+SERVO_CENTER=float(getattr(config_city,"SERVO_CENTER",95))
+SERVO_MIN=float(getattr(config_city,"MIN_SERVO_ANGLE",50))
+SERVO_MAX=float(getattr(config_city,"MAX_SERVO_ANGLE",130))
+DEFAULT_MAX_SPEED=max(0,min(255,int(getattr(config_city,"SPEED",255))))
+ENCODER_DEFAULTS={"pulse_distance_cm":getattr(config_city,"ENCODER_PULSE_DISTANCE_CM",None),
+ "wheelbase_cm":getattr(config_city,"ENCODER_WHEELBASE_CM",None),
+ "road_angle_min_deg":getattr(config_city,"ENCODER_ROAD_ANGLE_MIN_DEG",None),
+ "road_angle_max_deg":getattr(config_city,"ENCODER_ROAD_ANGLE_MAX_DEG",None)}
 
 CONTROL_HZ = 60.0
 UI_HZ = 20.0
@@ -82,6 +88,7 @@ def default_settings():
         'jpeg_quality': 70,
         'max_speed': DEFAULT_MAX_SPEED,
         'speed_limit': DEFAULT_MAX_SPEED,
+        'encoder_calibration': dict(ENCODER_DEFAULTS),
         'angle_limit_deg': 60.0,
         'angle_trim': 0.0,
         'smoothing_mode': 'alpha',  # 'alpha' or 'pid'
@@ -107,27 +114,43 @@ def load_settings():
 
 def save_settings(s):
     try:
-        with open(STATE_FILE, 'w') as f:
-            json.dump(s, f, indent=2)
+        target=Path(STATE_FILE);target.parent.mkdir(parents=True,exist_ok=True)
+        temporary=target.with_suffix(target.suffix+".tmp")
+        with open(temporary,"w",encoding="utf-8") as f:
+            json.dump(s,f,indent=2);f.flush();os.fsync(f.fileno())
+        os.replace(temporary,target);return True
     except Exception:
-        log.exception('save settings failed')
+        log.exception("save settings failed");return False
 
 # ---------- State ----------
 settings = load_settings()
-state_lock = threading.Lock()
+saved_calibration=settings.get('encoder_calibration')
+if isinstance(saved_calibration,dict): ENCODER_DEFAULTS.update(saved_calibration)
+settings['encoder_calibration']=dict(ENCODER_DEFAULTS)
+settings['max_speed']=max(0,min(255,int(settings.get('max_speed',DEFAULT_MAX_SPEED))))
+settings['speed_limit']=max(0,min(255,int(settings.get('speed_limit',DEFAULT_MAX_SPEED))))
+state_lock=threading.RLock()
 state = {
     'angle': float(SERVO_CENTER) + float(settings.get('angle_trim', 0.0)),
     'speed': 0.0,
     'angle_target': float(SERVO_CENTER) + float(settings.get('angle_trim', 0.0)),
     'speed_target': 0.0,
     'last_ui': time.monotonic(),
-    'last_cmd': time.monotonic(),
+    'last_cmd': 0.0,
+    'estop': False,
+    'watchdog_active': True,
     'clients': {},
     'seq_seen': {},
     'settings': settings
 }
 
-cam = Camera()
+cam=_UnavailableCamera()
+hw=_DummyHW()
+camera_lock=threading.RLock()
+camera_frame_lock=threading.RLock()
+latest_camera_frame=None
+manual_encoder_map=ManualEncoderMap(controller=hw,servo_center=SERVO_CENTER,servo_min=SERVO_MIN,
+    servo_max=SERVO_MAX,calibration=settings["encoder_calibration"])
 
 # ---------- PID ----------
 class PID:
@@ -153,186 +176,209 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 # ---------- Socket handlers ----------
-@socketio.on('connect')
+def _finite_number(value):
+    try: n=float(value)
+    except (TypeError,ValueError,OverflowError): return None
+    return n if math.isfinite(n) else None
+
+@socketio.on("connect")
 def on_connect(auth):
-    token = request.args.get('token') or (auth.get('token') if isinstance(auth, dict) else None)
-    sid = request.sid
-    log.info('connect attempt sid=%s token=%s', sid, str(token)[:10])
-    if token != MANUAL_TOKEN:
-        log.warning('rejecting connect sid=%s (bad token)', sid)
-        disconnect()
-        return
-    with state_lock:
-        state['clients'][sid] = {'last_seen': time.monotonic()}
-    emit('init', {'angle': state['angle'], 'speed': state['speed'], 'settings': state['settings']})
-    log.info('client connected %s', sid)
+    token=request.args.get("token") or (auth.get("token") if isinstance(auth,dict) else None)
+    if not secrets.compare_digest(str(token or ""),MANUAL_TOKEN):
+        log.warning("Rejected manual-control socket with invalid token");disconnect();return
+    with state_lock: state["clients"][request.sid]={"last_seen":time.monotonic()}
+    emit("init",{"angle":state["angle"],"speed":state["speed"],"settings":state["settings"],"estop":state["estop"],
+                 "servo_center":SERVO_CENTER,"servo_min":SERVO_MIN,"servo_max":SERVO_MAX})
 
-@socketio.on('disconnect')
+@socketio.on("disconnect")
 def on_disconnect():
-    sid = request.sid
-    log.info('disconnect %s', sid)
     with state_lock:
-        state['clients'].pop(sid, None)
-        state['seq_seen'].pop(sid, None)
+        state["clients"].pop(request.sid,None);state["seq_seen"].pop(request.sid,None)
+        state["speed_target"]=state["speed"]=0.0;state["angle_target"]=SERVO_CENTER
+        state["last_cmd"]=0.0;state["watchdog_active"]=True
 
-@socketio.on('input')
+@socketio.on("input")
 def on_input(msg):
-    sid = request.sid
-    seq = msg.get('seq')
-    if seq is None:
-        emit('cmd_nack', {'seq': None, 'err': 'no_seq'})
-        return
+    if not isinstance(msg,dict):
+        emit("cmd_nack",{"seq":None,"err":"bad_payload"});return
+    seq=msg.get("seq")
+    if not isinstance(seq,int) or isinstance(seq,bool) or seq<0:
+        emit("cmd_nack",{"seq":None,"err":"no_seq"});return
+    forward=_finite_number(msg.get("forward",0));steer=_finite_number(msg.get("steer",0));scale=_finite_number(msg.get("speed_scale",1))
+    if forward is None or steer is None or scale is None:
+        emit("cmd_nack",{"seq":seq,"err":"bad_payload"});return
+    forward=max(-1.0,min(1.0,forward));steer=max(-1.0,min(1.0,steer));scale=max(0.0,min(1.0,scale))
+    now=time.monotonic()
     with state_lock:
-        last = state['seq_seen'].get(sid)
-        if last is not None and seq <= last:
-            emit('cmd_ack', {'seq': seq})
-            return
-        state['seq_seen'][sid] = seq
-        state['last_cmd'] = time.monotonic()
-        state['clients'].setdefault(sid, {})['last_seen'] = time.monotonic()
-        state['last_ui'] = time.monotonic()
+        prev=state["seq_seen"].get(request.sid)
+        if prev is not None and seq<=prev:
+            emit("cmd_ack",{"seq":seq});return
+        if request.sid not in state["clients"]:
+            emit("cmd_nack",{"seq":seq,"err":"not_connected"});return
+        s=state["settings"]
+        if msg.get("is_mobile") and s.get("invert_mobile_y",False):forward=-forward
+        limit=max(10,min(90,float(s.get("angle_limit_deg",60))))
+        angle=max(SERVO_MIN,min(SERVO_MAX,SERVO_CENTER+float(s.get("angle_trim",0))+steer*limit))
+        max_speed=max(0,min(255,int(s.get("max_speed",DEFAULT_MAX_SPEED))))
+        state["seq_seen"][request.sid]=seq;state["clients"][request.sid]["last_seen"]=now
+        state["last_ui"]=now;state["last_cmd"]=now;state["watchdog_active"]=False
+        state["angle_target"]=angle
+        state["speed_target"]=0.0 if state["estop"] else max_speed*forward*scale
+    emit("cmd_ack",{"seq":seq})
 
-        try:
-            forward = float(msg.get('forward', 0.0))
-            steer = float(msg.get('steer', 0.0))
-            speed_scale = float(msg.get('speed_scale', 1.0))
-        except Exception:
-            emit('cmd_nack', {'seq': seq, 'err': 'bad_payload'})
-            return
-
-        forward = max(-1.0, min(1.0, forward))
-        steer = max(-1.0, min(1.0, steer))
-        speed_scale = max(0.0, min(1.0, speed_scale))
-
-        s = state['settings']
-        if msg.get('is_mobile') and s.get('invert_mobile_y', False):
-            forward = -forward
-
-        angle_limit = float(s.get('angle_limit_deg', 60.0))
-        angle_target = SERVO_CENTER + float(s.get('angle_trim', 0.0)) + steer * angle_limit
-        angle_target = max(0.0, min(180.0, angle_target))
-
-        max_speed = int(s.get('speed_limit', s.get('max_speed', DEFAULT_MAX_SPEED)))
-        speed_target = max_speed * forward * speed_scale
-
-        state['angle_target'] = angle_target
-        state['speed_target'] = speed_target
-
-    emit('cmd_ack', {'seq': seq})
-
-@socketio.on('set_setting')
+@socketio.on("set_setting")
 def on_set_setting(msg):
-    key = msg.get('key')
-    val = msg.get('value')
-    if key is None: return
-    with state_lock:
-        s = state['settings']
-        try:
-            if key in ('deadman','angle_alpha','speed_alpha','angle_limit_deg','speed_limit','keyboard_sensitivity','angle_trim'):
-                s[key] = float(val)
-            elif key in ('jpeg_quality','max_speed'):
-                s[key] = int(val)
-            elif key in ('invert_mobile_y','record_inputs'):
-                s[key] = bool(val)
-            elif key == 'smoothing_mode' and val in ('alpha','pid'):
-                s[key] = val
-            elif key in ('angle_pid','speed_pid') and isinstance(val, (list,tuple)) and len(val)==3:
-                s[key] = [float(v) for v in val]
+    if not isinstance(msg,dict) or not isinstance(msg.get("key"),str):
+        emit("setting_nack",{"err":"bad_payload"});return
+    key,value=msg["key"],msg.get("value")
+    numeric={"deadman":(.2,10),"angle_alpha":(.01,.9),"speed_alpha":(.01,.9),
+             "angle_limit_deg":(10,90),"speed_limit":(0,255),"keyboard_sensitivity":(.2,3),"angle_trim":(-30,30)}
+    try:
+        with state_lock:
+            s=state["settings"]
+            if key in numeric:
+                n=_finite_number(value)
+                if n is None:raise ValueError("value must be finite numeric")
+                low,high=numeric[key];s[key]=max(low,min(high,n))
+            elif key in ("jpeg_quality","max_speed"):
+                n=_finite_number(value)
+                if n is None:raise ValueError("value must be finite numeric")
+                low,high=(10,95) if key=="jpeg_quality" else (0,255)
+                s[key]=int(round(max(low,min(high,n))))
+            elif key in ("invert_mobile_y","record_inputs") and isinstance(value,bool):s[key]=value
+            elif key=="smoothing_mode" and value in ("alpha","pid"):s[key]=value
+            elif key in ("angle_pid","speed_pid") and isinstance(value,(list,tuple)) and len(value)==3:
+                nums=[_finite_number(v) for v in value]
+                if any(v is None for v in nums):raise ValueError("PID values must be finite")
+                s[key]=nums
             else:
-                pass
-            # rebuild PID
-            global pid_angle, pid_speed
-            pid_angle = PID(*s.get('angle_pid', [2.0,0,0.25]))
-            pid_speed = PID(*s.get('speed_pid', [3.0,0,0.15]))
-            save_settings(s)
-            emit('setting_ack', {'key': key, 'value': s.get(key)})
-        except Exception:
-            log.exception('set_setting fail')
+                emit("setting_nack",{"key":key,"err":"unsupported_setting"});return
+            global pid_angle,pid_speed
+            pid_angle=PID(*s.get("angle_pid",[2,0,.25]));pid_speed=PID(*s.get("speed_pid",[3,0,.15]))
+            snapshot=dict(s);saved=save_settings(snapshot)
+        if not saved:emit("setting_nack",{"key":key,"err":"persistence_failed"});return
+        emit("setting_ack",{"key":key,"value":snapshot.get(key)})
+    except (TypeError,ValueError) as exc:emit("setting_nack",{"key":key,"err":str(exc)})
 
-@socketio.on('heartbeat')
+@socketio.on("heartbeat")
 def on_heartbeat(msg):
-    sid = request.sid
+    now=time.monotonic()
     with state_lock:
-        state['last_ui'] = time.monotonic()
-        state['clients'].setdefault(sid, {})['last_seen'] = time.monotonic()
-    emit('heartbeat_ack', {'t': msg.get('t'), 'server': time.time()})
+        if request.sid in state["clients"]:state["clients"][request.sid]["last_seen"]=now
+        state["last_ui"]=now
+    # Heartbeat never refreshes the manual motion watchdog.
+    emit("heartbeat_ack",{"t":msg.get("t") if isinstance(msg,dict) else None,"server":time.time()})
 
-# ---------- Broadcaster ----------
+@socketio.on("emergency_stop")
+def on_emergency_stop(_msg=None):
+    with state_lock:
+        state["estop"]=True;state["speed_target"]=state["speed"]=0.0
+        state["angle_target"]=SERVO_CENTER;state["watchdog_active"]=True
+    socketio.emit("estop_state",{"active":True})
+
+@socketio.on("reset_estop")
+def on_reset_estop(_msg=None):
+    with state_lock:
+        state["estop"]=False;state["speed_target"]=state["speed"]=0.0
+        state["angle_target"]=SERVO_CENTER;state["last_cmd"]=0.0;state["watchdog_active"]=True
+    socketio.emit("estop_state",{"active":False})
+
+
+# ---------- Runtime workers ----------
+_stop=threading.Event()
+_shutdown_started=threading.Event()
+_hardware_command_lock=threading.Lock()
+_last_hw_speed=None
+_last_hw_angle=None
+
+def _connection_snapshot():
+    conn=getattr(hw,"connection",None)
+    connected=bool(not getattr(hw,"without_arduino",False) and conn is not None and getattr(conn,"connected",False))
+    return connected,str(getattr(conn,"state","CONNECTED" if connected else "DISCONNECTED"))
+
 def broadcaster():
-    interval = 1.0 / UI_HZ
-    while True:
-        with state_lock:
-            payload = {
-                'angle': state['angle'], 'speed': state['speed'],
-                'angle_target': state['angle_target'], 'speed_target': state['speed_target'],
-                'settings': state['settings'], 'clients': len(state['clients'])
-            }
-        socketio.emit('state', payload)
-        socketio.sleep(interval)
-
-# ---------- Control loop ----------
-_stop = threading.Event()
-def control_loop():
-    global pid_angle, pid_speed
-    last = time.monotonic()
-    interval = 1.0 / CONTROL_HZ
     while not _stop.is_set():
-        now = time.monotonic()
-        dt = max(1e-4, now - last)
-        last = now
+        connected,conn_state=_connection_snapshot()
         with state_lock:
-            s = state
-            sett = s['settings']
-            if now - s['last_ui'] > sett.get('deadman',1.0):
-                s['speed_target'] = 0.0
-            if sett.get('smoothing_mode','alpha') == 'pid':
-                a_cmd = pid_angle.step(s['angle_target'], s['angle'], dt)
-                sp_cmd = pid_speed.step(s['speed_target'], s['speed'], dt)
-                s['angle'] += a_cmd * dt
-                s['speed'] += sp_cmd * dt
-            else:
-                aa = float(sett.get('angle_alpha',0.18))
-                sa = float(sett.get('speed_alpha',0.20))
-                scale = dt * CONTROL_HZ
-                a_alpha = 1.0 - pow(1.0-aa, scale)
-                s_alpha = 1.0 - pow(1.0-sa, scale)
-                s['angle'] += (s['angle_target'] - s['angle']) * a_alpha
-                s['speed'] += (s['speed_target'] - s['speed']) * s_alpha
-            s['angle'] = max(0.0, min(180.0, s['angle']))
-            maxs = int(sett.get('speed_limit', sett.get('max_speed', DEFAULT_MAX_SPEED)))
-            s['speed'] = max(-maxs, min(maxs, s['speed']))
-            angle_hw = int(round(s['angle']))
-            speed_hw = int(round(s['speed']))
-        try:
-            hw.set_angle(angle_hw)
-            if abs(speed_hw) < 3:
-                hw.stop()
-            else:
-                hw.set_speed(speed_hw)
-        except Exception:
-            log.exception('hardware apply error')
-        with state_lock:
-            if time.monotonic() - state['last_ui'] > state['settings'].get('deadman',1.0) * WATCHDOG_MULT:
-                try:
-                    hw.stop()
-                    state['speed_target'] = 0.0
-                except Exception:
-                    pass
-        time.sleep(interval)
+            payload={"angle":state["angle"],"speed":state["speed"],"angle_target":state["angle_target"],
+                     "speed_target":state["speed_target"],"settings":dict(state["settings"]),"clients":len(state["clients"]),
+                     "connected":connected,"connection_state":conn_state,"estop":state["estop"],"watchdog_active":state["watchdog_active"]}
+        socketio.emit("state",payload);socketio.sleep(1.0/UI_HZ)
 
-# ---------- MJPEG ----------
+def control_loop():
+    global pid_angle,pid_speed,_last_hw_speed,_last_hw_angle
+    last=time.monotonic()
+    while not _stop.is_set():
+        now=time.monotonic();dt=max(1e-4,now-last);last=now
+        with state_lock:
+            s=state;sett=s["settings"]
+            expired=s["last_cmd"]<=0 or now-s["last_cmd"]>max(.2,float(sett.get("deadman",1)))
+            hard=bool(s["estop"] or expired or not s["clients"])
+            if hard:
+                if expired and not s["watchdog_active"]:log.warning("Manual input expired; forcing STOP")
+                s["speed_target"]=s["speed"]=0.0;s["angle_target"]=s["angle"]=SERVO_CENTER
+                s["watchdog_active"]=bool(expired or s["estop"])
+                pid_angle=PID(*sett.get("angle_pid",[2,0,.25]));pid_speed=PID(*sett.get("speed_pid",[3,0,.15]))
+            elif sett.get("smoothing_mode","alpha")=="pid":
+                s["angle"]+=pid_angle.step(s["angle_target"],s["angle"],dt)*dt
+                s["speed"]+=pid_speed.step(s["speed_target"],s["speed"],dt)*dt;s["watchdog_active"]=False
+            else:
+                aa=max(.01,min(.9,float(sett.get("angle_alpha",.18))));sa=max(.01,min(.9,float(sett.get("speed_alpha",.20))))
+                factor=dt*CONTROL_HZ;s["angle"]+=(s["angle_target"]-s["angle"])*(1-pow(1-aa,factor))
+                s["speed"]+=(s["speed_target"]-s["speed"])*(1-pow(1-sa,factor));s["watchdog_active"]=False
+            s["angle"]=max(SERVO_MIN,min(SERVO_MAX,s["angle"]));m=max(0,min(255,int(sett.get("max_speed",DEFAULT_MAX_SPEED))))
+            s["speed"]=max(-m,min(m,s["speed"]));angle=int(round(s["angle"]));speed=0 if hard or abs(s["speed"])<3 else int(round(s["speed"]))
+        connected,_=_connection_snapshot()
+        if connected:
+            try:
+                with _hardware_command_lock:
+                    if angle!=_last_hw_angle:
+                        result=hw.set_angle(angle);_last_hw_angle=None if result is False else angle
+                    if speed==0:
+                        if _last_hw_speed!=0:hw.stop(reason="manual_neutral_or_deadman")
+                        _last_hw_speed=0
+                    else:hw.set_speed(speed);_last_hw_speed=speed
+            except Exception:
+                _last_hw_speed=_last_hw_angle=None;log.exception("Manual hardware command failed")
+        else:_last_hw_speed=_last_hw_angle=None
+        _stop.wait(1.0/CONTROL_HZ)
+
+def _capture_frame_once():
+    if cam is None or cv2 is None:return None
+    with camera_lock:result=cam.capture_frame(with_resize=False)
+    frame=result[0] if isinstance(result,tuple) else result
+    return frame if frame is not None and bool(getattr(cam,"last_capture_valid",frame is not None)) else None
+
+def camera_capture_loop():
+    global latest_camera_frame
+    while not _stop.is_set():
+        try:
+            frame=_capture_frame_once()
+            if frame is not None:
+                with camera_frame_lock:latest_camera_frame=frame.copy()
+        except Exception:log.debug("Manual camera capture failed",exc_info=True)
+        _stop.wait(1.0/30.0)
+
+def encoder_poll_loop():
+    retry=0.0
+    while not _stop.is_set():
+        try:
+            manual_encoder_map.poll_once();snap=manual_encoder_map.snapshot();now=time.monotonic()
+            if snap.get("connected") and not snap.get("telemetry_available") and now>=retry:
+                manual_encoder_map.request_telemetry(timeout=.25);retry=now+2.0
+        except Exception:log.exception("Manual encoder polling failed")
+        _stop.wait(.05)
+
 def mjpeg_stream():
-    while True:
-        frame = cam.capture_frame(resize=False)
-        if frame is None:
-            time.sleep(0.01); continue
-        q = int(state['settings'].get('jpeg_quality',70))
-        if cv2 is None:
-            time.sleep(0.1); continue
-        ok, jpg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), q])
-        if not ok:
-            time.sleep(0.01); continue
-        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg.tobytes() + b"\r\n")
+    while not _stop.is_set():
+        with camera_frame_lock:frame=latest_camera_frame.copy() if latest_camera_frame is not None else None
+        if frame is None or cv2 is None:
+            _stop.wait(.05);continue
+        quality=max(10,min(95,int(state["settings"].get("jpeg_quality",70))))
+        ok,jpg=cv2.imencode(".jpg",frame,[int(cv2.IMWRITE_JPEG_QUALITY),quality])
+        if not ok:_stop.wait(.02);continue
+        yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"+jpg.tobytes()+b"\r\n"
+
 
 # ---------- UI (full HTML + JS) ----------
 INDEX_HTML = r"""
@@ -351,7 +397,7 @@ INDEX_HTML = r"""
 }
 *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
 html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg0),#062431);color:var(--text);overflow:hidden}
-img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;background:#000}
+img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;z-index:0;background:#000}
 
 /* HUD */
 .hud{position:fixed;left:16px;top:16px;background:rgba(0,0,0,0.45);padding:10px 14px;border-radius:14px;z-index:40;display:flex;gap:16px;align-items:center;font-weight:700}
@@ -365,12 +411,13 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 .small-btn{padding:6px 8px;font-size:13px;border-radius:8px}
 
 /* JOYSTICK */
-.joy{position:fixed;left:14px;bottom:14px;width:180px;height:180px;border-radius:50%;background:linear-gradient(180deg,var(--glass-2),rgba(0,0,0,0.05));z-index:45;display:flex;align-items:center;justify-content:center;touch-action:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
+.joy{position:fixed;left:14px;bottom:14px;width:180px;height:180px;border-radius:50%;background:linear-gradient(180deg,var(--glass-2),rgba(0,0,0,0.05));z-index:45;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
+.joy-caption{position:absolute;top:16px;left:0;right:0;text-align:center;font-weight:800;letter-spacing:.12em;font-size:11px;color:var(--muted);pointer-events:none}
 .knob{width:64px;height:64px;border-radius:50%;background:var(--accent);box-shadow:0 8px 22px rgba(0,0,0,0.6);transform:translate(0,0);transition:transform 0.02s linear}
 
 /* PEDAL */
-.pedal{position:fixed;right:14px;bottom:14px;width:86px;height:240px;border-radius:12px;background:var(--glass);z-index:45;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:8px;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
-.pedal .track{position:relative;width:44px;height:180px;background:rgba(255,255,255,0.03);border-radius:22px;overflow:hidden}
+.pedal{position:fixed;right:14px;top:50%;bottom:auto;transform:translateY(-50%);width:100px;height:min(38vh,250px);min-height:190px;border-radius:12px;background:var(--glass);z-index:45;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
+.pedal .track{position:relative;width:44px;height:100%;min-height:125px;background:linear-gradient(to bottom,rgba(28,190,113,.24),rgba(28,190,113,.08) 44%,rgba(255,255,255,.07) 50%,rgba(255,128,55,.08) 56%,rgba(255,88,70,.25));border:1px solid rgba(255,255,255,.12);border-radius:22px;overflow:hidden}
 .pedal .thumb{position:absolute;left:50%;transform:translate(-50%,0);width:56px;height:36px;border-radius:10px;background:linear-gradient(180deg,var(--accent),#0aa9c0);box-shadow:0 6px 18px rgba(0,0,0,0.6)}
 .pedal .label{font-size:13px;color:var(--muted)}
 
@@ -404,6 +451,10 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
   .joy{left:8px;bottom:12px;width:150px;height:150px}
   .knob{width:52px;height:52px}
   .estop button{min-width:100px}
+  .hud{left:8px;top:8px;gap:8px;padding:8px 10px}.hud .item{font-size:10px}.hud .item strong{font-size:12px}
+  .top-controls{right:8px;top:66px;gap:5px}.small-btn{font-size:11px;padding:7px 8px}
+  .pedal{right:8px;width:82px;height:35vh;min-height:170px}.estop{right:8px;bottom:10px}.estop button{font-size:11px;padding:10px;min-width:84px}
+  .quick{max-width:calc(100vw - 140px)}
 }
 </style>
 </head>
@@ -414,33 +465,30 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 <!-- HUD -->
 <div class="hud" id="hud">
   <div class="item">Speed <strong id="hud_speed">0</strong></div>
-  <div class="item">Angle <strong id="hud_angle">90</strong></div>
-  <div class="item">Clients <strong id="hud_clients">0</strong></div>
-  <div class="item">Ping <strong id="hud_ping">— ms</strong></div>
+  <div class="item">Steering <strong id="hud_angle">95</strong></div><div class="item">Arduino <strong id="hud_connection" data-connected="false">CHECKING</strong></div>
+  <div class="item">Clients <strong id="hud_clients">0</strong></div><div class="item">Ping <strong id="hud_ping">— ms</strong></div>
 </div>
 
 <!-- top -->
 <div class="top-controls">
+  <a href="/encoder-map" class="btn ghost small-btn" style="text-decoration:none;display:inline-flex;align-items:center">Encoder map ↗</a>
   <button id="btnSettings" class="btn ghost small-btn">Settings</button>
   <button id="btnFull" class="btn small-btn">Fullscreen</button>
 </div>
 
 <!-- joystick -->
-<div class="joy" id="joy" aria-label="joystick">
-  <div class="knob" id="knob"></div>
+<div class="joy" id="joy" aria-label="steering wheel">
+  <div class="joy-caption">STEERING</div><div class="knob" id="knob"></div>
 </div>
 
 <!-- pedal -->
 <div class="pedal" id="pedal">
-  <div class="label">Brake / Throttle</div>
-  <div class="track" id="pedal_track">
-    <div class="thumb" id="pedal_thumb"></div>
-  </div>
-  <div class="label" id="pedal_val">0%</div>
+  <div class="label">FORWARD ↑</div><div class="track" id="pedal_track"><div class="thumb" id="pedal_thumb"></div></div>
+  <div class="label" id="pedal_val">0%</div><div class="label">↓ REVERSE</div>
 </div>
 
 <!-- E-STOP -->
-<div class="estop"><button id="estop_btn">E-STOP</button></div>
+<div class="estop"><button id="estop_btn" aria-pressed="false">E-STOP</button><button id="estop_reset_btn" hidden>Resume</button></div>
 
 <!-- quick -->
 <div class="quick" id="quickPanel">
@@ -448,7 +496,7 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
   <div class="row-flex" style="margin-top:10px">
     <div style="flex:1">
       <div class="form-row"><label class="label">Speed limit</label><div class="value-badge" id="speed_limit_lbl">255</div></div>
-      <input id="speed_limit" class="range" type="range" min="0" max="1023" value="255">
+      <input id="speed_limit" class="range" type="range" min="0" max="255" value="{{ default_max_speed }}">
     </div>
     <div style="width:12px"></div>
     <div style="flex:1">
@@ -476,7 +524,7 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 
         <div class="form-line">
           <label>Max speed (HW)</label>
-          <div class="form-row"><input id="max_speed" type="number" min="0" max="4096" value="255"><div class="value-badge">units</div></div>
+          <div class="form-row"><input id="max_speed" type="number" min="0" max="255" value="{{ default_max_speed }}"><div class="value-badge">units</div></div>
         </div>
 
         <div class="form-line">
@@ -535,19 +583,20 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index
 /* =========================
    English UI + Ping / Keyboard-steer fix
    ========================= */
+const SERVO_CENTER={{ servo_center|tojson }};
+const SERVO_MIN={{ servo_min|tojson }};
+const SERVO_MAX={{ servo_max|tojson }};
 
 /* Socket */
-const TOKEN = prompt('MANUAL token (press enter to skip)','changeme') || 'changeme';
-const socket = io({ query: { token: TOKEN } });
-
-socket.on('connect', ()=> console.log('socket connected'));
-socket.on('disconnect', ()=> console.log('socket disconnected'));
-socket.on('connect_error', e => console.warn('socket error', e));
-
-/* Show server state if provided */
-socket.on('state', s => {
-  if(s && typeof s.clients !== 'undefined') document.getElementById('hud_clients').textContent = s.clients;
-});
+const TOKEN=prompt("Enter the MANUAL token printed by the server")||"";
+const socket=io({auth:{token:TOKEN}});
+socket.on("connect",()=>console.log("Manual control connected"));
+socket.on("disconnect",()=>{const e=document.getElementById("hud_connection");if(e){e.textContent="DISCONNECTED";e.dataset.connected="false";}releaseAllInputs();});
+socket.on("connect_error",e=>console.warn("Manual socket error",e));
+socket.on("init",s=>{if(s)syncEstopUI(!!s.estop);});
+socket.on("state",s=>{if(!s)return;if(s.clients!==undefined)document.getElementById("hud_clients").textContent=s.clients;
+ const e=document.getElementById("hud_connection");if(e){e.textContent=s.connected?"CONNECTED":(s.connection_state||"DISCONNECTED");e.dataset.connected=s.connected?"true":"false";}
+ if(s.estop!==undefined)syncEstopUI(!!s.estop);});
 
 /* Ping (heartbeat) — compute RTT when server replies with heartbeat_ack */
 socket.on('heartbeat_ack', (m) => {
@@ -566,7 +615,7 @@ function sendInput(payload){
     seq: nextSeq(),
     forward: Number(payload.forward || 0),
     steer: Number(payload.steer || 0),
-    speed_scale: Number(payload.speed_scale || 1.0),
+    speed_scale: payload.speed_scale == null ? 1.0 : Number(payload.speed_scale),
     t: Date.now(),
     is_mobile: /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent)
   };
@@ -614,7 +663,7 @@ function applyJoystickSize(){
 applyJoystickSize();
 
 /* Joystick implementation */
-let pointerId = null, joyRect=null, origin=null, maxR=null;
+let pointerId = null, joyRect=null, origin=null, maxR=null, joyCaptureTarget=null;
 let current = { forward: 0, steer: 0 };
 let target = { forward: 0, steer: 0 };
 
@@ -623,7 +672,8 @@ function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
 function joyStart(e){
   const ev = e.touches ? e.changedTouches[0] : e;
   pointerId = (ev.pointerId !== undefined) ? ev.pointerId : ('t'+Date.now());
-  try{ if(e.pointerId) e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); }catch(_){}
+  joyCaptureTarget=e.target;
+  try{ if(e.pointerId !== undefined) e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); }catch(_){}
   joyRect = joy.getBoundingClientRect();
   origin = { x: joyRect.left + joyRect.width/2, y: joyRect.top + joyRect.height/2 };
   maxR = Math.min(joyRect.width, joyRect.height)/2 - 8;
@@ -631,37 +681,29 @@ function joyStart(e){
   e.preventDefault && e.preventDefault();
 }
 function joyMove(e){
-  const ev = e.touches ? e.touches[0] : e;
-  if(pointerId !== null && e.pointerId !== undefined && e.pointerId !== pointerId) return;
-  if(!origin) return;
-  let dx = ev.clientX - origin.x, dy = ev.clientY - origin.y;
-  const d = Math.hypot(dx, dy);
-  if(d > maxR){ dx = dx * (maxR/d); dy = dy * (maxR/d); }
-  knob.style.transform = `translate(${dx}px, ${dy}px)`;
-  const nx = dx / maxR;
-  const ny = -dy / maxR; // up positive forward
-  const fx = Math.abs(nx) < settings.jdead ? 0 : nx;
-  const fy = Math.abs(ny) < settings.jdead ? 0 : ny;
-  target.steer = clamp(fx, -1, 1);
-  target.forward = clamp(fy, -1, 1);
+  const ev=e.touches?e.touches[0]:e;
+  if(pointerId!==null&&ev.pointerId!==undefined&&ev.pointerId!==pointerId)return;
+  if(!origin)return;
+  const dx=clamp(ev.clientX-origin.x,-maxR,maxR);
+  knob.style.transform="translate("+dx+"px, 0px)";
+  const n=dx/maxR;target.steer=Math.abs(n)<settings.jdead?0:clamp(n,-1,1);
 }
 function joyEnd(e){
-  try{ if(e.pointerId) e.target.releasePointerCapture && e.target.releasePointerCapture(e.pointerId); }catch(_){}
-  pointerId = null; joyRect = origin = maxR = null;
-  knob.style.transform = 'translate(0, 0)';
-  target.steer = 0; target.forward = 0;
+  if(e&&e.pointerId!==undefined&&pointerId!==null&&e.pointerId!==pointerId)return;
+  try{if(e&&e.pointerId!==undefined&&joyCaptureTarget&&joyCaptureTarget.releasePointerCapture)joyCaptureTarget.releasePointerCapture(e.pointerId);}catch(_){}
+  pointerId=null;joyRect=origin=maxR=joyCaptureTarget=null;knob.style.transform="translate(0,0)";target.steer=0;
 }
-joy.addEventListener('pointerdown', joyStart, {passive:false});
-window.addEventListener('pointermove', (e)=>{ if(pointerId !== null) joyMove(e); }, {passive:false});
-window.addEventListener('pointerup', (e)=>{ if(pointerId !== null) joyEnd(e); }, {passive:false});
-joy.addEventListener('touchstart', (ev)=> joyStart(ev.changedTouches[0]), {passive:false});
-joy.addEventListener('touchmove', (ev)=> joyMove(ev.changedTouches[0]), {passive:false});
-joy.addEventListener('touchend', (ev)=> joyEnd(ev.changedTouches[0]), {passive:false});
+joy.addEventListener("pointerdown",joyStart,{passive:false});
+window.addEventListener("pointermove",e=>{if(pointerId!==null)joyMove(e);},{passive:false});
+window.addEventListener("pointerup",e=>{if(pointerId!==null)joyEnd(e);},{passive:false});
+window.addEventListener("pointercancel",e=>{if(pointerId!==null)joyEnd(e);},{passive:false});
 
 /* Pedal */
-let pedalRect=null, pedalActive=false;
+let pedalRect=null, pedalActive=false, pedalPointerId=null, pedalCaptureTarget=null;
 function pedalStart(e){
   const ev = e.touches ? e.changedTouches[0] : e;
+  pedalPointerId=ev.pointerId===undefined?null:ev.pointerId;pedalCaptureTarget=e.target;
+  try{if(pedalPointerId!==null&&e.target.setPointerCapture)e.target.setPointerCapture(pedalPointerId);}catch(_){}
   pedalRect = pedalTrack.getBoundingClientRect();
   pedalActive = true;
   pedalMove(e);
@@ -680,17 +722,17 @@ function pedalMove(e){
   target.forward = clamp(vdead, -1, 1);
 }
 function pedalEnd(e){
-  pedalActive = false; pedalRect = null;
+  if(e&&e.pointerId!==undefined&&pedalPointerId!==null&&e.pointerId!==pedalPointerId)return;
+  try{if(e&&e.pointerId!==undefined&&pedalCaptureTarget&&pedalCaptureTarget.releasePointerCapture)pedalCaptureTarget.releasePointerCapture(e.pointerId);}catch(_){}
+  pedalActive=false;pedalPointerId=null;pedalCaptureTarget=null;pedalRect=null;
   pedalThumb.style.top = (pedalTrack.clientHeight/2 - pedalThumb.offsetHeight/2) + 'px';
   pedalVal.textContent = '0%';
-  if(pointerId === null) target.forward = 0;
+  target.forward = 0;
 }
 pedalTrack.addEventListener('pointerdown', pedalStart, {passive:false});
 window.addEventListener('pointermove', (e)=>{ if(pedalActive) pedalMove(e); }, {passive:false});
 window.addEventListener('pointerup', (e)=>{ if(pedalActive) pedalEnd(e); }, {passive:false});
-pedalTrack.addEventListener('touchstart', (ev)=> pedalStart(ev.changedTouches[0]), {passive:false});
-pedalTrack.addEventListener('touchmove', (ev)=> pedalMove(ev.changedTouches[0]), {passive:false});
-pedalTrack.addEventListener('touchend', (ev)=> pedalEnd(ev.changedTouches[0]), {passive:false});
+window.addEventListener('pointercancel', (e)=>{ if(pedalActive) pedalEnd(e); }, {passive:false});
 
 /* Keyboard ramp/decay (fixed to update steer) */
 const keyState = { up:false, down:false, left:false, right:false };
@@ -720,23 +762,25 @@ window.addEventListener('keyup', (e)=>{
   if(k==='d' || e.code==='ArrowRight') keyState.right = false;
 });
 
-/* Gamepad */
-let gpIndex = null;
-window.addEventListener('gamepadconnected', e => { gpIndex = e.gamepad.index; });
-window.addEventListener('gamepaddisconnected', e => { if(gpIndex===e.gamepad.index) gpIndex=null; });
-function pollGamepad(){
-  if(gpIndex!==null){
-    const g = navigator.getGamepads()[gpIndex];
-    if(g){
-      target.steer = clamp(g.axes[0]||0, -1,1);
-      target.forward = clamp(-(g.axes[1]||0), -1,1);
-    }
-  }
-  requestAnimationFrame(pollGamepad);
-}
+/* Gamepad: ignore centered axes and yield to touch input. */
+let gpIndex=null,gamepadActive=false;
+window.addEventListener("gamepadconnected",e=>{gpIndex=e.gamepad.index;});
+window.addEventListener("gamepaddisconnected",e=>{if(gpIndex===e.gamepad.index){gpIndex=null;gamepadActive=false;target.forward=target.steer=0;}});
+function pollGamepad(){gamepadActive=false;if(gpIndex!==null&&pointerId===null&&!pedalActive){const g=navigator.getGamepads()[gpIndex];if(g){const x=clamp(g.axes[0]||0,-1,1),y=clamp(-(g.axes[1]||0),-1,1);gamepadActive=Math.abs(x)>.08||Math.abs(y)>.08;if(gamepadActive){target.steer=x;target.forward=y;}}}requestAnimationFrame(pollGamepad);}
 pollGamepad();
+function syncEstopUI(active){const b=document.getElementById("estop_btn"),r=document.getElementById("estop_reset_btn");if(!b||!r)return;b.setAttribute("aria-pressed",active?"true":"false");b.textContent=active?"E-STOP ACTIVE":"E-STOP";b.disabled=active;r.hidden=!active;}
+function releaseAllInputs(){
+ if(typeof keyState!=="undefined")keyState.up=keyState.down=keyState.left=keyState.right=false;
+ if(typeof keyAccel!=="undefined"){keyAccel.forward=0;keyAccel.steer=0;}
+ target.forward=target.steer=current.forward=current.steer=0;pointerId=null;joyRect=origin=maxR=joyCaptureTarget=null;
+ pedalActive=false;pedalPointerId=null;pedalCaptureTarget=null;pedalRect=null;knob.style.transform="translate(0,0)";pedalVal.textContent="0%";
+ sendInput({forward:0,steer:0,speed_scale:0});
+}
+window.addEventListener("blur",releaseAllInputs);document.addEventListener("visibilitychange",()=>{if(document.hidden)releaseAllInputs();});
+
 
 /* Send + smoothing loop (keyboard-steer fix included) */
+let lastInputActive=false;
 setInterval(()=>{
     // keyboard influence
     let kf=0, ks=0;
@@ -760,7 +804,7 @@ setInterval(()=>{
 
 
   // when joystick/pedal not active, keyboard drives both forward and steer
-  if(pointerId === null && !pedalActive){
+  if(pointerId === null && !pedalActive && !gamepadActive){
     target.forward = clamp(keyAccel.forward * Number(document.getElementById('kb_sens').value || settings.kb_sens), -1,1);
     target.steer  = clamp(keyAccel.steer  * Number(document.getElementById('kb_sens').value || settings.kb_sens), -1,1);
   }
@@ -774,7 +818,7 @@ setInterval(()=>{
   const speedLimit = Number(document.getElementById('speed_limit').value || settings.speed_limit);
   const angleLimit = Number(document.getElementById('angle_limit').value || settings.angle_limit);
   const hwSpeed = Math.round(current.forward * speedLimit);
-  const hwAngle = Math.round(SERVO_CENTER + current.steer * angleLimit);
+  const hwAngle = Math.round(clamp(SERVO_CENTER + current.steer * angleLimit, SERVO_MIN, SERVO_MAX));
 
   // update HUD
   document.getElementById('hud_speed').textContent = hwSpeed;
@@ -783,8 +827,13 @@ setInterval(()=>{
   if(document.activeElement.id !== 'angle_limit_number') document.getElementById('angle_limit_number').value = String(angleLimit);
 
   // send normalized forward/steer (-1..1) and speed_scale (speedLimit / max_speed)
-  const speedScale = speedLimit / (Number(document.getElementById('max_speed').value || settings.max_speed) || 1);
-  sendInput({ forward: current.forward, steer: current.steer, speed_scale: speedScale });
+  const baseMax=Number(document.getElementById("max_speed").value||settings.max_speed)||1;
+  const speedScale=clamp(speedLimit/baseMax,0,1);
+  const active=pointerId!==null||pedalActive||gamepadActive||keyState.up||keyState.down||keyState.left||keyState.right||
+    Math.abs(keyAccel.forward)>.01||Math.abs(keyAccel.steer)>.01||Math.abs(target.forward)>.01||Math.abs(target.steer)>.01||
+    Math.abs(current.forward)>.01||Math.abs(current.steer)>.01;
+  if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale});lastInputActive=true;}
+  else if(lastInputActive){sendInput({forward:0,steer:0,speed_scale:0});lastInputActive=false;}
 
 }, 60); // ~16Hz
 
@@ -847,13 +896,9 @@ btnFull.addEventListener('click', async ()=>{
   }catch(e){ console.warn('fullscreen failed', e); }
 });
 
-/* E-STOP */
-estopBtn.addEventListener('click', ()=>{
-  target.forward = 0; target.steer = 0; current.forward = 0; current.steer = 0;
-  sendInput({ forward: 0, steer: 0, speed_scale: 0});
-  socket.emit('set_setting', { key:'max_speed', value: 0 });
-  setTimeout(()=> socket.emit('set_setting', { key:'max_speed', value: Number(document.getElementById('max_speed').value || settings.max_speed) }), 800);
-});
+/* Latched E-STOP: resume never restores throttle automatically. */
+estopBtn.addEventListener("click",()=>{releaseAllInputs();socket.emit("emergency_stop",{t:Date.now()});});
+document.getElementById("estop_reset_btn").addEventListener("click",()=>socket.emit("reset_estop",{t:Date.now()}));
 
 /* Typed angle limit stays synchronized with the slider and is applied to the controller. */
 const angleLimitNumber = document.getElementById('angle_limit_number');
@@ -931,31 +976,88 @@ console.log('Ready — UI is English, ping is shown in HUD. Keyboard steer bug f
 """
 
 # ---------- Routes ----------
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template_string(INDEX_HTML)
-
-@app.route('/video_feed')
+    return render_template_string(INDEX_HTML,servo_center=SERVO_CENTER,servo_min=SERVO_MIN,servo_max=SERVO_MAX,default_max_speed=DEFAULT_MAX_SPEED)
+@app.route("/video_feed")
 def video_feed():
-    return Response(mjpeg_stream(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-# ---------- Shutdown & start ----------
-def _shutdown(*args):
-    log.info('shutdown: stopping hw & camera')
-    try: hw.stop()
-    except Exception: pass
-    try: cam.release()
-    except Exception: pass
-    os._exit(0)
-
-signal.signal(signal.SIGINT, _shutdown)
-signal.signal(signal.SIGTERM, _shutdown)
-
-if __name__ == '__main__':
-    log.info('Starting manual_controller_enterprise (fixed) on %s:%s (token=%s)', HOST, PORT, MANUAL_TOKEN)
-    t_ctrl = threading.Thread(target=control_loop, daemon=True); t_ctrl.start()
-    socketio.start_background_task(broadcaster)
+    return Response(mjpeg_stream(),mimetype="multipart/x-mixed-replace; boundary=frame")
+@app.route("/encoder-map")
+def encoder_map_page():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)),"manual_encoder_map.html")
+@app.route("/api/encoder-map")
+def encoder_map_api():
+    manual_encoder_map.poll_once()
+    return jsonify(manual_encoder_map.snapshot())
+@app.route("/api/encoder-map/calibration",methods=["POST"])
+def encoder_map_calibration_api():
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict):return jsonify(success=False,message="Send a JSON calibration object."),400
     try:
-        socketio.run(app, host=HOST, port=PORT, allow_unsafe_werkzeug=True)
+        calibration=manual_encoder_map.set_calibration(data)
+        with state_lock:
+            settings["encoder_calibration"]=dict(calibration);saved=save_settings(dict(settings))
+        if not saved:return jsonify(success=False,message="Could not save calibration."),500
+        return jsonify(success=True,calibration=calibration,state=manual_encoder_map.snapshot())
+    except (TypeError,ValueError) as exc:return jsonify(success=False,message=str(exc)),400
+@app.route("/api/encoder-map/reset-origin",methods=["POST"])
+def encoder_map_reset_origin_api():
+    try:manual_encoder_map.reset_origin();return jsonify(success=True,state=manual_encoder_map.snapshot())
+    except RuntimeError as exc:return jsonify(success=False,message=str(exc)),409
+@app.route("/api/encoder-map/enable",methods=["POST"])
+def encoder_map_enable_api():
+    connected,status=_connection_snapshot()
+    if not connected:return jsonify(success=False,message="Arduino is not connected.",connection_state=status),409
+    if not manual_encoder_map.request_telemetry(timeout=.75):return jsonify(success=False,message="No ODOM1 acknowledgement; check firmware and serial connection."),409
+    return jsonify(success=True,state=manual_encoder_map.snapshot())
+
+def _initialize_runtime():
+    global hw,cam
+    config_city.ENCODER_MAP_ENABLED=False
+    config_city.ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED=False
+    if hasattr(config_city,"ARDUINO_CONFIG"):config_city.ARDUINO_CONFIG=None
+    config_city.SEND_AUTOMATIC_ARDUINO_COMMANDS=True
+    hw=ProjectController(config=config_city) if ProjectController is not None else _DummyHW()
+    manual_encoder_map.set_controller(hw)
+    try:
+        if ProjectCamera is None:raise RuntimeError("Project camera backend is unavailable")
+        cam=ProjectCamera(config=config_city)
     except Exception:
-        log.exception('server failed')
+        log.exception("Camera unavailable; manual control starts without video")
+        cam=_UnavailableCamera()
+    try:
+        if not getattr(hw,"without_arduino",False):hw.stop(reason="manual_controller_startup")
+    except Exception:log.exception("Could not send startup STOP")
+
+def _shutdown():
+    if _shutdown_started.is_set():return
+    _shutdown_started.set();_stop.set()
+    try:
+        with _hardware_command_lock:
+            if hw is not None and not getattr(hw,"without_arduino",False):hw.stop(reason="manual_controller_shutdown")
+    except Exception:log.exception("Final STOP failed")
+    try:
+        conn=getattr(hw,"connection",None)
+        if conn is not None and hasattr(conn,"close"):conn.close()
+    except Exception:log.exception("Serial shutdown failed")
+    try:
+        with camera_lock:
+            if cam is not None:cam.release()
+    except Exception:log.exception("Camera shutdown failed")
+
+def _handle_shutdown_signal(_signum,_frame):raise KeyboardInterrupt
+
+if __name__=="__main__":
+    signal.signal(signal.SIGINT,_handle_shutdown_signal);signal.signal(signal.SIGTERM,_handle_shutdown_signal)
+    log.info("Starting manual RC controller on %s:%s",HOST,PORT);print(f"MANUAL_TOKEN={MANUAL_TOKEN}",flush=True)
+    try:
+        _initialize_runtime()
+        threading.Thread(target=control_loop,name="manual-control",daemon=True).start()
+        threading.Thread(target=camera_capture_loop,name="manual-camera",daemon=True).start()
+        threading.Thread(target=encoder_poll_loop,name="manual-encoder",daemon=True).start()
+        socketio.start_background_task(broadcaster)
+        socketio.run(app,host=HOST,port=PORT,allow_unsafe_werkzeug=True)
+    except KeyboardInterrupt:log.info("Manual controller stopped")
+    except Exception:
+        log.exception("Manual controller failed");raise
+    finally:_shutdown()
