@@ -262,6 +262,23 @@ class StreamConfigurationMixin:
             if key.startswith("BEV_SRC_") and not -5.0 <= normalized <= 5.0:
                 raise ValueError(f"{key} must be between -5 and 5")
             advanced[key] = normalized
+
+        if "SERVO_CENTER" in advanced:
+            center = int(advanced["SERVO_CENTER"])
+            servo_min = float(getattr(self.config, "MIN_SERVO_ANGLE", 55))
+            servo_max = float(getattr(self.config, "MAX_SERVO_ANGLE", 125))
+            if not servo_min < center < servo_max:
+                raise ValueError(
+                    f"SERVO_CENTER must be strictly between MIN_SERVO_ANGLE ({servo_min:g}) "
+                    f"and MAX_SERVO_ANGLE ({servo_max:g})"
+                )
+            current_center = int(getattr(self.config, "SERVO_CENTER", 95))
+            if center != current_center and str(getattr(self.config, "RUN_LVL", "MOVE")).upper() != "STOP":
+                raise ValueError(
+                    "SERVO_CENTER can only be changed while RUN_LVL=STOP. "
+                    "Stop the robot first, then apply the new servo center."
+                )
+
         if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
                 and advanced.get("RUN_LVL", "STOP") == "MOVE"):
             # Undo/redo may target a snapshot from before the operator stopped
@@ -376,6 +393,32 @@ class StreamConfigurationMixin:
         return {"schema_version": 1, "mode": self._mode_slug(), "values": values,
                 "advanced": advanced, "ui": ui, "runtime": normalized_runtime}
 
+    def _sync_live_servo_center(self):
+        """Propagate the active mode's calibrated center to live steering components."""
+        center = int(getattr(self.config, "SERVO_CENTER", 95))
+        controller = getattr(self.config, "robot_controller", None)
+        if controller is not None:
+            controller.servo_center = center
+            connection = getattr(controller, "connection", None)
+            if connection is not None:
+                connection.servo_center = center
+
+        vision = getattr(self.config, "vision_processor", None)
+        if vision is not None:
+            for detector in (vision, getattr(vision, "ml_lane_detector", None)):
+                if detector is None:
+                    continue
+                if hasattr(detector, "servo_center"):
+                    detector.servo_center = float(center)
+                if hasattr(detector, "last_steering"):
+                    detector.last_steering = float(center)
+                if hasattr(detector, "_last_config_servo_center"):
+                    detector._last_config_servo_center = float(center)
+
+        odometry = getattr(self.config, "encoder_odometry", None)
+        if odometry is not None and hasattr(odometry, "servo_center"):
+            odometry.servo_center = float(center)
+
     def _sync_live_pid_settings(self):
         """Replace the PID object from validated active-mode settings."""
         controller = getattr(self.config, "robot_controller", None)
@@ -401,6 +444,10 @@ class StreamConfigurationMixin:
         before = self._full_config_snapshot()
         pid_keys = {"USE_PID", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS", "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER"}
         pid_changed = any(key in normalized["advanced"] and normalized["advanced"][key] != before.get("advanced", {}).get(key) for key in pid_keys)
+        servo_center_changed = (
+            "SERVO_CENTER" in normalized["advanced"]
+            and normalized["advanced"]["SERVO_CENTER"] != before.get("advanced", {}).get("SERVO_CENTER")
+        )
         try:
             for key, value in normalized["values"].items():
                 setattr(self.config, key, value)
@@ -413,6 +460,8 @@ class StreamConfigurationMixin:
                 set_marker_mode(self.config, "sign" if sign else "apriltag" if tag else "none")
             if pid_changed:
                 self._sync_live_pid_settings()
+            if servo_center_changed:
+                self._sync_live_servo_center()
             self.ui_settings = normalized["ui"]
             if not self.save_ui_settings():
                 raise RuntimeError("failed to persist UI settings")
@@ -446,6 +495,11 @@ class StreamConfigurationMixin:
                     self._sync_live_pid_settings()
                 except Exception:
                     logger.exception("Could not roll back live PID state after failed import")
+            if servo_center_changed:
+                try:
+                    self._sync_live_servo_center()
+                except Exception:
+                    logger.exception("Could not roll back live servo-center state after failed import")
             before_runtime = before.get("runtime", {})
             old_rate = before_runtime.get("target_processing_fps")
             rate = getattr(self.config, "processing_rate_controller", None)

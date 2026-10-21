@@ -121,6 +121,7 @@ ADVANCED_VARS = {
     "OBJ_TOP_WIDTH_FACTOR": 0.8,
 
     "USE_BEV": True,
+    "SERVO_CENTER": 95,
     "KP": 0.35, "KI": 0.0, "KD": 0.01, "KT": 0.01,
     "USE_PID": True, "AUTO_UPDATE_KP": False,
     "OUTPUT_LIMITS": (-80.0, 80.0),
