@@ -34,7 +34,7 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
   <div class="metric"><div class="name">Y position</div><div class="value"><span id="ypos">—</span><span class="unit">cm</span></div></div>
   <div class="metric"><div class="name">Heading</div><div class="value"><span id="heading">—</span><span class="unit">°</span></div></div>
   <div class="metric"><div class="name">Steering servo</div><div class="value" id="steering">—</div></div>
-  <div class="metric"><div class="name">Road-wheel angle</div><div class="value"><span id="roadAngle">—</span><span class="unit">°</span></div></div>
+  <div class="metric"><div class="name">Estimated wheel angle</div><div class="value"><span id="roadAngle">—</span><span class="unit">°</span></div></div>
 </section>
 <main class="main">
   <section class="map-panel">
@@ -186,7 +186,7 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
       byId("servoRange").textContent=numberText(data.servo_min,0)+" – "+numberText(data.servo_max,0)+" (center "+numberText(data.servo_center,0)+")";
       fillCalibration(data.calibration);
       byId("calibrationNotice").textContent=data.trajectory_available
-        ?"Model active. Pulse totals and servo commands are recorded per sample; the 25° default can be adjusted to improve the estimated trace."
+        ?"Model active. Pulse totals and servo commands are recorded per sample; the current "+numberText(data.max_wheel_angle_deg,1)+"° wheel-angle estimate is editable."
         :"A pulse-distance calibration is required for distance; wheelbase and an effective steering-angle estimate are required for XY.";
       byId("calibrationNotice").classList.toggle("warn",!data.trajectory_available);
       if(data.last_error)userMessage=data.last_error;
