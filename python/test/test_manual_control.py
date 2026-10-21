@@ -759,6 +759,7 @@ const SERVO_MAX={{ servo_max|tojson }};
 const TOKEN=prompt("Enter the MANUAL token printed by the server")||"";
 const socket=io({auth:{token:TOKEN}});
 socket.on("connect",()=>console.log("Manual control connected"));
+socket.on("cmd_nack",m=>console.warn("Manual input rejected",m));
 socket.on("disconnect",()=>{const e=document.getElementById("hud_connection");if(e){e.textContent="DISCONNECTED";e.dataset.connected="false";}releaseAllInputs();});
 socket.on("connect_error",e=>console.warn("Manual socket error",e));
 socket.on("init",s=>{if(s){syncEstopUI(!!s.estop);if(s.angle!==undefined)document.getElementById("hud_angle").textContent=Math.round(s.angle);}});
@@ -1080,7 +1081,7 @@ setInterval(()=>{
   if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale,speed_immediate:keyboardSpeedImmediate,steering_immediate:keyboardSteeringImmediate});lastInputActive=true;}
   else if(lastInputActive){sendInput({forward:0,steer:0,speed_scale:0,speed_immediate:keyboardOwnsControls && kbSpeedStop === 'instant'});lastInputActive=false;}
 
-}, 60); // ~16Hz
+}, 33); // ~30 Hz: lower control-input latency without flooding the socket
 
 /* Heartbeat (send periodically, server should reply with heartbeat_ack) */
 setInterval(()=> socket.emit('heartbeat', { t: Date.now() }), 2000);
