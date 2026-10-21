@@ -405,8 +405,15 @@ def control_loop():
                     if priority_stop:
                         if _priority_stop_due(priority_stop,_priority_stop_was_active,now,_last_priority_stop_at):
                             _last_priority_stop_at=now
-                            hw.stop(reason="manual_keyboard_hold_stop" if hold_stop_active else "manual_estop_hold")
-                        _priority_stop_was_active=True
+                            first_priority_stop=not _priority_stop_was_active
+                            # Record the stop transition once, not at every 10 Hz refresh.
+                            _priority_stop_was_active=True
+                            if first_priority_stop:
+                                hw.stop(reason="manual_keyboard_hold_stop" if hold_stop_active else "manual_estop_hold")
+                            else:
+                                hw.stop()
+                        else:
+                            _priority_stop_was_active=True
                         # Firmware STOP centers steering and clears queued motion.
                         _last_hw_speed=0;_last_hw_angle=SERVO_CENTER
                     else:
