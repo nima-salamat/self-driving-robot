@@ -140,7 +140,8 @@ def save_settings(s):
 # ---------- State ----------
 settings = load_settings()
 saved_calibration=settings.get('encoder_calibration')
-if isinstance(saved_calibration,dict): ENCODER_DEFAULTS.update(saved_calibration)
+if isinstance(saved_calibration,dict):
+    ENCODER_DEFAULTS.update({key:value for key,value in saved_calibration.items() if value is not None and value != ""})
 settings['encoder_calibration']=dict(ENCODER_DEFAULTS)
 settings['max_speed']=max(0,min(255,int(settings.get('max_speed',DEFAULT_MAX_SPEED))))
 settings['speed_limit']=max(0,min(255,int(settings.get('speed_limit',DEFAULT_MAX_SPEED))))
