@@ -34,8 +34,7 @@ class ManualEncoderMap:
         self._calibration = {
             "pulse_distance_cm": None,
             "wheelbase_cm": None,
-            "road_angle_min_deg": None,
-            "road_angle_max_deg": None,
+            "max_wheel_angle_deg": 25.0,
         }
         self._connection_state = None
         self._minimum_receive_at = None
@@ -75,30 +74,22 @@ class ManualEncoderMap:
             raise ValueError("Calibration must be a JSON object")
         pulse = self._optional_number(values.get("pulse_distance_cm"), "pulse_distance_cm")
         wheelbase = self._optional_number(values.get("wheelbase_cm"), "wheelbase_cm")
-        road_min = self._optional_number(values.get("road_angle_min_deg"), "road_angle_min_deg")
-        road_max = self._optional_number(values.get("road_angle_max_deg"), "road_angle_max_deg")
+        max_wheel_angle = self._optional_number(
+            values.get("max_wheel_angle_deg", 25.0), "max_wheel_angle_deg"
+        )
 
         if pulse is not None and pulse <= 0:
             raise ValueError("pulse_distance_cm must be greater than zero")
         if wheelbase is not None and wheelbase <= 0:
             raise ValueError("wheelbase_cm must be greater than zero")
-        if (road_min is None) != (road_max is None):
-            raise ValueError("Provide both road-wheel angle calibration endpoints, or leave both blank")
-        if road_min is not None:
-            opposite_signs = road_min * road_max < 0.0
-            in_range = -45.0 <= road_min <= 45.0 and -45.0 <= road_max <= 45.0
-            if not (in_range and opposite_signs):
-                raise ValueError(
-                    "Road-wheel angles must be within -45..45 degrees, non-zero, "
-                    "and have opposite signs. Servo MIN may turn either left or right."
-                )
-            if not (self.servo_min < self.servo_center < self.servo_max):
-                raise ValueError("Servo min/center/max calibration is inconsistent")
+        if max_wheel_angle is not None and not (0.0 < max_wheel_angle <= 45.0):
+            raise ValueError("max_wheel_angle_deg must be greater than 0 and at most 45")
+        if max_wheel_angle is not None and not (self.servo_min < self.servo_center < self.servo_max):
+            raise ValueError("Servo min/center/max calibration is inconsistent")
         normalized = {
             "pulse_distance_cm": pulse,
             "wheelbase_cm": wheelbase,
-            "road_angle_min_deg": road_min,
-            "road_angle_max_deg": road_max,
+            "max_wheel_angle_deg": max_wheel_angle,
         }
 
         with self._lock:
@@ -112,8 +103,7 @@ class ManualEncoderMap:
                     servo_center=self.servo_center,
                     servo_min=self.servo_min,
                     servo_max=self.servo_max,
-                    road_angle_min_deg=road_min,
-                    road_angle_max_deg=road_max,
+                    max_wheel_angle_deg=max_wheel_angle if max_wheel_angle is not None else 25.0,
                     max_sample_age_s=self.max_sample_age_s,
                 )
             self._minimum_receive_at = self._clock()
@@ -248,7 +238,7 @@ class ManualEncoderMap:
             elif self._odometry is None:
                 message = "Encoder pulses are arriving. Enter pulse distance to calculate travel distance."
             elif not trajectory:
-                message = "Travel distance is available; wheelbase and road-wheel angle calibration are needed for a 2D path."
+                message = "Travel distance is available; wheelbase and effective wheel-angle settings are needed for a 2D path."
             elif odom and not odom.get("valid"):
                 message = str(odom.get("reason") or "Odometry continuity is not currently valid.")
             else:
@@ -292,12 +282,13 @@ class ManualEncoderMap:
                 "road_wheel_angle_deg": None,
                 "pulse_distance_cm": self._calibration["pulse_distance_cm"],
                 "wheelbase_cm": self._calibration["wheelbase_cm"],
+                "max_wheel_angle_deg": self._calibration["max_wheel_angle_deg"],
             }
             if odom is not None:
                 for key in (
                     "history", "travel_cm", "signed_distance_cm", "x_cm", "y_cm",
                     "heading_rad", "road_wheel_angle_deg", "pulse_distance_cm",
-                    "wheelbase_cm", "reason",
+                    "wheelbase_cm", "max_wheel_angle_deg", "reason",
                 ):
                     payload[key] = odom.get(key)
                 payload["odometry_valid"] = bool(
