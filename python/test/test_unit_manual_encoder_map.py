@@ -122,53 +122,61 @@ class ManualEncoderMapTests(unittest.TestCase):
         self.tracker.poll_once()
         self.assertAlmostEqual(self.tracker.snapshot()["travel_cm"], 3.0)
 
-    def test_calibration_form_allows_positive_or_negative_at_both_servo_endpoints(self):
+    def test_calibration_form_uses_one_effective_wheel_angle_setting(self):
         html = (PYTHON_ROOT / "test" / "manual_encoder_map.html").read_text(
             encoding="utf-8"
         )
         self.assertIn(
-            'id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="45"',
+            'id="maxWheelAngle" name="max_wheel_angle_deg" type="number" min="0.1" max="45"',
             html,
         )
-        self.assertIn(
-            'id="roadMax" name="road_angle_max_deg" type="number" min="-45" max="45"',
-            html,
-        )
-        self.assertNotIn('id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="-0.0001"', html)
-        self.assertNotIn('id="roadMax" name="road_angle_max_deg" type="number" min="0.0001" max="45"', html)
+        self.assertNotIn("road_angle_min_deg", html)
+        self.assertNotIn("road_angle_max_deg", html)
 
-    def test_reversed_servo_direction_accepts_positive_min_and_negative_max(self):
-        calibration = {
+    def test_servo_command_and_pulse_delta_are_recorded_for_each_sample(self):
+        self.tracker.set_calibration({
             "pulse_distance_cm": 0.4,
             "wheelbase_cm": 25.0,
-            "road_angle_min_deg": 20.0,
-            "road_angle_max_deg": -15.0,
-        }
-        self.tracker.set_calibration(calibration)
+            "max_wheel_angle_deg": 25.0,
+        })
+        self.tracker.poll_once(now=10.0)
+        self.controller.records = [sample(10.01, 0, servo=95), sample(10.10, 4, servo=115)]
+        self.now[0] = 10.10
+        self.tracker.poll_once()
+        history = self.tracker.snapshot()["history"]
+        last = history[-1]
+        self.assertEqual(last["signed_pulses"], 4)
+        self.assertEqual(last["pulse_delta"], 4)
+        self.assertEqual(last["servo_command"], 115)
+        self.assertAlmostEqual(self.tracker.snapshot()["road_wheel_angle_deg"], 12.5)
+
+    def test_effective_wheel_angle_is_derived_from_servo_command_and_editable_limit(self):
+        self.tracker.set_calibration({
+            "pulse_distance_cm": 0.4,
+            "wheelbase_cm": 25.0,
+            "max_wheel_angle_deg": 30.0,
+        })
         odometry = self.tracker._odometry
-
-        self.assertTrue(odometry.calibrated)
-        self.assertAlmostEqual(odometry._road_wheel_angle(55), 20.0)
+        self.assertAlmostEqual(odometry._road_wheel_angle(55), -30.0)
         self.assertAlmostEqual(odometry._road_wheel_angle(95), 0.0)
-        self.assertAlmostEqual(odometry._road_wheel_angle(125), -15.0)
+        self.assertAlmostEqual(odometry._road_wheel_angle(130), 30.0)
 
-    def test_servo_endpoints_must_still_have_opposite_signs(self):
-        for min_angle, max_angle in ((10.0, 20.0), (-10.0, -20.0), (0.0, 20.0), (10.0, 0.0)):
-            with self.subTest(min_angle=min_angle, max_angle=max_angle):
+    def test_max_wheel_angle_must_be_positive_and_at_most_45_degrees(self):
+        for angle in (0, -1, 45.1, float("inf")):
+            with self.subTest(angle=angle):
                 with self.assertRaises(ValueError):
                     self.tracker.set_calibration({
                         "pulse_distance_cm": 0.4,
                         "wheelbase_cm": 25.0,
-                        "road_angle_min_deg": min_angle,
-                        "road_angle_max_deg": max_angle,
+                        "max_wheel_angle_deg": angle,
                     })
 
     def test_invalid_calibration_is_rejected(self):
         for values in (
             {"pulse_distance_cm": 0},
             {"pulse_distance_cm": 0.5, "wheelbase_cm": -1},
-            {"pulse_distance_cm": 0.5, "road_angle_min_deg": -10},
-            {"pulse_distance_cm": 0.5, "road_angle_min_deg": 10, "road_angle_max_deg": 20},
+            {"pulse_distance_cm": 0.5, "max_wheel_angle_deg": 0},
+            {"pulse_distance_cm": 0.5, "max_wheel_angle_deg": 50},
         ):
             with self.subTest(values=values):
                 with self.assertRaises(ValueError):
