@@ -267,6 +267,17 @@ class StreamConfigurationMixin:
                 calibration_path_from_reference(normalized, require_exists=True)
             advanced[key] = normalized
 
+        calibration_fields = {"CAMERA_CALIBRATION_FILE", "APPLY_CAMERA_CALIBRATION"}
+        calibration_changed = any(
+            key in advanced and advanced[key] != getattr(self.config, key, ADVANCED_VARS[key])
+            for key in calibration_fields
+        )
+        if calibration_changed and str(getattr(self.config, "RUN_LVL", "MOVE")).upper() != "STOP":
+            raise ValueError(
+                "Camera calibration can only be changed while RUN_LVL=STOP. "
+                "Stop the robot first, then apply the profile."
+            )
+
         if "SERVO_CENTER" in advanced:
             center = int(advanced["SERVO_CENTER"])
             servo_min = float(getattr(self.config, "MIN_SERVO_ANGLE", 55))
@@ -459,6 +470,13 @@ class StreamConfigurationMixin:
             "SERVO_CENTER" in normalized["advanced"]
             and normalized["advanced"]["SERVO_CENTER"] != before.get("advanced", {}).get("SERVO_CENTER")
         )
+        calibration_fields = {"CAMERA_CALIBRATION_FILE", "APPLY_CAMERA_CALIBRATION"}
+        calibration_changed = any(
+            key in normalized["advanced"]
+            and normalized["advanced"][key] != before.get("advanced", {}).get(key)
+            for key in calibration_fields
+        )
+        camera = getattr(self.config, "camera", None)
         try:
             for key, value in normalized["values"].items():
                 setattr(self.config, key, value)
@@ -473,6 +491,14 @@ class StreamConfigurationMixin:
                 self._sync_live_pid_settings()
             if servo_center_changed:
                 self._sync_live_servo_center()
+            if calibration_changed and camera is not None:
+                switch = getattr(camera, "set_camera_calibration_file", None)
+                if not callable(switch):
+                    raise ValueError("active camera does not support live calibration switching")
+                switch(
+                    str(getattr(self.config, "CAMERA_CALIBRATION_FILE")),
+                    enabled=bool(getattr(self.config, "APPLY_CAMERA_CALIBRATION", True)),
+                )
             self.ui_settings = normalized["ui"]
             setattr(self.config, "stream_ui_settings", self.ui_settings)
             if not self.save_ui_settings():
@@ -514,6 +540,14 @@ class StreamConfigurationMixin:
                     self._sync_live_servo_center()
                 except Exception:
                     logger.exception("Could not roll back live servo-center state after failed import")
+            if calibration_changed and camera is not None:
+                try:
+                    camera.set_camera_calibration_file(
+                        str(before.get("advanced", {}).get("CAMERA_CALIBRATION_FILE")),
+                        enabled=bool(before.get("advanced", {}).get("APPLY_CAMERA_CALIBRATION", True)),
+                    )
+                except Exception:
+                    logger.exception("Could not roll back live camera calibration after failed import")
             before_runtime = before.get("runtime", {})
             old_rate = before_runtime.get("target_processing_fps")
             rate = getattr(self.config, "processing_rate_controller", None)
