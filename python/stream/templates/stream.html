@@ -349,6 +349,13 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div id="wb_preview_status" class="small status-line" role="status">No preview yet.</div>
       <div id="wb_stage_gallery" class="wb-stage-gallery"></div>
       <pre id="wb_preview_summary" class="ext-pre">Candidate counts and rejection reason appear here.</pre>
+      <div class="section-title" style="margin-top:14px">Actual runtime debug feed</div>
+      <p class="small-muted">Reads the most recent intermediate stages published by the City/Race runtime. It does not re-run perception. Auto refresh is opt-in because debug frames use CPU, bandwidth and memory.</p>
+      <div class="form-row"><select id="wb_live_stage" aria-label="Actual runtime debug stage" style="min-width:0;flex:1"><option value="annotated">Rendered runtime geometry</option><option value="combined">Detector frame</option><option value="rl_edges">Right ROI edges</option><option value="ll_edges">Left ROI edges</option><option value="binary">BLSF binary mask</option><option value="candidates">Runtime candidates</option></select><button type="button" class="ghost" id="wb_live_refresh">Refresh</button></div>
+      <label class="wb-check"><input id="wb_live_auto" type="checkbox"> Auto refresh every ~1.5 seconds (opt-in)</label>
+      <img id="wb_live_image" class="wb-live-image" alt="Actual runtime vision debug stage" hidden>
+      <div class="small status-line" id="wb_live_status" role="status" aria-live="polite">Waiting for runtime detector diagnostics…</div>
+      <pre id="wb_live_summary" class="ext-pre">No live diagnostics loaded.</pre>
     </div></details>
     <details class="dock-panel" id="ext_profiles_bundle_panel"><summary class="dock-summary"><span>Complete Profiles & Diagnostics</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Unified profiles</div><p class="small-muted">A profile bundles active mode settings, detector tuning, workspace layout, grid scale and annotations. Loading requires RUN_LVL=STOP and never resumes motion.</p>
