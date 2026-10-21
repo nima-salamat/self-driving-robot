@@ -207,6 +207,9 @@ class StopHoldModeTests(unittest.TestCase):
 
     def test_city_operator_stop_keeps_debug_stream_signature_valid(self):
         robot = self.make_robot(city_module)
+        robot.health = None
+        robot.runtime_exception = None
+        robot._next_control_time = 0.0
         frame = np.zeros((48, 64, 3), dtype=np.uint8)
         robot.fps = Mock()
         robot.camera = Mock()
