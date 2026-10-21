@@ -210,10 +210,10 @@ class StopHoldModeTests(unittest.TestCase):
         robot.health = None
         robot.runtime_exception = None
         robot._next_control_time = 0.0
-        frame = np.zeros((48, 64, 3), dtype=np.uint8)
+        frame = np.full((48, 64, 3), 32, dtype=np.uint8)
         robot.fps = Mock()
         robot.camera = Mock()
-        robot.camera.capture_frame.return_value = (frame, None)
+        robot.camera.capture_frame.return_value = (frame, frame.copy())
         robot.camera.last_capture_valid = True
         robot.handle_debug_stream = Mock()
         robot._pace_control_loop = Mock()
@@ -234,7 +234,7 @@ class StopHoldModeTests(unittest.TestCase):
         robot.close.assert_called_once()
 
     def test_completed_stop_is_consumed_without_threshold_submission_and_blocks_motion(self):
-        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        frame = np.full((240, 320, 3), 32, dtype=np.uint8)
 
         for name, mode_module, config in MODE_CASES:
             with self.subTest(mode=name):
@@ -537,7 +537,7 @@ class StopHoldModeTests(unittest.TestCase):
                 )
 
     def test_stop_hold_repeats_without_motion_and_keeps_debug_stream_live(self):
-        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        frame = np.full((240, 320, 3), 32, dtype=np.uint8)
         for name, mode_module, config in MODE_CASES:
             with self.subTest(mode=name):
                 robot = self.make_robot(mode_module)

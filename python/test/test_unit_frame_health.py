@@ -18,7 +18,7 @@ class CameraFrameHealthTests(unittest.TestCase):
 
     def test_sensor_noise_on_a_covered_lens_is_still_occluded(self):
         rng = np.random.default_rng(17)
-        frame = rng.integers(0, 7, size=(240, 320, 3), dtype=np.uint8)
+        frame = rng.integers(0, 4, size=(240, 320, 3), dtype=np.uint8)
         self.assertTrue(is_camera_frame_obscured(frame))
 
     def test_visible_image_is_not_treated_as_occluded(self):

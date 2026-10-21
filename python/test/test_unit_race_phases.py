@@ -92,7 +92,8 @@ class RacePhaseModeTests(unittest.TestCase):
         robot._race_timer_started = False
         robot.control = Control()
         robot.camera = Mock()
-        robot.camera.capture_frame.return_value = (object(), None)
+        frame = np.full((240, 320, 3), 32, dtype=np.uint8)
+        robot.camera.capture_frame.return_value = (frame, frame.copy())
         robot.camera.last_capture_valid = True
         robot._pace_control_loop = Mock()
         observations = iter([
