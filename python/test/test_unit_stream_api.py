@@ -209,6 +209,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn(".panel-resize-handle{display:none;align-items:center;justify-content:center", css)
         self.assertIn("grid-template-columns:minmax(0,1fr) 12px var(--right-pane-width)", css)
         self.assertIn(".container.dock-hidden > .panel-resize-handle { display:none !important; }", css)
+        self.assertIn(".container:not(.dock-hidden) > .panel-resize-handle {\n    display: flex !important;", css)
         self.assertIn(".panel-resize-handle { display:none !important; }", css)
 
     def test_stream_editor_precision_and_layout_hooks_are_present(self):

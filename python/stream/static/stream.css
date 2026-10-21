@@ -1549,3 +1549,21 @@ canvas {
 @media (max-width: 900px) and (orientation: landscape) and (max-height: 520px) {
   .bottom-console.console-open { max-height: min(42dvh, 200px); }
 }
+
+/* Keep the settings resize grip visible on desktop. This must follow the
+   base .panel-resize-handle rule, which intentionally hides it by default. */
+@media (min-width:721px) {
+  .container:not(.dock-hidden) > .panel-resize-handle {
+    display: flex !important;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: stretch;
+  }
+  .container:not(.dock-hidden) > .right-panel {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+@media (max-width:720px) {
+  .container > .panel-resize-handle { display: none !important; }
+}
