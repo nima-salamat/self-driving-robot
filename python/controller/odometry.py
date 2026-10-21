@@ -52,7 +52,7 @@ class EncoderOdometry:
             return (math.isfinite(low) and math.isfinite(high) and
                     self.servo_min < self.servo_center < self.servo_max and
                     -45.0 <= low <= 45.0 and -45.0 <= high <= 45.0 and
-                    low < 0 < high)
+                    low * high < 0.0)
         except (TypeError, ValueError):
             return False
 
@@ -61,6 +61,8 @@ class EncoderOdometry:
         # need not be halfway between MIN and MAX (e.g. 50..130 with center 95).
         # Linear interpolation across the full MIN..MAX span creates a false
         # steering angle at straight ahead and bends the estimated path over time.
+        # Endpoint angle signs are calibration-derived: servo direction may be
+        # reversed, so MIN does not inherently mean a negative road-wheel angle.
         command = max(self.servo_min, min(self.servo_max, float(servo)))
         if command <= self.servo_center:
             span = self.servo_center - self.servo_min
