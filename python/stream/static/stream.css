@@ -412,7 +412,8 @@ canvas {
 .properties-panel .property-actions{flex:0 0 auto}
 .mirror-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
 .mirror-actions[hidden]{display:none!important}
-.mirror-actions button{flex:1 1 120px;min-width:0;font-size:10px}
+.mirror-actions button{display:flex;align-items:center;justify-content:center;gap:7px;flex:1 1 auto;min-width:0;font-size:10px}
+.mirror-button-icon{width:16px;height:16px;flex:0 0 16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .menu-dropdown button.menu-danger{color:#fda4af}
 .menu-dropdown button.menu-danger:hover{color:#fecdd3;border-color:#9f1239;background:rgba(136,19,55,.22)}
 .stream-exit-card{border-color:#7f3345}

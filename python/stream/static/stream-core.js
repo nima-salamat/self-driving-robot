@@ -30,7 +30,7 @@ const STREAM_VIEW_ONLY_IDS = new Set([
     'roi_setting_grid_opacity', 'roi_setting_grid_thickness',
     'roi_setting_grid_dot_size', 'roi_setting_grid_color',
     'roi_setting_keyboard_nudge', 'roi_setting_stream_fps', 'roi_setting_snap',
-    'roi_setting_label_size', 'roi_setting_label_weight',
+    'roi_setting_label_size', 'roi_setting_label_weight', 'roi_setting_label_shape',
     'roi_setting_outline_thickness', 'roi_setting_handle_size',
     'ext_grid', 'ext_overlays', 'ext_snap', 'ext_crosshair'
 ]);
@@ -62,7 +62,7 @@ syncStreamPermissionUI();
 
 let selectedVar = 'NONE';
 let markerHighlight = null;
-let roiAppearance = {labelFontSize:12, labelFontWeight:'700', outlineThickness:2, handleSize:10};
+let roiAppearance = {labelFontSize:12, labelFontWeight:'700', outlineThickness:2, handleSize:10, showShapeType:false};
 let gridMode = 'off', gridSpacing = 0.05, gridOpacity = 0.35, gridThickness = 1, gridDotSize = 2;
 function isEditorSnapEnabled(){return typeof window.__isEditorSnapEnabled === 'function' && window.__isEditorSnapEnabled();}
 function snapNormalized(value, spacing){const step=Math.max(0.001,Math.min(1,Number(spacing==null?gridSpacing:spacing)||0.05));return round01(Math.round(Number(value)/step)*step);}
@@ -605,21 +605,37 @@ function drawHandle(cx,cy,size,fill,stroke){
     ctx.rect(cx-size/2,cy-size/2,size,size);ctx.fill();ctx.stroke();
 }
 
-function drawPolygon(points,color,isHighlight,labelText,r,fillAlpha=0.35){
+function drawPolygon(points,color,isHighlight,fillAlpha=0.35){
     const z=getOverlayScale();
     ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);for(let i=1;i<points.length;i++)ctx.lineTo(points[i].x,points[i].y);ctx.closePath();
     ctx.fillStyle=color;ctx.globalAlpha=fillAlpha;ctx.fill();ctx.globalAlpha=1;
     ctx.strokeStyle=isHighlight?'#fff':color;
     ctx.lineWidth=Math.max(.5,(Number(roiAppearance.outlineThickness)||2)*z+(isHighlight?z:0));
     ctx.setLineDash(isHighlight?[6*z,4*z]:[]);ctx.stroke();ctx.setLineDash([]);
-    if(r&&labelText){
-      const fs=Math.max(4,Math.min(64,(Number(roiAppearance.labelFontSize)||12)*z));
-      ctx.font=String(roiAppearance.labelFontWeight||'700')+' '+fs+'px Arial,sans-serif';
-      const pad=4*z,w=Math.ceil(ctx.measureText(labelText).width+pad*2),h=Math.ceil(fs+5*z);
-      ctx.fillStyle=color;ctx.fillRect(r.x+4*z,r.y+4*z,w,h);ctx.fillStyle='#012';ctx.textBaseline='top';ctx.fillText(labelText,r.x+8*z,r.y+6*z);
-    }
 }
 
+// Keep text outside ROI geometry, with anchor alignment chosen by ROI type.
+function drawExternalLabel(labelText,color,anchorX,shapeTop,alignment='left'){
+    if(!labelText)return;
+    const z=getOverlayScale();
+    const fs=Math.max(4,Math.min(64,(Number(roiAppearance.labelFontSize)||12)*z));
+    ctx.save();
+    ctx.font=String(roiAppearance.labelFontWeight||'700')+' '+fs+'px Arial,sans-serif';
+    const padX=4*z,padY=2*z;
+    const width=Math.ceil(ctx.measureText(labelText).width+padX*2);
+    const height=Math.ceil(fs+padY*2);
+    const gap=3*z;
+    let x=alignment==='right'?anchorX-width:alignment==='center'?anchorX-width/2:anchorX;
+    let y=shapeTop-height-gap;
+    x=Math.max(1,Math.min(Math.max(1,canvas.width-width-1),x));
+    y=Math.max(1,y);
+    ctx.fillStyle=color;ctx.fillRect(x,y,width,height);
+    ctx.fillStyle='#fff';ctx.textBaseline='top';ctx.fillText(labelText,x+padX,y+padY);
+    ctx.restore();
+}
+function formatRoiLabel(key,shapeType){
+    return roiAppearance.showShapeType ? key+' ('+shapeType+')' : key;
+}
 function syncOverlayControlUI(){
     const button=document.getElementById('tool_overlays_btn');
     const visible=!!showRectsCheckbox.checked;
@@ -657,17 +673,22 @@ function drawOverlays(){
                 toCanvas(advanced.BEV_SRC_BL_X, advanced.BEV_SRC_BL_Y)
             ];
             
-            drawPolygon(pts, bevColor, isBevHL, null, null, 0.15); 
+            drawPolygon(pts, bevColor, isBevHL, 0.15); 
             
-            const z=getOverlayScale(),fs=Math.max(4,(Number(roiAppearance.labelFontSize)||12)*z);
-            ctx.fillStyle=bevColor;ctx.fillRect(pts[0].x,pts[0].y-20*z,90*z,18*z);ctx.fillStyle='#fff';
-            ctx.font=String(roiAppearance.labelFontWeight||'700')+' '+fs+'px Arial,sans-serif';ctx.fillText("BEV Region",pts[0].x+5*z,pts[0].y-7*z);
+            const topY=Math.min(pts[0].y,pts[1].y);
+            drawExternalLabel('BEV Region',bevColor,(pts[0].x+pts[1].x)/2,topY,'center');
             const size=Math.max(2,(Number(roiAppearance.handleSize)||10)*z);
             for(let p of pts) drawHandle(p.x, p.y, size, '#fff', bevColor);
         }
 
+        // Draw the selected ROI last so overlapping regions cannot cover it.
+        const roiOrder=['RL','LL','CW','ST','OBJ'];
+        if(roiOrder.includes(markerHighlight)){
+            const selectedIndex=roiOrder.indexOf(markerHighlight);
+            roiOrder.push(roiOrder.splice(selectedIndex,1)[0]);
+        }
         // 2. Draw ROIs
-        for(const key of ['RL','LL','CW','ST','OBJ']){
+        for(const key of roiOrder){
             if(!ui.visible[key]) continue;
             const r = rects[key];
             if(!r) continue;
@@ -675,57 +696,66 @@ function drawOverlays(){
             const color = varColorByKey(key);
             const isHL = (markerHighlight === key);
             
+            let shapeType='Rectangle';
             if(key === 'RL') {
                 if(laneMode === 'trapezoid'){
+                    shapeType='Trapezoid';
                     let factor = advanced.RL_TOP_WIDTH_FACTOR;
                     let pts = [{x:r.x, y:r.y}, {x:r.x+(r.w*factor), y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "RL (Trapezoid)", r);
+                    drawPolygon(pts,color,isHL);
                 } else {
                     let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "RL (Rectangle)", r);
+                    drawPolygon(pts,color,isHL);
                 }
-            } 
+            }
             else if(key === 'LL') {
                 if(laneMode === 'trapezoid'){
+                    shapeType='Trapezoid';
                     let factor = advanced.LL_TOP_WIDTH_FACTOR;
                     let pts = [{x:(r.x+r.w)-(r.w*factor), y:r.y}, {x:r.x+r.w, y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "LL (Trapezoid)", r);
+                    drawPolygon(pts,color,isHL);
                 } else {
                     let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "LL (Rectangle)", r);
+                    drawPolygon(pts,color,isHL);
                 }
             }
             else if(key === 'CW') {
                 if(cwMode){
+                    shapeType='Isosceles';
                     let factor = advanced.CW_TOP_WIDTH_FACTOR;
                     let pts = [{x:r.x+(r.w*(1-factor)/2), y:r.y}, {x:r.x+(r.w*(1+factor)/2), y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "CW (Isosceles)", r);
+                    drawPolygon(pts,color,isHL);
                 } else {
                     let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "CW (Rectangle)", r);
+                    drawPolygon(pts,color,isHL);
                 }
             }
             else if(key === 'ST') {
                 if(stMode){
+                    shapeType='Isosceles';
                     let factor = advanced.ST_TOP_WIDTH_FACTOR;
                     let pts = [{x:r.x+(r.w*(1-factor)/2), y:r.y}, {x:r.x+(r.w*(1+factor)/2), y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "ST (Isosceles)", r);
+                    drawPolygon(pts,color,isHL);
                 } else {
                     let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "ST (Rectangle)", r);
+                    drawPolygon(pts,color,isHL);
                 }
             }
             else if(key === 'OBJ') {
                 if(objMode){
+                    shapeType='Isosceles';
                     let factor = advanced.OBJ_TOP_WIDTH_FACTOR;
                     let pts = [{x:r.x+(r.w*(1-factor)/2), y:r.y}, {x:r.x+(r.w*(1+factor)/2), y:r.y}, {x:r.x+r.w, y:r.y+r.h}, {x:r.x, y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "OBJ (Isosceles)", r);
+                    drawPolygon(pts,color,isHL);
                 } else {
                     let pts = [{x:r.x,y:r.y}, {x:r.x+r.w,y:r.y}, {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}];
-                    drawPolygon(pts, color, isHL, "OBJ (Rectangle)", r);
+                    drawPolygon(pts,color,isHL);
                 }
             }
-            
+
+            const labelAlignment=key==='RL'?'right':key==='CW'?'center':'left';
+            const labelX=labelAlignment==='right'?r.x+r.w:labelAlignment==='center'?r.x+r.w/2:r.x;
+            drawExternalLabel(formatRoiLabel(key,shapeType),color,labelX,r.y,labelAlignment);
             const z=getOverlayScale();ctx.globalAlpha=1;
             ctx.strokeStyle=isHL?'rgba(255,255,255,.95)':'rgba(255,255,255,.24)';
             ctx.lineWidth=Math.max(.5,(Number(roiAppearance.outlineThickness)||2)*.5*z);
@@ -1671,14 +1701,13 @@ function mirrorLaneRoi(source,destination){
    factorPayload[destinationFactorKey]=advanced[destinationFactorKey];
    updateShapeUIFromData();
  }
- markerHighlight=destination;selectedVar=destination;select.value=destination;propTarget.value=destination;updateInputsFromValues();renderWorkspaceCanvas();syncPropertiesSelection(destination);
+ markerHighlight=source;selectedVar=source;select.value=source;propTarget.value=source;updateInputsFromValues();renderWorkspaceCanvas();syncPropertiesSelection(source);
  sendUpdate({[dst.top]:values[dst.top],[dst.bottom]:values[dst.bottom],[dst.left]:values[dst.left],[dst.right]:values[dst.right]});
  if(Object.keys(factorPayload).length)sendAdvanced(factorPayload);
  noteWorkspaceEvent('info','Mirrored '+source+' ROI to '+destination+' around normalized image center, including lane shape when available.');
  showToast('Mirrored '+(source==='LL'?'Left':'Right')+' ROI to '+(destination==='RL'?'Right':'Left')+'.');
 }
-document.getElementById('mirror_left_to_right').addEventListener('click',()=>mirrorLaneRoi('LL','RL'));
-document.getElementById('mirror_right_to_left').addEventListener('click',()=>mirrorLaneRoi('RL','LL'));
+document.getElementById('mirror_selected_to_opposite').addEventListener('click',()=>{const st=info();if(st.kind!=='roi'||!['RL','LL'].includes(st.group))return showToast('Select RL or LL before mirroring.');mirrorLaneRoi(st.group,st.group==='RL'?'LL':'RL');});
 let keyboardRoiSaveTimer=null,keyboardRoiPendingGroup=null;
 function flushKeyboardRoiMove(){if(keyboardRoiSaveTimer){clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=null;}const g=keyboardRoiPendingGroup;keyboardRoiPendingGroup=null;if(!g||!['RL','LL','CW','ST','OBJ'].includes(g))return;const n=names(g);sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});}
 function scheduleKeyboardRoiMove(g){keyboardRoiPendingGroup=g;if(keyboardRoiSaveTimer)clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=setTimeout(flushKeyboardRoiMove,220);}
