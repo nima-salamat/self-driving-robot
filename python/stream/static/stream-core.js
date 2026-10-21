@@ -475,112 +475,123 @@ function showCameraConnectionState(message){
     drawOverlays();
 }
 
+const FRAME_REQUEST_TIMEOUT_MS = 8000;
 function fetchFrameOnce(){
-    if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;
+    // Camera refresh is independent from configuration/health API availability.
+    if(!syncActive || frameRequestInFlight) return;
     if(Date.now() < frameRetryAt) return;
 
     frameRequestInFlight = true;
     let objectUrl = null;
+    let img = null;
+    let timeoutHandle = null;
+    let completed = false;
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
 
-    const failFrameRequest = (error) => {
-        frameRequestFailures += 1;
-        frameRetryAt = Date.now() + Math.min(
-            5000,
-            250 * Math.pow(2, Math.min(frameRequestFailures - 1, 5))
-        );
-
-        const detail = error && error.message
-            ? error.message
-            : 'Unknown frame request error';
-        if(!hasRenderedFrame) {
-            showCameraConnectionState(
-                frameRequestFailures > 3
-                    ? 'Waiting for camera frames... ' + detail
-                    : 'Connecting to camera... ' + detail
-            );
+    const finishFrameRequest = (error) => {
+        if(completed) return;
+        completed = true;
+        if(timeoutHandle !== null) clearTimeout(timeoutHandle);
+        if(img) {
+            img.onload = null;
+            img.onerror = null;
         }
         if(objectUrl) {
             URL.revokeObjectURL(objectUrl);
             objectUrl = null;
         }
         frameRequestInFlight = false;
+
+        if(error) {
+            frameRequestFailures += 1;
+            frameRetryAt = Date.now() + Math.min(5000, 250 * Math.pow(2, Math.min(frameRequestFailures - 1, 5)));
+            const detail = error && error.message ? error.message : 'Unknown frame request error';
+            if(!hasRenderedFrame) {
+                showCameraConnectionState(
+                    frameRequestFailures > 3
+                        ? 'Waiting for camera frames... ' + detail
+                        : 'Connecting to camera... ' + detail
+                );
+            }
+            if(frameRequestFailures === 1 || frameRequestFailures === 4) {
+                noteWorkspaceEvent('warn', 'Camera frame refresh failed; retrying: ' + detail);
+            }
+            return;
+        }
+
+        const recovered = frameRequestFailures > 0;
+        frameRequestFailures = 0;
+        frameRetryAt = 0;
+        if(recovered) noteWorkspaceEvent('info', 'Camera frame updates recovered');
     };
 
-    // Fetch the JPEG as a response first so 204 (no published frame), HTTP
-    // errors, auth redirects and non-image responses are visible in the UI
-    // instead of all collapsing into an opaque Image.onerror event.
-    fetch('/video_feed_frame?t=' + Date.now(), {
-        cache: 'no-store',
-        headers: { 'Accept': 'image/jpeg' }
-    }).then(response => {
-        if(response.status === 204) {
-            throw new Error('The Stream server has not published a frame yet (HTTP 204).');
-        }
-        if(!response.ok) {
-            throw new Error('Camera frame endpoint returned HTTP ' + response.status + '.');
-        }
+    timeoutHandle = setTimeout(() => {
+        if(controller) controller.abort();
+        finishFrameRequest(new Error(
+            'Camera frame request timed out after ' + (FRAME_REQUEST_TIMEOUT_MS / 1000) + ' seconds.'
+        ));
+    }, FRAME_REQUEST_TIMEOUT_MS);
+
+    const requestOptions = {cache:'no-store',headers:{'Accept':'image/jpeg'}};
+    if(controller) requestOptions.signal = controller.signal;
+
+    fetch('/video_feed_frame?t=' + Date.now(), requestOptions).then(response => {
+        if(completed) return null;
+        if(response.status === 204) throw new Error('The Stream server has not published a frame yet (HTTP 204).');
+        if(!response.ok) throw new Error('Camera frame endpoint returned HTTP ' + response.status + '.');
         const contentType = String(response.headers.get('content-type') || '').toLowerCase();
         if(contentType && !contentType.startsWith('image/')) {
             throw new Error('Camera frame endpoint returned ' + contentType + ', not an image.');
         }
         return response.blob();
     }).then(blob => {
-        if(!blob || blob.size === 0) {
-            throw new Error('Camera frame response was empty.');
-        }
+        if(completed || blob === null) return;
+        if(!blob || blob.size === 0) throw new Error('Camera frame response was empty.');
 
         objectUrl = URL.createObjectURL(blob);
-        const img = new Image();
+        img = new Image();
         img.decoding = 'async';
-
         img.onload = () => {
+            if(completed) return;
             try {
                 if(syncActive) {
                     const frameWidth = img.naturalWidth || img.width;
                     const frameHeight = img.naturalHeight || img.height;
-                    if(frameWidth <= 0 || frameHeight <= 0) {
-                        throw new Error('Decoded camera frame has invalid dimensions.');
-                    }
-
-                    // Keep source dimensions separate from the viewport backing
-                    // store so aspect-fit and zoom/pan use native frame geometry.
+                    if(frameWidth <= 0 || frameHeight <= 0) throw new Error('Decoded camera frame has invalid dimensions.');
                     frameSourceWidth = frameWidth;
                     frameSourceHeight = frameHeight;
                     lastFrameImage = img;
                     syncCameraCanvasSize();
                     const rect = canvas.getBoundingClientRect();
-                    if(rect.width <= 0 || rect.height <= 0) {
-                        throw new Error('Camera canvas has no visible size.');
-                    }
+                    if(rect.width <= 0 || rect.height <= 0) throw new Error('Camera canvas has no visible size.');
                     renderWorkspaceCanvas();
                     hasRenderedFrame = true;
-                    frameRequestFailures = 0;
-                    frameRetryAt = 0;
                 }
+                finishFrameRequest();
             } catch(error) {
                 console.error('Failed to render camera frame:', error);
-                failFrameRequest(new Error(
+                finishFrameRequest(new Error(
                     'Camera frame received, but display failed: ' +
                     (error && error.message ? error.message : String(error))
                 ));
-                return;
             }
-
-            if(objectUrl) {
-                URL.revokeObjectURL(objectUrl);
-                objectUrl = null;
-            }
-            frameRequestInFlight = false;
         };
-
-        img.onerror = () => {
-            failFrameRequest(new Error('The response could not be decoded as an image.'));
-        };
+        img.onerror = () => finishFrameRequest(new Error('The response could not be decoded as an image.'));
         img.src = objectUrl;
-    }).catch(error => {
-        failFrameRequest(error);
-    });
+    }).catch(error => finishFrameRequest(error));
 }
+
+// Force an immediate retry after browser timer throttling or network recovery.
+document.addEventListener('visibilitychange', () => {
+    if(!document.hidden) {
+        frameRetryAt = 0;
+        fetchFrameOnce();
+    }
+});
+window.addEventListener('online', () => {
+    frameRetryAt = 0;
+    fetchFrameOnce();
+});
 
 /* ---------- Overlays (Shapes & Rects) ---------- */
 function drawHandle(cx,cy,size,fill,stroke){
@@ -1306,37 +1317,101 @@ function updateHealth(){
         .catch(()=>{});
 }
 
+function setArduinoHardwareNotice(id,message,tone='info'){
+    const node=document.getElementById(id);
+    if(!node)return;
+    node.textContent=message;
+    node.dataset.tone=tone;
+}
+function syncAutomaticCommandButton(button,enabled){
+    if(!button)return;
+    const on=!!enabled;
+    button.setAttribute('aria-pressed',String(on));
+    button.dataset.enabled=String(on);
+    button.classList.toggle('is-enabled',on);
+    button.classList.toggle('is-disabled',!on);
+    button.textContent=on?'ON · ENABLED':'OFF · SUPPRESSED';
+    button.title=on
+        ?'Automatic Python control/configuration commands are enabled. Click to suppress them.'
+        :'Automatic Python control/configuration commands are suppressed. Click to enable them.';
+    button.setAttribute('aria-label',on
+        ?'Automatic Python control/configuration commands enabled; click to disable'
+        :'Automatic Python control/configuration commands suppressed; click to enable');
+}
+function updateArduinoHardwareUi(j){
+    const withoutArduino=j.without_arduino===true;
+    const connected=!withoutArduino&&j.connected===true;
+    const telemetryNotice=withoutArduino
+        ?'Arduino is disabled for this run (--without-arduino). No serial port is opened, so telemetry and manual commands are unavailable. The automatic-command preference can still be saved for a future hardware-enabled run.'
+        :connected
+            ?'Arduino serial connection is active. Telemetry and custom commands are available.'
+            :'Arduino is not currently connected. The background reconnect worker may recover; commands cannot be sent until the serial link reconnects.';
+    const commandNotice=withoutArduino
+        ?'Unavailable: this run uses --without-arduino. Custom commands are blocked because no Arduino serial connection is opened.'
+        :connected
+            ?'Arduino is connected. Custom commands can be sent; they bypass the automatic Python-command setting.'
+            :'Unavailable: Arduino is disconnected. Custom commands will remain disabled until reconnect succeeds.';
+    const tone=withoutArduino?'error':connected?'success':'warning';
+    setArduinoHardwareNotice('arduino_hardware_notice',telemetryNotice,tone);
+    setArduinoHardwareNotice('console_arduino_notice',telemetryNotice,tone);
+    setArduinoHardwareNotice('arduino_commands_hardware_notice',commandNotice,tone);
+
+    const form=document.getElementById('arduino_command_form');
+    const pending=!!(form&&form.dataset.sending==='true');
+    const canSend=STREAM_CONTROL_ALLOWED&&!withoutArduino&&connected&&!pending;
+    const input=document.getElementById('arduino_custom_command');
+    const sendButton=document.getElementById('arduino_command_send_btn');
+    if(input)input.disabled=!canSend;
+    if(sendButton)sendButton.disabled=!canSend;
+    const feedback=document.getElementById('arduino_command_feedback');
+    if(feedback&&!pending){
+        if(withoutArduino) feedback.textContent='Unavailable: --without-arduino is active. Restart without that flag to send serial commands.';
+        else if(!STREAM_CONTROL_ALLOWED) feedback.textContent='Unavailable: this dashboard is read-only; custom commands are disabled.';
+        else if(!connected) feedback.textContent='Arduino is disconnected. Waiting for the serial reconnect worker; no command has been sent.';
+        else if(feedback.textContent.startsWith('Unavailable:')||feedback.textContent.startsWith('Arduino is disconnected.')) {
+            feedback.textContent='Ready. Arduino is connected. Stop the robot or lift the wheels before testing motion commands.';
+        }
+    }
+    const output=document.getElementById('arduino_output');
+    const lines=Array.isArray(j.lines)?j.lines:[];
+    if(output){
+        output.textContent = (j.lines || []).join('\\n');
+        output.scrollTop=output.scrollHeight;
+        const placeholder=output.parentElement&&output.parentElement.querySelector('.console-empty');
+        if(placeholder){
+            placeholder.hidden=lines.length>0;
+            if(withoutArduino)placeholder.textContent='Serial output is unavailable because this run uses --without-arduino.';
+            else if(!connected)placeholder.textContent='No serial output: Arduino is disconnected. Waiting for reconnect.';
+            else placeholder.textContent='Connected; waiting for Arduino serial telemetry…';
+        }
+    }
+    return {withoutArduino,connected,state:String(j.state||'UNKNOWN')};
+}
 function updateArduinoOutput(){
-    if(!syncActive) return;
+    if(!syncActive)return;
     fetchDashboardJson('/api/arduino-output')
         .then(j=>{
-            if(!j) return;
-            const status = document.getElementById('arduino_status');
-            const output = document.getElementById('arduino_output');
-            const automaticToggle = document.getElementById('arduino_auto_commands_enabled');
-            if (automaticToggle && typeof j.automatic_commands_enabled === 'boolean' && automaticToggle.dataset.pending !== 'true') {
-                automaticToggle.checked = j.automatic_commands_enabled;
+            if(!j)return;
+            const button=document.getElementById('arduino_auto_commands_enabled');
+            const policyStatus=document.getElementById('arduino_command_policy_status');
+            const policyKnown=typeof j.automatic_commands_enabled==='boolean';
+            const pending=!!(button&&button.dataset.pending==='true');
+            if(button&&policyKnown&&!pending)syncAutomaticCommandButton(button,j.automatic_commands_enabled);
+            if(policyStatus&&policyKnown&&!pending){
+                policyStatus.textContent=j.without_arduino===true
+                    ?'Saved preference: '+(j.automatic_commands_enabled?'ON':'OFF')+'. This run cannot send to Arduino because --without-arduino is active.'
+                    :j.automatic_commands_enabled
+                        ?'Automatic Python control/configuration commands are enabled.'
+                        :'Automatic Python control/configuration commands are suppressed. Manual commands remain available when connected.';
             }
-            const policyStatus = document.getElementById('arduino_command_policy_status');
-            if (policyStatus && typeof j.automatic_commands_enabled === 'boolean' && automaticToggle?.dataset.pending !== 'true') {
-                policyStatus.textContent = j.automatic_commands_enabled
-                    ? 'Automatic Python commands are enabled.'
-                    : 'Automatic Python commands are suppressed; manual commands still work.';
+            const hardware=updateArduinoHardwareUi(j);
+            const stateText=hardware.withoutArduino?'DISABLED (--without-arduino)':'State: '+hardware.state+' | Connected: '+(hardware.connected?'yes':'no');
+            if(lastLoggedArduinoState!==stateText){
+                noteWorkspaceEvent(hardware.connected?'info':'warn','Arduino telemetry: '+stateText);
+                lastLoggedArduinoState=stateText;
             }
-            const arduinoStateText = 'State: ' + (j.state || 'UNKNOWN') + ' | Connected: ' + (j.connected ? 'yes' : 'no');
-            status.textContent = arduinoStateText;
-            if(lastLoggedArduinoState !== arduinoStateText) {
-                noteWorkspaceEvent(j.connected ? 'info' : 'warn', 'Arduino telemetry: ' + arduinoStateText);
-                lastLoggedArduinoState = arduinoStateText;
-            }
-            output.textContent = (j.lines || []).join('\\n');
-            output.scrollTop = output.scrollHeight;
-            const placeholder = output.parentElement && output.parentElement.querySelector('.console-empty');
-            if (placeholder) placeholder.hidden = (j.lines || []).length > 0;
-        })
-        .catch(()=>{});
+        }).catch(()=>{});
 }
-
 function fetchValuesLoop(){
  if(!syncActive)return;
  fetchDashboardJson('/get_values').then(j=>{
@@ -1619,8 +1694,29 @@ document.addEventListener('keydown',function(e){
 document.addEventListener('keyup',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)||['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))flushKeyboardRoiMove();});window.addEventListener('blur',flushKeyboardRoiMove);
 
 const readout={x:document.getElementById('cad_cursor_x'),y:document.getElementById('cad_cursor_y'),u:document.getElementById('cad_cursor_u'),v:document.getElementById('cad_cursor_v'),area:document.getElementById('cad_selected_area')};
-function updateCadReadout(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;if(u<0||u>1||v<0||v>1){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';return;}const source=getSourceFrameSize();readout.x.textContent='X: '+Math.round(u*source.width)+' px';readout.y.textContent='Y: '+Math.round(v*source.height)+' px';readout.u.textContent='U: '+(u*100).toFixed(1)+' %';readout.v.textContent='V: '+(v*100).toFixed(1)+' %';}
-canvas.addEventListener('mousemove',updateCadReadout,{passive:true});canvas.addEventListener('mouseleave',()=>{if(!viewPanState){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';}},{passive:true});
+function clearCadReadout(){
+  readout.x.textContent='X: — px';
+  readout.y.textContent='Y: — px';
+  readout.u.textContent='U: — %';
+  readout.v.textContent='V: — %';
+}
+function updateCadReadout(e){
+  const r=canvas.getBoundingClientRect();
+  if(!r.width||!r.height){clearCadReadout();return;}
+  const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;
+  if(!Number.isFinite(u)||!Number.isFinite(v)||u<0||u>1||v<0||v>1){
+    clearCadReadout();
+    return;
+  }
+  const source=getSourceFrameSize();
+  readout.x.textContent='X: '+Math.round(u*source.width)+' px';
+  readout.y.textContent='Y: '+Math.round(v*source.height)+' px';
+  readout.u.textContent='U: '+(u*100).toFixed(1)+' %';
+  readout.v.textContent='V: '+(v*100).toFixed(1)+' %';
+}
+canvas.addEventListener('mousemove',updateCadReadout,{passive:true});
+canvas.addEventListener('mouseleave',clearCadReadout,{passive:true});
+window.addEventListener('blur',clearCadReadout,{passive:true});
 select.addEventListener('change',()=>{flushKeyboardRoiMove();const t=select.value;if(t==='NONE'){markerHighlight=null;selectedVar='NONE';document.getElementById('prop_target').value='NONE';window.syncPropertiesSelection('NONE');}else if(t.startsWith('BEV_')){markerHighlight='BEV';selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}else if(['RL','LL','CW','ST','OBJ'].includes(t)){markerHighlight=t;selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}readout.area.textContent='Object: '+(t==='NONE'?'NONE':t.startsWith('BEV_')?'BEV '+t.slice(4):t);renderWorkspaceCanvas();});
 noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('NONE');updateZoomStatus();
 }
@@ -1660,8 +1756,7 @@ function mapGroupToDefaultVar(g){
 }
 
 
-// Manual Arduino command console. This endpoint intentionally bypasses the
-// automatic Python-command gate while retaining dashboard control permissions.
+// Manual commands bypass the automatic Python-command gate, but still require a live Arduino.
 (function bindArduinoCommandConsole(){
   const policyToggle=document.getElementById('arduino_auto_commands_enabled');
   const policyStatus=document.getElementById('arduino_command_policy_status');
@@ -1671,34 +1766,39 @@ function mapGroupToDefaultVar(g){
   const feedback=document.getElementById('arduino_command_feedback');
 
   if(policyToggle){
-    policyToggle.addEventListener('change',async()=>{
-      const requested=policyToggle.checked;
+    const initial=window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.advanced
+      ?window.STREAM_BOOTSTRAP.advanced.SEND_AUTOMATIC_ARDUINO_COMMANDS:undefined;
+    syncAutomaticCommandButton(policyToggle,typeof initial==='boolean'?initial:policyToggle.getAttribute('aria-pressed')==='true');
+    policyToggle.disabled=!STREAM_CONTROL_ALLOWED;
+    policyToggle.addEventListener('click',async()=>{
+      if(!STREAM_CONTROL_ALLOWED)return;
+      const previous=policyToggle.getAttribute('aria-pressed')==='true';
+      const requested=!previous;
       policyToggle.disabled=true;
       policyToggle.dataset.pending='true';
+      syncAutomaticCommandButton(policyToggle,requested);
       if(policyStatus)policyStatus.textContent='Saving automatic-command policy…';
       try{
         const response=await fetch('/set_advanced',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
+          method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({SEND_AUTOMATIC_ARDUINO_COMMANDS:requested})
         });
         const result=await response.json().catch(()=>({}));
         if(!response.ok||!result.success)throw new Error(result.message||('HTTP '+response.status));
         const saved=!!result.advanced.SEND_AUTOMATIC_ARDUINO_COMMANDS;
-        policyToggle.checked=saved;
-        if(policyStatus)policyStatus.textContent=saved
-          ?'Automatic Python commands are enabled.'
-          :'Automatic Python commands are suppressed; manual commands still work.';
-        noteWorkspaceEvent('info',saved
-          ?'Automatic Python Arduino commands enabled'
-          :'Automatic Python Arduino commands suppressed');
+        syncAutomaticCommandButton(policyToggle,saved);
+        const withoutArduino=!!(result.advanced&&result.advanced.WITHOUT_ARDUINO);
+        if(policyStatus)policyStatus.textContent=withoutArduino
+          ?'Preference saved: '+(saved?'ON':'OFF')+'. This run uses --without-arduino, so hardware commands remain unavailable.'
+          :saved?'Automatic Python control/configuration commands are enabled.':'Automatic Python control/configuration commands are suppressed. Manual commands remain available when connected.';
+        noteWorkspaceEvent('info',saved?'Automatic Python Arduino commands enabled':'Automatic Python Arduino commands suppressed');
       }catch(error){
-        policyToggle.checked=!requested;
+        syncAutomaticCommandButton(policyToggle,previous);
         if(policyStatus)policyStatus.textContent='Could not save policy: '+(error.message||error);
         showToast('Could not save Arduino command policy');
       }finally{
         delete policyToggle.dataset.pending;
-        policyToggle.disabled=false;
+        policyToggle.disabled=!STREAM_CONTROL_ALLOWED;
       }
     });
   }
@@ -1707,18 +1807,17 @@ function mapGroupToDefaultVar(g){
     form.addEventListener('submit',async(event)=>{
       event.preventDefault();
       const command=input.value.trim();
-      if(!command){
-        if(feedback)feedback.textContent='Enter a command before sending.';
-        input.focus();
+      if(!command){if(feedback)feedback.textContent='Enter a command before sending.';input.focus();return;}
+      if(input.disabled||sendButton.disabled){
+        if(feedback)feedback.textContent='Command not sent: Arduino is unavailable for this run or this dashboard is read-only.';
         return;
       }
+      form.dataset.sending='true';
       sendButton.disabled=true;
       if(feedback)feedback.textContent='Sending custom command…';
       try{
         const response=await fetch('/api/arduino-command',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({command})
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command})
         });
         const result=await response.json().catch(()=>({}));
         if(!response.ok||!result.success)throw new Error(result.message||('HTTP '+response.status));
@@ -1729,7 +1828,8 @@ function mapGroupToDefaultVar(g){
         if(feedback)feedback.textContent='Command failed: '+(error.message||error);
         noteWorkspaceEvent('error','Custom Arduino command failed: '+(error.message||error),'arduino-commands');
       }finally{
-        sendButton.disabled=false;
+        delete form.dataset.sending;
+        updateArduinoOutput();
         input.focus();
       }
     });

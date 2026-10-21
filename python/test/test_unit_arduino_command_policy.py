@@ -86,6 +86,7 @@ class ArduinoCommandPolicyTests(unittest.TestCase):
             OUTPUT_DIR="output",
             SEND_AUTOMATIC_ARDUINO_COMMANDS=False,
             READ_ARDUINO_OUTPUT=True,
+            WITHOUT_ARDUINO=False,
         )
         if connection is not None:
             config.arduino_connection = connection
@@ -153,14 +154,52 @@ class ArduinoCommandPolicyTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertFalse(result.get_json()["automatic_commands_enabled"])
 
-    def test_terminal_contains_a_dedicated_arduino_command_tab(self):
+    def test_arduino_status_reports_without_arduino_mode_and_blocks_manual_send(self):
+        connection = _FakeArduinoConnection()
+        streamer, config = self.make_streamer(connection)
+        config.WITHOUT_ARDUINO = True
+        client = streamer.app.test_client()
+
+        payload = client.get("/api/arduino-output").get_json()
+        self.assertTrue(payload["without_arduino"])
+        self.assertFalse(payload["hardware_available"])
+        self.assertFalse(payload["connected"])
+        self.assertEqual(payload["state"], "DISABLED")
+
+        denied = client.post("/api/arduino-command", json={"command": "servo 95"})
+        self.assertEqual(denied.status_code, 409)
+        self.assertIn("--without-arduino", denied.get_json()["message"])
+        self.assertEqual(connection.commands, [])
+
+    def test_arduino_status_reports_connected_hardware(self):
+        streamer, config = self.make_streamer(_FakeArduinoConnection())
+        payload = streamer.app.test_client().get("/api/arduino-output").get_json()
+        self.assertFalse(payload["without_arduino"])
+        self.assertTrue(payload["hardware_available"])
+        self.assertTrue(payload["connected"])
+
+    def test_terminal_contains_arduino_command_tab_and_telemetry_policy_button(self):
         template = (PYTHON_ROOT / "stream" / "templates" / "stream.html").read_text(encoding="utf-8")
         javascript = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
+        stylesheet = (PYTHON_ROOT / "stream" / "static" / "stream.css").read_text(encoding="utf-8")
+        telemetry_pos = template.index('<span>Arduino Telemetry</span>')
+        policy_pos = template.index('id="arduino_auto_commands_enabled"')
+        commands_pos = template.index('class="console-body console-command-body"')
         self.assertIn('data-console-tab="arduino-commands"', template)
-        self.assertIn('id="arduino_auto_commands_enabled"', template)
+        self.assertIn('type="button" id="arduino_auto_commands_enabled"', template)
+        self.assertNotIn('type="checkbox" id="arduino_auto_commands_enabled"', template)
+        self.assertLess(telemetry_pos, policy_pos)
+        telemetry_end = template.index('</details>', telemetry_pos)
+        self.assertLess(policy_pos, telemetry_end)
+        self.assertEqual(template.count('id="arduino_auto_commands_enabled"'), 1)
+        self.assertIn('id="arduino_hardware_notice"', template)
+        self.assertIn('id="console_arduino_notice"', template)
+        self.assertIn('id="arduino_commands_hardware_notice"', template)
         self.assertIn('id="arduino_custom_command"', template)
         self.assertIn("/api/arduino-command", javascript)
         self.assertIn("SEND_AUTOMATIC_ARDUINO_COMMANDS", javascript)
+        self.assertIn("policyToggle.addEventListener('click'", javascript)
+        self.assertIn('.arduino-policy-toggle[aria-pressed="true"]', stylesheet)
 
 
 if __name__ == "__main__":

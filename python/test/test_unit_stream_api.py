@@ -298,6 +298,25 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn(".container.dock-hidden { grid-template-columns:minmax(0,1fr) !important; }", css)
         self.assertIn("#video_canvas.crosshair-active { cursor: crosshair !important; }", css)
 
+    def test_frame_refresh_recovers_from_stalled_requests_and_unrelated_api_failures(self):
+        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
+        self.assertIn("const FRAME_REQUEST_TIMEOUT_MS = 8000", core)
+        self.assertIn("if(!syncActive || frameRequestInFlight) return;", core)
+        self.assertNotIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", core)
+        self.assertIn("controller.abort()", core)
+        self.assertIn("finishFrameRequest(new Error(", core)
+        self.assertIn("document.addEventListener('visibilitychange'", core)
+        self.assertIn("window.addEventListener('online'", core)
+
+    def test_cursor_readout_clears_when_pointer_leaves_frame(self):
+        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
+        self.assertIn("function clearCadReadout()", core)
+        self.assertIn("canvas.addEventListener('mouseleave',clearCadReadout", core)
+        self.assertIn("window.addEventListener('blur',clearCadReadout", core)
+        self.assertIn("!Number.isFinite(u)||!Number.isFinite(v)||u<0||u>1||v<0||v>1", core)
+        # BEV control points deliberately keep a wider range than ordinary ROIs.
+        self.assertIn("Math.max(-5.0, Math.min(5.0", core)
+
     def test_workspace_sanitizes_grid_color_and_pixel_nudge_settings(self):
         streamer = WebStreamer(self.make_config())
 
@@ -502,7 +521,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("fetchDashboardJson('/api/arduino-output')", core)
         self.assertIn("fetchDashboardJson('/get_values')", core)
         self.assertIn("let frameRetryAt = 0;", core)
-        self.assertIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", core)
+        self.assertIn("if(!syncActive || frameRequestInFlight) return;", core)
+        self.assertNotIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", core)
 
     def test_camera_canvas_preserves_source_frame_aspect_ratio(self):
         import re
