@@ -521,7 +521,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("fetchDashboardJson('/api/arduino-output')", core)
         self.assertIn("fetchDashboardJson('/get_values')", core)
         self.assertIn("let frameRetryAt = 0;", core)
-        self.assertIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", core)
+        self.assertIn("if(!syncActive || frameRequestInFlight) return;", core)
+        self.assertNotIn("if(!syncActive || frameRequestInFlight || !dashboardApiOnline) return;", core)
 
     def test_camera_canvas_preserves_source_frame_aspect_ratio(self):
         import re
