@@ -272,6 +272,101 @@ class Robot:
             getattr(config_city, "SHUTDOWN_EVENT", None)
         )
 
+    def _set_mode_runtime_fault(self, name, active, message):
+        """Log safety-fault transitions once and mirror them to the runtime health panel."""
+        active = bool(active)
+        state_attr = "_mode_runtime_fault_" + str(name)
+        was_active = bool(getattr(self, state_attr, False))
+        if active == was_active:
+            return
+        setattr(self, state_attr, active)
+        health = getattr(self, "health", None)
+        if active:
+            logger.error("%s", message)
+            if health is not None:
+                from utils.health import FaultSeverity
+                health.set_fault(
+                    name, True, severity=FaultSeverity.CRITICAL, message=message
+                )
+        else:
+            if health is not None:
+                health.set_fault(name, False)
+            logger.info("%s", message)
+
+    def _run_inhibited_diagnostic_cycle(self, update_sign=True):
+        """Refresh sensing/Stream while motion is gated; issue no actuator commands."""
+        frame, frame_resized = self.camera.capture_frame(with_resize=True)
+        self.camera.last_frame = frame
+        if (
+            not getattr(self.camera, "last_capture_valid", False)
+            or frame is None
+            or frame_resized is None
+        ):
+            return False
+        if is_camera_frame_obscured(frame):
+            self._handle_camera_obscured_frame(frame_resized)
+            return True
+
+        self._clear_camera_obscured_state()
+        publish_camera_frame_fallback(config_city, frame)
+        debug_frame = frame_resized.copy() if (config_city.STREAM or config_city.DEBUG) else None
+        perception_started = time.monotonic()
+        lane_started = time.monotonic()
+        result = self.vision.detect(frame_resized, debug_frame)
+        self.fps.update()
+        if getattr(self, "metrics", None) is not None:
+            self.metrics.record_stage(
+                "lane", (time.monotonic() - lane_started) * 1000.0
+            )
+
+        if getattr(self, "confidence_estimator", None) is not None:
+            confidence_started = time.monotonic()
+            confidence = self.confidence_estimator.evaluate(
+                result,
+                frame_valid=self.camera.last_capture_valid,
+                frame_at=self.camera.last_capture_at,
+                observation_token=getattr(
+                    self.camera, "frame_sequence", self.camera.last_capture_at
+                ),
+            )
+            if getattr(self, "metrics", None) is not None:
+                self.metrics.record_stage(
+                    "confidence", (time.monotonic() - confidence_started) * 1000.0
+                )
+            config_city.perception_confidence = confidence
+
+        if getattr(self, "metrics", None) is not None:
+            self.metrics.record_perception(
+                (time.monotonic() - perception_started) * 1000.0,
+                bool(result.get("perception_valid", False)),
+            )
+
+        sign_text = ""
+        if update_sign and (config_city.WITH_SIGN or config_city.WITH_APRILTAG):
+            sign_text, _, debug_frame, _ = self.handle_read_sign_or_tag(
+                frame, debug_frame
+            )
+        stopped_for_sign = bool(
+            getattr(self, "stop_hold", None) and self.stop_hold.active
+        )
+        if stopped_for_sign:
+            self._keep_stop_hold()
+
+        if config_city.STREAM or config_city.DEBUG:
+            angle = result.get(
+                "steering_angle",
+                int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
+            )
+            self.handle_debug_stream(
+                result,
+                frame_resized,
+                angle,
+                result.get("crosswalk", False),
+                "STOP HOLD" if stopped_for_sign else "motion inhibited — waiting for controller release",
+                "STOP" if stopped_for_sign else sign_text,
+            )
+        return True
+
     def update_debug_frames(self, frame):
         publish_debug_frame(config_city, frame)
 
@@ -669,7 +764,7 @@ class Robot:
                 self.health.set_lifecycle(HealthState.RUNNING)
 
             while not self._shutdown_requested():
-                self.fps.update()
+                self.fps.loop_update()
                 self.fps.maybe_log_performance()
                 if self.stop_hold.active:
                     # STOP-sign holds supersede traffic-light permission; discard
@@ -705,8 +800,20 @@ class Robot:
                 latch_state = getattr(self, "_mcu_stop_latched", False)
                 if latch_state is True or latch_state is None:
                     if not self._set_mcu_stop_latched(False):
-                        self._pace_control_loop()
+                        self._set_mode_runtime_fault(
+                            "motion_gate_release",
+                            True,
+                            "Controller motion-gate release failed; motion remains inhibited while sensing diagnostics continue.",
+                        )
+                        if not self._wait_for_processing_slot():
+                            break
+                        self._run_inhibited_diagnostic_cycle(update_sign=True)
                         continue
+                self._set_mode_runtime_fault(
+                    "motion_gate_release",
+                    False,
+                    "Controller motion gate released; diagnostic-only mode ended.",
+                )
 
                 if config_city.SHOW_FPS:
                     self.fps.print_every_second(
@@ -750,6 +857,7 @@ class Robot:
                     perception_started = time.monotonic()
                     lane_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
+                    self.fps.update()
                     if getattr(self, "metrics", None) is not None:
                         self.metrics.record_stage(
                             "lane", (time.monotonic() - lane_started) * 1000.0
@@ -855,8 +963,19 @@ class Robot:
                     
                 else:
                     if not self.control.stop():
+                        self._set_mode_runtime_fault(
+                            "crosswalk_stop_command",
+                            True,
+                            "Crosswalk STOP command failed; crossing remains blocked while sensing diagnostics continue.",
+                        )
+                        self._run_inhibited_diagnostic_cycle(update_sign=True)
                         self._pace_control_loop()
                         continue
+                    self._set_mode_runtime_fault(
+                        "crosswalk_stop_command",
+                        False,
+                        "Crosswalk STOP command recovered; crossing logic may resume.",
+                    )
                     time.sleep(2*config_city.DELAY)
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
@@ -884,6 +1003,7 @@ class Robot:
                         perception_started = time.monotonic()
                         lane_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
+                        self.fps.update()
                         if getattr(self, "metrics", None) is not None:
                             self.metrics.record_stage(
                                 "lane", (time.monotonic() - lane_started) * 1000.0
@@ -1267,9 +1387,21 @@ class Robot:
             config_city, controller_angle, angle
         )
         if source_frame is not None:
-            debug["combined"] = render_lane_debug_overlay(
-                source_frame, debug.get("draw_data"), config_city, visual_angle
-            )
+            try:
+                rendered = render_lane_debug_overlay(
+                    source_frame, debug.get("draw_data"), config_city, visual_angle
+                )
+                debug["combined"] = rendered if rendered is not None else source_frame
+                if getattr(self, "_lane_overlay_error_active", False):
+                    self._lane_overlay_error_active = False
+                    logger.info("City lane debug overlay recovered")
+            except Exception:
+                debug["combined"] = source_frame
+                if not getattr(self, "_lane_overlay_error_active", False):
+                    logger.exception(
+                        "City lane debug overlay failed; continuing with the clean camera frame"
+                    )
+                self._lane_overlay_error_active = True
         if config_city.DEBUG:
             debug = result.get("debug") or {}
             if debug.get("combined") is not None:
