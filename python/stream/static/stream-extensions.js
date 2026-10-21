@@ -12,6 +12,12 @@ let editorTool='select', rulerStart=null, rulerHoverPoint=null, internalWorkspac
 let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null, extSettingsTimer=null;
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
 let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
+const cameraDraftDirty = new Set();
+const cameraDraftVersions = Object.create(null);
+let processingRateDraftDirty = false;
+let processingRateDraftVersion = 0;
+function markCameraDraftDirty(id){cameraDraftDirty.add(id);cameraDraftVersions[id]=(cameraDraftVersions[id]||0)+1;}
+function cameraControlIsDrafted(id){const control=$(id);return cameraDraftDirty.has(id)||document.activeElement===control;}
 const nativeFetch = window.fetch.bind(window);
 let motionHotkeyActionInFlight=false, streamShutdownRequestedLocally=false, extensionPollingEnabled=true;
 function stopExtensionPolling(){
@@ -21,7 +27,7 @@ function stopExtensionPolling(){
 }
 function startExtensionPolling(){
   if(!extensionPollingEnabled||streamShutdownRequestedLocally)return;
-  if(!extHealthTimer)extHealthTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshRuntime();refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
+  if(!extHealthTimer)extHealthTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshTrafficAndRace();refreshSafety();refreshSignRequests();},1800);
   if(!extSettingsTimer)extSettingsTimer=setInterval(function(){if(streamShutdownRequestedLocally)return;refreshCameraSettings();refreshProcessingRate();},8000);
 }
 window.setStreamExtensionPollingEnabled=function(enabled){
@@ -401,7 +407,7 @@ function applyConfigToUI(snapshot){
   document.querySelectorAll('#inputs_container input[name]').forEach(function(input){if(Object.prototype.hasOwnProperty.call(values,input.name))input.value=String(values[input.name]);});
   const advancedInputs={lane_threshold:'LANE_THRESHOLD',cross_thresh:'CROSSWALK_THRESHOLD',crosswalk_sleep:'CROSSWALK_SLEEP',crosswalk_thresh_spend:'CROSSWALK_THRESH_SPEND',read_sign_threshold:'READ_SIGN_THRESHOLD',turn_right:'TURN_RIGHT',turn_left:'TURN_LEFT',straight:'STRAIGHT',stop_lvl:'STOP'};
   Object.keys(advancedInputs).forEach(function(id){if($(id)&&advanced[advancedInputs[id]]!=null)$(id).value=String(advanced[advancedInputs[id]]);});
-  if($('run_lvl'))$('run_lvl').value=advanced.RUN_LVL||'MOVE';if($('with_sign'))$('with_sign').checked=!!advanced.WITH_SIGN;if($('with_apriltag'))$('with_apriltag').checked=!!advanced.WITH_APRILTAG;
+  if($('with_sign'))$('with_sign').checked=!!advanced.WITH_SIGN;if($('with_apriltag'))$('with_apriltag').checked=!!advanced.WITH_APRILTAG;
   if(typeof updateInputsFromValues==='function')updateInputsFromValues();
   if(typeof updateShapeUIFromData==='function')updateShapeUIFromData();
   const runtime=cfg.runtime||{};if(runtime.target_processing_fps!=null&&$('ext_target_fps'))$('ext_target_fps').value=String(runtime.target_processing_fps);
@@ -522,9 +528,11 @@ window.reloadFullConfig=async function(){
   noteWorkspaceEvent('info','Reloaded full configuration from runtime');
   return config;
 };
-async function refreshRuntime(){
+function refreshRuntime(snapshot){
+  const health = snapshot && snapshot.payload ? snapshot.payload
+    : snapshot || (window.__streamLatestHealth && window.__streamLatestHealth.payload);
+  if(!health)return;
   try{
-    const health=await nativeFetch('/api/health',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
     const h=health.health||{},m=health.metrics||{},timing=m.timing||{},camera=timing.camera||{},perception=timing.perception||{},loop=timing.loop||{},rate=health.processing_rate||{};
     const fps=Number(rate.achieved_fps)||Number(m.avg_fps)||0;extRuntimeSample.push({fps:fps,loop:Number(loop.mean_ms)||0,perception:Number(perception.mean_ms)||0});extRuntimeSample=extRuntimeSample.slice(-60);
     drawSparkline('ext_fps_chart',extRuntimeSample.map(function(v){return v.fps;}));drawSparkline('ext_latency_chart',extRuntimeSample.map(function(v){return v.loop;}));drawSparkline('ext_perception_chart',extRuntimeSample.map(function(v){return v.perception;}));
@@ -535,6 +543,9 @@ async function refreshRuntime(){
     $('ext_obstacle_status').textContent=JSON.stringify(health.obstacle_diagnostics||null,null,2);
   }catch(err){$('ext_health_summary').textContent='Runtime telemetry unavailable: '+err.message;}
 }
+window.addEventListener('stream:health',function(event){
+  if(extensionPollingEnabled)refreshRuntime(event.detail);
+});
 function renderLiveFeatureControls(snapshot){
   const root=$('ext_live_feature_rows');if(!root)return;root.replaceChildren();
   const live=snapshot.live||{},canControl=!!snapshot.controls_enabled&&STREAM_CONTROL_ALLOWED;
@@ -620,8 +631,11 @@ async function refreshCameraSettings(){
       const step=pair[0]==='ExposureTime'?'100':'0.1';input.step=step;
       input.title=(range.min!=null||range.max!=null)?'Sensor limits: '+(range.min==null?'unreported':range.min)+' to '+(range.max==null?'unreported':range.max):'The API validates against sensor-supported limits';
     });
-    const controls=c.controls||{};if(controls.ExposureTime!=null)$('ext_exposure').value=String(controls.ExposureTime);if(controls.AnalogueGain!=null)$('ext_gain').value=String(controls.AnalogueGain);
-    $('ext_auto_exposure').checked=!!controls.AeEnable;$('ext_auto_wb').checked=!!controls.AwbEnable;
+    const controls=c.controls||{};
+    if(controls.ExposureTime!=null&&!cameraControlIsDrafted('ext_exposure'))$('ext_exposure').value=String(controls.ExposureTime);
+    if(controls.AnalogueGain!=null&&!cameraControlIsDrafted('ext_gain'))$('ext_gain').value=String(controls.AnalogueGain);
+    if(!cameraControlIsDrafted('ext_auto_exposure'))$('ext_auto_exposure').checked=!!controls.AeEnable;
+    if(!cameraControlIsDrafted('ext_auto_wb'))$('ext_auto_wb').checked=!!controls.AwbEnable;
     updateCameraControlsEnabled();
   }catch(err){$('ext_camera_support').textContent='Camera capability read failed: '+err.message;}
 }
@@ -636,7 +650,7 @@ function updateCameraControlsEnabled(){
 async function refreshProcessingRate(){
   try{
     const data=await nativeFetch('/api/processing-rate',{cache:'no-store'}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-    if(data.target_fps!=null)$('ext_target_fps').value=String(data.target_fps);
+    if(data.target_fps!=null&&!processingRateDraftDirty&&document.activeElement!==$('ext_target_fps'))$('ext_target_fps').value=String(data.target_fps);
     $('ext_fps_status').textContent=data.available?'Live · '+Number(data.target_fps).toFixed(1)+' FPS':'Unavailable';
     $('ext_target_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;$('ext_apply_fps').disabled=!data.available||!STREAM_CONTROL_ALLOWED;
   }catch(err){$('ext_fps_status').textContent=err.message;}
@@ -645,10 +659,11 @@ async function refreshSafety(){
   try{
     const response=await nativeFetch('/api/safety',{cache:'no-store'});
     const data=await response.json();if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
-    $('ext_safety_state').textContent='Robot motion: RUN_LVL='+data.run_level+' · '+(data.software_stop_active?'STOPPED':'MOVE');
+    const safetyText='Robot motion: RUN_LVL='+data.run_level+' · '+(data.software_stop_active?'STOPPED':'MOVE');
+    if($('ext_safety_state').textContent!==safetyText)$('ext_safety_state').textContent=safetyText;
     $('ext_software_stop').disabled=!data.controls_enabled||data.software_stop_active;
     $('ext_software_resume').disabled=!data.controls_enabled||!data.software_stop_active;
-    if($('run_lvl'))$('run_lvl').value=String(data.run_level||'MOVE');
+    
   }catch(err){$('ext_safety_state').textContent='Robot motion status unavailable: '+err.message;}
 }
 async function refreshSignRequests(){
@@ -693,7 +708,7 @@ async function safetyAction(action,options){
   if(action==='stop'&&!settings.skipConfirm&&!confirm('Request the active Python mode loop to stop robot motion? This is software control, not a hardware E-stop.'))return;
   if(action==='resume'&&!confirm('Resume motion? Confirm the track is clear and the robot is safe to move.'))return;
   const data=await nativeFetch('/api/safety',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  if($('run_lvl'))$('run_lvl').value=String(data.run_level|| (action==='stop'?'STOP':'MOVE'));
+  
   showToast(action==='stop'?'Force Stop requested · RUN_LVL=STOP':'Motion resume requested');noteWorkspaceEvent(action==='stop'?'warn':'info','Dashboard RUN_LVL '+(action==='stop'?'STOP':'MOVE')+' requested'+(settings.source==='keyboard'?' via Ctrl+Shift+Space':settings.source==='command-palette'?' via Command Palette':''));await Promise.all([refreshSafety(),refreshSignRequests()]);
 }
 async function toggleMotionSafetyFromKeyboard(){
@@ -771,8 +786,15 @@ async function requestStreamShutdown(){
 }
 async function applyProcessingRate(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
-  const fps=Number($('ext_target_fps').value);const data=await nativeFetch('/api/processing-rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_fps:fps})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
-  $('ext_fps_status').textContent='Saved · '+Number(data.target_fps).toFixed(1)+' FPS';currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Processing-rate limit applied and saved');
+  const submittedVersion=processingRateDraftVersion;
+  const fps=Number($('ext_target_fps').value);
+  const data=await nativeFetch('/api/processing-rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_fps:fps})}).then(async function(r){const j=await r.json();if(!r.ok)throw new Error(j.message||('HTTP '+r.status));return j;});
+  if(processingRateDraftVersion===submittedVersion){
+    processingRateDraftDirty=false;
+    $('ext_target_fps').value=String(data.target_fps);
+  }
+  $('ext_fps_status').textContent='Saved · '+Number(data.target_fps).toFixed(1)+' FPS'+(processingRateDraftDirty?' · newer edit not applied':'');
+  currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Processing-rate limit applied and saved');
 }
 async function applyCameraControls(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
@@ -788,8 +810,18 @@ async function applyCameraControls(){
     if(cameraSupportedControlNames.includes('AnalogueGain'))payload.AnalogueGain=Number($('ext_gain').value);
   }
   if(!Object.keys(payload).length)throw new Error('This camera does not expose any supported runtime controls.');
+  const controlIds={ExposureTime:'ext_exposure',AnalogueGain:'ext_gain',AeEnable:'ext_auto_exposure',AwbEnable:'ext_auto_wb'};
+  const submittedVersions=Object.create(null);
+  Object.keys(controlIds).forEach(function(key){submittedVersions[controlIds[key]]=cameraDraftVersions[controlIds[key]]||0;});
   const response=await nativeFetch('/api/camera/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));await refreshCameraSettings();currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Runtime camera controls applied');
+  const data=await response.json().catch(function(){return {};});
+  if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  Object.keys(payload).forEach(function(key){
+    const id=controlIds[key];
+    if(id&&(cameraDraftVersions[id]||0)===submittedVersions[id])cameraDraftDirty.delete(id);
+  });
+  await refreshCameraSettings();
+  currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Runtime camera controls applied');
 }
 function paletteNormalize(value){
   const raw=String(value==null?'':value);
@@ -1169,7 +1201,11 @@ function installExtension(){
   $('ext_apply_fps').onclick=function(){applyProcessingRate().catch(function(e){showToast(e.message);});};$('ext_apply_camera').onclick=function(){applyCameraControls().catch(function(e){showToast(e.message);});};
   $('ext_sign_requests_pause').onclick=function(){signRequestsAction('pause').catch(function(e){showToast(e.message);});};$('ext_sign_requests_resume').onclick=function(){signRequestsAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
-  $('ext_auto_exposure').addEventListener('change',updateCameraControlsEnabled);
+  $('ext_exposure').addEventListener('input',function(){markCameraDraftDirty('ext_exposure');});
+  $('ext_gain').addEventListener('input',function(){markCameraDraftDirty('ext_gain');});
+  $('ext_auto_exposure').addEventListener('change',function(){markCameraDraftDirty('ext_auto_exposure');updateCameraControlsEnabled();});
+  $('ext_auto_wb').addEventListener('change',function(){markCameraDraftDirty('ext_auto_wb');});
+  $('ext_target_fps').addEventListener('input',function(){processingRateDraftDirty=true;processingRateDraftVersion+=1;});
   $('ext_log_refresh').onclick=function(){refreshServerLogs();};$('ext_log_level').addEventListener('change',refreshServerLogs);$('ext_log_search').addEventListener('input',function(){clearTimeout(window.extLogDebounce);window.extLogDebounce=setTimeout(refreshServerLogs,250);});
   $('console_filter').addEventListener('input',function(){workspaceConsoleQuery=this.value;['events','api','python'].forEach(renderWorkspaceEventLog);});
   $('console_level').addEventListener('change',function(){workspaceConsoleLevel=this.value;['events','api','python'].forEach(renderWorkspaceEventLog);});

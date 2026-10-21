@@ -1454,3 +1454,47 @@ canvas {
 .arduino-hardware-notice[data-tone="warning"]{border-color:#8a6221;border-left-color:#f59e0b;background:rgba(245,158,11,.09);color:#fde68a}
 .arduino-hardware-notice[data-tone="error"]{border-color:#923737;border-left-color:#ef4444;background:rgba(239,68,68,.10);color:#fecaca}
 @media(max-width:560px){.arduino-policy-control{grid-template-columns:minmax(0,1fr)}.arduino-policy-toggle{width:100%}}
+
+
+/* Persistent safety controls: always available without opening the settings dock. */
+.editor-safety-controls {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-right: 7px;
+  padding-right: 7px;
+  border-right: 1px solid #344457;
+}
+.editor-safety-controls #ext_safety_state {
+  display: block;
+  min-width: 0;
+  max-width: 145px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.editor-safety-controls button {
+  flex: 0 0 auto;
+  min-width: 43px;
+  min-height: 27px;
+  height: 27px;
+  padding: 3px 6px;
+  font-size: 10px;
+  line-height: 1.1;
+}
+.editor-controls-right #toggle_dock_btn { min-width: 42px; }
+@media (max-width: 980px) {
+  .editor-safety-controls #ext_safety_state { max-width: 92px; }
+  .editor-safety-controls { gap: 3px; margin-right: 5px; padding-right: 5px; }
+  .editor-safety-controls button { min-width: 38px; padding: 3px 4px; }
+}
+@media (max-width: 720px) {
+  .editor-safety-controls #ext_safety_state { display: none; }
+  .editor-safety-controls { margin-right: 4px; padding-right: 4px; }
+  .editor-safety-controls button { min-width: 33px; width: 34px; padding: 3px 2px; font-size: 9px; }
+  .editor-controls-right #toggle_dock_btn { min-width: 36px; padding: 0 5px; }
+}

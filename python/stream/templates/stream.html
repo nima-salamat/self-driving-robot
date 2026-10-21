@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Editor Self Driving Robot</title>
+<title>Self-Driving Robot · Stream Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 
 
@@ -30,7 +30,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 </head>
 <body>
 <div class="app-menubar" role="menubar" aria-label="Workspace menu">
-<div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Editor Self Driving Robot</span></div>
+<div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Self-Driving Robot · Stream</span></div>
 <details class="menu-group"><summary>File</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="export-config">Export Full Configuration JSON…</button><button type="button" data-action="refresh-config">Reload Configuration</button><div class="menu-separator"></div><button type="button" data-action="take-picture">Capture Camera Image</button><div class="menu-separator"></div><button type="button" class="menu-danger" data-action="exit-stream">Exit · Stop Stream Server…</button></div></details>
 <details class="menu-group"><summary>Edit</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="clear-selection">Clear Selection</button><div class="menu-separator"></div><button type="button" data-action="properties">Show Properties Panel</button></div></details>
 <details class="menu-group"><summary>View</summary><div class="menu-dropdown" role="menu"><button type="button" data-action="zoom-in">Zoom In</button><button type="button" data-action="zoom-out">Zoom Out</button><button type="button" data-action="fit-view">Fit / Reset View</button><button type="button" data-action="toggle-fullscreen">Fullscreen Camera</button><button type="button" data-action="toggle-overlays">Toggle Overlays</button><button type="button" data-action="toggle-console">Toggle Event Console</button><button type="button" data-action="toggle-properties">Show / Hide Panels</button></div></details>
@@ -66,7 +66,12 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <span id="mode_features" class="sr-only" aria-hidden="true"></span>
         <div id="frame_mode" class="small status-line" hidden></div>
       </div>
-      <div class="editor-controls-right" role="group" aria-label="Panel visibility">
+      <div class="editor-controls-right" role="group" aria-label="Robot safety and panel visibility">
+        <div class="editor-safety-controls" id="ext_safety_panel" role="group" aria-label="Robot motion safety controls">
+          <span id="ext_safety_state" class="small status-line" role="status" aria-live="polite">Reading robot motion state…</span>
+          <button type="button" class="btn ext-stop-btn" id="ext_software_stop" aria-label="Force Stop robot motion" title="Request software STOP through RUN_LVL. Not a hardware emergency stop.">STOP</button>
+          <button type="button" class="ghost" id="ext_software_resume" aria-label="Resume robot motion" title="Resume robot motion after confirming the track is clear.">RESUME</button>
+        </div>
         <button id="toggle_dock_btn" type="button" class="ghost toolbar-icon-button" aria-expanded="true" aria-label="Hide settings panels" title="Open the left settings menu on mobile or show/hide panels"><svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16M7 9h4M7 12h4"/></svg><span id="toggle_dock_label">Hide Panels</span></button>
       </div>
     </div>
@@ -160,7 +165,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     </div></details>
 
   
-      <details class="dock-panel" open><summary class="dock-summary"><span>Runtime Health</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <details class="dock-panel"><summary class="dock-summary"><span>Runtime Health</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
         <div class="section-title">Runtime Health</div>
         <div id="health_state" class="status-line">State: UNKNOWN</div>
         <div id="health_faults" class="small">Faults: none</div>
@@ -246,9 +251,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <div class="form-row"><label class="label">STRAIGHT Lvl</label><input id="straight" type="number" min="0" step="1" class="counter"></div>
         <div class="form-row"><label class="label">STOP Lvl</label><input id="stop_lvl" type="number" min="0" step="1" class="counter"></div>
         
-        <div class="form-row"><label class="label">RUN_LVL</label>
-          <select id="run_lvl" class="counter"><option value="MOVE">MOVE</option><option value="STOP">STOP</option></select>
-        </div>
+        <div class="small-muted">Robot motion and software STOP are controlled from the persistent safety controls in the workspace toolbar. Vision settings do not change RUN_LVL.</div>
         <div class="form-row"><label class="label">Use Signs Vision</label><input type="checkbox" id="with_sign"></div>
         <div class="form-row"><label class="label">Use AprilTag</label><input type="checkbox" id="with_apriltag"></div>
       </div>
@@ -274,12 +277,12 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
     </div></details>
 
 
-    <details class="dock-panel" open id="ext_layers_panel"><summary class="dock-summary"><span>Layers & Opacity</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+    <details class="dock-panel" id="ext_layers_panel"><summary class="dock-summary"><span>Layers & Opacity</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Layer Manager</div><div class="small-muted">Visibility and color affect the live ROI overlay; opacity is saved with this mode's UI settings.</div>
       <div id="ext_layer_rows"></div>
     </div></details>
 
-    <details class="dock-panel" open id="ext_editor_panel"><summary class="dock-summary"><span>Precision Editor & Annotations</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+    <details class="dock-panel" id="ext_editor_panel"><summary class="dock-summary"><span>Precision Editor & Annotations</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Precision Tools</div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
@@ -294,7 +297,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="form-row"><button type="button" class="ghost" id="ext_profile_save">Save Profile</button><button type="button" class="ghost" id="ext_profile_load">Load</button><button type="button" class="ghost" id="ext_profile_delete">Delete</button></div>
     </div></details>
 
-    <details class="dock-panel" open id="ext_config_panel"><summary class="dock-summary"><span>Config, Presets & History</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+    <details class="dock-panel" id="ext_config_panel"><summary class="dock-summary"><span>Config, Presets & History</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Full Configuration</div>
       <div class="form-row"><button type="button" class="ghost" id="ext_export_config">Export Full JSON</button><button type="button" class="ghost" id="ext_import_config">Import JSON</button><input type="file" id="ext_config_file" accept=".json,application/json" hidden></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_undo">↶ Undo</button><button type="button" class="ghost" id="ext_redo">↷ Redo</button><span class="small-muted" id="ext_undo_status">Undo: 0 · Redo: 0</span></div>
@@ -321,7 +324,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <button type="button" class="ghost" id="ext_pid_settings_open" style="width:100%;justify-content:center">⚙ Open PID Tuning</button>
     </div></details>
 
-    <details class="dock-panel" open id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+    <details class="dock-panel" id="ext_runtime_panel"><summary class="dock-summary"><span>Runtime & Performance</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Runtime Health</div><div id="ext_health_summary" class="small status-line">Waiting for runtime telemetry…</div>
       <div class="ext-charts"><div><div class="small-muted">Processing FPS</div><canvas id="ext_fps_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Loop latency · ms</div><canvas id="ext_latency_chart" width="300" height="58"></canvas></div><div><div class="small-muted">Perception latency · ms</div><canvas id="ext_perception_chart" width="300" height="58"></canvas></div></div>
       <pre class="ext-pre" id="ext_runtime_details">Runtime detail is loading…</pre>
@@ -361,18 +364,14 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="small-muted">Session-only snapshots from the current dashboard frame. They are not a replacement for recorded video.</div><div id="ext_frame_gallery" class="ext-gallery"></div><button type="button" class="ghost" id="ext_clear_gallery">Clear Frame History</button>
     </div></details>
 
-    <details class="dock-panel" id="ext_sign_requests_panel" open><summary class="dock-summary"><span>Sign Detection Compute Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+    <details class="dock-panel" id="ext_sign_requests_panel"><summary class="dock-summary"><span>Sign Detection Compute Control</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div id="ext_sign_requests_state" class="status-line">Reading sign detector request state…</div>
       <div class="form-row"><button type="button" class="btn" id="ext_sign_requests_pause">Pause Sign Requests</button><button type="button" class="ghost" id="ext_sign_requests_resume">Resume Sign Requests</button></div>
       <div class="small-muted">Pause blocks new frames from being submitted to the asynchronous sign-detection worker and drops queued frames. An inference already in progress may finish. This does not change RUN_LVL or stop robot movement; sign-based detection is unavailable while requests are paused.</div>
       <div class="small-muted" style="margin-top:6px">Robot movement is controlled separately: Force Stop sets RUN_LVL=STOP. Ctrl+Shift+Space toggles motion; resuming a stopped robot requires confirmation. The Resume Motion button remains available separately.</div>
     </div></details>
 
-    <details class="dock-panel" id="ext_safety_panel" open><summary class="dock-summary"><span>Robot Motion Control · RUN_LVL</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
-      <div id="ext_safety_state" class="status-line">Reading robot motion state…</div>
-      <div class="form-row"><button type="button" class="btn ext-stop-btn" id="ext_software_stop">Force Stop (RUN_LVL → STOP)</button><button type="button" class="ghost" id="ext_software_resume">Resume Motion</button></div>
-      <div class="small-muted"><strong>Ctrl+Shift+Space toggles robot motion:</strong> it stops a moving robot and resumes a stopped robot after confirmation. This is software control, not a hardware emergency stop.</div>
-    </div></details>
+
 
   </div>
 </div>
@@ -404,7 +403,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <p class="settings-note">Grid spacing is measured relative to image height; horizontal spacing is corrected for the frame aspect ratio so grid cells remain square. Arrow keys move the selected ROI by the configured number of source-image pixels; Shift + Arrow moves 5× farther.</p>
     </div>
     <div class="settings-section"><h3>Stream Display Performance</h3>
-      <label>Stream display FPS <span id="roi_setting_stream_fps_value">8.3 FPS target</span><input id="roi_setting_stream_fps" type="number" min="1" max="30" step="0.5" value="8.3" aria-label="Stream display refresh rate in frames per second"></label>
+      <label>Stream display FPS <span id="roi_setting_stream_fps_value">8.3 FPS target</span><input id="roi_setting_stream_fps" type="number" min="1" max="30" step="0.1" value="8.3" aria-label="Stream display refresh rate in frames per second"></label>
       <p class="settings-note">Controls how often this page requests a new frame. It is separate from target processing FPS and the camera sensor FPS; the actual display rate can be lower when frames, network, or browser rendering are slower.</p>
       <label>JPEG image quality <span id="roi_setting_jpeg_quality_value">85 / 100</span><input id="roi_setting_jpeg_quality" type="range" min="30" max="100" step="5" value="85" aria-label="Stream JPEG image quality" {% if not stream_control %}disabled{% endif %}></label>
       <p class="settings-note">Lower quality generally reduces image size and network bandwidth; higher quality preserves more detail. This only changes JPEG encoding for dashboard frames—not camera resolution, sensor FPS, or the robot's vision/control processing. Changing it requires dashboard controls to be enabled.</p>

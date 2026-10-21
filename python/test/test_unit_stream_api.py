@@ -1265,6 +1265,37 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(config.stream_frame_seq, original_sequence)
         np.testing.assert_array_equal(config.debug_frames_list[-1][0, 0], [211, 211, 211])
 
+    def test_frozen_frame_reuses_jpeg_cache_while_live_stream_advances(self):
+        import cv2
+
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.debug_frames_list = [np.zeros((32, 48, 3), dtype=np.uint8)]
+        config.stream_frame_seq = 1
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+
+        with patch("stream.media_api.cv2.imencode", wraps=cv2.imencode) as encode:
+            frozen = client.post("/freeze_frame")
+            self.assertEqual(frozen.status_code, 200)
+            first = client.get("/video_feed_frame")
+            self.assertEqual(first.status_code, 200)
+            self.assertTrue(first.headers["X-Stream-Frame-Sequence"].startswith("frozen-"))
+
+            # Advancing live sequence numbers must not invalidate the frozen image.
+            publish_debug_frame(config, np.full((32, 48, 3), 255, dtype=np.uint8))
+            second = client.get("/video_feed_frame")
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(first.data, second.data)
+            self.assertEqual(encode.call_count, 1)
+
+            resumed = client.post("/unfreeze_frame")
+            self.assertEqual(resumed.status_code, 200)
+            live = client.get("/video_feed_frame")
+            self.assertEqual(live.status_code, 200)
+            self.assertNotEqual(first.data, live.data)
+            self.assertEqual(encode.call_count, 2)
+
     def test_stream_jpeg_quality_api_updates_cached_and_live_encoders(self):
         import cv2
 

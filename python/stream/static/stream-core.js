@@ -73,6 +73,8 @@ let healthUpdateTimer = null;
 let arduinoUpdateTimer = null;
 let dragState = null;
 let debounceTimers = {};
+const roiDirtyFields = new Set();
+const roiEditVersions = Object.create(null);
 let isFrozen = false;
 let isRecording = false;
 let syncActive = true;
@@ -373,29 +375,31 @@ function updateFrameModeText(){
     frameModeDisplay.textContent = paused ? 'Dashboard requests: PAUSED' : (isFrozen ? 'Frozen frame · precise tuning' : '');
     frameModeDisplay.hidden = !paused && !isFrozen;
 }
-function sendAdvanced(payload) {
-    if(!syncActive) return showToast('Requests are stopped!');
+async function sendAdvanced(payload) {
+    if(!syncActive) {
+        showToast('Requests are stopped!');
+        return false;
+    }
     recordApiEvent('info','Saving advanced properties: '+Object.keys(payload).join(', '));
-    fetch('/set_advanced',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-        .then(async r => {
-            const data = await r.json().catch(() => ({}));
-            if(!r.ok) throw new Error(data.message || 'HTTP ' + r.status);
-            return data;
-        })
-        .then(j=>{
-            if(j && j.success){
-                advanced = j.advanced;
-                updateShapeUIFromData();
-                showToast('Advanced settings saved');
-            } else {
-                showToast((j && j.message) || 'Could not save advanced settings');
-            }
-        })
-        .catch(err => {
-            recordApiEvent('error', 'Failed to save advanced settings: ' + err.message);
-            console.error('Failed to save advanced settings:', err);
-            showToast('Advanced settings failed: ' + err.message);
-        });
+    try {
+        const response = await fetch('/set_advanced',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok) throw new Error(data.message || 'HTTP ' + response.status);
+        if(!data || !data.success) {
+            const message = (data && data.message) || 'Could not save advanced settings';
+            showToast(message);
+            return false;
+        }
+        advanced = data.advanced;
+        updateShapeUIFromData();
+        showToast('Advanced settings saved');
+        return true;
+    } catch(err) {
+        recordApiEvent('error', 'Failed to save advanced settings: ' + err.message);
+        console.error('Failed to save advanced settings:', err);
+        showToast('Advanced settings failed: ' + err.message);
+        return false;
+    }
 }
 
 // Convert image norm coords (0-1) to physical canvas coords, honoring workspace zoom
@@ -1025,7 +1029,6 @@ function handleShapeSlider() {
 
 shapeInputs.use_bev.addEventListener('change', (e) => {
     sendAdvanced({ USE_BEV: e.target.checked });
-    showToast('BEV System ' + (e.target.checked ? 'Enabled' : 'Disabled'));
 });
 
 document.getElementById('confirm_bev_inputs').addEventListener('click', () => {
@@ -1039,7 +1042,6 @@ document.getElementById('confirm_bev_inputs').addEventListener('click', () => {
         BEV_SRC_BL_X: parseFloat(shapeInputs.bev_bl_x.value) || 0,
         BEV_SRC_BL_Y: parseFloat(shapeInputs.bev_bl_y.value) || 0
     });
-    showToast('BEV Points Saved');
 });
 
 document.getElementById('confirm_shape').addEventListener('click', ()=>{
@@ -1054,14 +1056,13 @@ document.getElementById('confirm_shape').addEventListener('click', ()=>{
         OBJ_TRAPEZOID_MODE: advanced.OBJ_TRAPEZOID_MODE,
         OBJ_TOP_WIDTH_FACTOR: advanced.OBJ_TOP_WIDTH_FACTOR
     });
-    showToast('Shape Config Saved');
 });
 
 /* ---------- Manual Box inputs ---------- */
 function updateInputsFromValues(){
     inputsContainer.querySelectorAll('input').forEach(input=>{
         const name = input.name;
-        if(values[name]!==undefined) input.value = round01(values[name]).toFixed(2);
+        if(values[name]!==undefined && !roiDirtyFields.has(name) && document.activeElement!==input) input.value = round01(values[name]).toFixed(2);
     });
 }
 document.querySelectorAll('.btn-inc').forEach(btn=>{
@@ -1086,6 +1087,8 @@ inputsContainer.querySelectorAll('input').forEach(input=>{
         const name = e.target.name;
         let v = parseFloat(e.target.value);
         if(isNaN(v)) return;
+        roiDirtyFields.add(name);
+        roiEditVersions[name] = (roiEditVersions[name] || 0) + 1;
         v = clamp01(round01(v));
         values[name]=v;
         debounceSendSingle(name, v);
@@ -1094,6 +1097,8 @@ inputsContainer.querySelectorAll('input').forEach(input=>{
 });
 function sendUpdate(data){
     if(!syncActive) return;
+    const editVersions = Object.create(null);
+    Object.keys(data).forEach(name => { editVersions[name] = roiEditVersions[name] || 0; });
     recordApiEvent('info','Saving ROI/config fields: '+Object.keys(data).join(', '));
     fetch('/update_conf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
         .then(async r => {
@@ -1103,6 +1108,9 @@ function sendUpdate(data){
         })
         .then(j=>{
             if(j && j.values){
+                Object.keys(data).forEach(name => {
+                    if((roiEditVersions[name] || 0) === editVersions[name]) roiDirtyFields.delete(name);
+                });
                 values = j.values;
                 updateInputsFromValues(); drawOverlays();
                 if(window.syncPropertiesSelection)window.syncPropertiesSelection(document.getElementById('prop_target').value);
@@ -1171,7 +1179,6 @@ const advInputs = {
     turn_left: document.getElementById('turn_left'),
     straight: document.getElementById('straight'),
     stop_lvl: document.getElementById('stop_lvl'),
-    run_lvl: document.getElementById('run_lvl'),
     with_sign: document.getElementById('with_sign'),
     with_apriltag: document.getElementById('with_apriltag')
 };
@@ -1190,7 +1197,6 @@ function loadAdvanced(){
             advInputs.turn_left.value = advanced.TURN_LEFT;
             advInputs.straight.value = advanced.STRAIGHT;
             advInputs.stop_lvl.value = advanced.STOP;
-            advInputs.run_lvl.value = advanced.RUN_LVL;
             advInputs.with_sign.checked = advanced.WITH_SIGN;
             advInputs.with_apriltag.checked = advanced.WITH_APRILTAG;
             updateShapeUIFromData();
@@ -1209,11 +1215,9 @@ document.getElementById('confirm_advanced').addEventListener('click', ()=>{
         TURN_LEFT: parseInt(advInputs.turn_left.value)||0,
         STRAIGHT: parseInt(advInputs.straight.value)||0,
         STOP: parseInt(advInputs.stop_lvl.value)||0,
-        RUN_LVL: advInputs.run_lvl.value,
         WITH_SIGN: advInputs.with_sign.checked,
         WITH_APRILTAG: advInputs.with_apriltag.checked
     });
-    showToast('Advanced Limits Saved');
 });
 
 /* ---------- Color & Vis Listeners ---------- */
@@ -1275,6 +1279,8 @@ function updateHealth(){
     fetchDashboardJson('/api/health')
         .then(j=>{
             if(!j) return;
+            window.__streamLatestHealth = {payload:j, receivedAt:Date.now()};
+            window.dispatchEvent(new CustomEvent('stream:health', {detail:window.__streamLatestHealth}));
             const h = j.health || {};
             const m = j.metrics || {};
             const t = m.timing || {};
@@ -1651,7 +1657,7 @@ function syncPropertiesSelection(target){
 window.syncPropertiesSelection=syncPropertiesSelection;
 propTarget.addEventListener('change',()=>{const st=info();markerHighlight=st.kind==='point'?'BEV':st.kind==='roi'?st.group:null;syncPropertiesSelection(propTarget.value);renderWorkspaceCanvas();noteWorkspaceEvent('info','Properties target selected: '+propTarget.value);});
 document.getElementById('prop_apply_btn').addEventListener('click',()=>{if(!syncActive)return showToast('Requests are stopped!');const s=info();if(s.kind==='roi'){const n=names(s.group);let l=Number(document.getElementById('prop_left').value),t=Number(document.getElementById('prop_top').value),r=Number(document.getElementById('prop_right').value),b=Number(document.getElementById('prop_bottom').value);if(![l,t,r,b].every(Number.isFinite))return showToast('Enter valid numeric ROI coordinates');l=clamp01(l);t=clamp01(t);r=clamp01(r);b=clamp01(b);if(r-l<.01||b-t<.01)return showToast('ROI requires right > left and bottom > top');values[n.left]=round01(l);values[n.top]=round01(t);values[n.right]=round01(r);values[n.bottom]=round01(b);updateInputsFromValues();renderWorkspaceCanvas();sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});syncPropertiesSelection(s.group);noteWorkspaceEvent('info',s.group+' ROI properties applied');}
-else if(s.kind==='point'){const c=s.corner,x=Number(document.getElementById('prop_point_x').value),y=Number(document.getElementById('prop_point_y').value);if(!Number.isFinite(x)||!Number.isFinite(y))return showToast('Enter valid BEV point coordinates');advanced['BEV_SRC_'+c+'_X']=Math.max(-5,Math.min(5,round01(x)));advanced['BEV_SRC_'+c+'_Y']=Math.max(-5,Math.min(5,round01(y)));updateShapeUIFromData();renderWorkspaceCanvas();sendAdvanced({['BEV_SRC_'+c+'_X']:advanced['BEV_SRC_'+c+'_X'],['BEV_SRC_'+c+'_Y']:advanced['BEV_SRC_'+c+'_Y']});syncPropertiesSelection('BEV_'+c);noteWorkspaceEvent('info','BEV '+c+' point properties applied');}else{return showToast('Select an ROI or BEV point first.');}});
+else if(s.kind==='point'){const c=s.corner,x=Number(document.getElementById('prop_point_x').value),y=Number(document.getElementById('prop_point_y').value);if(!Number.isFinite(x)||!Number.isFinite(y))return showToast('Enter valid BEV point coordinates');advanced['BEV_SRC_'+c+'_X']=Math.max(-5,Math.min(5,round01(x)));advanced['BEV_SRC_'+c+'_Y']=Math.max(-5,Math.min(5,round01(y)));updateShapeUIFromData();renderWorkspaceCanvas();sendAdvanced({['BEV_SRC_'+c+'_X']:advanced['BEV_SRC_'+c+'_X'],['BEV_SRC_'+c+'_Y']:advanced['BEV_SRC_'+c+'_Y']}).then(function(saved){if(saved){syncPropertiesSelection('BEV_'+c);noteWorkspaceEvent('info','BEV '+c+' point properties applied');}});}else{return showToast('Select an ROI or BEV point first.');}});
 document.getElementById('prop_revert_btn').addEventListener('click',()=>syncPropertiesSelection(propTarget.value));
 function mirrorLaneRoi(source,destination){
  if(!STREAM_CONTROL_ALLOWED)return showToast('Dashboard is read-only; ROI changes are disabled.');if(!syncActive)return showToast('Requests are stopped!');

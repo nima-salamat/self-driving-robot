@@ -60,6 +60,8 @@ class StreamMediaMixin:
             frozen = getattr(self.config, "frozen_debug_frame", None)
             if frozen is not None:
                 frame = frozen.copy()
+                # Live frames keep advancing during a freeze; use a stable ID for the frozen image.
+                frame_id = f"frozen-{int(getattr(self.config, 'frozen_debug_frame_seq', 0))}"
             else:
                 frames_list = getattr(self.config, "debug_frames_list", [])
                 frame = (
@@ -70,6 +72,11 @@ class StreamMediaMixin:
                     )
                     if frames_list and frames_list[-1] is not None
                     else None
+                )
+                frame_id = getattr(
+                    self.config,
+                    "stream_frame_seq",
+                    id(frame) if frame is not None else None,
                 )
 
         cache_headers = {
@@ -83,7 +90,6 @@ class StreamMediaMixin:
             response.headers.update(cache_headers)
             return response
 
-        frame_id = getattr(self.config, "stream_frame_seq", id(frame))
         quality = self._normalize_stream_jpeg_quality(
             getattr(self.config, "STREAM_JPEG_QUALITY", 85)
         )
@@ -124,12 +130,13 @@ class StreamMediaMixin:
     def video_feed(self):
         def generate():
             last_frame_id = None
+            last_quality = None
             while True:
                 with self._frame_lock:
                     frozen = getattr(self.config, "frozen_debug_frame", None)
                     if frozen is not None:
                         frame = frozen.copy()
-                        frame_id = "frozen"
+                        frame_id = f"frozen-{int(getattr(self.config, 'frozen_debug_frame_seq', 0))}"
                     else:
                         frames_list = getattr(
                             self.config,
@@ -155,10 +162,14 @@ class StreamMediaMixin:
                     time.sleep(0.05)
                     continue
 
+                quality = self._normalize_stream_jpeg_quality(
+                    getattr(self.config, "STREAM_JPEG_QUALITY", 85)
+                )
+                if frame_id == last_frame_id and quality == last_quality:
+                    time.sleep(0.01)
+                    continue
+
                 try:
-                    quality = self._normalize_stream_jpeg_quality(
-                        getattr(self.config, "STREAM_JPEG_QUALITY", 85)
-                    )
                     ret, buffer = cv2.imencode(
                         ".jpg",
                         frame,
@@ -174,6 +185,7 @@ class StreamMediaMixin:
                     continue
 
                 last_frame_id = frame_id
+                last_quality = quality
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -213,6 +225,11 @@ class StreamMediaMixin:
                     self.config,
                     "frozen_debug_frame",
                     frames_list[-1].copy(),
+                )
+                setattr(
+                    self.config,
+                    "frozen_debug_frame_seq",
+                    int(getattr(self.config, "frozen_debug_frame_seq", 0)) + 1,
                 )
                 return jsonify(success=True)
         return jsonify(success=False, message="No frame available")

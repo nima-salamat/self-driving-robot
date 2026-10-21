@@ -138,7 +138,8 @@ The CAD-style workspace includes:
 - Picamera2-supported exposure/gain/auto-control settings, live processing-cycle FPS limiting, session-only frame snapshots/comparison, console filters/export, runtime log search, workspace profiles, and a command palette (`Ctrl+K`).
 - Runtime Stream JPEG quality (30–100) for smaller or clearer dashboard images; it is separate from browser display FPS, camera sensor FPS, and robot perception/processing.
 - `File → Exit · Stop Stream Server…` opens a custom confirmation dialog and then shuts down only the Stream HTTP server and its serving thread; it does not stop the City/Race runtime loop or robot motion.
-- `Pause Dashboard Requests` stops the browser's frame, configuration, health, and Arduino polling intervals. `Resume Dashboard Requests` restores those requests. Neither action sends a robot stop command or changes `RUN_LVL`; use `Force Stop (RUN_LVL → STOP)` to request a software motion stop. This polling pause reduces dashboard request/encoding traffic, but it does not pause the robot's City/Race control loop.
+- The robot software STOP and Resume controls stay in the workspace toolbar, independently of the settings dock. STOP requests `RUN_LVL=STOP` through the active Python mode loop; it is not a hardware emergency stop. Resume remains confirmation-gated.
+- `Pause Dashboard Requests` pauses browser-side frame, configuration, health, Arduino and extension status polling. It never changes `RUN_LVL` or pauses the City/Race control loop. Runtime status charts share the core health response instead of polling `/api/health` independently.
 
 After confirmation, the active process sets `STREAM=False` so dashboard-only frame generation stops too. The current browser page disconnects; restarting the dashboard requires launching the program again with `--stream`. This runtime action is disabled when launched with `--stream-read-only`.
 
