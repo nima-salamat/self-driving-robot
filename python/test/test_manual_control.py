@@ -370,7 +370,7 @@ def encoder_poll_loop():
     while not _stop.is_set():
         try:
             manual_encoder_map.poll_once();snap=manual_encoder_map.snapshot();now=time.monotonic()
-            if snap.get("connected") and not snap.get("telemetry_available") and now>=retry:
+            if snap.get("connected") and (not snap.get("telemetry_available") or not snap.get("telemetry_fresh")) and now>=retry:
                 manual_encoder_map.request_telemetry(timeout=.25);retry=now+2.0
         except Exception:log.exception("Manual encoder polling failed")
         _stop.wait(.05)
@@ -540,6 +540,13 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;objec
           <div class="form-row"><input id="kb_sens" type="number" step="0.1" min="0.2" max="3.0" value="1.0"><div class="value-badge">x</div></div>
         </div>
         <div class="form-line">
+          <label for="kb_steer_mode">Keyboard steering response</label>
+          <select id="kb_steer_mode">
+            <option value="hold">Hold to steer; release to recenter</option>
+            <option value="progressive">Progressive steering</option>
+          </select>
+        </div>
+        <div class="form-line">
           <label for="kb_speed_ramp">Keyboard acceleration</label>
           <select id="kb_speed_ramp">
             <option value="smooth">Gradual ramp</option>
@@ -675,6 +682,7 @@ let settings = {
   kb_return: Number(document.getElementById('kb_return').value),
   kb_speed_ramp: document.getElementById('kb_speed_ramp').value || 'smooth',
   kb_speed_stop: document.getElementById('kb_speed_stop').value || 'smooth',
+  kb_steer_mode: document.getElementById('kb_steer_mode').value || 'hold',
 
 };
 
@@ -819,6 +827,7 @@ setInterval(()=>{
     const keyboardOwnsControls = pointerId === null && !pedalActive && !gamepadActive;
     const kbSpeedRamp = document.getElementById('kb_speed_ramp').value || settings.kb_speed_ramp || 'smooth';
     const kbSpeedStop = document.getElementById('kb_speed_stop').value || settings.kb_speed_stop || 'smooth';
+    const kbSteerMode = document.getElementById('kb_steer_mode').value || settings.kb_steer_mode || 'hold';
 
     if (kf !== 0) {
       if (kbSpeedRamp === 'direct') keyAccel.forward = kf;
@@ -829,10 +838,17 @@ setInterval(()=>{
       keyAccel.forward += (0 - keyAccel.forward) * RET;
     }
 
-    if (ks !== 0)
-    keyAccel.steer += ks * ACC;
-    else
-    keyAccel.steer += (0 - keyAccel.steer) * RET;
+    if (ks !== 0) {
+      if (keyboardOwnsControls && kbSteerMode === 'hold') {
+        // Hold a stable steering target while A/D or left/right remains pressed.
+        keyAccel.steer = ks;
+      } else if (kbSteerMode === 'progressive') {
+        keyAccel.steer = clamp(keyAccel.steer + ks * ACC, -1, 1);
+      }
+    } else {
+      // Smoothly recenter after releasing the steering key.
+      keyAccel.steer += (0 - keyAccel.steer) * RET;
+    }
 
 
   // when joystick/pedal not active, keyboard drives both forward and steer
@@ -850,7 +866,11 @@ setInterval(()=>{
   } else {
     current.forward = (current.forward || 0) + (target.forward - (current.forward || 0)) * alpha;
   }
-  current.steer  = (current.steer  || 0) + (target.steer  - (current.steer || 0)) * alpha;
+  if (keyboardOwnsControls && ks !== 0 && kbSteerMode === 'hold') {
+    current.steer = target.steer;
+  } else {
+    current.steer = (current.steer || 0) + (target.steer - (current.steer || 0)) * alpha;
+  }
 
   // map to hardware values
   const speedLimit = Number(document.getElementById('speed_limit').value || settings.speed_limit);
@@ -907,6 +927,7 @@ document.getElementById('save_settings').addEventListener('click', ()=>{
     kb_return: Number(document.getElementById('kb_return').value),
     kb_speed_ramp: document.getElementById('kb_speed_ramp').value,
     kb_speed_stop: document.getElementById('kb_speed_stop').value,
+    kb_steer_mode: document.getElementById('kb_steer_mode').value,
 
   };
   // persist locally
@@ -995,7 +1016,7 @@ function loadSettingsToUI(){
   'deadman','jpegq','max_speed',
   'speed_limit','angle_limit',
   'alpha','jsize','jdead','pdead',
-  'kb_sens','kb_return','kb_speed_ramp','kb_speed_stop'
+  'kb_sens','kb_return','kb_speed_ramp','kb_speed_stop','kb_steer_mode'
 ];
 
   keys.forEach(k=>{
