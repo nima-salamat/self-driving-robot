@@ -1082,35 +1082,38 @@ function installWorkspaceKeyboardShortcuts(){
       }
       // Space and Enter keep native <summary> toggle behaviour.
     }
-    if(!(event.ctrlKey&&event.altKey&&!event.metaKey)||isAltGraph(event)||event.repeat)return;
+    const palette=$('ext_command_palette');
+    if(palette&&palette.style.display==='flex')return;
+    if(!(event.ctrlKey&&event.altKey&&!event.metaKey)||isAltGraph(event))return;
     const menuId=menuKeyMap[event.code];
+    if(event.repeat&&(menuId||['KeyP','KeyC','KeyR'].includes(event.code)))return;
     if(menuId){
       if(isEditableKeyboardTarget(target))return;
-      event.preventDefault();
+      event.preventDefault();event.stopPropagation();
       openTopMenu(menuId);
       return;
     }
     if(isEditableKeyboardTarget(target))return;
     switch(event.code){
       case 'KeyP':
-        event.preventDefault();
+        event.preventDefault();event.stopPropagation();
         if(event.shiftKey)focusPanelNavigation();
         else toggleSettingsPanels();
         return;
       case 'KeyC':
-        event.preventDefault();
+        event.preventDefault();event.stopPropagation();
         if($('console_toggle_btn'))$('console_toggle_btn').click();
         return;
       case 'KeyW':
-        event.preventDefault();changeConsoleHeight(1);return;
+        event.preventDefault();event.stopPropagation();changeConsoleHeight(1);return;
       case 'KeyS':
-        event.preventDefault();changeConsoleHeight(-1);return;
+        event.preventDefault();event.stopPropagation();changeConsoleHeight(-1);return;
       case 'KeyA':
-        event.preventDefault();adjustSettingsPanelWidth(1);return;
+        event.preventDefault();event.stopPropagation();adjustSettingsPanelWidth(1);return;
       case 'KeyD':
-        event.preventDefault();adjustSettingsPanelWidth(-1);return;
+        event.preventDefault();event.stopPropagation();adjustSettingsPanelWidth(-1);return;
       case 'KeyR':
-        event.preventDefault();
+        event.preventDefault();event.stopPropagation();
         if($('refresh_vals'))$('refresh_vals').click();
         else showToast('Configuration refresh control is unavailable.');
         return;
@@ -1157,7 +1160,7 @@ function buildCommandPalette(){
     ['Open encoder map','encoder',''],['Open camera controls','camera',''],
     ['Toggle Robot Motion (RUN_LVL)','toggle-motion','Ctrl+Shift+Space'],
     ['Force Stop (RUN_LVL → STOP)','stop',''],['Resume motion (confirmation)','resume','']
-  ;
+  ];
   const commandList=$('ext_command_list'),settingsList=$('ext_settings_results'),search=$('ext_command_search');
   function renderResults(){
     const query=paletteNormalize(search.value.trim());

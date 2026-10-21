@@ -212,6 +212,7 @@ class StreamApiTests(unittest.TestCase):
         for code in ("KeyP", "KeyC", "KeyW", "KeyS", "KeyA", "KeyD", "KeyR", "KeyF", "KeyE", "KeyV", "KeyT", "KeyH"):
             self.assertIn("'" + code + "'", extensions)
         self.assertIn("function installWorkspaceKeyboardShortcuts()", extensions)
+        self.assertIn("event.preventDefault();event.stopPropagation();", extensions)
         self.assertIn("function focusPanelNavigation()", extensions)
         self.assertIn("function adjustSettingsPanelWidth(direction)", extensions)
         self.assertIn("function changeConsoleHeight(direction)", extensions)

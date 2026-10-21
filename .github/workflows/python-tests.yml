@@ -18,6 +18,8 @@ jobs:
           python-version: "3.11"
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pyserial numpy opencv-python-headless flask flask-socketio onnxruntime
+      - name: Check JavaScript syntax
+        run: node --check python/stream/static/stream-core.js && node --check python/stream/static/stream-extensions.js
       - name: Compile Python
         run: python -m compileall -q python
       - name: Run hardware-free unit tests
