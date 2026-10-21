@@ -15,8 +15,8 @@ from collections import deque
 
 class EncoderOdometry:
     def __init__(self, pulse_distance_cm, wheelbase_cm=None, servo_center=95,
-                 servo_min=55, servo_max=125, road_angle_min_deg=None,
-                 road_angle_max_deg=None, history_size=1200, max_sample_age_s=0.5):
+                 servo_min=55, servo_max=125, max_wheel_angle_deg=25.0,
+                 history_size=1200, max_sample_age_s=0.5):
         if not math.isfinite(float(pulse_distance_cm)) or pulse_distance_cm <= 0:
             raise ValueError("pulse_distance_cm must be a positive finite value")
         self.pulse_distance_cm = float(pulse_distance_cm)
@@ -24,8 +24,9 @@ class EncoderOdometry:
         self.servo_center = float(servo_center)
         self.servo_min = float(servo_min)
         self.servo_max = float(servo_max)
-        self.road_angle_min_deg = road_angle_min_deg
-        self.road_angle_max_deg = road_angle_max_deg
+        self.max_wheel_angle_deg = float(max_wheel_angle_deg)
+        if not math.isfinite(self.max_wheel_angle_deg) or not 0.0 < self.max_wheel_angle_deg <= 45.0:
+            raise ValueError("max_wheel_angle_deg must be in (0, 45]")
         self.calibrated = self._has_steering_calibration()
         self.max_sample_age_s = max(0.01, float(max_sample_age_s))
         self.history = deque(maxlen=max(2, int(history_size)))
@@ -35,6 +36,7 @@ class EncoderOdometry:
         self._last_at = None
         self._continuity_broken = False
         self._servo = self.servo_center
+        self._last_delta_pulses = 0
         self._total_distance = 0.0
         self._travel_distance = 0.0
         self._x = self._y = self._heading = 0.0
@@ -43,34 +45,24 @@ class EncoderOdometry:
         self._last_sample_age = None
 
     def _has_steering_calibration(self):
-        if self.wheelbase_cm is None or self.wheelbase_cm <= 0:
-            return False
-        if self.road_angle_min_deg is None or self.road_angle_max_deg is None:
-            return False
-        try:
-            low, high = float(self.road_angle_min_deg), float(self.road_angle_max_deg)
-            return (math.isfinite(low) and math.isfinite(high) and
-                    self.servo_min < self.servo_center < self.servo_max and
-                    -45.0 <= low <= 45.0 and -45.0 <= high <= 45.0 and
-                    low * high < 0.0)
-        except (TypeError, ValueError):
-            return False
+        return bool(
+            self.wheelbase_cm is not None and self.wheelbase_cm > 0 and
+            self.servo_min < self.servo_center < self.servo_max and
+            0.0 < self.max_wheel_angle_deg <= 45.0
+        )
 
     def _road_wheel_angle(self, servo):
-        # Calibrate each side against the actual servo center. The servo center
-        # need not be halfway between MIN and MAX (e.g. 50..130 with center 95).
-        # Linear interpolation across the full MIN..MAX span creates a false
-        # steering angle at straight ahead and bends the estimated path over time.
-        # Endpoint angle signs are calibration-derived: servo direction may be
-        # reversed, so MIN does not inherently mean a negative road-wheel angle.
+        # Firmware telemetry gives the servo command, not physical wheel angles.
+        # Map each side of the configured center to the editable maximum effective
+        # steering angle. This is a starting model, not a measured Ackermann angle.
         command = max(self.servo_min, min(self.servo_max, float(servo)))
         if command <= self.servo_center:
             span = self.servo_center - self.servo_min
             ratio = (self.servo_center - command) / span
-            return ratio * float(self.road_angle_min_deg)
+            return -ratio * self.max_wheel_angle_deg
         span = self.servo_max - self.servo_center
         ratio = (command - self.servo_center) / span
-        return ratio * float(self.road_angle_max_deg)
+        return ratio * self.max_wheel_angle_deg
 
     def ingest(self, sample, received_at=None):
         """Accept one parsed ODOM1 record; repeated pulse totals add no travel."""
@@ -90,6 +82,7 @@ class EncoderOdometry:
             self._servo = float(servo)
             if self._epoch is None:
                 self._epoch, self._pulses, self._last_at = epoch, pulses, received_at
+                self._last_delta_pulses = 0
                 self._valid = bool(sample.get("valid", True))
                 self._reason = "re-anchored after odometry discontinuity" if self._continuity_broken else "origin established"
                 self._append(valid=not self._continuity_broken, gap=self._continuity_broken, at=received_at)
@@ -115,6 +108,7 @@ class EncoderOdometry:
                 self._mark_gap("implausible encoder counter jump")
                 return False
             self._pulses, self._last_at = pulses, received_at
+            self._last_delta_pulses = delta
             distance = delta * self.pulse_distance_cm
             self._total_distance += distance
             self._travel_distance += abs(distance)
@@ -154,6 +148,8 @@ class EncoderOdometry:
                              "y_cm": self._y if self.calibrated else None,
                              "heading_rad": self._heading if self.calibrated else None,
                              "signed_pulses": self._pulses,
+                             "pulse_delta": self._last_delta_pulses,
+                             "servo_command": self._servo,
                              "valid": bool(valid and self._valid), "gap": bool(gap),
                              "reason": self._reason if gap else None,
                              "at": at})
@@ -172,6 +168,7 @@ class EncoderOdometry:
                     "signed_pulses": self._pulses,
                     "steering_angle_source": "arduino_servo_command",
                     "road_wheel_angle_deg": self._road_wheel_angle(self._servo) if self.calibrated else None,
+                    "max_wheel_angle_deg": self.max_wheel_angle_deg,
                     "travel_cm": self._travel_distance,
                     "signed_distance_cm": self._total_distance,
                     "x_cm": self._x if self.calibrated else None,
@@ -180,8 +177,7 @@ class EncoderOdometry:
                     "servo_command": self._servo, "servo_center": self.servo_center,
                     "pulse_distance_cm": self.pulse_distance_cm,
                     "wheelbase_cm": self.wheelbase_cm,
-                    "road_wheel_angle_at_servo_min_deg": self.road_angle_min_deg,
-                    "road_wheel_angle_at_servo_max_deg": self.road_angle_max_deg,
+                    "max_wheel_angle_deg": self.max_wheel_angle_deg,
                     "sample_age_s": age,
                     "history": list(self.history)}
 
