@@ -28,12 +28,24 @@ class FPS:
         self._sec_start = now
         return self
 
-    def update(self):
+    def loop_update(self):
+        """Record outer control-loop cadence without counting it as a vision frame."""
         now = time.monotonic()
-
         if self._last_period_time is not None and self.metrics is not None:
             self.metrics.record_loop((now - self._last_period_time) * 1000.0)
         self._last_period_time = now
+
+        # A fast safety/STOP loop is not a fast perception pipeline. Clear live
+        # processing-rate readings after a full second without a completed frame.
+        if self._last_frame_time is not None and now - self._last_frame_time >= 1.0:
+            self.instant_fps = 0.0
+            self.second_fps = 0.0
+            self._sec_frames = 0
+            self._sec_start = now
+
+    def update(self):
+        """Record one completed perception cycle, not just one while-loop iteration."""
+        now = time.monotonic()
 
         dt = now - self._last_frame_time
         if dt > 0:
