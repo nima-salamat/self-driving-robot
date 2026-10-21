@@ -25,7 +25,7 @@ from controller.perception_confidence import PerceptionConfidenceEstimator, Conf
 from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
-from stream import publish_camera_frame_fallback, publish_debug_frame, start_stream, stop_stream
+from stream import publish_camera_frame_fallback, publish_debug_frame, publish_vision_debug, start_stream, stop_stream
 from vision.frame_health import is_camera_frame_obscured
 import logging
 import cv2
@@ -313,6 +313,7 @@ class Robot:
         perception_started = time.monotonic()
         lane_started = time.monotonic()
         result = self.vision.detect(frame_resized, debug_frame)
+        publish_vision_debug(config_city, result)
         self.fps.update()
         if getattr(self, "metrics", None) is not None:
             self.metrics.record_stage(
@@ -857,6 +858,7 @@ class Robot:
                     perception_started = time.monotonic()
                     lane_started = time.monotonic()
                     result = self.vision.detect(frame_resized, debug_frame)
+                    publish_vision_debug(config_city, result)
                     self.fps.update()
                     if getattr(self, "metrics", None) is not None:
                         self.metrics.record_stage(
@@ -1003,6 +1005,7 @@ class Robot:
                         perception_started = time.monotonic()
                         lane_started = time.monotonic()
                         result = self.vision.detect(frame_resized, debug_frame)
+                        publish_vision_debug(config_city, result)
                         self.fps.update()
                         if getattr(self, "metrics", None) is not None:
                             self.metrics.record_stage(

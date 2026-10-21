@@ -402,6 +402,31 @@ def publish_debug_frame(config, frame):
         timestamps.append(time.monotonic())
 
 
+def publish_vision_debug(config, result):
+    """Publish the latest detector diagnostics without changing the control path."""
+    if not isinstance(result, dict):
+        return False
+    lock = getattr(config, "stream_vision_debug_lock", None)
+    if lock is None:
+        lock = threading.RLock()
+        setattr(config, "stream_vision_debug_lock", lock)
+    fields = (
+        "steering_angle", "error", "lane_type", "perception_valid", "crosswalk",
+        "lane_detector", "lane_latency_ms", "lane_segment_count", "lane_left_x",
+        "lane_right_x", "lane_angle_band", "lane_angle_votes", "perception_quality",
+        "observed_lane_boundaries", "kp", "frame_width_px", "frame_height_px",
+    )
+    snapshot = {
+        "timestamp": time.time(),
+        "monotonic_at": time.monotonic(),
+        "mode": str(getattr(config, "MODE", "unknown")).lower(),
+        "result": {key: result[key] for key in fields if key in result},
+        "debug": result.get("debug") if isinstance(result.get("debug"), dict) else None,
+    }
+    with lock:
+        setattr(config, "stream_vision_debug_snapshot", snapshot)
+    return True
+
 def publish_camera_frame_fallback(config, frame, max_stale_s=0.75):
     """Publish a raw camera frame only when no fresh annotated stream frame exists.
 
