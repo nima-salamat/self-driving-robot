@@ -7,6 +7,7 @@ from stream.vision_api import StreamVisionMixin
 def api(mode="city"):
     value=object.__new__(StreamVisionMixin)
     value.config=SimpleNamespace(MODE=mode)
+    value._mode_slug=lambda: mode
     return value
 
 

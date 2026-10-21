@@ -106,7 +106,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <span id="cad_cursor_x">X: — px</span>
       <span id="cad_cursor_y">Y: — px</span>
       <span id="cad_cursor_u">U: — %</span>
-      <span id="cad_cursor_v">V: — %</span>
+      <span id="cad_cursor_v">V: — %</span><span id="cad_cursor_z" title="Normal 2D camera pixels do not include depth">Z: —</span>
       <span class="workspace-status-spacer" aria-hidden="true"></span>
       <label class="small editor-zoom-label" for="workspace_zoom">View Zoom <input id="workspace_zoom" type="range" min="0.3" max="4.0" step="0.1" value="1.0"></label>
       <input id="workspace_zoom_percent" class="zoom-percent" type="text" value="100%" aria-label="View zoom percentage" title="Type 30%–400%, then press Enter or click outside to apply" inputmode="decimal" autocomplete="off" spellcheck="false">
@@ -288,6 +288,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="section-title">Precision Tools</div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_grid"> Grid</label><label><input type="checkbox" id="ext_snap"> Snap to 5%</label><label><input type="checkbox" id="ext_crosshair"> Crosshair</label></div>
       <div class="toggle-row"><label><input type="checkbox" id="ext_overlays" checked> ROI overlays</label><label><input type="checkbox" id="ext_ruler"> Ruler tool</label></div>
+      <div class="precision-scale-row"><label for="ext_measure_mm_per_px">Calibrated mm / image px (0 = pixels only)</label><div class="form-row"><input id="ext_measure_mm_per_px" type="number" min="0" max="10000" step="0.001" value="0" aria-describedby="ext_measure_scale_help"><button type="button" class="ghost" id="ext_measure_scale_apply">Apply scale</button></div><p class="small-muted" id="ext_measure_scale_help">Use only for a calibrated plane at comparable depth. A single scale does not correct perspective; camera Z/depth is not inferred.</p></div>
       <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
       <div class="small-muted">Operational ROI regions are edited through Properties. Notes and ruler measurements are workspace annotations only.</div>
       <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
@@ -299,6 +300,66 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="form-row"><button type="button" class="ghost" id="ext_profile_save">Save Profile</button><button type="button" class="ghost" id="ext_profile_load">Load</button><button type="button" class="ghost" id="ext_profile_delete">Delete</button></div>
     </div></details>
 
+    <details class="dock-panel" id="ext_vision_lab_panel"><summary class="dock-summary"><span>Lane Vision Lab</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Detector & preprocessing</div>
+      <label class="property-field">Lane detector<select id="wb_detector" style="width:100%"><option value="default">Classical / Hough</option><option value="blsf-beta">BLSF beta (City only)</option><option value="ml">ML (Race only)</option></select></label>
+      <p class="small-muted" id="wb_detector_help">Detector selection is startup-only; a running motion pipeline is never silently swapped.</p>
+      <div class="section-title">Hough / edge preprocessing</div>
+      <div class="wb-form-grid">
+        <label>Lane threshold<input id="wb_lane_threshold" type="number" min="0" max="255" step="1"></label>
+        <label>Hough vote threshold<input id="wb_hough_threshold" type="number" min="1" max="255" step="1"></label>
+        <label>Min line length (px)<input id="wb_hough_min_len" type="number" min="1" max="500" step="1"></label>
+        <label>Max line gap (px)<input id="wb_hough_gap" type="number" min="0" max="100" step="1"></label>
+        <label>Blur kernel (odd)<input id="wb_hough_blur" type="number" min="1" max="15" step="2"></label>
+      </div>
+      <label class="wb-check"><input id="wb_hough_morph" type="checkbox"> Morphological close</label>
+      <div id="wb_blsf_fields" hidden>
+        <div class="section-title">BLSF beta parameters</div>
+        <div class="wb-form-grid">
+          <label>Random seed<input id="wb_blsf_seed" type="number" min="0" max="1000000" step="1"></label>
+          <label>Min segment length<input id="wb_blsf_min_segment" type="number" min="1" max="500" step="1"></label>
+          <label>Angle limit °<input id="wb_blsf_angle" type="number" min="1" max="89" step="1"></label>
+          <label>Straight band °<input id="wb_blsf_straight" type="number" min="0" max="30" step="1"></label>
+          <label>Min angle vote<input id="wb_blsf_vote" type="number" min="0" step="1"></label>
+          <label>Median kernel (odd)<input id="wb_blsf_median" type="number" min="3" max="31" step="2"></label>
+          <label>Local threshold<input id="wb_blsf_local" type="number" min="0" max="255" step="1"></label>
+          <label>Sliding windows<input id="wb_blsf_windows" type="number" min="3" max="40" step="1"></label>
+          <label>Window width factor<input id="wb_blsf_width" type="number" min="0.05" max="1" step="0.01"></label>
+          <label>RANSAC iterations<input id="wb_blsf_iterations" type="number" min="1" max="1000" step="1"></label>
+          <label>RANSAC inlier threshold<input id="wb_blsf_ransac" type="number" min="0.1" step="0.1"></label>
+          <label>Minimum fit points<input id="wb_blsf_fit_points" type="number" min="3" step="1"></label>
+          <label>Default lane width factor<input id="wb_blsf_lane_width" type="number" min="0.05" max="1" step="0.01"></label>
+          <label>Fallback half width<input id="wb_blsf_half_width" type="number" min="0.05" max="0.5" step="0.01"></label>
+          <label>Steering KP<input id="wb_blsf_kp" type="number" min="0" max="5" step="0.01"></label>
+          <label>Steering smoothing<input id="wb_blsf_smoothing" type="number" min="0" max="1" step="0.01"></label>
+          <label>No-lane steering angle<input id="wb_blsf_no_lane" type="number" min="0" max="180" step="1"></label>
+        </div>
+      </div>
+      <div class="section-title">Sign area filter</div>
+      <label class="wb-check"><input id="wb_sign_area_enabled" type="checkbox"> Enable area filtering for selected sign classes</label>
+      <div class="wb-form-grid">
+        <label>Target sign labels<input id="wb_sign_targets" type="text" maxlength="120" placeholder="STOP"></label>
+        <label>Minimum detector box area (px²)<input id="wb_sign_min_area" type="number" min="0" max="10000000" step="25"></label>
+      </div>
+      <p class="small-muted">Enter recognized labels separated by commas (for example STOP). Area uses detector box px², not real-world size.</p>
+      <div class="form-row"><button type="button" class="btn" id="wb_vision_apply" {% if not stream_control %}disabled{% endif %}>Validate & Apply Settings</button><button type="button" class="ghost" id="wb_preview_btn">Preview Current Frame</button></div>
+      <div class="small status-line" id="wb_vision_status" role="status" aria-live="polite">Loading vision settings…</div>
+      <div class="section-title" style="margin-top:12px">Vision pipeline stages</div>
+      <p class="small-muted">Preview analyses one submitted/current frame only. It does not send motor commands. Compare edges and rejected/selected candidates; a preview is diagnostic, not proof of safe detection.</p>
+      <div id="wb_preview_status" class="small status-line" role="status">No preview yet.</div>
+      <div id="wb_stage_gallery" class="wb-stage-gallery"></div>
+      <pre id="wb_preview_summary" class="ext-pre">Candidate counts and rejection reason appear here.</pre>
+    </div></details>
+    <details class="dock-panel" id="ext_profiles_bundle_panel"><summary class="dock-summary"><span>Complete Profiles & Diagnostics</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
+      <div class="section-title">Unified profiles</div><p class="small-muted">A profile bundles active mode settings, detector tuning, workspace layout, grid scale and annotations. Loading requires RUN_LVL=STOP and never resumes motion.</p>
+      <label class="property-field">Profile name<input id="wb_profile_name" type="text" maxlength="48" placeholder="e.g. indoor-track"></label>
+      <label class="property-field" style="margin-top:8px">Saved profiles<select id="wb_profile_select" style="width:100%"><option value="">Loading profiles…</option></select></label>
+      <div class="form-row" style="margin-top:8px"><button type="button" class="ghost" id="wb_profile_save" {% if not stream_control %}disabled{% endif %}>Save Current</button><button type="button" class="btn" id="wb_profile_load" {% if not stream_control %}disabled{% endif %}>Load Selected</button><button type="button" class="ghost" id="wb_profile_delete" {% if not stream_control %}disabled{% endif %}>Delete</button></div>
+      <div class="form-row"><button type="button" class="ghost" id="wb_profile_export">Export JSON</button><button type="button" class="ghost" id="wb_profile_import" {% if not stream_control %}disabled{% endif %}>Import JSON</button><input id="wb_profile_file" type="file" accept=".json,application/json" hidden></div>
+      <div class="small status-line" id="wb_profile_status" role="status" aria-live="polite">Loading profiles…</div>
+      <div class="section-title" style="margin-top:14px">One-click diagnostic bundle</div><p class="small-muted">ZIP includes config, health snapshot, redacted recent logs, current frame and up to 12 pipeline-stage previews. Inspect it before sharing.</p>
+      <button type="button" class="ghost" id="wb_diagnostics_btn">Export Diagnostics ZIP</button><div class="small status-line" id="wb_diagnostics_status" role="status" aria-live="polite">Ready.</div>
+    </div></details>
     <details class="dock-panel" id="ext_config_panel"><summary class="dock-summary"><span>Config, Presets & History</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">
       <div class="section-title">Full Configuration</div>
       <div class="form-row"><button type="button" class="ghost" id="ext_export_config">Export Full JSON</button><button type="button" class="ghost" id="ext_import_config">Import JSON</button><input type="file" id="ext_config_file" accept=".json,application/json" hidden></div>
@@ -525,6 +586,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
 <script src="{{ url_for('static', filename='stream-core.js') }}"></script>
 
 <script src="{{ url_for('static', filename='stream-extensions.js') }}"></script>
+<script src="{{ url_for('static', filename='stream-workbench.js') }}"></script>
 
 <div id="ext_frame_compare" style="display:none;position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.82);align-items:center;justify-content:center;padding:18px">
   <div style="width:min(1000px,96vw);max-height:92vh;overflow:auto;background:#0b1420;border:1px solid var(--border);border-radius:8px;padding:12px">

@@ -162,8 +162,10 @@ from .configuration_api import StreamConfigurationMixin
 from .runtime_api import StreamRuntimeMixin
 from .pages_api import StreamPagesMixin
 from .media_api import StreamMediaMixin
+from .vision_api import StreamVisionMixin, register_vision_routes
+from .profiles_api import StreamProfilesMixin, register_profile_routes
 
-class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin, StreamRuntimeMixin, StreamPagesMixin, StreamMediaMixin):
+class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin, StreamRuntimeMixin, StreamPagesMixin, StreamMediaMixin, StreamVisionMixin, StreamProfilesMixin):
     def __init__(self, config):
         self.config = config
         self.app = Flask(__name__)
@@ -197,6 +199,8 @@ class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin
         register_media_routes(self.app, self)
         register_runtime_routes(self.app, self)
         register_configuration_routes(self.app, self)
+        register_vision_routes(self.app, self)
+        register_profile_routes(self.app, self)
 
 
 def _stream_access_urls(bind_host, port):

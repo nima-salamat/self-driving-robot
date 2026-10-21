@@ -696,7 +696,7 @@ class StreamConfigurationMixin:
             if view["gridMode"] not in {"off", "grid", "dots"}:
                 raise ValueError("view.gridMode must be off, grid, or dots")
             clean_view["gridMode"] = view["gridMode"]
-        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0), ("keyboardNudgePx", 1.0, 100.0), ("streamFps", 1.0, 30.0)):
+        for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0), ("keyboardNudgePx", 1.0, 100.0), ("streamFps", 1.0, 30.0), ("mmPerSourcePixel", 0.0, 10000.0)):
             if key in view:
                 if isinstance(view[key], bool):
                     raise ValueError(f"view.{key} must be numeric")
@@ -777,6 +777,17 @@ class StreamConfigurationMixin:
                     if not math.isfinite(val) or not 0 <= val <= 1:
                         raise ValueError("annotation coordinates must be normalized between 0 and 1")
                     entry[key] = val
+            if "space" in item:
+                if item["space"] not in {"image", "canvas"}:
+                    raise ValueError("annotation space must be image or canvas")
+                entry["space"] = item["space"]
+            if "distancePx" in item:
+                if isinstance(item["distancePx"], bool):
+                    raise ValueError("annotation distance must be numeric")
+                distance = float(item["distancePx"])
+                if not math.isfinite(distance) or not 0 <= distance <= 1000000000:
+                    raise ValueError("annotation distance is out of range")
+                entry["distancePx"] = distance
             if "label" in item:
                 entry["label"] = str(item["label"])[:80]
             if "color" in item and isinstance(item["color"], str) and re.fullmatch(r"#[0-9a-fA-F]{6}", item["color"]):

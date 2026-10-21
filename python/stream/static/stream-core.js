@@ -32,7 +32,8 @@ const STREAM_VIEW_ONLY_IDS = new Set([
     'roi_setting_keyboard_nudge', 'roi_setting_stream_fps', 'roi_setting_snap',
     'roi_setting_label_size', 'roi_setting_label_weight', 'roi_setting_label_shape',
     'roi_setting_outline_thickness', 'roi_setting_handle_size',
-    'ext_grid', 'ext_overlays', 'ext_snap', 'ext_crosshair'
+    'ext_grid', 'ext_overlays', 'ext_snap', 'ext_crosshair', 'ext_measure_mm_per_px', 'ext_measure_scale_apply',
+    'wb_preview_btn', 'wb_profile_select', 'wb_profile_export', 'wb_diagnostics_btn'
 ]);
 function syncStreamPermissionUI(){
     const permission=STREAM_CONTROL_ALLOWED?'enabled':'read-only';

@@ -1619,3 +1619,22 @@ canvas {
 @media (max-width:520px) {
   .frame-overlay-field-grid { grid-template-columns:minmax(0,1fr); }
 }
+
+/* Lane Vision Lab and profile manager */
+.wb-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px;margin:7px 0}
+.wb-form-grid label{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--muted);font-size:10px}
+.wb-form-grid input,.wb-form-grid select{width:100%;min-width:0;font-size:12px}
+.wb-check{display:flex;align-items:center;gap:6px;font-size:11px;margin:7px 0}
+#wb_blsf_fields[hidden]{display:none!important}
+.wb-stage-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px}
+.wb-stage-card{min-width:0;display:flex;flex-direction:column;gap:5px;border:1px solid var(--border);border-radius:6px;padding:6px;background:#080f18}
+.wb-stage-card strong{font-size:10px;color:var(--txt);font-weight:600}
+.wb-stage-card img{display:block;width:100%;height:auto;max-height:180px;object-fit:contain;background:#02060a;border-radius:3px}
+.wb-stage-card button{align-self:flex-start;font-size:10px}
+#wb_preview_summary{max-height:260px}
+.precision-scale-row{margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.precision-scale-row>label{font-size:11px;color:var(--muted)}
+.precision-scale-row .form-row{align-items:center}
+.precision-scale-row input{width:100%;min-width:0}
+#cad_cursor_z{white-space:nowrap}
+@media(max-width:420px){.wb-form-grid{grid-template-columns:minmax(0,1fr)}.wb-stage-gallery{grid-template-columns:minmax(0,1fr)}}
