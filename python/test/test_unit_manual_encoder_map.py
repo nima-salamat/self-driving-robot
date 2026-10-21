@@ -122,6 +122,21 @@ class ManualEncoderMapTests(unittest.TestCase):
         self.tracker.poll_once()
         self.assertAlmostEqual(self.tracker.snapshot()["travel_cm"], 3.0)
 
+    def test_calibration_form_allows_positive_or_negative_at_both_servo_endpoints(self):
+        html = (PYTHON_ROOT / "test" / "manual_encoder_map.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="45"',
+            html,
+        )
+        self.assertIn(
+            'id="roadMax" name="road_angle_max_deg" type="number" min="-45" max="45"',
+            html,
+        )
+        self.assertNotIn('id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="-0.0001"', html)
+        self.assertNotIn('id="roadMax" name="road_angle_max_deg" type="number" min="0.0001" max="45"', html)
+
     def test_reversed_servo_direction_accepts_positive_min_and_negative_max(self):
         calibration = {
             "pulse_distance_cm": 0.4,
