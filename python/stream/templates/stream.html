@@ -357,6 +357,42 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="toggle-row"><label><input type="checkbox" id="ext_auto_exposure"> Auto exposure</label><label><input type="checkbox" id="ext_auto_wb"> Auto white balance</label></div>
       <div class="form-row"><button type="button" class="btn" id="ext_apply_camera">Apply Camera Controls</button></div>
       <div class="small-muted">Camera controls are runtime-only and are only editable when Picamera2 exposes the requested hardware controls.</div>
+      <div class="section-title" style="margin-top:14px">Camera Calibration Profile</div>
+      <p class="small-muted">Select the intrinsic/distortion model used to undistort camera frames. Upload accepts validated OpenCV NumPy .npz files only (16 MiB maximum); uploaded files are stored under <code>python/assets/camera_calibrations/</code>. Uploading does not activate a file.</p>
+      <div id="ext_calibration_status" class="small status-line" role="status" aria-live="polite">Loading calibration profiles…</div>
+      <div class="form-row">
+        <label class="label" for="ext_calibration_file">Calibration file</label>
+        <select id="ext_calibration_file" style="width:100%" {% if not stream_control %}disabled{% endif %}><option value="">Loading…</option></select>
+      </div>
+      <div class="toggle-row"><label><input type="checkbox" id="ext_calibration_enabled" checked {% if not stream_control %}disabled{% endif %}> Apply camera undistortion</label></div>
+      <div class="form-row">
+        <button type="button" class="btn" id="ext_calibration_apply" {% if not stream_control %}disabled{% endif %}>Apply Selected Calibration</button>
+        <button type="button" class="ghost" id="ext_calibration_refresh">Refresh Files</button>
+      </div>
+      <div class="section-title" style="margin-top:10px">Upload a Calibration File</div>
+      <div class="form-row"><input type="file" id="ext_calibration_upload_file" accept=".npz,application/octet-stream" aria-label="Choose a camera calibration NPZ file" {% if not stream_control %}disabled{% endif %}></div>
+      <div class="form-row"><button type="button" class="ghost" id="ext_calibration_upload" {% if not stream_control %}disabled{% endif %}>Upload &amp; Validate</button></div>
+      <p class="small-muted">Selecting or enabling/disabling calibration requires <code>RUN_LVL=STOP</code>. The selected profile is switched on the live capture worker when available and saved to the active mode JSON. If the camera is not exposed to Stream, restart the mode to apply it.</p>
+
+      <div class="section-title" style="margin-top:14px">Frame Text Overlay</div>
+      <p class="small-muted">Choose which diagnostics are written over the camera frame. These choices are saved per mode in the Stream UI settings; they do not affect robot control or the lane detector's geometry overlays.</p>
+      <div class="frame-overlay-field-grid">
+        <label><input type="checkbox" id="ext_overlay_fps" {% if ui.get('frame_overlay', {}).get('fps', true) %}checked{% endif %}> Processing FPS</label>
+        <label><input type="checkbox" id="ext_overlay_realfps" {% if ui.get('frame_overlay', {}).get('realfps', false) %}checked{% endif %}> Camera / Real FPS</label>
+        <label><input type="checkbox" id="ext_overlay_status" {% if ui.get('frame_overlay', {}).get('status', true) %}checked{% endif %}> Mode status</label>
+        <label><input type="checkbox" id="ext_overlay_applied_angle" {% if ui.get('frame_overlay', {}).get('applied_angle', true) %}checked{% endif %}> Applied servo angle</label>
+        <label><input type="checkbox" id="ext_overlay_vision_angle" {% if ui.get('frame_overlay', {}).get('vision_angle', true) %}checked{% endif %}> Vision steering target</label>
+        <label><input type="checkbox" id="ext_overlay_servo_center" {% if ui.get('frame_overlay', {}).get('servo_center', true) %}checked{% endif %}> Servo center</label>
+        <label><input type="checkbox" id="ext_overlay_crosswalk" {% if ui.get('frame_overlay', {}).get('crosswalk', false) %}checked{% endif %}> Crosswalk state</label>
+        <label><input type="checkbox" id="ext_overlay_sign" {% if ui.get('frame_overlay', {}).get('sign', false) %}checked{% endif %}> Detected sign</label>
+        <label><input type="checkbox" id="ext_overlay_last_tag" {% if ui.get('frame_overlay', {}).get('last_tag', false) %}checked{% endif %}> Last sign / tag</label>
+        <label><input type="checkbox" id="ext_overlay_error" {% if ui.get('frame_overlay', {}).get('error', false) %}checked{% endif %}> Lane error</label>
+        <label><input type="checkbox" id="ext_overlay_lane_type" {% if ui.get('frame_overlay', {}).get('lane_type', false) %}checked{% endif %}> Lane detection type</label>
+        <label><input type="checkbox" id="ext_overlay_speed" {% if ui.get('frame_overlay', {}).get('speed', false) %}checked{% endif %}> Commanded speed</label>
+        <label><input type="checkbox" id="ext_overlay_confidence" {% if ui.get('frame_overlay', {}).get('confidence', false) %}checked{% endif %}> Perception confidence</label>
+        <label><input type="checkbox" id="ext_overlay_obstacle" {% if ui.get('frame_overlay', {}).get('obstacle', false) %}checked{% endif %}> Obstacle planner</label>
+      </div>
+      <div class="form-row"><button type="button" class="btn" id="ext_overlay_apply" {% if not stream_control %}disabled{% endif %}>Apply Frame Overlay</button><span id="ext_overlay_status" class="small-muted" role="status" aria-live="polite">Saved per mode.</span></div>
     </div></details>
 
     <details class="dock-panel" id="ext_live_features_panel"><summary class="dock-summary"><span>Live Feature Status</span><span class="dock-chevron" aria-hidden="true">⌄</span></summary><div class="dock-content">

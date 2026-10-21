@@ -796,6 +796,105 @@ async function applyProcessingRate(){
   $('ext_fps_status').textContent='Saved · '+Number(data.target_fps).toFixed(1)+' FPS'+(processingRateDraftDirty?' · newer edit not applied':'');
   currentConfig=await readConfig().catch(function(){return currentConfig;});rememberUndo(before,currentConfig);showToast('Processing-rate limit applied and saved');
 }
+async function refreshCameraCalibrations(){
+  const status=$('ext_calibration_status'),select=$('ext_calibration_file');
+  if(!status||!select)return;
+  try{
+    const response=await nativeFetch('/api/camera/calibrations',{cache:'no-store'});
+    const data=await response.json().catch(function(){return {};});
+    if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+    select.replaceChildren();
+    let validCount=0;
+    (data.files||[]).forEach(function(file){
+      const option=document.createElement('option');
+      option.value=file.reference||'';
+      option.textContent=(file.valid?'':'⚠ Invalid · ')+file.filename
+        +(file.active?' · Active':'')
+        +(file.quality_status?' · '+file.quality_status:'');
+      option.title=file.valid?'':'Not selectable: '+(file.error||'invalid calibration');
+      option.disabled=!file.valid;
+      if(file.valid)validCount+=1;
+      select.appendChild(option);
+    });
+    if(data.active_reference&&(data.files||[]).some(function(f){return f.valid&&f.reference===data.active_reference;})){
+      select.value=data.active_reference;
+    }else if(validCount){
+      const first=(data.files||[]).find(function(f){return f.valid;});
+      select.value=first.reference;
+    }else{
+      const option=document.createElement('option');option.value='';option.textContent='No valid calibration files';option.disabled=true;select.appendChild(option);
+    }
+    const enabled=$('ext_calibration_enabled');
+    if(enabled)enabled.checked=!!data.enabled;
+    const apply=$('ext_calibration_apply');
+    if(apply)apply.disabled=!STREAM_CONTROL_ALLOWED||validCount===0;
+    const upload=$('ext_calibration_upload');
+    if(upload)upload.disabled=!STREAM_CONTROL_ALLOWED;
+    status.textContent=String(data.mode||'mode').toUpperCase()
+      +' · RUN_LVL='+String(data.run_level||'UNKNOWN')
+      +' · '+(data.enabled?'undistortion ON':'undistortion OFF')
+      +' · '+validCount+' valid calibration file(s)'
+      +(data.active_calibration?' · Active: '+data.active_calibration.filename:' · Active file missing or invalid');
+    status.title=data.active_reference||'No active calibration reference';
+    return data;
+  }catch(error){
+    status.textContent='Calibration profiles unavailable: '+(error&&error.message?error.message:'request failed');
+    const apply=$('ext_calibration_apply');if(apply)apply.disabled=true;
+  }
+}
+async function uploadCameraCalibration(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const input=$('ext_calibration_upload_file');
+  if(!input||!input.files||!input.files[0])throw new Error('Choose a .npz calibration file first.');
+  const file=input.files[0];
+  if(!/\.npz$/i.test(file.name))throw new Error('Only .npz calibration files are supported.');
+  const status=$('ext_calibration_status');
+  if(status)status.textContent='Uploading and validating '+file.name+'…';
+  const body=new FormData();body.append('file',file,file.name);
+  const response=await nativeFetch('/api/camera/calibrations',{method:'POST',body:body});
+  const data=await response.json().catch(function(){return {};});
+  if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  input.value='';
+  await refreshCameraCalibrations();
+  const select=$('ext_calibration_file');
+  if(select&&data.reference)select.value=data.reference;
+  if(status)status.textContent=data.message||'Calibration uploaded and validated. Apply to activate it.';
+  showToast('Calibration uploaded and validated; it has not been activated yet.');
+}
+async function applyCameraCalibrationSelection(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const select=$('ext_calibration_file'),enabled=$('ext_calibration_enabled');
+  const reference=select?select.value:'';
+  if(!reference)throw new Error('Select a valid camera calibration profile first.');
+  const response=await nativeFetch('/api/camera/calibrations',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'select',reference:reference,enabled:!!(enabled&&enabled.checked)})
+  });
+  const data=await response.json().catch(function(){return {};});
+  if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  const status=$('ext_calibration_status');
+  if(status)status.textContent=data.message+' · '+(data.enabled?'enabled':'disabled')+' · '+data.reference;
+  showToast(data.message||'Camera calibration selection saved.');
+  await refreshCameraCalibrations();
+}
+async function saveFrameOverlaySettings(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const keys=['fps','realfps','status','applied_angle','vision_angle','servo_center','crosswalk','sign','last_tag','error','lane_type','speed','confidence','obstacle'];
+  const frame_overlay={};
+  keys.forEach(function(key){
+    const input=$('ext_overlay_'+key);
+    frame_overlay[key]=!!(input&&input.checked);
+  });
+  const response=await nativeFetch('/set_ui',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({frame_overlay:frame_overlay})
+  });
+  const data=await response.json().catch(function(){return {};});
+  if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+  const status=$('ext_overlay_status');
+  if(status)status.textContent='Saved · '+keys.filter(function(key){return frame_overlay[key];}).length+' telemetry field(s) selected.';
+  showToast('Frame text overlay preferences saved for this mode.');
+}
 async function applyCameraControls(){
   const before=currentConfig?jsonClone(currentConfig):await readConfig();
   const payload={};
@@ -1605,6 +1704,11 @@ function installExtension(){
   $('ext_preset_delete').onclick=function(){presetAction('delete').catch(function(e){showToast(e.message);});};
   $('ext_compare_preset').onclick=function(){comparePreset().catch(function(e){showToast(e.message);});};$('ext_history_refresh').onclick=function(){refreshHistory().catch(function(e){showToast(e.message);});};$('ext_history_restore').onclick=function(){restoreHistory().catch(function(e){showToast(e.message);});};
   $('ext_apply_fps').onclick=function(){applyProcessingRate().catch(function(e){showToast(e.message);});};$('ext_apply_camera').onclick=function(){applyCameraControls().catch(function(e){showToast(e.message);});};
+  $('ext_calibration_apply').onclick=function(){applyCameraCalibrationSelection().catch(function(error){showToast('Could not apply calibration: '+error.message);const status=$('ext_calibration_status');if(status)status.textContent=error.message;});};
+  $('ext_calibration_refresh').onclick=function(){refreshCameraCalibrations();};
+  $('ext_calibration_upload').onclick=function(){uploadCameraCalibration().catch(function(error){showToast('Could not upload calibration: '+error.message);const status=$('ext_calibration_status');if(status)status.textContent=error.message;});};
+  $('ext_overlay_apply').onclick=function(){saveFrameOverlaySettings().catch(function(error){showToast('Could not save frame overlay: '+error.message);const status=$('ext_overlay_status');if(status)status.textContent=error.message;});};
+  refreshCameraCalibrations();
   $('ext_sign_requests_pause').onclick=function(){signRequestsAction('pause').catch(function(e){showToast(e.message);});};$('ext_sign_requests_resume').onclick=function(){signRequestsAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_software_stop').onclick=function(){safetyAction('stop').catch(function(e){showToast(e.message);});};$('ext_software_resume').onclick=function(){safetyAction('resume').catch(function(e){showToast(e.message);});};
   $('ext_exposure').addEventListener('input',function(){markCameraDraftDirty('ext_exposure');});
