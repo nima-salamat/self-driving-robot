@@ -20,6 +20,7 @@ CAMERA_HEIGHT = 27 # height of camera in real world
 CAMERA_FPS = 60.0
 # Apply saved intrinsic/distortion calibration to runtime camera frames.
 APPLY_CAMERA_CALIBRATION = True
+CAMERA_CALIBRATION_FILE = "assets/camera_calibrations/camera_calibration.npz"  # [JSON] active camera intrinsic/distortion model
 
 
 # --- ROI Shape Features ---
