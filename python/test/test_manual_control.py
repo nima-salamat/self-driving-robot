@@ -69,10 +69,9 @@ SERVO_CENTER=float(getattr(config_city,"SERVO_CENTER",95))
 SERVO_MIN=float(getattr(config_city,"MIN_SERVO_ANGLE",50))
 SERVO_MAX=float(getattr(config_city,"MAX_SERVO_ANGLE",130))
 DEFAULT_MAX_SPEED=max(0,min(255,int(getattr(config_city,"SPEED",255))))
-ENCODER_DEFAULTS={"pulse_distance_cm":getattr(config_city,"ENCODER_PULSE_DISTANCE_CM",None),
- "wheelbase_cm":getattr(config_city,"ENCODER_WHEELBASE_CM",None),
- "road_angle_min_deg":getattr(config_city,"ENCODER_ROAD_ANGLE_MIN_DEG",None),
- "road_angle_max_deg":getattr(config_city,"ENCODER_ROAD_ANGLE_MAX_DEG",None)}
+ENCODER_DEFAULTS={"pulse_distance_cm":getattr(config_city,"ENCODER_PULSE_DISTANCE_CM",0.4),
+ "wheelbase_cm":getattr(config_city,"ENCODER_WHEELBASE_CM",25.0),
+ "max_wheel_angle_deg":getattr(config_city,"ENCODER_MAX_WHEEL_ANGLE_DEG",25.0)}
 
 CONTROL_HZ = 60.0
 UI_HZ = 20.0
@@ -123,6 +122,17 @@ def load_settings():
             with open(STATE_FILE, 'r') as f:
                 j = json.load(f)
             s.update(j)
+            # Migrate older saved endpoint-angle calibration to the current model.
+            # Keep pulse distance and wheelbase, but use the current default for the
+            # single editable effective wheel-angle limit.
+            saved_calibration = j.get("encoder_calibration")
+            if isinstance(saved_calibration, dict):
+                migrated = dict(s["encoder_calibration"])
+                for key in ("pulse_distance_cm", "wheelbase_cm", "max_wheel_angle_deg"):
+                    value = saved_calibration.get(key)
+                    if value is not None and value != "":
+                        migrated[key] = value
+                s["encoder_calibration"] = migrated
         except Exception:
             log.exception('load settings failed')
     return s
