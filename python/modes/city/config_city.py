@@ -126,12 +126,11 @@ CROSSWALK_THRESH_SPEND = 8  # [JSON] crosswalk re-detection cooldown window, in 
 # Stream (enable/disable) 
 STREAM = False
 ENCODER_MAP_ENABLED = False
-# Measured physical geometry for --encoder-map / host-adaptive features.
-# Steering endpoint angles remain unset until measured; CLI values override them.
+# Physical geometry and initial effective steering model for the encoder map.
+# 25 degrees is a tunable starting estimate, not a measured wheel angle.
 ENCODER_PULSE_DISTANCE_CM = 0.4
 ENCODER_WHEELBASE_CM = 25.0
-ENCODER_ROAD_ANGLE_MIN_DEG = None
-ENCODER_ROAD_ANGLE_MAX_DEG = None
+ENCODER_MAX_WHEEL_ANGLE_DEG = 25.0
 
 CONFIDENCE_AWARE_ENABLED = False
 ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED = False
