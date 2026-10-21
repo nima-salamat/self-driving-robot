@@ -189,6 +189,28 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("max-height: min(55dvh, 360px)", css)
         self.assertIn("max-height: min(42dvh, 200px)", css)
 
+    def test_settings_panel_has_visible_bounded_keyboard_resizer(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="panel_resize_handle"', template)
+        self.assertIn('role="separator" aria-orientation="vertical"', template)
+        self.assertIn('title="Drag to resize the settings panel.', template)
+        self.assertIn("function initializeResize()", extensions)
+        self.assertIn("handle.addEventListener('pointerdown'", extensions)
+        self.assertIn("handle.addEventListener('pointermove'", extensions)
+        self.assertIn("event.key==='ArrowLeft'", extensions)
+        self.assertIn("event.key==='ArrowRight'", extensions)
+        self.assertIn("event.key==='Home'", extensions)
+        self.assertIn("event.key==='End'", extensions)
+        self.assertIn("Math.min(700,window.innerWidth-360)", extensions)
+        self.assertIn(".panel-resize-handle{display:none;align-items:center;justify-content:center", css)
+        self.assertIn("grid-template-columns:minmax(0,1fr) 12px var(--right-pane-width)", css)
+        self.assertIn(".container.dock-hidden > .panel-resize-handle { display:none !important; }", css)
+        self.assertIn(".panel-resize-handle { display:none !important; }", css)
+
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
         core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")

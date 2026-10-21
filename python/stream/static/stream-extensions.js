@@ -1034,12 +1034,64 @@ function enableReadOnlyState(){
   ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_sign_requests_pause','ext_sign_requests_resume','ext_software_stop','ext_software_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
 }
 function initializeResize(){
-  const container=document.querySelector('.container'),panel=document.querySelector('.right-panel');if(!container||!panel)return;
+  const container=document.querySelector('.container'),panel=document.querySelector('.right-panel'),handle=$('panel_resize_handle');
+  if(!container||!panel||!handle)return;
   let active=false,startX=0,startWidth=315;
-  panel.addEventListener('pointerdown',function(e){const bounds=panel.getBoundingClientRect();if(e.clientX-bounds.left>12||window.innerWidth<721||e.button!==0)return;active=true;startX=e.clientX;startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||bounds.width;panel.setPointerCapture(e.pointerId);e.preventDefault();});
-  panel.addEventListener('pointermove',function(e){if(!active)return;const delta=startX-e.clientX;const width=Math.max(250,Math.min(700,startWidth+delta));container.style.setProperty('--right-pane-width',width+'px');});
-  panel.addEventListener('pointerup',function(){if(!active)return;active=false;scheduleWorkspaceSave();});
-  panel.addEventListener('pointercancel',function(){active=false;});
+  function limits(){
+    const minimum=250;
+    const maximum=Math.max(minimum,Math.min(700,window.innerWidth-360));
+    return {minimum:minimum,maximum:maximum};
+  }
+  function announceWidth(width){
+    const bounds=limits();
+    handle.setAttribute('aria-valuemin',String(bounds.minimum));
+    handle.setAttribute('aria-valuemax',String(bounds.maximum));
+    handle.setAttribute('aria-valuenow',String(Math.round(width)));
+    handle.setAttribute('aria-valuetext',Math.round(width)+' pixels wide');
+  }
+  function setWidth(requested){
+    const bounds=limits();
+    const width=Math.round(Math.min(bounds.maximum,Math.max(bounds.minimum,Number(requested)||315)));
+    container.style.setProperty('--right-pane-width',width+'px');
+    announceWidth(width);
+  }
+  function finishResize(){
+    if(!active)return;
+    active=false;
+    container.classList.remove('panel-resizing');
+    scheduleWorkspaceSave();
+  }
+  handle.addEventListener('pointerdown',function(event){
+    if(window.innerWidth<721||(event.button!==0&&event.pointerType!=='touch'))return;
+    active=true;
+    startX=event.clientX;
+    startWidth=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||panel.getBoundingClientRect().width;
+    container.classList.add('panel-resizing');
+    handle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  handle.addEventListener('pointermove',function(event){
+    if(!active)return;
+    setWidth(startWidth-(event.clientX-startX));
+  });
+  handle.addEventListener('pointerup',finishResize);
+  handle.addEventListener('pointercancel',finishResize);
+  handle.addEventListener('keydown',function(event){
+    if(window.innerWidth<721)return;
+    const bounds=limits();
+    const current=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||panel.getBoundingClientRect().width;
+    if(event.key==='ArrowLeft'){event.preventDefault();setWidth(current+24);scheduleWorkspaceSave();}
+    else if(event.key==='ArrowRight'){event.preventDefault();setWidth(current-24);scheduleWorkspaceSave();}
+    else if(event.key==='Home'){event.preventDefault();setWidth(bounds.minimum);scheduleWorkspaceSave();}
+    else if(event.key==='End'){event.preventDefault();setWidth(bounds.maximum);scheduleWorkspaceSave();}
+  });
+  window.addEventListener('resize',function(){
+    if(window.innerWidth<721)return;
+    const saved=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'));
+    if(Number.isFinite(saved))setWidth(saved);
+    else announceWidth(panel.getBoundingClientRect().width);
+  });
+  announceWidth(parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||panel.getBoundingClientRect().width);
 }
 function initializeConsoleResize(){
   const consoleDock=$('bottom_console'),handle=$('console_resize_handle');
