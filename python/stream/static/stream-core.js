@@ -1329,10 +1329,14 @@ function updateHealth(){
                 const fault = h.faults[name] || {};
                 return name + (fault.message ? ': ' + fault.message : '');
             });
-            const faultSignature = details.join(' | ');
-            faults.textContent = 'Faults: ' + (details.length ? faultSignature : 'none');
+            const faultSignature = names.slice().sort().map(name => {
+                const fault = (h.faults || {})[name] || {};
+                return name + ':' + String(fault.severity || 'unknown');
+            }).join(' | ');
+            const faultDetails = details.join(' | ');
+            faults.textContent = 'Faults: ' + (faultDetails || 'none');
             if(lastLoggedFaultSignature !== faultSignature) {
-                if(faultSignature) noteWorkspaceEvent('error', 'Runtime faults: ' + faultSignature);
+                if(faultSignature) noteWorkspaceEvent('error', 'Runtime faults: ' + faultDetails);
                 else if(lastLoggedFaultSignature) noteWorkspaceEvent('info', 'Runtime faults cleared');
                 lastLoggedFaultSignature = faultSignature;
             }
