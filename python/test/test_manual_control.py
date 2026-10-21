@@ -77,11 +77,26 @@ ENCODER_DEFAULTS={"pulse_distance_cm":getattr(config_city,"ENCODER_PULSE_DISTANC
 CONTROL_HZ = 60.0
 UI_HZ = 20.0
 WATCHDOG_MULT = 3.0
+PRIORITY_STOP_REFRESH_INTERVAL = 0.10  # Reassert stop at 10 Hz while Space/E-STOP is active
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s')
 log = logging.getLogger('manual_enterprise')
 
 # ---------- Defaults & persistence ----------
+def _servo_angle_for_steer(steer, limit, trim=0.0):
+    """Convert normalized steering into a bounded physical servo command."""
+    steer = max(-1.0, min(1.0, float(steer)))
+    limit = max(10.0, min(90.0, float(limit)))
+    trim = max(-30.0, min(30.0, float(trim)))
+    angle = SERVO_CENTER + trim + steer * limit
+    return int(round(max(SERVO_MIN, min(SERVO_MAX, angle))))
+
+
+def _priority_stop_due(active, was_active, now, last_sent):
+    """Send immediately on activation, then periodically for the duration."""
+    return bool(active and (not was_active or now - last_sent >= PRIORITY_STOP_REFRESH_INTERVAL))
+
+
 def default_settings():
     return {
         'deadman': 1.0,
@@ -136,6 +151,8 @@ state = {
     'angle_target': float(SERVO_CENTER) + float(settings.get('angle_trim', 0.0)),
     'speed_target': 0.0,
     'speed_immediate': False,
+    'steering_immediate': False,
+    'hold_stop_clients': set(),
     'last_ui': time.monotonic(),
     'last_cmd': 0.0,
     'estop': False,
@@ -189,13 +206,16 @@ def on_connect(auth):
         log.warning("Rejected manual-control socket with invalid token");disconnect();return
     with state_lock: state["clients"][request.sid]={"last_seen":time.monotonic()}
     emit("init",{"angle":state["angle"],"speed":state["speed"],"settings":state["settings"],"estop":state["estop"],
+                 "hold_stop":bool(state["hold_stop_clients"]),
                  "servo_center":SERVO_CENTER,"servo_min":SERVO_MIN,"servo_max":SERVO_MAX})
 
 @socketio.on("disconnect")
 def on_disconnect():
     with state_lock:
         state["clients"].pop(request.sid,None);state["seq_seen"].pop(request.sid,None)
-        state["speed_target"]=state["speed"]=0.0;state["angle_target"]=SERVO_CENTER
+        state["hold_stop_clients"].discard(request.sid)
+        state["speed_target"]=state["speed"]=0.0;state["angle_target"]=state["angle"]=SERVO_CENTER
+        state["speed_immediate"]=False;state["steering_immediate"]=False
         state["last_cmd"]=0.0;state["watchdog_active"]=True
 
 @socketio.on("input")
@@ -216,16 +236,29 @@ def on_input(msg):
             emit("cmd_ack",{"seq":seq});return
         if request.sid not in state["clients"]:
             emit("cmd_nack",{"seq":seq,"err":"not_connected"});return
+        state["seq_seen"][request.sid]=seq
+        state["clients"][request.sid]["last_seen"]=now
+        state["last_ui"]=now
+
+        # A held Space stop and E-STOP are server-side motion interlocks.
+        # Ignore all motion inputs while either interlock is active.
+        if state["hold_stop_clients"] or state["estop"]:
+            state["speed_target"]=state["speed"]=0.0
+            state["angle_target"]=state["angle"]=SERVO_CENTER
+            state["speed_immediate"]=False;state["steering_immediate"]=False
+            state["last_cmd"]=0.0;state["watchdog_active"]=True
+            emit("cmd_ack",{"seq":seq});return
+
         s=state["settings"]
         if msg.get("is_mobile") and s.get("invert_mobile_y",False):forward=-forward
         limit=max(10,min(90,float(s.get("angle_limit_deg",60))))
-        angle=max(SERVO_MIN,min(SERVO_MAX,SERVO_CENTER+float(s.get("angle_trim",0))+steer*limit))
+        angle=_servo_angle_for_steer(steer,limit,float(s.get("angle_trim",0.0)))
         max_speed=max(0,min(255,int(s.get("max_speed",DEFAULT_MAX_SPEED))))
-        state["seq_seen"][request.sid]=seq;state["clients"][request.sid]["last_seen"]=now
-        state["last_ui"]=now;state["last_cmd"]=now;state["watchdog_active"]=False
+        state["last_cmd"]=now;state["watchdog_active"]=False
         state["angle_target"]=angle
-        state["speed_target"]=0.0 if state["estop"] else max_speed*forward*scale
+        state["speed_target"]=max_speed*forward*scale
         state["speed_immediate"] = msg.get("speed_immediate") is True
+        state["steering_immediate"] = msg.get("steering_immediate") is True
     emit("cmd_ack",{"seq":seq})
 
 @socketio.on("set_setting")
@@ -262,6 +295,27 @@ def on_set_setting(msg):
         emit("setting_ack",{"key":key,"value":snapshot.get(key)})
     except (TypeError,ValueError) as exc:emit("setting_nack",{"key":key,"err":str(exc)})
 
+@socketio.on("hold_stop")
+def on_hold_stop(msg):
+    """Space is a hold-to-stop interlock; release never restores prior throttle."""
+    if not isinstance(msg,dict) or not isinstance(msg.get("active"),bool):
+        emit("hold_stop_nack",{"err":"bad_payload"});return
+    with state_lock:
+        if request.sid not in state["clients"]:
+            emit("hold_stop_nack",{"err":"not_connected"});return
+        if msg["active"]:
+            state["hold_stop_clients"].add(request.sid)
+        else:
+            state["hold_stop_clients"].discard(request.sid)
+        state["speed_target"]=state["speed"]=0.0
+        state["angle_target"]=state["angle"]=SERVO_CENTER
+        state["speed_immediate"]=False;state["steering_immediate"]=False
+        # Require a fresh command after release; never restore an old throttle.
+        state["last_cmd"]=0.0;state["watchdog_active"]=True
+        active=bool(state["hold_stop_clients"])
+    socketio.emit("hold_stop_state",{"active":active},namespace="/")
+
+
 @socketio.on("heartbeat")
 def on_heartbeat(msg):
     now=time.monotonic()
@@ -292,6 +346,8 @@ _shutdown_started=threading.Event()
 _hardware_command_lock=threading.Lock()
 _last_hw_speed=None
 _last_hw_angle=None
+_last_priority_stop_at=0.0
+_priority_stop_was_active=False
 
 def _connection_snapshot():
     conn=getattr(hw,"connection",None)
@@ -304,31 +360,39 @@ def broadcaster():
         with state_lock:
             payload={"angle":state["angle"],"speed":state["speed"],"angle_target":state["angle_target"],
                      "speed_target":state["speed_target"],"settings":dict(state["settings"]),"clients":len(state["clients"]),
-                     "connected":connected,"connection_state":conn_state,"estop":state["estop"],"watchdog_active":state["watchdog_active"]}
+                     "connected":connected,"connection_state":conn_state,"estop":state["estop"],
+                     "hold_stop":bool(state["hold_stop_clients"]),"watchdog_active":state["watchdog_active"]}
         socketio.emit("state",payload);socketio.sleep(1.0/UI_HZ)
 
 def control_loop():
     global pid_angle,pid_speed,_last_hw_speed,_last_hw_angle
+    global _last_priority_stop_at,_priority_stop_was_active
     last=time.monotonic()
     while not _stop.is_set():
         now=time.monotonic();dt=max(1e-4,now-last);last=now
         with state_lock:
             s=state;sett=s["settings"]
             expired=s["last_cmd"]<=0 or now-s["last_cmd"]>max(.2,float(sett.get("deadman",1)))
-            hard=bool(s["estop"] or expired or not s["clients"])
+            hold_stop_active=bool(s["hold_stop_clients"])
+            priority_stop=bool(s["estop"] or hold_stop_active)
+            hard=bool(priority_stop or expired or not s["clients"])
             if hard:
                 if expired and not s["watchdog_active"]:log.warning("Manual input expired; forcing STOP")
                 s["speed_target"]=s["speed"]=0.0;s["angle_target"]=s["angle"]=SERVO_CENTER
-                s["watchdog_active"]=bool(expired or s["estop"])
+                s["speed_immediate"]=False;s["steering_immediate"]=False
+                s["watchdog_active"]=bool(expired or priority_stop)
                 pid_angle=PID(*sett.get("angle_pid",[2,0,.25]));pid_speed=PID(*sett.get("speed_pid",[3,0,.15]))
             elif sett.get("smoothing_mode","alpha")=="pid":
-                s["angle"]+=pid_angle.step(s["angle_target"],s["angle"],dt)*dt
+                if s.get("steering_immediate",False):s["angle"]=s["angle_target"]
+                else:s["angle"]+=pid_angle.step(s["angle_target"],s["angle"],dt)*dt
                 if s.get("speed_immediate",False):s["speed"]=s["speed_target"]
                 else:s["speed"]+=pid_speed.step(s["speed_target"],s["speed"],dt)*dt
                 s["watchdog_active"]=False
             else:
                 aa=max(.01,min(.9,float(sett.get("angle_alpha",.18))));sa=max(.01,min(.9,float(sett.get("speed_alpha",.20))))
-                factor=dt*CONTROL_HZ;s["angle"]+=(s["angle_target"]-s["angle"])*(1-pow(1-aa,factor))
+                factor=dt*CONTROL_HZ
+                if s.get("steering_immediate",False):s["angle"]=s["angle_target"]
+                else:s["angle"]+=(s["angle_target"]-s["angle"])*(1-pow(1-aa,factor))
                 if s.get("speed_immediate",False):s["speed"]=s["speed_target"]
                 else:s["speed"]+=(s["speed_target"]-s["speed"])*(1-pow(1-sa,factor))
                 s["watchdog_active"]=False
@@ -338,15 +402,26 @@ def control_loop():
         if connected:
             try:
                 with _hardware_command_lock:
-                    if angle!=_last_hw_angle:
-                        result=hw.set_angle(angle);_last_hw_angle=None if result is False else angle
-                    if speed==0:
-                        if _last_hw_speed!=0:hw.stop(reason="manual_neutral_or_deadman")
-                        _last_hw_speed=0
-                    else:hw.set_speed(speed);_last_hw_speed=speed
+                    if priority_stop:
+                        if _priority_stop_due(priority_stop,_priority_stop_was_active,now,_last_priority_stop_at):
+                            _last_priority_stop_at=now
+                            hw.stop(reason="manual_keyboard_hold_stop" if hold_stop_active else "manual_estop_hold")
+                        _priority_stop_was_active=True
+                        # Firmware STOP centers steering and clears queued motion.
+                        _last_hw_speed=0;_last_hw_angle=SERVO_CENTER
+                    else:
+                        _priority_stop_was_active=False
+                        if angle!=_last_hw_angle:
+                            result=hw.set_angle(angle);_last_hw_angle=None if result is False else angle
+                        if speed==0:
+                            if _last_hw_speed!=0:hw.stop(reason="manual_neutral_or_deadman")
+                            _last_hw_speed=0
+                        else:hw.set_speed(speed);_last_hw_speed=speed
             except Exception:
                 _last_hw_speed=_last_hw_angle=None;log.exception("Manual hardware command failed")
-        else:_last_hw_speed=_last_hw_angle=None
+        else:
+            _last_hw_speed=_last_hw_angle=None
+            if not priority_stop:_priority_stop_was_active=False
         _stop.wait(1.0/CONTROL_HZ)
 
 def _capture_frame_once():
@@ -473,7 +548,7 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;objec
 <!-- HUD -->
 <div class="hud" id="hud">
   <div class="item">Speed <strong id="hud_speed">0</strong></div>
-  <div class="item">Steering <strong id="hud_angle">95</strong></div><div class="item">Arduino <strong id="hud_connection" data-connected="false">CHECKING</strong></div>
+  <div class="item">Servo cmd <strong id="hud_angle">95</strong></div><div class="item">Motion <strong id="hud_motion">READY</strong></div><div class="item">Arduino <strong id="hud_connection" data-connected="false">CHECKING</strong></div>
   <div class="item">Clients <strong id="hud_clients">0</strong></div><div class="item">Ping <strong id="hud_ping">— ms</strong></div>
 </div>
 
@@ -622,9 +697,11 @@ const socket=io({auth:{token:TOKEN}});
 socket.on("connect",()=>console.log("Manual control connected"));
 socket.on("disconnect",()=>{const e=document.getElementById("hud_connection");if(e){e.textContent="DISCONNECTED";e.dataset.connected="false";}releaseAllInputs();});
 socket.on("connect_error",e=>console.warn("Manual socket error",e));
-socket.on("init",s=>{if(s)syncEstopUI(!!s.estop);});
+socket.on("init",s=>{if(s){syncEstopUI(!!s.estop);if(s.angle!==undefined)document.getElementById("hud_angle").textContent=Math.round(s.angle);}});
 socket.on("state",s=>{if(!s)return;if(s.clients!==undefined)document.getElementById("hud_clients").textContent=s.clients;
  const e=document.getElementById("hud_connection");if(e){e.textContent=s.connected?"CONNECTED":(s.connection_state||"DISCONNECTED");e.dataset.connected=s.connected?"true":"false";}
+ if(s.angle!==undefined)document.getElementById("hud_angle").textContent=Math.round(s.angle);
+ const motion=document.getElementById("hud_motion");if(motion)motion.textContent=s.estop?"E-STOP":(s.hold_stop?"SPACE STOP":(s.watchdog_active?"STOP / WAIT":"READY"));
  if(s.estop!==undefined)syncEstopUI(!!s.estop);});
 
 /* Ping (heartbeat) — compute RTT when server replies with heartbeat_ack */
@@ -646,6 +723,7 @@ function sendInput(payload){
     steer: Number(payload.steer || 0),
     speed_scale: payload.speed_scale == null ? 1.0 : Number(payload.speed_scale),
     speed_immediate: payload.speed_immediate === true,
+    steering_immediate: payload.steering_immediate === true,
     t: Date.now(),
     is_mobile: /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent)
   };
@@ -768,7 +846,8 @@ window.addEventListener('pointerup', (e)=>{ if(pedalActive) pedalEnd(e); }, {pas
 window.addEventListener('pointercancel', (e)=>{ if(pedalActive) pedalEnd(e); }, {passive:false});
 
 /* Keyboard ramp/decay (fixed to update steer) */
-const keyState = { up:false, down:false, left:false, right:false };
+const keyState = { up:false, down:false, left:false, right:false, stop:false };
+let gamepadReleaseRequired = false;
 const keyAccel = { forward:0, steer:0 };
 function getKbAccel() {
   return 0.05 * (Number(document.getElementById('kb_sens').value) || settings.kb_sens);
@@ -779,6 +858,22 @@ function getKbReturn() {
 }
 
 window.addEventListener('keydown', (e)=>{
+  // Space is a hold-to-stop interlock, not a one-shot key toggle.
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(!e.repeat && !keyState.stop){
+      keyState.stop=true;
+      keyState.up=keyState.down=keyState.left=keyState.right=false;
+      keyAccel.forward=keyAccel.steer=0;
+      target.forward=target.steer=current.forward=current.steer=0;
+      pointerId=null;joyRect=origin=maxR=joyCaptureTarget=null;
+      pedalActive=false;pedalPointerId=null;pedalCaptureTarget=null;pedalRect=null;
+      gamepadReleaseRequired=true;
+      socket.emit('hold_stop',{active:true,t:Date.now()});
+      const motion=document.getElementById('hud_motion');if(motion)motion.textContent='SPACE STOP';
+    }
+    return;
+  }
   if(e.repeat) return;
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
   const k = e.key.toLowerCase();
@@ -788,6 +883,18 @@ window.addEventListener('keydown', (e)=>{
   if(k==='d' || e.code==='ArrowRight') keyState.right = true;
 });
 window.addEventListener('keyup', (e)=>{
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(keyState.stop){
+      keyState.stop=false;
+      socket.emit('hold_stop',{active:false,t:Date.now()});
+      keyState.up=keyState.down=keyState.left=keyState.right=false;
+      keyAccel.forward=keyAccel.steer=0;
+      target.forward=target.steer=current.forward=current.steer=0;
+      const motion=document.getElementById('hud_motion');if(motion)motion.textContent='STOP / WAIT';
+    }
+    return;
+  }
   const k = e.key.toLowerCase();
   if(k==='w' || e.code==='ArrowUp') keyState.up = false;
   if(k==='s' || e.code==='ArrowDown') keyState.down = false;
@@ -799,11 +906,14 @@ window.addEventListener('keyup', (e)=>{
 let gpIndex=null,gamepadActive=false;
 window.addEventListener("gamepadconnected",e=>{gpIndex=e.gamepad.index;});
 window.addEventListener("gamepaddisconnected",e=>{if(gpIndex===e.gamepad.index){gpIndex=null;gamepadActive=false;target.forward=target.steer=0;}});
-function pollGamepad(){gamepadActive=false;if(gpIndex!==null&&pointerId===null&&!pedalActive){const g=navigator.getGamepads()[gpIndex];if(g){const x=clamp(g.axes[0]||0,-1,1),y=clamp(-(g.axes[1]||0),-1,1);gamepadActive=Math.abs(x)>.08||Math.abs(y)>.08;if(gamepadActive){target.steer=x;target.forward=y;}}}requestAnimationFrame(pollGamepad);}
+function pollGamepad(){gamepadActive=false;if(gpIndex!==null&&!keyState.stop&&pointerId===null&&!pedalActive){const g=navigator.getGamepads()[gpIndex];if(g){const x=clamp(g.axes[0]||0,-1,1),y=clamp(-(g.axes[1]||0),-1,1);if(gamepadReleaseRequired){if(Math.abs(x)<=.08&&Math.abs(y)<=.08)gamepadReleaseRequired=false;}else{gamepadActive=Math.abs(x)>.08||Math.abs(y)>.08;if(gamepadActive){target.steer=x;target.forward=y;}}}}requestAnimationFrame(pollGamepad);}
 pollGamepad();
 function syncEstopUI(active){const b=document.getElementById("estop_btn"),r=document.getElementById("estop_reset_btn");if(!b||!r)return;b.setAttribute("aria-pressed",active?"true":"false");b.textContent=active?"E-STOP ACTIVE":"E-STOP";b.disabled=active;r.hidden=!active;}
 function releaseAllInputs(){
- if(typeof keyState!=="undefined")keyState.up=keyState.down=keyState.left=keyState.right=false;
+ if(typeof keyState!=="undefined"){
+   keyState.up=keyState.down=keyState.left=keyState.right=false;
+   if(keyState.stop){keyState.stop=false;socket.emit('hold_stop',{active:false,t:Date.now()});gamepadReleaseRequired=true;}
+ }
  if(typeof keyAccel!=="undefined"){keyAccel.forward=0;keyAccel.steer=0;}
  target.forward=target.steer=current.forward=current.steer=0;pointerId=null;joyRect=origin=maxR=joyCaptureTarget=null;
  pedalActive=false;pedalPointerId=null;pedalCaptureTarget=null;pedalRect=null;knob.style.transform="translate(0,0)";pedalVal.textContent="0%";
@@ -821,7 +931,7 @@ setInterval(()=>{
     if(keyState.down) kf -= 1;
     if(keyState.left) ks -= 1;
     if(keyState.right) ks += 1;
-    const m = Math.hypot(kf, ks) || 1; kf/=m; ks/=m;
+    // Throttle and steering are independent car controls: diagonal input must not weaken either axis.
     const ACC = getKbAccel();
     const RET = getKbReturn();
     const keyboardOwnsControls = pointerId === null && !pedalActive && !gamepadActive;
@@ -866,34 +976,29 @@ setInterval(()=>{
   } else {
     current.forward = (current.forward || 0) + (target.forward - (current.forward || 0)) * alpha;
   }
-  if (keyboardOwnsControls && ks !== 0 && kbSteerMode === 'hold') {
-    current.steer = target.steer;
-  } else {
-    current.steer = (current.steer || 0) + (target.steer - (current.steer || 0)) * alpha;
-  }
+  const keyboardSteeringImmediate = keyboardOwnsControls && ks !== 0 && kbSteerMode === 'hold';
+  if (keyboardSteeringImmediate) current.steer = target.steer;
+  else current.steer = (current.steer || 0) + (target.steer - (current.steer || 0)) * alpha;
 
   // map to hardware values
   const speedLimit = Number(document.getElementById('speed_limit').value || settings.speed_limit);
   const angleLimit = Number(document.getElementById('angle_limit').value || settings.angle_limit);
   const hwSpeed = Math.round(current.forward * speedLimit);
-  const hwAngle = Math.round(clamp(SERVO_CENTER + current.steer * angleLimit, SERVO_MIN, SERVO_MAX));
-
-  // update HUD
+  // The server reports the bounded servo command; don't display a client-side guess.
   document.getElementById('hud_speed').textContent = hwSpeed;
-  document.getElementById('hud_angle').textContent = hwAngle;
   document.getElementById('speed_limit_lbl').textContent = speedLimit;
   if(document.activeElement.id !== 'angle_limit_number') document.getElementById('angle_limit_number').value = String(angleLimit);
 
   // send normalized forward/steer (-1..1) and speed_scale (speedLimit / max_speed)
   const baseMax=Number(document.getElementById("max_speed").value||settings.max_speed)||1;
   const speedScale=clamp(speedLimit/baseMax,0,1);
-  const active=pointerId!==null||pedalActive||gamepadActive||keyState.up||keyState.down||keyState.left||keyState.right||
+  const active=!keyState.stop&&(pointerId!==null||pedalActive||gamepadActive||keyState.up||keyState.down||keyState.left||keyState.right||
     Math.abs(keyAccel.forward)>.01||Math.abs(keyAccel.steer)>.01||Math.abs(target.forward)>.01||Math.abs(target.steer)>.01||
-    Math.abs(current.forward)>.01||Math.abs(current.steer)>.01;
+    Math.abs(current.forward)>.01||Math.abs(current.steer)>.01);
   const keyboardSpeedImmediate = keyboardOwnsControls && (
     (kf !== 0 && kbSpeedRamp === 'direct') || (kf === 0 && kbSpeedStop === 'instant')
   );
-  if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale,speed_immediate:keyboardSpeedImmediate});lastInputActive=true;}
+  if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale,speed_immediate:keyboardSpeedImmediate,steering_immediate:keyboardSteeringImmediate});lastInputActive=true;}
   else if(lastInputActive){sendInput({forward:0,steer:0,speed_scale:0,speed_immediate:keyboardOwnsControls && kbSpeedStop === 'instant'});lastInputActive=false;}
 
 }, 60); // ~16Hz
