@@ -473,7 +473,7 @@ class Robot:
 
         if is_camera_frame_obscured(frame):
             self._keep_stop_hold()
-            self._handle_camera_obscured_frame(frame)
+            self._handle_camera_obscured_frame(frame_resized)
             self._pace_control_loop()
             return
 
@@ -687,17 +687,18 @@ class Robot:
                     self._set_mcu_stop_latched(True)
 
                     if config_city.STREAM or config_city.DEBUG:
-                        frame, _ = self.camera.capture_frame(with_resize=False)
-                        if self.camera.last_capture_valid:
+                        frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                        if self.camera.last_capture_valid and frame_resized is not None:
+                            # Match Vision output dimensions so frame text and guides keep a stable scale.
                             result = {
                                 "steering_angle": int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                                 "error": 0,
                                 "lane_type": "stopped",
                                 "perception_valid": True,
-                                "debug": {"combined": frame},
+                                "debug": {"combined": frame_resized},
                             }
                             self.handle_debug_stream(
-                                result, frame, int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)), False, "stopped", ""
+                                result, frame_resized, int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)), False, "stopped", ""
                             )
                     self._pace_control_loop()
                     continue
@@ -865,6 +866,11 @@ class Robot:
                         self.control.stop()
                         self._pace_control_loop()
                         continue
+                    if is_camera_frame_obscured(frame):
+                        self._handle_camera_obscured_frame(frame_resized)
+                        self._pace_control_loop()
+                        continue
+                    self._clear_camera_obscured_state()
                     publish_camera_frame_fallback(config_city, frame)
                     result = {
                         "steering_angle": int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),

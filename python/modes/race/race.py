@@ -501,7 +501,7 @@ class Robot:
 
         if is_camera_frame_obscured(frame):
             self._keep_stop_hold()
-            self._handle_camera_obscured_frame(frame)
+            self._handle_camera_obscured_frame(frame_resized)
             self._pace_control_loop()
             return
 
@@ -580,14 +580,15 @@ class Robot:
             self._pace_control_loop()
             return
 
-        frame, _ = self.camera.capture_frame(with_resize=False)
+        frame, frame_resized = self.camera.capture_frame(with_resize=True)
         valid_frame = bool(
-            getattr(self.camera, "last_capture_valid", False) and frame is not None
+            getattr(self.camera, "last_capture_valid", False)
+            and frame is not None and frame_resized is not None
         )
         stop_seen = False
         if valid_frame and is_camera_frame_obscured(frame):
             if bool(getattr(config_race, "STREAM", False)):
-                publish_debug_frame(config_race, frame)
+                publish_debug_frame(config_race, frame_resized)
             observation_id = getattr(self, "last_sign_result_id", None)
             observation_at = getattr(self, "last_sign_observation_at", None)
             gate.observe(
@@ -700,17 +701,18 @@ class Robot:
                     self._set_mcu_stop_latched(True)
 
                     if config_race.STREAM or config_race.DEBUG:
-                        frame, _ = self.camera.capture_frame(with_resize=False)
-                        if self.camera.last_capture_valid:
+                        frame, frame_resized = self.camera.capture_frame(with_resize=True)
+                        if self.camera.last_capture_valid and frame_resized is not None:
+                            # Match Vision output dimensions so frame text and guides keep a stable scale.
                             result = {
                                 "steering_angle": int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                                 "error": 0,
                                 "lane_type": "stopped",
                                 "perception_valid": True,
-                                "debug": {"combined": frame},
+                                "debug": {"combined": frame_resized},
                             }
                             self.handle_debug_stream(
-                                result, frame, int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
+                                result, frame_resized, int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                                 False, "stopped"
                             )
                     self._pace_control_loop()
