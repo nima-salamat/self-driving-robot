@@ -13,11 +13,16 @@ import test_manual_control as manual
 
 class ManualControlSafetyTests(unittest.TestCase):
     def setUp(self):
+        with manual.state_lock:
+            known_sids = set(manual.state["clients"])
         self.client = manual.socketio.test_client(
             manual.app, auth={"token": manual.MANUAL_TOKEN}
         )
         self.assertTrue(self.client.is_connected())
-        self.sid = self.client.get_sid("/")
+        with manual.state_lock:
+            new_sids = set(manual.state["clients"]) - known_sids
+        self.assertEqual(len(new_sids), 1)
+        self.sid = next(iter(new_sids))
         with manual.state_lock:
             manual.state["estop"] = False
             manual.state["hold_stop_clients"].clear()
