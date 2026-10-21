@@ -11,7 +11,7 @@ import numpy as np
 
 class VisionProcessor:
     def __init__(self):
-        self.last_steering = SERVO_CENTER
+        self.last_steering = float(getattr(conf, "SERVO_CENTER", SERVO_CENTER))
         self.last_error = 0
         self.rroi_unseen_counter = 0
         self.lroi_unseen_counter = 0
@@ -114,7 +114,7 @@ class VisionProcessor:
 
         if frame is None:
             return {
-                "steering_angle": SERVO_CENTER,
+                "steering_angle": float(getattr(conf, "SERVO_CENTER", SERVO_CENTER)),
                 "error": 0,
                 "lane_type": "none",
                 "perception_valid": False,
@@ -123,6 +123,7 @@ class VisionProcessor:
             }
 
         height, width = frame.shape[:2]
+        servo_center = float(getattr(conf, "SERVO_CENTER", SERVO_CENTER))
 
         # ----------------------
         # APPLY BEV
@@ -326,18 +327,18 @@ class VisionProcessor:
         error = -lane_center
         
         if error < 0:
-            kp = (180 - SERVO_CENTER) / abs(min_error) 
+            kp = (180 - servo_center) / abs(min_error) 
         elif error > 0:
-            kp = SERVO_CENTER / abs(max_error)
+            kp = servo_center / abs(max_error)
         else:
             kp = 0
 
         if SERVO_DIRECTION == "ltr":
-            steering_angle = SERVO_CENTER - kp * error
+            steering_angle = servo_center - kp * error
         elif SERVO_DIRECTION == "rtl":
-            steering_angle = SERVO_CENTER + kp * error
+            steering_angle = servo_center + kp * error
         else:
-            steering_angle = SERVO_CENTER - kp * error
+            steering_angle = servo_center - kp * error
         
         steering_angle = int(max(MIN_SERVO_ANGLE, min(MAX_SERVO_ANGLE, steering_angle)))
         

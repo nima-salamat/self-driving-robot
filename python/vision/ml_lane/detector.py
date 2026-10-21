@@ -13,12 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class MLLaneDetector:
-    def __init__(self, model_name, model_root=None, cpu_threads=4, servo_center=95, servo_min=55, servo_max=125):
+    def __init__(self, model_name, model_root=None, cpu_threads=4, servo_center=95, servo_min=55, servo_max=125, config=None):
         self.spec = get_model_spec(model_name)
         self.model_name = model_name
         self.servo_center = float(servo_center)
         self.servo_min = float(servo_min)
         self.servo_max = float(servo_max)
+        self.config = config
+        self._last_config_servo_center = self.servo_center
         self.last_steering = self.servo_center
         self.model_root = Path(model_root) if model_root else Path(__file__).resolve().parents[2] / "models" / "lane"
         try:
@@ -149,7 +151,23 @@ class MLLaneDetector:
         center_x, lane_type = self._lane_center_from_mask(lane_mask)
         return lane_mask, center_x, lane_type, {"lanes": []}, inference_ms
 
+    def _sync_servo_calibration(self):
+        if self.config is None:
+            return
+        center = float(getattr(self.config, "SERVO_CENTER", self.servo_center))
+        servo_min = float(getattr(self.config, "MIN_SERVO_ANGLE", self.servo_min))
+        servo_max = float(getattr(self.config, "MAX_SERVO_ANGLE", self.servo_max))
+        if not servo_min < center < servo_max:
+            return
+        if center != self.servo_center:
+            self.last_steering = center
+        self.servo_center = center
+        self.servo_min = servo_min
+        self.servo_max = servo_max
+        self._last_config_servo_center = center
+
     def detect(self, frame, debug_frame=None):
+        self._sync_servo_calibration()
         started = time.monotonic()
 
         if frame is None or frame.size == 0:
@@ -220,4 +238,5 @@ def create_ml_lane_detector(config):
         servo_center=float(getattr(config, "SERVO_CENTER", 95)),
         servo_min=float(getattr(config, "MIN_SERVO_ANGLE", 55)),
         servo_max=float(getattr(config, "MAX_SERVO_ANGLE", 125)),
+        config=config,
     )

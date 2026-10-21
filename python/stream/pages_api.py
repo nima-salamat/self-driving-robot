@@ -25,6 +25,8 @@ class StreamPagesMixin:
                     getattr(self.config, "STREAM_ALLOW_CONTROL", False)
                 ),
                 capabilities=mode_capabilities(self.config),
+                servo_min_angle=float(getattr(self.config, "MIN_SERVO_ANGLE", 55)),
+                servo_max_angle=float(getattr(self.config, "MAX_SERVO_ANGLE", 125)),
                 encoder_map_enabled=bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)),
                 auth_enabled=bool(self.auth_enabled),
             ),

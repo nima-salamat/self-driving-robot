@@ -150,6 +150,7 @@ class Robot:
                 f"{lane_detector!r}. Expected 'default' or 'blsf-beta'."
             )
 
+        config_city.vision_processor = self.vision
         logger.info("City lane detector selected: %s", lane_detector)
         self.apriltag_detector = ApriltagDetector(config=config_city)
         self.crosswalk_time_start = 0
@@ -738,7 +739,7 @@ class Robot:
                         self.handle_debug_stream(
                             result,
                             frame,
-                            result.get("steering_angle", SERVO_CENTER),
+                            result.get("steering_angle", getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                             result.get("crosswalk", False),
                             "STOP HOLD",
                             sign_text,
@@ -758,7 +759,7 @@ class Robot:
                             self.handle_debug_stream(
                                 result,
                                 frame,
-                                result.get("steering_angle", SERVO_CENTER),
+                                result.get("steering_angle", getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
                                 result.get("crosswalk", False),
                                 "perception unavailable",
                                 "",

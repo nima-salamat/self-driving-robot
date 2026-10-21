@@ -1244,7 +1244,7 @@ function executeCommand(name){
 }
 function enableReadOnlyState(){
   if(STREAM_CONTROL_ALLOWED)return;
-  ['ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_sign_requests_pause','ext_sign_requests_resume','ext_software_stop','ext_software_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
+  ['ext_apply_servo_center','ext_export_config','ext_import_config','ext_undo','ext_redo','ext_preset_save','ext_preset_apply','ext_preset_delete','ext_history_restore','ext_profile_save','ext_profile_delete','ext_apply_fps','ext_apply_camera','ext_sign_requests_pause','ext_sign_requests_resume','ext_software_stop','ext_software_resume','ext_save_workspace'].forEach(function(id){if($(id))$(id).disabled=true;});
 }
 function initializeResize(){
   const container=document.querySelector('.container'),panel=document.querySelector('.right-panel'),handle=$('panel_resize_handle');
@@ -1511,6 +1511,30 @@ async function saveManeuverConfigDialog(){
   setConfigDialogOpen('ext_maneuver_settings_dialog',false);
   showToast(isCity?'Saved to city.json. Arduino startup lane sequences are sent at the next robot initialization.':'Saved to race.json. Arduino startup lane sequences are sent at the next robot initialization.');
 }
+async function applyServoCenter(){
+  if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
+  const input=$('ext_servo_center'),status=$('ext_servo_center_status');
+  if(!input)throw new Error('Servo center control is unavailable.');
+  const center=Number(input.value),minimum=Number(input.min),maximum=Number(input.max);
+  if(!Number.isInteger(center)||!Number.isFinite(center)||center<=minimum||center>=maximum){
+    throw new Error('SERVO_CENTER must be an integer strictly between '+minimum+' and '+maximum+'.');
+  }
+  const fresh=await readConfig();
+  const advanced=fresh.advanced||{};
+  const current=Number(advanced.SERVO_CENTER==null?95:advanced.SERVO_CENTER);
+  const runLevel=String(advanced.RUN_LVL||'MOVE').trim().toUpperCase();
+  if(center!==current&&runLevel!=='STOP'){
+    throw new Error('Set RUN_LVL=STOP first. Servo center cannot be changed while the robot is in MOVE.');
+  }
+  const body=jsonClone(fresh);
+  body.advanced=body.advanced||{};
+  body.advanced.SERVO_CENTER=center;
+  await applyFullConfig(body,'Updated '+String(window.STREAM_BOOTSTRAP.mode||'mode').toUpperCase()+' servo center',true);
+  input.value=String(center);
+  const mode=String(window.STREAM_BOOTSTRAP.mode||'city').toLowerCase()==='race'?'race':'city';
+  if(status)status.textContent='Saved to '+mode+'.json and applied to the active steering calibration. No servo command was sent.';
+  showToast('SERVO_CENTER saved for '+mode+'.json: '+center+'°');
+}
 async function openPidConfigDialog(){
   try{
     const fresh=await readConfig();currentConfig=jsonClone(fresh);
@@ -1602,7 +1626,7 @@ function installExtension(){
   $('ext_maneuver_settings_cancel').onclick=function(){setConfigDialogOpen('ext_maneuver_settings_dialog',false);};
   $('ext_maneuver_settings_apply').onclick=function(){saveManeuverConfigDialog().catch(function(error){showToast('Could not save maneuver settings: '+error.message);});};
   $('ext_maneuver_settings_dialog').addEventListener('click',function(event){if(event.target===this)setConfigDialogOpen('ext_maneuver_settings_dialog',false);});
-  $('ext_pid_settings_open').onclick=function(){openPidConfigDialog();};
+  $('ext_pid_settings_open').onclick=function(){openPidConfigDialog();};$('ext_apply_servo_center').onclick=function(){applyServoCenter().catch(function(error){showToast('Could not apply servo center: '+error.message);const status=$('ext_servo_center_status');if(status)status.textContent=error.message;});};
   $('ext_pid_settings_close').onclick=function(){setConfigDialogOpen('ext_pid_settings_dialog',false);};
   $('ext_pid_settings_cancel').onclick=function(){setConfigDialogOpen('ext_pid_settings_dialog',false);};
   $('ext_pid_settings_apply').onclick=function(){savePidConfigDialog().catch(function(error){showToast('Could not save PID settings: '+error.message);});};

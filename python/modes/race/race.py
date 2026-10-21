@@ -165,6 +165,7 @@ class Robot:
 
 
         self.vision = VisionProcessor()
+        config_race.vision_processor = self.vision
         self.apriltag_detector = ApriltagDetector(config=config_race)
         self.last_tag = None
         self.stop_last_seen = None
@@ -729,7 +730,7 @@ class Robot:
                     self.handle_debug_stream(
                         result,
                         frame,
-                        result.get("steering_angle", SERVO_CENTER),
+                        result.get("steering_angle", getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                         "STOP HOLD",
                         "STOP",
                     )
@@ -757,7 +758,7 @@ class Robot:
                         self.handle_debug_stream(
                             result,
                             frame,
-                            result.get("steering_angle", SERVO_CENTER),
+                            result.get("steering_angle", getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                             "perception unavailable",
                             "",
                         )
