@@ -49,6 +49,7 @@ class StreamControlsMixin:
                 logger.exception("Could not restore live servo-center state")
         try:
             set_marker_mode(
+                self.config,
                 "sign" if snapshot.get("WITH_SIGN", False)
                 else "apriltag" if snapshot.get("WITH_APRILTAG", False)
                 else "none",
