@@ -25,6 +25,8 @@
   "CROSSWALK_THRESH_SPEND": 10,
   "RUN_LVL": "MOVE",
   "SERVO_CENTER": 95,
+  "APPLY_CAMERA_CALIBRATION": true,
+  "CAMERA_CALIBRATION_FILE": "assets/camera_calibrations/camera_calibration.npz",
   "WITH_SIGN": true,
   "WITH_APRILTAG": false,
   "READ_SIGN_THRESHOLD": 20,
