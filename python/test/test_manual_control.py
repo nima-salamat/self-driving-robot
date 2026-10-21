@@ -127,7 +127,7 @@ def load_settings():
             # single editable effective wheel-angle limit.
             saved_calibration = j.get("encoder_calibration")
             if isinstance(saved_calibration, dict):
-                migrated = dict(s["encoder_calibration"])
+                migrated = dict(default_settings()["encoder_calibration"])
                 for key in ("pulse_distance_cm", "wheelbase_cm", "max_wheel_angle_deg"):
                     value = saved_calibration.get(key)
                     if value is not None and value != "":
