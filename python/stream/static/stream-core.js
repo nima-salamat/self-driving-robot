@@ -675,6 +675,7 @@ function drawOverlays(){
             
             drawPolygon(pts, bevColor, isBevHL, 0.15); 
             
+            const z=getOverlayScale();
             const topY=Math.min(pts[0].y,pts[1].y);
             drawExternalLabel('BEV Region',bevColor,(pts[0].x+pts[1].x)/2,topY,'center');
             const size=Math.max(2,(Number(roiAppearance.handleSize)||10)*z);
