@@ -3,6 +3,7 @@ import time
 import cv2
 import logging
 from collections import deque
+from calibration.asset_store import DEFAULT_CALIBRATION_REFERENCE, calibration_path_from_reference
 from calibration.calibrator import CameraCalibration
 
 try:
@@ -60,6 +61,7 @@ class Camera:
                 apply_calibration=bool(
                     getattr(self.config, "APPLY_CAMERA_CALIBRATION", True)
                 ),
+                calibration_file=getattr(self.config, "CAMERA_CALIBRATION_FILE", DEFAULT_CALIBRATION_REFERENCE),
                 runtime_mode=getattr(self.config, "MODE", None),
             )
             self.pi_mode = self._shared_capture.pi_mode
@@ -71,8 +73,16 @@ class Camera:
             )
             return
 
+        calibration_reference = getattr(
+            self.config, "CAMERA_CALIBRATION_FILE", DEFAULT_CALIBRATION_REFERENCE
+        )
+        calibration_path = calibration_path_from_reference(
+            calibration_reference, require_exists=False
+        )
+        self.camera_calibration_file = str(calibration_path)
         self.camera_calibration = CameraCalibration(
-            enabled=bool(getattr(self.config, "APPLY_CAMERA_CALIBRATION", True))
+            calibration_file=calibration_path,
+            enabled=bool(getattr(self.config, "APPLY_CAMERA_CALIBRATION", True)),
         )
 
         if self.mode == "picam" and Picamera2 is not None:
@@ -103,6 +113,37 @@ class Camera:
                 self._cleanup_failed_initialization()
                 raise
             logger.info("Using OpenCV VideoCapture")
+
+    def set_camera_calibration_file(self, calibration_reference, enabled=True):
+        """Validate and switch the live undistortion model without restarting capture."""
+        calibration_path = calibration_path_from_reference(
+            calibration_reference, require_exists=True
+        )
+        enabled = bool(enabled)
+        candidate = CameraCalibration(
+            calibration_file=calibration_path,
+            enabled=enabled,
+        )
+        if enabled and (
+            not candidate.enabled
+            or candidate.camera_matrix is None
+            or candidate.dist_coeffs is None
+        ):
+            raise ValueError(
+                candidate.last_error or "selected camera calibration is not usable"
+            )
+        shared = getattr(self, "_shared_capture", None)
+        if shared is not None:
+            shared.set_calibration_file(calibration_reference, enabled)
+        else:
+            self.camera_calibration = candidate
+        self.camera_calibration_file = str(calibration_path)
+        return {
+            "enabled": enabled,
+            "filename": calibration_path.name,
+            "quality_status": candidate.quality_status,
+            "image_size": list(candidate.image_size) if candidate.image_size else None,
+        }
 
     def _cleanup_failed_initialization(self):
         self.camera_initialized = False

@@ -115,6 +115,11 @@ def _capture_process(config_values, shared_name, frame_shape, resized_shape,
                             raise RuntimeError("Runtime camera controls require Picamera2")
                         camera.picam.set_controls(value)
                         payload = True
+                    elif operation == "set_calibration":
+                        payload = camera.set_camera_calibration_file(
+                            value["calibration_reference"],
+                            enabled=value["enabled"],
+                        )
                     else:
                         raise ValueError(f"Unsupported camera command: {operation}")
                     limits = camera.get_frame_rate_limits()
@@ -201,7 +206,7 @@ class SharedMemoryCapture:
 
     def __init__(self, *, width, height, resize_width, resize_height, mode,
                  camera_index, camera_fallback, camera_fps, apply_calibration,
-                 runtime_mode):
+                 calibration_file, runtime_mode):
         self.width, self.height = int(width), int(height)
         self.resize_width, self.resize_height = int(resize_width), int(resize_height)
         if min(self.width, self.height, self.resize_width, self.resize_height) <= 0:
@@ -246,6 +251,7 @@ class SharedMemoryCapture:
             "CAMERA_FALLBACK_TO_OPENCV": bool(camera_fallback),
             "CAMERA_FPS": camera_fps,
             "APPLY_CAMERA_CALIBRATION": bool(apply_calibration),
+            "CAMERA_CALIBRATION_FILE": str(calibration_file),
             "MULTIPROCESS_CAMERA": False,
             "MODE": runtime_mode,
         }
@@ -332,6 +338,15 @@ class SharedMemoryCapture:
 
     def set_controls(self, controls):
         return self._request("set_controls", dict(controls))
+
+    def set_calibration_file(self, calibration_reference, enabled=True):
+        return self._request(
+            "set_calibration",
+            {
+                "calibration_reference": str(calibration_reference),
+                "enabled": bool(enabled),
+            },
+        )
 
     def capture_frame(self, with_resize=True):
         deadline = time.monotonic() + self.FRAME_TIMEOUT_S
