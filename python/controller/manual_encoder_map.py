@@ -85,8 +85,13 @@ class ManualEncoderMap:
         if (road_min is None) != (road_max is None):
             raise ValueError("Provide both road-wheel angle calibration endpoints, or leave both blank")
         if road_min is not None:
-            if not (-45.0 <= road_min < 0.0 < road_max <= 45.0):
-                raise ValueError("Road-wheel angle endpoints must be within -45..45 degrees and straddle zero")
+            opposite_signs = road_min * road_max < 0.0
+            in_range = -45.0 <= road_min <= 45.0 and -45.0 <= road_max <= 45.0
+            if not (in_range and opposite_signs):
+                raise ValueError(
+                    "Road-wheel angles must be within -45..45 degrees, non-zero, "
+                    "and have opposite signs. Servo MIN may turn either left or right."
+                )
             if not (self.servo_min < self.servo_center < self.servo_max):
                 raise ValueError("Servo min/center/max calibration is inconsistent")
         normalized = {
