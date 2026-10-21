@@ -1535,12 +1535,12 @@ canvas {
   display: block;
   width: 46px;
   max-width: 25%;
-  height: 3px;
-  border-radius: 3px;
-  background: #607d98;
+  height: 4px;
+  border-radius: 0;
+  background: repeating-linear-gradient(to right, #607d98 0 5px, transparent 5px 9px);
 }
 .console-resize-handle:hover span,
-.console-resize-handle:focus-visible span { background: #67d9e8; }
+.console-resize-handle:focus-visible span { background: repeating-linear-gradient(to right, #67d9e8 0 5px, transparent 5px 9px); }
 /* The resize grip stays visible while collapsed so it can be dragged open. */
 @media (max-width: 720px) {
   .bottom-console.console-open { max-height: min(55dvh, 360px); }
@@ -1573,19 +1573,7 @@ canvas {
   height: 42px;
   min-height: 42px;
 }
-.bottom-console:not(.console-open) .console-resize-handle {
-  background: #101e2d;
-  border-bottom-color: #2d536c;
-}
-.bottom-console:not(.console-open) .console-resize-handle span {
-  background: repeating-linear-gradient(to right, #67d9e8 0 5px, transparent 5px 9px);
-  width: 46px;
-  height: 4px;
-}
-.bottom-console:not(.console-open) .console-resize-handle:hover,
-.bottom-console:not(.console-open) .console-resize-handle:focus-visible {
-  background: #173149;
-}
+/* The dashed grip keeps identical styling in open and closed states. */
 @media (max-width: 720px) {
   .bottom-console:not(.console-open) {
     flex-basis: 38px;

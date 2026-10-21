@@ -1096,7 +1096,7 @@ function initializeResize(){
 function initializeConsoleResize(){
   const consoleDock=$('bottom_console'),handle=$('console_resize_handle'),toggle=$('console_toggle_btn');
   if(!consoleDock||!handle||!toggle)return;
-  let active=false,startY=0,startHeight=178,startedClosed=false;
+  let active=false,startY=0,startHeight=178,lastExpandedHeight=178;
   function limits(){
     const mobile=window.matchMedia('(max-width: 720px)').matches;
     const shortLandscape=window.matchMedia('(max-width: 900px) and (orientation: landscape) and (max-height: 520px)').matches;
@@ -1108,84 +1108,106 @@ function initializeConsoleResize(){
     ));
     return {minimum:minimum,maximum:maximum,mobile:mobile};
   }
-  function announceSize(height){
-    const bounds=limits(),isOpen=consoleDock.classList.contains('console-open');
-    handle.setAttribute('aria-valuemin',String(Math.round(bounds.minimum)));
-    handle.setAttribute('aria-valuemax',String(Math.round(bounds.maximum)));
-    handle.setAttribute('aria-valuenow',String(Math.round(isOpen?Math.max(bounds.minimum,Math.min(bounds.maximum,height)):bounds.minimum)));
-    handle.setAttribute('aria-valuetext',isOpen?Math.round(height)+' pixels tall':'Closed. Drag upward to open and resize.');
+  function closedHeight(bounds){return bounds.mobile?38:42;}
+  function isOpen(){return consoleDock.classList.contains('console-open');}
+  function toggleOpen(open){
+    if(isOpen()!==open)toggle.click();
   }
-  function setHeight(requested,allowOpeningHeight){
-    const bounds=limits();
-    const closedHeight=bounds.mobile?38:42;
-    const minimum=allowOpeningHeight?closedHeight:bounds.minimum;
-    const height=Math.round(Math.min(bounds.maximum,Math.max(minimum,Number(requested)||bounds.minimum)));
+  function announceSize(height){
+    const bounds=limits(),closed=closedHeight(bounds),open=isOpen();
+    handle.setAttribute('aria-valuemin',String(closed));
+    handle.setAttribute('aria-valuemax',String(Math.round(bounds.maximum)));
+    handle.setAttribute('aria-valuenow',String(Math.round(open?Math.max(closed,Math.min(bounds.maximum,height)):closed)));
+    handle.setAttribute('aria-valuetext',open?Math.round(height)+' pixels tall':'Closed. Drag upward to open and downward to close.');
+  }
+  function setHeight(requested,allowCollapsedRange){
+    const bounds=limits(),closed=closedHeight(bounds);
+    const minimum=allowCollapsedRange?closed:bounds.minimum;
+    const numeric=Number(requested);
+    const finite=Number.isFinite(numeric)?numeric:bounds.minimum;
+    const height=Math.round(Math.min(bounds.maximum,Math.max(minimum,finite)));
     consoleDock.style.setProperty('--console-resize-height',height+'px');
+    if(height>=bounds.minimum)lastExpandedHeight=height;
     announceSize(height);
     return height;
   }
-  function openConsole(){
-    if(!consoleDock.classList.contains('console-open'))toggle.click();
-  }
   function finishResize(){
     if(!active)return;
-    if(consoleDock.classList.contains('console-open')){
-      setHeight(consoleDock.getBoundingClientRect().height,false);
+    const bounds=limits(),height=consoleDock.getBoundingClientRect().height;
+    if(isOpen()&&height<bounds.minimum){
+      /* Closing by drag shouldn't poison the remembered expanded height. */
+      consoleDock.style.setProperty('--console-resize-height',Math.max(bounds.minimum,lastExpandedHeight)+'px');
+      toggleOpen(false);
+    }else if(isOpen()){
+      setHeight(height,false);
+    }else{
+      consoleDock.style.setProperty('--console-resize-height',Math.max(bounds.minimum,lastExpandedHeight)+'px');
     }
     active=false;
-    startedClosed=false;
     consoleDock.classList.remove('console-resizing');
+    announceSize(consoleDock.getBoundingClientRect().height);
   }
   handle.addEventListener('pointerdown',function(event){
     if(event.button!==0&&event.pointerType!=='touch')return;
+    const bounds=limits();
     active=true;
-    startedClosed=!consoleDock.classList.contains('console-open');
     startY=event.clientY;
     startHeight=consoleDock.getBoundingClientRect().height;
+    lastExpandedHeight=isOpen()?Math.max(bounds.minimum,startHeight):Math.max(bounds.minimum,parseFloat(consoleDock.style.getPropertyValue('--console-resize-height'))||178);
     consoleDock.classList.add('console-resizing');
     try{handle.setPointerCapture(event.pointerId);}catch(_error){}
     event.preventDefault();
   });
   handle.addEventListener('pointermove',function(event){
     if(!active)return;
-    const bounds=limits();
-    const delta=startY-event.clientY;
-    if(startedClosed&&!consoleDock.classList.contains('console-open')){
-      /* Only an intentional upward pull opens a collapsed console. */
-      if(delta<6)return;
-      setHeight(startHeight+delta,true);
-      openConsole();
-      /* Keep the pointer and top edge moving together from the collapsed height. */
-      setHeight(startHeight+delta,true);
+    const bounds=limits(),closed=closedHeight(bounds);
+    const requested=startHeight-(event.clientY-startY);
+    if(requested<=closed){
+      /* Dragging down past the collapsed height closes the console. */
+      consoleDock.style.setProperty('--console-resize-height',Math.max(bounds.minimum,lastExpandedHeight)+'px');
+      toggleOpen(false);
+      announceSize(closed);
       return;
     }
-    setHeight(startHeight-(event.clientY-startY),startedClosed);
+    /* The same grip expands upward and collapses downward, continuously. */
+    const height=setHeight(requested,true);
+    toggleOpen(true);
+    if(height>=bounds.minimum)lastExpandedHeight=height;
+    announceSize(height);
   });
   handle.addEventListener('pointerup',finishResize);
   handle.addEventListener('pointercancel',finishResize);
   handle.addEventListener('keydown',function(event){
-    const bounds=limits(),isOpen=consoleDock.classList.contains('console-open');
-    const current=isOpen?consoleDock.getBoundingClientRect().height:bounds.minimum;
-    if(!isOpen){
-      if(event.key==='ArrowUp'){event.preventDefault();setHeight(bounds.minimum+24);openConsole();}
-      else if(event.key==='Home'){event.preventDefault();setHeight(bounds.minimum);openConsole();}
-      else if(event.key==='End'){event.preventDefault();setHeight(bounds.maximum);openConsole();}
-      return;
+    const bounds=limits(),closed=closedHeight(bounds),current=consoleDock.getBoundingClientRect().height;
+    if(event.key==='ArrowUp'){
+      event.preventDefault();
+      if(!isOpen()){setHeight(bounds.minimum,false);toggleOpen(true);}
+      else setHeight(current+24,false);
+    }else if(event.key==='ArrowDown'){
+      event.preventDefault();
+      if(isOpen()&&current<=bounds.minimum+24){
+        consoleDock.style.setProperty('--console-resize-height',Math.max(bounds.minimum,lastExpandedHeight)+'px');
+        toggleOpen(false);
+      }else if(isOpen())setHeight(current-24,false);
+    }else if(event.key==='Home'){
+      event.preventDefault();
+      if(isOpen())setHeight(bounds.minimum,false);
+      else announceSize(closed);
+    }else if(event.key==='End'){
+      event.preventDefault();
+      setHeight(bounds.maximum,false);
+      toggleOpen(true);
     }
-    if(event.key==='ArrowUp'){event.preventDefault();setHeight(current+24);}
-    else if(event.key==='ArrowDown'){event.preventDefault();setHeight(current-24);}
-    else if(event.key==='Home'){event.preventDefault();setHeight(bounds.minimum);}
-    else if(event.key==='End'){event.preventDefault();setHeight(bounds.maximum);}
   });
   window.addEventListener('resize',function(){
-    if(!consoleDock.classList.contains('console-open')){
-      announceSize(consoleDock.getBoundingClientRect().height);
-      return;
-    }
+    const bounds=limits();
+    if(!isOpen()){announceSize(closedHeight(bounds));return;}
     const saved=parseFloat(consoleDock.style.getPropertyValue('--console-resize-height'));
-    if(Number.isFinite(saved))setHeight(saved);
+    if(Number.isFinite(saved))setHeight(saved,false);
     else announceSize(consoleDock.getBoundingClientRect().height);
   });
+  const saved=parseFloat(consoleDock.style.getPropertyValue('--console-resize-height'));
+  if(Number.isFinite(saved)&&saved>=limits().minimum)lastExpandedHeight=saved;
   announceSize(consoleDock.getBoundingClientRect().height);
 }
 function installCoordinatePairPaste(){
