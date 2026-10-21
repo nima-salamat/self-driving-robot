@@ -1075,9 +1075,6 @@ setInterval(()=>{
   const active=!keyState.stop&&(pointerId!==null||pedalActive||gamepadActive||keyState.up||keyState.down||keyState.left||keyState.right||
     Math.abs(keyAccel.forward)>.01||Math.abs(keyAccel.steer)>.01||Math.abs(target.forward)>.01||Math.abs(target.steer)>.01||
     Math.abs(current.forward)>.01||Math.abs(current.steer)>.01);
-  const keyboardSpeedImmediate = keyboardOwnsControls && (
-    (kf !== 0 && kbSpeedRamp === 'direct') || (kf === 0 && kbSpeedStop === 'instant')
-  );
   if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale,speed_immediate:true,steering_immediate:true});lastInputActive=true;}
   else if(lastInputActive){sendInput({forward:0,steer:0,speed_scale:0,speed_immediate:keyboardOwnsControls && kbSpeedStop === 'instant'});lastInputActive=false;}
 
