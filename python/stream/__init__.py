@@ -122,6 +122,8 @@ ADVANCED_VARS = {
 
     "USE_BEV": True,
     "SERVO_CENTER": 95,
+    "APPLY_CAMERA_CALIBRATION": True,
+    "CAMERA_CALIBRATION_FILE": "assets/camera_calibrations/camera_calibration.npz",
     "KP": 0.35, "KI": 0.0, "KD": 0.01, "KT": 0.01,
     "USE_PID": True, "AUTO_UPDATE_KP": False,
     "OUTPUT_LIMITS": (-80.0, 80.0),

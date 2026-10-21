@@ -261,6 +261,10 @@ class StreamConfigurationMixin:
                 raise ValueError(f"{key} must be between 0 and 1")
             if key.startswith("BEV_SRC_") and not -5.0 <= normalized <= 5.0:
                 raise ValueError(f"{key} must be between -5 and 5")
+            if key == "CAMERA_CALIBRATION_FILE":
+                from calibration.asset_store import calibration_path_from_reference
+                normalized = str(value).strip()
+                calibration_path_from_reference(normalized, require_exists=True)
             advanced[key] = normalized
 
         if "SERVO_CENTER" in advanced:

@@ -100,6 +100,10 @@ def validate_pulse_sequence(name, value):
 
 
 def _validate(name, value):
+    if name == "CAMERA_CALIBRATION_FILE":
+        from calibration.asset_store import calibration_path_from_reference
+        calibration_path_from_reference(value, require_exists=False)
+        return value
     if name in PULSE_SEQUENCE_KEYS:
         return validate_pulse_sequence(name, value)
     if name in {"ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM"}:
