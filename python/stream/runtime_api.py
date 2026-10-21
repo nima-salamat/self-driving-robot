@@ -503,28 +503,69 @@ class StreamRuntimeMixin:
         return jsonify(payload)
 
     def arduino_output(self):
+        without_arduino = bool(getattr(self.config, "WITHOUT_ARDUINO", False))
+        automatic_commands_enabled = bool(
+            getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+        )
         connection = getattr(self.config, "arduino_connection", None)
         if connection is None:
             return jsonify(
                 enabled=False,
                 connected=False,
-                state="DISCONNECTED",
+                state="DISABLED" if without_arduino else "DISCONNECTED",
                 lines=[],
-                automatic_commands_enabled=bool(
-                    getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+                automatic_commands_enabled=automatic_commands_enabled,
+                without_arduino=without_arduino,
+                hardware_available=False,
+                message=(
+                    "Arduino is disabled for this run (--without-arduino)."
+                    if without_arduino
+                    else "No Arduino serial connection is available."
                 ),
             )
+
         status = connection.telemetry_status(limit=50)
-        status["enabled"] = bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
-        status["automatic_commands_enabled"] = bool(
-            getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+        hardware_available = bool(
+            not without_arduino and getattr(connection, "enabled", True)
         )
+        status["enabled"] = bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
+        status["automatic_commands_enabled"] = automatic_commands_enabled
+        status["without_arduino"] = without_arduino
+        status["hardware_available"] = hardware_available
+        if without_arduino:
+            status["connected"] = False
+            status["state"] = "DISABLED"
+            status["lines"] = []
+            status["message"] = (
+                "Arduino serial communication is disabled for this run "
+                "(--without-arduino)."
+            )
+        elif not hardware_available:
+            status["connected"] = False
+            status["state"] = "DISABLED"
+            status["message"] = "Arduino serial communication is disabled."
+        else:
+            status["message"] = (
+                "Arduino is connected."
+                if status.get("connected")
+                else "Arduino is not connected; serial reconnection may still be in progress."
+            )
         return jsonify(status)
 
     def arduino_command_api(self):
         """Send one operator-entered command, bypassing the automatic-send gate."""
         if not self._control_allowed():
             return self._control_denied()
+        if bool(getattr(self.config, "WITHOUT_ARDUINO", False)):
+            return jsonify(
+                success=False,
+                message=(
+                    "Arduino is disabled for this run (--without-arduino). "
+                    "Custom serial commands cannot be sent; restart without "
+                    "--without-arduino to enable Arduino communication."
+                ),
+            ), 409
+
 
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
