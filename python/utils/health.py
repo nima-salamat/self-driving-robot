@@ -52,6 +52,51 @@ class HealthMonitor:
         faults = dict(snapshot["faults"])
         resources = {}
         lifecycle = snapshot["lifecycle"]
+        runtime_robot = getattr(config, "runtime_robot", None)
+        run_level_stopped = (
+            str(getattr(config, "RUN_LVL", "MOVE")).strip().upper() == "STOP"
+        )
+        stream_enabled = bool(getattr(config, "STREAM", False))
+        debug_enabled = bool(getattr(config, "DEBUG", False))
+        stop_hold_active = bool(
+            getattr(getattr(runtime_robot, "stop_hold", None), "active", False)
+        )
+        camera_obscured = bool(getattr(runtime_robot, "_camera_obscured", False))
+        race_start_gate = getattr(runtime_robot, "race_start_gate", None)
+        race_start_gate_blocked = bool(
+            race_start_gate is not None
+            and not getattr(
+                runtime_robot,
+                "_race_start_gate_motion_released",
+                getattr(race_start_gate, "released", False),
+            )
+        )
+        crosswalk_active = bool(getattr(runtime_robot, "crosswalk_time_start", 0))
+        crosswalk_skips_vision = (
+            str(getattr(config, "MODE", "")).strip().lower() == "city"
+            and crosswalk_active
+            and not stream_enabled
+            and not debug_enabled
+        )
+        perception_expected = (
+            lifecycle == HealthState.RUNNING
+            and not run_level_stopped
+            and not stop_hold_active
+            and not camera_obscured
+            and not race_start_gate_blocked
+            and not crosswalk_skips_vision
+        )
+        camera_capture_expected = (
+            lifecycle == HealthState.RUNNING
+            and (
+                not run_level_stopped
+                or stream_enabled
+                or debug_enabled
+                or stop_hold_active
+                or camera_obscured
+                or race_start_gate_blocked
+            )
+        )
 
         connection = getattr(config, "arduino_connection", None)
         if connection is not None:
@@ -131,14 +176,14 @@ class HealthMonitor:
                 "last_valid": perception_valid,
                 "last_age_ms": perception_age_ms,
             }
-            if perception_valid is False:
+            if perception_valid is False and perception_expected:
                 faults["perception"] = {
                     "severity": FaultSeverity.CRITICAL,
                     "message": "latest perception result is invalid",
                     "age_s": (perception_age_ms or 0.0) / 1000.0,
                 }
             elif (
-                lifecycle == HealthState.RUNNING
+                perception_expected
                 and perception_age_ms is not None
                 and perception_age_ms > self.PERCEPTION_MAX_AGE_S * 1000.0
             ):
@@ -184,7 +229,7 @@ class HealthMonitor:
                     "age_s": last_capture_age_s or 0.0,
                 }
             elif (
-                lifecycle == HealthState.RUNNING
+                camera_capture_expected
                 and last_capture_age_s is not None
                 and last_capture_age_s > self.CAMERA_MAX_AGE_S
             ):
@@ -231,7 +276,11 @@ class HealthMonitor:
                     "age_s": sign_status["last_submit_age_s"],
                 }
             elif (
-                sign_status.get("last_result_age_s") is not None
+                not run_level_stopped
+                and not camera_obscured
+                and not bool(sign_status.get("paused", False))
+                and bool(sign_status.get("requests_enabled", True))
+                and sign_status.get("last_result_age_s") is not None
                 and sign_status["last_result_age_s"] > float(
                     getattr(config, "SIGN_RESULT_MAX_AGE", 0.75)
                 )
