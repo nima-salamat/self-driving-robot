@@ -237,8 +237,11 @@ class StreamMediaMixin:
     def unfreeze_frame(self):
         if not self._control_allowed():
             return self._control_denied()
-        if hasattr(self.config, "frozen_debug_frame"):
-            delattr(self.config, "frozen_debug_frame")
+        # Serialize freeze-state changes with frame readers so an in-flight
+        # request cannot observe a partially updated preview state.
+        with self._frame_lock:
+            if hasattr(self.config, "frozen_debug_frame"):
+                delattr(self.config, "frozen_debug_frame")
         return jsonify(success=True)
 
 
