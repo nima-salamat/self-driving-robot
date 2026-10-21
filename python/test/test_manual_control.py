@@ -135,6 +135,7 @@ state = {
     'speed': 0.0,
     'angle_target': float(SERVO_CENTER) + float(settings.get('angle_trim', 0.0)),
     'speed_target': 0.0,
+    'speed_immediate': False,
     'last_ui': time.monotonic(),
     'last_cmd': 0.0,
     'estop': False,
@@ -224,6 +225,7 @@ def on_input(msg):
         state["last_ui"]=now;state["last_cmd"]=now;state["watchdog_active"]=False
         state["angle_target"]=angle
         state["speed_target"]=0.0 if state["estop"] else max_speed*forward*scale
+        state["speed_immediate"] = msg.get("speed_immediate") is True
     emit("cmd_ack",{"seq":seq})
 
 @socketio.on("set_setting")
@@ -321,11 +323,15 @@ def control_loop():
                 pid_angle=PID(*sett.get("angle_pid",[2,0,.25]));pid_speed=PID(*sett.get("speed_pid",[3,0,.15]))
             elif sett.get("smoothing_mode","alpha")=="pid":
                 s["angle"]+=pid_angle.step(s["angle_target"],s["angle"],dt)*dt
-                s["speed"]+=pid_speed.step(s["speed_target"],s["speed"],dt)*dt;s["watchdog_active"]=False
+                if s.get("speed_immediate",False):s["speed"]=s["speed_target"]
+                else:s["speed"]+=pid_speed.step(s["speed_target"],s["speed"],dt)*dt
+                s["watchdog_active"]=False
             else:
                 aa=max(.01,min(.9,float(sett.get("angle_alpha",.18))));sa=max(.01,min(.9,float(sett.get("speed_alpha",.20))))
                 factor=dt*CONTROL_HZ;s["angle"]+=(s["angle_target"]-s["angle"])*(1-pow(1-aa,factor))
-                s["speed"]+=(s["speed_target"]-s["speed"])*(1-pow(1-sa,factor));s["watchdog_active"]=False
+                if s.get("speed_immediate",False):s["speed"]=s["speed_target"]
+                else:s["speed"]+=(s["speed_target"]-s["speed"])*(1-pow(1-sa,factor))
+                s["watchdog_active"]=False
             s["angle"]=max(SERVO_MIN,min(SERVO_MAX,s["angle"]));m=max(0,min(255,int(sett.get("max_speed",DEFAULT_MAX_SPEED))))
             s["speed"]=max(-m,min(m,s["speed"]));angle=int(round(s["angle"]));speed=0 if hard or abs(s["speed"])<3 else int(round(s["speed"]))
         connected,_=_connection_snapshot()
@@ -444,6 +450,8 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;objec
 .value-badge{min-width:66px;text-align:center;background:rgba(255,255,255,0.03);padding:6px;border-radius:8px;color:var(--muted)}
 .angle-limit-number{width:78px;min-width:78px;padding:6px 5px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(0,0,0,.24);color:var(--text);font:700 13px Inter,system-ui,sans-serif;text-align:center;font-variant-numeric:tabular-nums}
 .angle-limit-number:focus{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
+.form-line select{width:100%;padding:9px 10px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(0,0,0,.24);color:var(--text);font:500 13px Inter,system-ui,sans-serif}
+.form-line select option{background:#071a20;color:var(--text)}
 
 /* small screens */
 @media(max-width:820px){
@@ -531,6 +539,20 @@ img#video{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;objec
           <label>Keyboard sensitivity</label>
           <div class="form-row"><input id="kb_sens" type="number" step="0.1" min="0.2" max="3.0" value="1.0"><div class="value-badge">x</div></div>
         </div>
+        <div class="form-line">
+          <label for="kb_speed_ramp">Keyboard acceleration</label>
+          <select id="kb_speed_ramp">
+            <option value="smooth">Gradual ramp</option>
+            <option value="direct">Direct / instant target</option>
+          </select>
+        </div>
+        <div class="form-line">
+          <label for="kb_speed_stop">Keyboard stop on key release</label>
+          <select id="kb_speed_stop">
+            <option value="smooth">Gradual slowdown</option>
+            <option value="instant">Immediate stop (0)</option>
+          </select>
+        </div>
       </div>
       
       <div class="form-line">
@@ -616,6 +638,7 @@ function sendInput(payload){
     forward: Number(payload.forward || 0),
     steer: Number(payload.steer || 0),
     speed_scale: payload.speed_scale == null ? 1.0 : Number(payload.speed_scale),
+    speed_immediate: payload.speed_immediate === true,
     t: Date.now(),
     is_mobile: /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent)
   };
@@ -650,6 +673,8 @@ let settings = {
   pdead: Number(document.getElementById('pdead').value)/100.0,
   kb_sens: Number(document.getElementById('kb_sens').value),
   kb_return: Number(document.getElementById('kb_return').value),
+  kb_speed_ramp: document.getElementById('kb_speed_ramp').value || 'smooth',
+  kb_speed_stop: document.getElementById('kb_speed_stop').value || 'smooth',
 
 };
 
@@ -791,11 +816,18 @@ setInterval(()=>{
     const m = Math.hypot(kf, ks) || 1; kf/=m; ks/=m;
     const ACC = getKbAccel();
     const RET = getKbReturn();
+    const keyboardOwnsControls = pointerId === null && !pedalActive && !gamepadActive;
+    const kbSpeedRamp = document.getElementById('kb_speed_ramp').value || settings.kb_speed_ramp || 'smooth';
+    const kbSpeedStop = document.getElementById('kb_speed_stop').value || settings.kb_speed_stop || 'smooth';
 
-    if (kf !== 0)
-    keyAccel.forward += kf * ACC;
-    else
-    keyAccel.forward += (0 - keyAccel.forward) * RET;
+    if (kf !== 0) {
+      if (kbSpeedRamp === 'direct') keyAccel.forward = kf;
+      else keyAccel.forward = clamp(keyAccel.forward + kf * ACC, -1, 1);
+    } else if (kbSpeedStop === 'instant') {
+      keyAccel.forward = 0;
+    } else {
+      keyAccel.forward += (0 - keyAccel.forward) * RET;
+    }
 
     if (ks !== 0)
     keyAccel.steer += ks * ACC;
@@ -804,14 +836,20 @@ setInterval(()=>{
 
 
   // when joystick/pedal not active, keyboard drives both forward and steer
-  if(pointerId === null && !pedalActive && !gamepadActive){
+  if(keyboardOwnsControls){
     target.forward = clamp(keyAccel.forward * Number(document.getElementById('kb_sens').value || settings.kb_sens), -1,1);
     target.steer  = clamp(keyAccel.steer  * Number(document.getElementById('kb_sens').value || settings.kb_sens), -1,1);
   }
 
-  // smoothing
+  // Steering remains smoothed. Keyboard throttle can independently ramp or snap.
   const alpha = clamp(Number(document.getElementById('alpha').value || settings.alpha), 0.01, 0.9);
-  current.forward = (current.forward || 0) + (target.forward - (current.forward || 0)) * alpha;
+  if (keyboardOwnsControls && kf !== 0 && kbSpeedRamp === 'direct') {
+    current.forward = target.forward;
+  } else if (keyboardOwnsControls && kf === 0 && kbSpeedStop === 'instant') {
+    current.forward = 0;
+  } else {
+    current.forward = (current.forward || 0) + (target.forward - (current.forward || 0)) * alpha;
+  }
   current.steer  = (current.steer  || 0) + (target.steer  - (current.steer || 0)) * alpha;
 
   // map to hardware values
@@ -832,8 +870,11 @@ setInterval(()=>{
   const active=pointerId!==null||pedalActive||gamepadActive||keyState.up||keyState.down||keyState.left||keyState.right||
     Math.abs(keyAccel.forward)>.01||Math.abs(keyAccel.steer)>.01||Math.abs(target.forward)>.01||Math.abs(target.steer)>.01||
     Math.abs(current.forward)>.01||Math.abs(current.steer)>.01;
-  if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale});lastInputActive=true;}
-  else if(lastInputActive){sendInput({forward:0,steer:0,speed_scale:0});lastInputActive=false;}
+  const keyboardSpeedImmediate = keyboardOwnsControls && (
+    (kf !== 0 && kbSpeedRamp === 'direct') || (kf === 0 && kbSpeedStop === 'instant')
+  );
+  if(active){sendInput({forward:current.forward,steer:current.steer,speed_scale:speedScale,speed_immediate:keyboardSpeedImmediate});lastInputActive=true;}
+  else if(lastInputActive){sendInput({forward:0,steer:0,speed_scale:0,speed_immediate:keyboardOwnsControls && kbSpeedStop === 'instant'});lastInputActive=false;}
 
 }, 60); // ~16Hz
 
@@ -864,6 +905,8 @@ document.getElementById('save_settings').addEventListener('click', ()=>{
     pdead: Number(document.getElementById('pdead').value)/100.0,
     kb_sens: Number(document.getElementById('kb_sens').value),
     kb_return: Number(document.getElementById('kb_return').value),
+    kb_speed_ramp: document.getElementById('kb_speed_ramp').value,
+    kb_speed_stop: document.getElementById('kb_speed_stop').value,
 
   };
   // persist locally
@@ -952,7 +995,7 @@ function loadSettingsToUI(){
   'deadman','jpegq','max_speed',
   'speed_limit','angle_limit',
   'alpha','jsize','jdead','pdead',
-  'kb_sens','kb_return'
+  'kb_sens','kb_return','kb_speed_ramp','kb_speed_stop'
 ];
 
   keys.forEach(k=>{
