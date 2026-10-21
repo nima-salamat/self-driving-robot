@@ -134,6 +134,7 @@ class EncoderOdometry:
             self._mark_gap(str(reason))
 
     def _mark_gap(self, reason):
+        self._last_delta_pulses = 0
         self._valid = False
         self._reason = reason
         self._continuity_broken = True
@@ -185,5 +186,6 @@ class EncoderOdometry:
         """Zero only visualization pose; never touches Arduino counters/motors."""
         with self._lock:
             self._x = self._y = self._heading = 0.0
+            self._last_delta_pulses = 0
             self.history.clear()
             self._append(valid=self._valid, gap=False, at=time.monotonic())
