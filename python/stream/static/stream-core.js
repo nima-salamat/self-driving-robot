@@ -483,7 +483,7 @@ function fetchFrameOnce(){
 
     frameRequestInFlight = true;
     let objectUrl = null;
-    let image = null;
+    let img = null;
     let timeoutHandle = null;
     let completed = false;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -492,9 +492,9 @@ function fetchFrameOnce(){
         if(completed) return;
         completed = true;
         if(timeoutHandle !== null) clearTimeout(timeoutHandle);
-        if(image) {
-            image.onload = null;
-            image.onerror = null;
+        if(img) {
+            img.onload = null;
+            img.onerror = null;
         }
         if(objectUrl) {
             URL.revokeObjectURL(objectUrl);
@@ -549,18 +549,18 @@ function fetchFrameOnce(){
         if(!blob || blob.size === 0) throw new Error('Camera frame response was empty.');
 
         objectUrl = URL.createObjectURL(blob);
-        image = new Image();
-        image.decoding = 'async';
-        image.onload = () => {
+        img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
             if(completed) return;
             try {
                 if(syncActive) {
-                    const width = image.naturalWidth || image.width;
-                    const height = image.naturalHeight || image.height;
-                    if(width <= 0 || height <= 0) throw new Error('Decoded camera frame has invalid dimensions.');
-                    frameSourceWidth = width;
-                    frameSourceHeight = height;
-                    lastFrameImage = image;
+                    const frameWidth = img.naturalWidth || img.width;
+                    const frameHeight = img.naturalHeight || img.height;
+                    if(frameWidth <= 0 || frameHeight <= 0) throw new Error('Decoded camera frame has invalid dimensions.');
+                    frameSourceWidth = frameWidth;
+                    frameSourceHeight = frameHeight;
+                    lastFrameImage = img;
                     syncCameraCanvasSize();
                     const rect = canvas.getBoundingClientRect();
                     if(rect.width <= 0 || rect.height <= 0) throw new Error('Camera canvas has no visible size.');
@@ -576,8 +576,8 @@ function fetchFrameOnce(){
                 ));
             }
         };
-        image.onerror = () => finishFrameRequest(new Error('The response could not be decoded as an image.'));
-        image.src = objectUrl;
+        img.onerror = () => finishFrameRequest(new Error('The response could not be decoded as an image.'));
+        img.src = objectUrl;
     }).catch(error => finishFrameRequest(error));
 }
 
@@ -1375,7 +1375,7 @@ function updateArduinoHardwareUi(j){
     const output=document.getElementById('arduino_output');
     const lines=Array.isArray(j.lines)?j.lines:[];
     if(output){
-        output.textContent=lines.join('\n');
+        output.textContent = (j.lines || []).join('\\n');
         output.scrollTop=output.scrollHeight;
         const placeholder=output.parentElement&&output.parentElement.querySelector('.console-empty');
         if(placeholder){
@@ -1694,8 +1694,29 @@ document.addEventListener('keydown',function(e){
 document.addEventListener('keyup',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)||['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))flushKeyboardRoiMove();});window.addEventListener('blur',flushKeyboardRoiMove);
 
 const readout={x:document.getElementById('cad_cursor_x'),y:document.getElementById('cad_cursor_y'),u:document.getElementById('cad_cursor_u'),v:document.getElementById('cad_cursor_v'),area:document.getElementById('cad_selected_area')};
-function updateCadReadout(e){const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;if(u<0||u>1||v<0||v>1){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';return;}const source=getSourceFrameSize();readout.x.textContent='X: '+Math.round(u*source.width)+' px';readout.y.textContent='Y: '+Math.round(v*source.height)+' px';readout.u.textContent='U: '+(u*100).toFixed(1)+' %';readout.v.textContent='V: '+(v*100).toFixed(1)+' %';}
-canvas.addEventListener('mousemove',updateCadReadout,{passive:true});canvas.addEventListener('mouseleave',()=>{if(!viewPanState){readout.x.textContent='X: — px';readout.y.textContent='Y: — px';readout.u.textContent='U: — %';readout.v.textContent='V: — %';}},{passive:true});
+function clearCadReadout(){
+  readout.x.textContent='X: — px';
+  readout.y.textContent='Y: — px';
+  readout.u.textContent='U: — %';
+  readout.v.textContent='V: — %';
+}
+function updateCadReadout(e){
+  const r=canvas.getBoundingClientRect();
+  if(!r.width||!r.height){clearCadReadout();return;}
+  const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;
+  if(!Number.isFinite(u)||!Number.isFinite(v)||u<0||u>1||v<0||v>1){
+    clearCadReadout();
+    return;
+  }
+  const source=getSourceFrameSize();
+  readout.x.textContent='X: '+Math.round(u*source.width)+' px';
+  readout.y.textContent='Y: '+Math.round(v*source.height)+' px';
+  readout.u.textContent='U: '+(u*100).toFixed(1)+' %';
+  readout.v.textContent='V: '+(v*100).toFixed(1)+' %';
+}
+canvas.addEventListener('mousemove',updateCadReadout,{passive:true});
+canvas.addEventListener('mouseleave',clearCadReadout,{passive:true});
+window.addEventListener('blur',clearCadReadout,{passive:true});
 select.addEventListener('change',()=>{flushKeyboardRoiMove();const t=select.value;if(t==='NONE'){markerHighlight=null;selectedVar='NONE';document.getElementById('prop_target').value='NONE';window.syncPropertiesSelection('NONE');}else if(t.startsWith('BEV_')){markerHighlight='BEV';selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}else if(['RL','LL','CW','ST','OBJ'].includes(t)){markerHighlight=t;selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}readout.area.textContent='Object: '+(t==='NONE'?'NONE':t.startsWith('BEV_')?'BEV '+t.slice(4):t);renderWorkspaceCanvas();});
 noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('NONE');updateZoomStatus();
 }
