@@ -199,6 +199,29 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("max-height: min(55dvh, 360px)", css)
         self.assertIn("max-height: min(42dvh, 200px)", css)
 
+    def test_workspace_keyboard_shortcuts_and_command_search_are_complete(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+
+        for menu_id, mnemonic in (("file", "F"), ("edit", "E"), ("view", "V"), ("tools", "T"), ("help", "H")):
+            self.assertIn('data-menu-id="' + menu_id + '"', template)
+            self.assertIn('<span class="menu-mnemonic">' + mnemonic + '</span>', template)
+
+        for code in ("KeyP", "KeyC", "KeyW", "KeyS", "KeyA", "KeyD", "KeyR", "KeyF", "KeyE", "KeyV", "KeyT", "KeyH"):
+            self.assertIn("'" + code + "'", extensions)
+        self.assertIn("function installWorkspaceKeyboardShortcuts()", extensions)
+        self.assertIn("function focusPanelNavigation()", extensions)
+        self.assertIn("function adjustSettingsPanelWidth(direction)", extensions)
+        self.assertIn("function changeConsoleHeight(direction)", extensions)
+        self.assertIn("refresh-config','Ctrl+Alt+R'", extensions)
+        self.assertIn("matchedCommands=commands.filter(function(entry){return !query||paletteNormalize(entry[0]+' '+entry[2]+' '+(entry[3]||'')).includes(query);})", extensions)
+        self.assertIn("app-menubar.shortcuts-visible .menu-mnemonic", css)
+        self.assertIn("Focus panel navigation; use ↑/↓, Space or Enter", template)
+        self.assertIn("Increase / decrease console height by one step", template)
+        self.assertIn("Refresh configuration values &amp; advanced settings", template)
+
     def test_settings_panel_has_visible_bounded_keyboard_resizer(self):
         stream_dir = PYTHON_ROOT / "stream"
         extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")

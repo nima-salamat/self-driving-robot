@@ -1582,3 +1582,20 @@ canvas {
     max-height: 38px;
   }
 }
+
+/* Custom workspace menu mnemonics (Ctrl+Alt held): mirror native menu access hints. */
+.menu-label { display:inline-flex; align-items:center; }
+.menu-mnemonic { text-decoration:none; text-underline-offset:3px; text-decoration-thickness:2px; }
+.app-menubar.shortcuts-visible .menu-mnemonic {
+  color:#9ff3ff;
+  text-decoration:underline;
+}
+.app-menubar .menu-group > summary:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:-2px;
+}
+.app-menubar .menu-dropdown button:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:-2px;
+  background:#1b3347;
+}

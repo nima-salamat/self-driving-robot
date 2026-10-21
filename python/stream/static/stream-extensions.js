@@ -952,21 +952,217 @@ function isPaletteCommandActive(name){
   if(name==='preset')return !!($('ext_config_panel')&&$('ext_config_panel').open&&document.activeElement===$('ext_preset_name'));
   return false;
 }
+function isEditableKeyboardTarget(target){
+  return !!(target&&(
+    target.isContentEditable||
+    ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||
+    target.closest&&target.closest('[contenteditable="true"]')
+  ));
+}
+function toggleSettingsPanels(){
+  const button=$('toggle_dock_btn');
+  if(button)button.click();
+}
+function focusPanelNavigation(){
+  const container=document.querySelector('.container');
+  if(typeof window.ensureStreamDockVisible==='function')window.ensureStreamDockVisible();
+  else if(container&&(container.classList.contains('dock-hidden')||(window.matchMedia('(max-width: 720px)').matches&&!container.classList.contains('show-dock'))))toggleSettingsPanels();
+  window.requestAnimationFrame(function(){
+    const first=document.querySelector('.right-panel details.dock-panel > summary');
+    if(first)first.focus();
+    else showToast('Settings panel navigation is unavailable.');
+  });
+}
+function adjustSettingsPanelWidth(direction){
+  if(window.innerWidth<721)return;
+  const container=document.querySelector('.container');
+  const panel=document.querySelector('.right-panel');
+  if(!container||!panel||container.classList.contains('dock-hidden'))return;
+  const current=parseFloat(getComputedStyle(container).getPropertyValue('--right-pane-width'))||panel.getBoundingClientRect().width||315;
+  const minimum=250,maximum=Math.max(minimum,Math.min(700,window.innerWidth-360));
+  const width=Math.round(Math.max(minimum,Math.min(maximum,current+(direction>0?24:-24))));
+  container.style.setProperty('--right-pane-width',width+'px');
+  const handle=$('panel_resize_handle');
+  if(handle){
+    handle.setAttribute('aria-valuenow',String(width));
+    handle.setAttribute('aria-valuetext',width+' pixels wide');
+  }
+  if(typeof scheduleWorkspaceSave==='function')scheduleWorkspaceSave();
+}
+function consoleResizeLimits(){
+  const mobile=window.matchMedia('(max-width: 720px)').matches;
+  const shortLandscape=window.matchMedia('(max-width: 900px) and (orientation: landscape) and (max-height: 520px)').matches;
+  const minimum=mobile?84:96;
+  const maximum=Math.max(minimum,Math.min(shortLandscape?200:(mobile?360:520),window.innerHeight*(shortLandscape?0.42:(mobile?0.55:0.62)),window.innerHeight-(mobile?80:120)));
+  return {minimum:minimum,maximum:maximum};
+}
+function changeConsoleHeight(direction){
+  const dock=$('bottom_console'),toggle=$('console_toggle_btn'),handle=$('console_resize_handle');
+  if(!dock||!toggle)return;
+  const bounds=consoleResizeLimits(),isOpen=dock.classList.contains('console-open');
+  let current=parseFloat(dock.style.getPropertyValue('--console-resize-height'));
+  if(!Number.isFinite(current))current=isOpen?(dock.getBoundingClientRect().height||178):178;
+  if(direction>0){
+    if(!isOpen){
+      const height=Math.max(bounds.minimum,Math.min(bounds.maximum,178));
+      dock.style.setProperty('--console-resize-height',height+'px');
+      toggle.click();
+      if(handle){handle.setAttribute('aria-valuenow',String(height));handle.setAttribute('aria-valuetext',height+' pixels tall');}
+    }else{
+      const height=Math.max(bounds.minimum,Math.min(bounds.maximum,current+24));
+      dock.style.setProperty('--console-resize-height',height+'px');
+      if(handle){handle.setAttribute('aria-valuenow',String(height));handle.setAttribute('aria-valuetext',height+' pixels tall');}
+    }
+  }else if(isOpen){
+    if(current<=bounds.minimum+24){
+      toggle.click();
+      if(handle)handle.setAttribute('aria-valuetext','Closed. Drag upward to open and downward to close.');
+    }else{
+      const height=Math.max(bounds.minimum,current-24);
+      dock.style.setProperty('--console-resize-height',height+'px');
+      if(handle){handle.setAttribute('aria-valuenow',String(height));handle.setAttribute('aria-valuetext',height+' pixels tall');}
+    }
+  }
+  if(typeof scheduleWorkspaceSave==='function')scheduleWorkspaceSave();
+}
+function openTopMenu(menuId){
+  const menu=document.querySelector('.app-menubar .menu-group[data-menu-id="'+menuId+'"]');
+  if(!menu)return;
+  document.querySelectorAll('.app-menubar .menu-group').forEach(function(item){item.open=item===menu;});
+  const first=menu.querySelector('.menu-dropdown button:not(:disabled)');
+  const summary=menu.querySelector(':scope > summary');
+  if(first)first.focus();else if(summary)summary.focus();
+}
+function installWorkspaceKeyboardShortcuts(){
+  const menuKeyMap={KeyF:'file',KeyE:'edit',KeyV:'view',KeyT:'tools',KeyH:'help'};
+  function isAltGraph(event){return !!(event.getModifierState&&event.getModifierState('AltGraph'));}
+  function syncMnemonicHints(event){
+    const bar=document.querySelector('.app-menubar');
+    if(bar)bar.classList.toggle('shortcuts-visible',!!(event&&event.ctrlKey&&event.altKey&&!event.metaKey&&!isAltGraph(event)));
+  }
+  document.addEventListener('keydown',function(event){
+    syncMnemonicHints(event);
+    const target=event.target;
+    const menuItem=target&&target.closest?target.closest('.menu-dropdown button'):null;
+    if(menuItem&&menuItem.closest('.menu-group[open]')){
+      const menu=menuItem.closest('.menu-group[open]');
+      const items=Array.from(menu.querySelectorAll('.menu-dropdown button:not(:disabled)'));
+      const index=items.indexOf(menuItem);
+      if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){
+        event.preventDefault();
+        let next=index;
+        if(event.key==='ArrowDown')next=(index+1)%items.length;
+        else if(event.key==='ArrowUp')next=(index-1+items.length)%items.length;
+        else if(event.key==='Home')next=0;
+        else next=items.length-1;
+        if(items[next])items[next].focus();
+        return;
+      }
+      if(event.key==='Escape'){
+        event.preventDefault();event.stopPropagation();menu.open=false;
+        const summary=menu.querySelector(':scope > summary');if(summary)summary.focus();
+        return;
+      }
+    }
+    if(target&&target.matches&&target.matches('.right-panel .dock-panel > summary')){
+      const summaries=Array.from(document.querySelectorAll('.right-panel .dock-panel > summary'));
+      const index=summaries.indexOf(target);
+      if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+        event.preventDefault();
+        const delta=event.key==='ArrowDown'?1:-1;
+        const next=(index+delta+summaries.length)%summaries.length;
+        if(summaries[next])summaries[next].focus();
+        return;
+      }
+      if(event.key==='Home'||event.key==='End'){
+        event.preventDefault();
+        const next=event.key==='Home'?summaries[0]:summaries[summaries.length-1];
+        if(next)next.focus();
+        return;
+      }
+      // Space and Enter keep native <summary> toggle behaviour.
+    }
+    if(!(event.ctrlKey&&event.altKey&&!event.metaKey)||isAltGraph(event)||event.repeat)return;
+    const menuId=menuKeyMap[event.code];
+    if(menuId){
+      if(isEditableKeyboardTarget(target))return;
+      event.preventDefault();
+      openTopMenu(menuId);
+      return;
+    }
+    if(isEditableKeyboardTarget(target))return;
+    switch(event.code){
+      case 'KeyP':
+        event.preventDefault();
+        if(event.shiftKey)focusPanelNavigation();
+        else toggleSettingsPanels();
+        return;
+      case 'KeyC':
+        event.preventDefault();
+        if($('console_toggle_btn'))$('console_toggle_btn').click();
+        return;
+      case 'KeyW':
+        event.preventDefault();changeConsoleHeight(1);return;
+      case 'KeyS':
+        event.preventDefault();changeConsoleHeight(-1);return;
+      case 'KeyA':
+        event.preventDefault();adjustSettingsPanelWidth(1);return;
+      case 'KeyD':
+        event.preventDefault();adjustSettingsPanelWidth(-1);return;
+      case 'KeyR':
+        event.preventDefault();
+        if($('refresh_vals'))$('refresh_vals').click();
+        else showToast('Configuration refresh control is unavailable.');
+        return;
+    }
+  },true);
+  document.addEventListener('keyup',syncMnemonicHints,true);
+  window.addEventListener('blur',function(){
+    const bar=document.querySelector('.app-menubar');if(bar)bar.classList.remove('shortcuts-visible');
+  });
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden){const bar=document.querySelector('.app-menubar');if(bar)bar.classList.remove('shortcuts-visible');}
+  });
+}
+
 function buildCommandPalette(){
   const commands=[
+    ['Toggle settings panels','toggle-panels','Ctrl+Alt+P','show hide sidebar panel'],
+    ['Focus settings panel navigation','focus-panels','Ctrl+Alt+Shift+P','navigate panel menus with arrows space enter'],
+    ['Toggle Event Console','toggle-console','Ctrl+Alt+C / Ctrl+Backtick','open close events log console'],
+    ['Increase Event Console height','console-grow','Ctrl+Alt+W','grow taller resize up'],
+    ['Decrease Event Console height / close at minimum','console-shrink','Ctrl+Alt+S','shrink shorter resize down'],
+    ['Widen settings panel','panel-widen','Ctrl+Alt+A','move divider left wider'],
+    ['Narrow settings panel','panel-narrow','Ctrl+Alt+D','move divider right narrower'],
+    ['Refresh configuration values and advanced settings','refresh-config','Ctrl+Alt+R','refresh config values feed advanced settings'],
+    ['Open File menu','menu-file','Ctrl+Alt+F','file menu export import refresh capture exit'],
+    ['Open Edit menu','menu-edit','Ctrl+Alt+E','edit menu properties selection'],
+    ['Open View menu','menu-view','Ctrl+Alt+V','view menu zoom full screen overlay console panels'],
+    ['Open Tools menu','menu-tools','Ctrl+Alt+T','tools select pan freeze live frame'],
+    ['Open Help menu','menu-help','Ctrl+Alt+H','help shortcuts guide'],
     ['Select / Edit operational ROI','select','V'],['Pan camera view','pan','H'],['Toggle view lock','view-lock',''],
-    ['Keyboard shortcuts','shortcuts','F1'],['Export full configuration','export','Ctrl+Shift+E'],['Import full configuration','import',''],['Save workspace layout','workspace','Ctrl+S'],['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y / Ctrl+Shift+Z'],
-    ['Fit camera frame','fit','0'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],['Toggle crosshair','crosshair','X'],
-    ['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],
+    ['Keyboard shortcuts','shortcuts','F1'],['Export full configuration','export','Ctrl+Shift+E','download configuration JSON'],
+    ['Import full configuration','import','','load configuration JSON'],['Save workspace layout','workspace','Ctrl+S'],
+    ['Undo','undo','Ctrl+Z'],['Redo','redo','Ctrl+Y / Ctrl+Shift+Z'],
+    ['Fit camera frame','fit','0'],['Zoom in','zoom-in','+'],['Zoom out','zoom-out','−'],
+    ['Toggle camera fullscreen','fullscreen','F'],['Toggle ROI overlays','overlays','O'],['Toggle grid','grid','G'],
+    ['Toggle crosshair','crosshair','X'],['Use annotation tool','annotate','N'],['Use pixel ruler','ruler','R'],
+    ['Show or hide Properties section','properties','','properties inspector'],
+    ['Clear selection','clear-selection','','deselect clear current roi'],
+    ['Take camera picture','take-picture','','capture still image photograph'],
+    ['Exit Stream server','exit-stream','','stop server exit dashboard'],
+    ['Freeze camera frame','freeze','','pause live frame'],['Return to live camera','unfreeze','','resume live frame'],
     ['Save workspace profile','profile',''],['Save configuration preset','preset',''],
     ['Capture frame snapshot','snapshot',''],['Refresh runtime diagnostics','health',''],['Refresh server logs','logs',''],
-    ['Open encoder map','encoder',''],['Open camera controls','camera',''],['Toggle Robot Motion (RUN_LVL)','toggle-motion','Ctrl+Shift+Space'],['Force Stop (RUN_LVL → STOP)','stop',''],['Resume motion (confirmation)','resume','']
-  ];
+    ['Open encoder map','encoder',''],['Open camera controls','camera',''],
+    ['Toggle Robot Motion (RUN_LVL)','toggle-motion','Ctrl+Shift+Space'],
+    ['Force Stop (RUN_LVL → STOP)','stop',''],['Resume motion (confirmation)','resume','']
+  ;
   const commandList=$('ext_command_list'),settingsList=$('ext_settings_results'),search=$('ext_command_search');
   function renderResults(){
     const query=paletteNormalize(search.value.trim());
     commandList.replaceChildren();settingsList.replaceChildren();
-    const matchedCommands=commands.filter(function(entry){return !query||paletteNormalize(entry[0]+' '+entry[2]).includes(query);});
+    const matchedCommands=commands.filter(function(entry){return !query||paletteNormalize(entry[0]+' '+entry[2]+' '+(entry[3]||'')).includes(query);});
     matchedCommands.forEach(function(entry){
       const button=document.createElement('button');button.type='button';button.className='palette-command-result';
       const badge=document.createElement('span');badge.className='palette-kind-badge command-kind';badge.textContent='COMMAND';
@@ -1010,6 +1206,20 @@ function closeCommandPalette(){
 }
 function executeCommand(name){
   const actions={
+    'toggle-panels':toggleSettingsPanels,'focus-panels':focusPanelNavigation,
+    'toggle-console':function(){if($('console_toggle_btn'))$('console_toggle_btn').click();},
+    'console-grow':function(){changeConsoleHeight(1);},'console-shrink':function(){changeConsoleHeight(-1);},
+    'panel-widen':function(){adjustSettingsPanelWidth(1);},'panel-narrow':function(){adjustSettingsPanelWidth(-1);},
+    'refresh-config':function(){if($('refresh_vals'))$('refresh_vals').click();},
+    'menu-file':function(){openTopMenu('file');},'menu-edit':function(){openTopMenu('edit');},'menu-view':function(){openTopMenu('view');},'menu-tools':function(){openTopMenu('tools');},'menu-help':function(){openTopMenu('help');},
+    'zoom-in':function(){const b=document.querySelector('[data-action="zoom-in"]');if(b)b.click();},
+    'zoom-out':function(){const b=document.querySelector('[data-action="zoom-out"]');if(b)b.click();},
+    fullscreen:function(){const b=document.querySelector('[data-action="toggle-fullscreen"]');if(b)b.click();},
+    properties:function(){const b=document.querySelector('[data-action="properties"]');if(b)b.click();},
+    'clear-selection':function(){if($('clear_selection'))$('clear_selection').click();},
+    'take-picture':function(){if($('take_picture_btn'))$('take_picture_btn').click();},
+    'exit-stream':function(){if(window.openStreamExitDialog)window.openStreamExitDialog();else showToast('Stream exit dialog is unavailable.');},
+    freeze:function(){const b=$('freeze_btn');if(b)b.click();},unfreeze:function(){const b=$('unfreeze_btn');if(b)b.click();},
     shortcuts:function(){if(window.openStreamShortcuts)window.openStreamShortcuts();},
     export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,
     fit:function(){fitWorkspaceView();},overlays:function(){$('ext_overlays').click();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},
@@ -1407,7 +1617,7 @@ function installExtension(){
   $('ext_encoder_reset').onclick=async function(){if(!confirm('Reset only the displayed odometry origin? Hardware counters will not be reset.'))return;const r=await nativeFetch('/api/encoder-map/reset-origin',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));showToast('Displayed odometry origin reset');};
   $('ext_frame_compare_close').onclick=function(){$('ext_frame_compare').style.display='none';};
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
-  $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();initializeConsoleResize();enableReadOnlyState();
+  $('ext_command_palette').addEventListener('click',function(e){if(e.target===this)closeCommandPalette();});buildCommandPalette();initializeResize();initializeConsoleResize();installWorkspaceKeyboardShortcuts();enableReadOnlyState();
   document.addEventListener('keydown',function(e){
     // Toggle robot motion with Ctrl+Shift+Space: stop while moving; resume while stopped.
     // Resume still requires confirmation. This is separate from /api/sign-requests.
