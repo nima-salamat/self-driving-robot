@@ -236,10 +236,10 @@ async function copyCoordinateText(text){
 function onCustomPointerDown(event){
  if(extCrosshair&&event.button===0){
   event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const p=pointFromEvent(event);if(!p)return;
-  extCrosshairPoint={x:p.x,y:p.y};crosshairPinned=true;const coords=p.space==='image'?p.u.toFixed(3)+', '+p.v.toFixed(3):Math.round(p.canvasX)+', '+Math.round(p.canvasY);
+  extCrosshairPoint={x:p.x,y:p.y};crosshairPinned=true;const coordinateText=p.space==='image'?p.u.toFixed(3)+', '+p.v.toFixed(3):Math.round(p.canvasX)+', '+Math.round(p.canvasY);
   extCrosshair=false;if($('ext_crosshair'))$('ext_crosshair').checked=false;if(canvas)canvas.classList.remove('crosshair-active');
   drawPrecisionOverlay();scheduleWorkspaceSave();
-  copyCoordinateText(coords).then(()=>{const text=p.space==='image'?'Captured image U,V: '+coords+'.':'Captured canvas X,Y px: '+coords+'. Z is not real depth.';updateEditorStatus(text);showToast('Copied coordinates: '+coords);}).catch(()=>{updateEditorStatus('Captured point: '+coords+'. Clipboard unavailable.');showToast('Point: '+coords);});
+  copyCoordinateText(coordinateText).then(()=>{const text=p.space==='image'?'Captured image U,V: '+coordinateText+'.':'Captured canvas X,Y px: '+coordinateText+'. Z is not real depth.';updateEditorStatus(text);showToast('Copied coordinates: '+coordinateText);}).catch(()=>{updateEditorStatus('Captured point: '+coordinateText+'. Clipboard unavailable.');showToast('Point: '+coordinateText);});
   return;
  }
  if(!['annotate','ruler'].includes(editorTool)||event.button!==0)return;
