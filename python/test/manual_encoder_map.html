@@ -47,12 +47,12 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
   <aside class="side-panel">
     <div class="panel-heading"><h2>ENCODER CALIBRATION</h2><span>saved locally</span></div>
     <div class="side-content">
-      <div class="note warn" id="calibrationNotice">A 2D trajectory is only an estimate. Pulse distance and steering geometry must be calibrated first.</div>
+      <div class="note warn" id="calibrationNotice">A 2D trajectory is only an estimate. Pulse distance and steering geometry must be calibrated first. Record each measured angle at its servo endpoint; either endpoint may be positive or negative, but the two values must have opposite signs.</div>
       <form id="calibrationForm" class="form-grid">
         <div class="field full"><label for="pulseDistance">Distance per encoder pulse (cm)</label><input id="pulseDistance" name="pulse_distance_cm" type="number" min="0.0001" step="any" placeholder="Required for distance"></div>
         <div class="field full"><label for="wheelbase">Wheelbase (cm)</label><input id="wheelbase" name="wheelbase_cm" type="number" min="0.0001" step="any" placeholder="Required for 2D path"></div>
-        <div class="field"><label for="roadMin">Road-wheel angle at servo MIN (°)</label><input id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="-0.0001" step="any" placeholder="Negative"></div>
-        <div class="field"><label for="roadMax">Road-wheel angle at servo MAX (°)</label><input id="roadMax" name="road_angle_max_deg" type="number" min="0.0001" max="45" step="any" placeholder="Positive"></div>
+        <div class="field"><label for="roadMin">Road-wheel angle at servo MIN (°)</label><input id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="45" step="any" placeholder="± degrees"></div>
+        <div class="field"><label for="roadMax">Road-wheel angle at servo MAX (°)</label><input id="roadMax" name="road_angle_max_deg" type="number" min="-45" max="45" step="any" placeholder="± degrees"></div>
         <div class="field full"><div class="note">Servo command endpoints: <strong id="servoRange">—</strong>. Measure pulse distance and road-wheel angles physically; do not guess these values.</div></div>
         <div class="field full calib-actions"><button type="submit" class="primary">Save calibration</button><button type="button" id="enableTelemetry">Enable encoder</button></div>
       </form>
