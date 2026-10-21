@@ -6,7 +6,7 @@ from manager.output_manager import OutputManager
 from vision.camera import Camera
 from vision.city_vision_processing import VisionProcessor
 from vision.blsf_lane import create_blsf_lane_detector
-from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle
+from visualization.lane_debug_overlay import render_lane_debug_overlay, resolve_visual_steering_angle, roi_color_bgr
 from visualization.frame_telemetry import build_frame_telemetry
 from vision.apriltag import ApriltagDetector
 from vision.object_detector import ObjectDetector
@@ -26,6 +26,7 @@ from modes.city.config_city import (
     SPEED, HARDCODE_SPEED, SERVO_CENTER,
     TURN_LEFT, TURN_RIGHT, STRAIGHT, STOP)
 from stream import publish_camera_frame_fallback, publish_debug_frame, start_stream, stop_stream
+from vision.frame_health import is_camera_frame_obscured
 import logging
 import cv2
 import numpy as np
@@ -65,7 +66,7 @@ def _draw_process_sign_overlay(debug_frame, source_frame, coordinate, label, con
         (x1, y1), (x2, y2) = coordinate
         p1 = (int(x1) + left, int(y1) + top)
         p2 = (int(x2) + left, int(y2) + top)
-        cv2.rectangle(debug_frame, p1, p2, (0, 255, 0), 2)
+        cv2.rectangle(debug_frame, p1, p2, roi_color_bgr(config, "ST"), 2)
         cv2.putText(
             debug_frame, str(label), (p1[0], max(0, p1[1] - 10)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA,
@@ -419,6 +420,49 @@ class Robot:
         self.stop_hold_detector_kind = None
         return True
 
+    def _handle_camera_obscured_frame(self, frame):
+        """Hold motion and keep publishing frames while the camera view is nearly black."""
+        first_frame = not bool(getattr(self, "_camera_obscured", False))
+        self._camera_obscured = True
+        if first_frame:
+            logger.warning("Camera view is nearly black; holding motion until the image recovers")
+            try:
+                self._camera_obscured_stop_confirmed = bool(
+                    self.control.stop(reason="camera_obscured")
+                )
+            except Exception:
+                self._camera_obscured_stop_confirmed = False
+                logger.exception("Could not stop motion after camera occlusion")
+        elif not bool(getattr(self, "_camera_obscured_stop_confirmed", False)):
+            try:
+                self._camera_obscured_stop_confirmed = bool(self.control.stop())
+            except Exception:
+                logger.exception("Retrying the camera-occlusion stop command failed")
+
+        if bool(getattr(config_city, "STREAM", False)):
+            # Publish first so a stale annotated frame is never retained during occlusion.
+            publish_debug_frame(config_city, frame)
+        if config_city.STREAM or config_city.DEBUG:
+            center = int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER))
+            angle = getattr(self.control, "last_angle", None)
+            if angle is None:
+                angle = center
+            result = {
+                "steering_angle": int(angle),
+                "error": 0,
+                "lane_type": "camera_obscured",
+                "perception_valid": False,
+                "crosswalk": False,
+                "debug": {"combined": frame},
+            }
+            self.handle_debug_stream(result, frame, angle, False, "camera obscured; holding motion", "")
+
+    def _clear_camera_obscured_state(self):
+        if bool(getattr(self, "_camera_obscured", False)):
+            self._camera_obscured = False
+            self._camera_obscured_stop_confirmed = False
+            logger.info("Camera image recovered from near-black state")
+
     def _run_stop_hold_cycle(self):
         """Check STOP on every camera frame while keeping Debug/Stream alive."""
         frame, frame_resized = self.camera.capture_frame(with_resize=True)
@@ -427,6 +471,13 @@ class Robot:
             self._pace_control_loop()
             return
 
+        if is_camera_frame_obscured(frame):
+            self._keep_stop_hold()
+            self._handle_camera_obscured_frame(frame)
+            self._pace_control_loop()
+            return
+
+        self._clear_camera_obscured_state()
         publish_camera_frame_fallback(config_city, frame)
         debug_frame = frame.copy() if (config_city.STREAM or config_city.DEBUG) else None
         sign_text, _, _, _ = self.handle_read_sign_or_tag(
@@ -687,6 +738,11 @@ class Robot:
                         self.control.stop()
                         self._pace_control_loop()
                         continue
+                    if is_camera_frame_obscured(frame):
+                        self._handle_camera_obscured_frame(frame)
+                        self._pace_control_loop()
+                        continue
+                    self._clear_camera_obscured_state()
                     publish_camera_frame_fallback(config_city, frame)
                     if config_city.STREAM or config_city.DEBUG:
                         debug_frame = frame.copy()

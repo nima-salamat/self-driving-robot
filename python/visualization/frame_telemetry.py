@@ -130,7 +130,7 @@ def build_frame_telemetry(
     lines = []
     current = ""
     for token in tokens:
-        candidate = token if not current else current + "  ·  " + token
+        candidate = token if not current else current + "  |  " + token
         if current and len(candidate) > max(20, int(max_line_length)):
             lines.append(current)
             current = token

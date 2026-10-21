@@ -51,6 +51,17 @@ class FrameTelemetryTests(unittest.TestCase):
         self.assertNotIn("Servo:95", text)
         self.assertNotIn("Lane:", text)
 
+    def test_opencv_overlay_uses_ascii_separators(self):
+        config = SimpleNamespace(
+            SERVO_CENTER=95,
+            stream_ui_settings={"frame_overlay": {"fps": True, "status": True, "servo_center": True}},
+        )
+        lines = build_frame_telemetry(config, instant_fps=8.0, status="running")
+        rendered = " ".join(lines)
+        self.assertIn("  |  ", rendered)
+        self.assertNotIn("·", rendered)
+        self.assertTrue(all(all(ord(char) < 128 for char in line) for line in lines))
+
     def test_overlay_settings_are_per_mode_and_wrap_long_text(self):
         config = SimpleNamespace(
             SERVO_CENTER=97,

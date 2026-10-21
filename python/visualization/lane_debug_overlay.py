@@ -10,6 +10,32 @@ import math
 import cv2
 import numpy as np
 
+_DEFAULT_ROI_COLORS = {
+    "RL": "#ff7b7b",
+    "LL": "#7bffb8",
+    "CW": "#ffd27b",
+    "ST": "#bf7bff",
+    "OBJ": "#ff5757",
+    "BEV": "#d946ef",
+}
+
+
+def roi_color_bgr(config, key):
+    """Resolve a Stream-configured ROI color and convert CSS RGB to OpenCV BGR."""
+    settings = getattr(config, "stream_ui_settings", {}) if config is not None else {}
+    colors = settings.get("colors", {}) if isinstance(settings, dict) else {}
+    value = colors.get(key) if isinstance(colors, dict) else None
+    if not isinstance(value, str) or len(value) != 7 or not value.startswith("#"):
+        value = _DEFAULT_ROI_COLORS.get(key, "#9ad0ff")
+    try:
+        red = int(value[1:3], 16)
+        green = int(value[3:5], 16)
+        blue = int(value[5:7], 16)
+    except (TypeError, ValueError):
+        red, green, blue = (0xFF, 0xD0, 0x9A)
+    return blue, green, red
+
+
 
 def _finite_number(value):
     try:
@@ -81,6 +107,9 @@ def _draw_classical(canvas, data, config):
     if config is None:
         return
 
+    rl_color = roi_color_bgr(config, "RL")
+    ll_color = roi_color_bgr(config, "LL")
+    cw_color = roi_color_bgr(config, "CW")
     lane_mode = str(getattr(config, "LANE_ROI_MODE", "rectangle")).lower()
     lane_is_trapezoid = lane_mode == "trapezoid"
     cw_is_trapezoid = bool(getattr(config, "CW_TRAPEZOID_MODE", False))
@@ -96,9 +125,9 @@ def _draw_classical(canvas, data, config):
             top_right = left + int(round(base_width * float(getattr(config, "RL_TOP_WIDTH_FACTOR", 0.85))))
             cv2.polylines(canvas, [np.asarray([
                 [left, top], [top_right, top], [right, bottom], [left, bottom]
-            ], dtype=np.int32)], True, (255, 0, 0), 1, cv2.LINE_AA)
+            ], dtype=np.int32)], True, rl_color, 1, cv2.LINE_AA)
         else:
-            cv2.rectangle(canvas, (left, top), (right, bottom), (255, 0, 0), 1)
+            cv2.rectangle(canvas, (left, top), (right, bottom), rl_color, 1)
     if ll_box:
         left, top, right, bottom = _scaled_box(ll_box, sx, sy)
         if lane_is_trapezoid:
@@ -107,9 +136,9 @@ def _draw_classical(canvas, data, config):
             top_left = right - int(round(base_width * float(getattr(config, "LL_TOP_WIDTH_FACTOR", 0.85))))
             cv2.polylines(canvas, [np.asarray([
                 [top_left, top], [right, top], [right, bottom], [left, bottom]
-            ], dtype=np.int32)], True, (0, 255, 0), 1, cv2.LINE_AA)
+            ], dtype=np.int32)], True, ll_color, 1, cv2.LINE_AA)
         else:
-            cv2.rectangle(canvas, (left, top), (right, bottom), (0, 255, 0), 1)
+            cv2.rectangle(canvas, (left, top), (right, bottom), ll_color, 1)
     if cw_box:
         left, top, right, bottom = _scaled_box(cw_box, sx, sy)
         if cw_is_trapezoid:
@@ -119,23 +148,23 @@ def _draw_classical(canvas, data, config):
             cv2.polylines(canvas, [np.asarray([
                 [left + inset, top], [right - inset, top],
                 [right, bottom], [left, bottom]
-            ], dtype=np.int32)], True, (0, 255, 255), 1, cv2.LINE_AA)
+            ], dtype=np.int32)], True, cw_color, 1, cv2.LINE_AA)
         else:
-            cv2.rectangle(canvas, (left + 1, top), (right - 1, bottom), (0, 255, 255), 1)
+            cv2.rectangle(canvas, (left + 1, top), (right - 1, bottom), cw_color, 1)
 
     offsets = data.get("line_offsets") or {}
     line_sets = data.get("lines") or {}
     for key, color, thickness in (
-        ("RL", (0, 165, 255), 2),
-        ("LL", (255, 255, 0), 2),
-        ("CW", (0, 255, 255), 2),
+        ("RL", rl_color, 2),
+        ("LL", ll_color, 2),
+        ("CW", cw_color, 2),
     ):
         _draw_segment_list(
             canvas, line_sets.get(key), offsets.get(key, (0, 0)),
             sx, sy, color, thickness,
         )
 
-    for key, color in (("RL", (0, 255, 0)), ("LL", (0, 255, 0))):
+    for key, color in (("RL", rl_color), ("LL", ll_color)):
         mid_x = _finite_number((data.get("midpoints") or {}).get(key))
         box = boxes.get(key)
         if mid_x is None or not box:
@@ -152,7 +181,7 @@ def _draw_classical(canvas, data, config):
     show_candidate_labels = selected.get("candidate_labels", True) is not False
     label = "Candidate:"
     (_, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-    candidate_label_items = (("RL", (0, 165, 255)), ("LL", (255, 255, 0))) if show_candidate_labels else ()
+    candidate_label_items = (("RL", rl_color), ("LL", ll_color)) if show_candidate_labels else ()
     for key, color in candidate_label_items:
         box = boxes.get(key)
         if not box:
@@ -182,13 +211,13 @@ def _draw_classical(canvas, data, config):
         perception_x = int(np.clip(perception_x, 0, width - 1))
         cv2.line(canvas, (perception_x, 0), (perception_x, height), (180, 0, 255), 1, cv2.LINE_AA)
 
-def _draw_blsf(canvas, data):
+def _draw_blsf(canvas, data, config):
     height, width = canvas.shape[:2]
     source_width = max(1, int(data.get("frame_width", width)))
     source_height = max(1, int(data.get("frame_height", height)))
     sx, sy = width / source_width, height / source_height
     y_values = np.arange(source_height, dtype=np.float32)
-    for model in (data.get("left_model"), data.get("right_model")):
+    for model, key in ((data.get("left_model"), "LL"), (data.get("right_model"), "RL")):
         if model is None:
             continue
         try:
@@ -199,7 +228,7 @@ def _draw_blsf(canvas, data):
         valid = (points[:, 0] >= 0) & (points[:, 0] < width) & (points[:, 1] >= 0) & (points[:, 1] < height)
         points = points[valid]
         if len(points) > 1:
-            cv2.polylines(canvas, [points], False, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.polylines(canvas, [points], False, roi_color_bgr(config, key), 2, cv2.LINE_AA)
 
     center_x = int(round(width / 2.0))
     cv2.line(canvas, (center_x, 0), (center_x, height), (0, 0, 255), 1, cv2.LINE_AA)
@@ -213,12 +242,12 @@ def _draw_blsf(canvas, data):
     if roi and len(roi) == 4:
         top, bottom, left, right = roi
         left, top, right, bottom = _scaled_box((left, top, right, bottom), sx, sy)
-        cv2.rectangle(canvas, (left, top), (right, bottom), (0, 255, 255), 1)
+        cv2.rectangle(canvas, (left, top), (right, bottom), roi_color_bgr(config, "CW"), 1)
         _draw_segment_list(
             canvas,
             data.get("crosswalk_lines"),
             (int(roi[2]), int(roi[0])),
-            sx, sy, (0, 255, 255), 2,
+            sx, sy, roi_color_bgr(config, "CW"), 2,
         )
 def _draw_ml(canvas, data):
     height, width = canvas.shape[:2]
@@ -262,7 +291,15 @@ def steering_marker_x(width, config, steering_angle):
     if available <= 0:
         return None
     ratio = float(np.clip(physical_delta / available, -1.0, 1.0))
-    return int(np.clip(round(width / 2.0 + ratio * width * 0.22), 0, max(0, width - 1)))
+    if width <= 1:
+        return 0
+    # Keep the visual pointer on an inset steering rail, never against the frame edge.
+    rail_center = (width - 1) / 2.0
+    rail_half_span = (width - 1) * 0.22
+    lower_bound = (width - 1) * 0.28
+    upper_bound = (width - 1) * 0.72
+    marker_x = rail_center + ratio * rail_half_span
+    return int(round(np.clip(marker_x, lower_bound, upper_bound)))
 
 
 def _draw_servo_guide(canvas, config, steering_angle):
@@ -307,7 +344,7 @@ def render_lane_debug_overlay(frame, draw_data=None, config=None, steering_angle
     if kind == "classical":
         _draw_classical(canvas, data, config)
     elif kind == "blsf":
-        _draw_blsf(canvas, data)
+        _draw_blsf(canvas, data, config)
     elif kind == "ml":
         _draw_ml(canvas, data)
     if config is not None:

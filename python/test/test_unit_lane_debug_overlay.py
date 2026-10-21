@@ -12,6 +12,7 @@ if str(PYTHON_ROOT) not in sys.path:
 from visualization.lane_debug_overlay import (
     render_lane_debug_overlay,
     resolve_visual_steering_angle,
+    roi_color_bgr,
     steering_marker_x,
 )
 
@@ -47,6 +48,19 @@ class LaneDebugOverlayTests(unittest.TestCase):
         self.config.SERVO_DIRECTION = "rtl"
         self.assertLess(steering_marker_x(width, self.config, 105), center_x)
         self.assertGreater(steering_marker_x(width, self.config, 85), center_x)
+
+    def test_marker_stays_on_the_inset_rail_for_a_neutralish_90_degree_angle(self):
+        marker = steering_marker_x(640, self.config, 90)
+        self.assertGreater(marker, 640 * 0.28)
+        self.assertLess(marker, 640 * 0.72)
+
+    def test_roi_colors_follow_stream_palette_and_convert_rgb_to_bgr(self):
+        self.config.stream_ui_settings = {
+            "colors": {"RL": "#123456", "LL": "#abcdef", "CW": "#ffd27b"}
+        }
+        self.assertEqual(roi_color_bgr(self.config, "RL"), (0x56, 0x34, 0x12))
+        self.assertEqual(roi_color_bgr(self.config, "LL"), (0xef, 0xcd, 0xab))
+        self.assertEqual(roi_color_bgr(self.config, "CW"), (0x7b, 0xd2, 0xff))
 
     def test_renderer_returns_annotated_copy_and_preserves_source(self):
         frame = np.zeros((120, 160, 3), dtype=np.uint8)
