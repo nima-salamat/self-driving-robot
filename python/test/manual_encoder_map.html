@@ -47,13 +47,12 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
   <aside class="side-panel">
     <div class="panel-heading"><h2>ENCODER CALIBRATION</h2><span>saved locally</span></div>
     <div class="side-content">
-      <div class="note warn" id="calibrationNotice">A 2D trajectory is only an estimate. Pulse distance and steering geometry must be calibrated first. Record each measured angle at its servo endpoint; either endpoint may be positive or negative, but the two values must have opposite signs.</div>
+      <div class="note warn" id="calibrationNotice">The path is an odometry estimate. Set pulse distance, wheelbase and a starting maximum effective steering angle; servo commands and pulse deltas are recorded with every sample.</div>
       <form id="calibrationForm" class="form-grid">
         <div class="field full"><label for="pulseDistance">Distance per encoder pulse (cm)</label><input id="pulseDistance" name="pulse_distance_cm" type="number" min="0.0001" step="any" placeholder="Required for distance"></div>
         <div class="field full"><label for="wheelbase">Wheelbase (cm)</label><input id="wheelbase" name="wheelbase_cm" type="number" min="0.0001" step="any" placeholder="Required for 2D path"></div>
-        <div class="field"><label for="roadMin">Road-wheel angle at servo MIN (°)</label><input id="roadMin" name="road_angle_min_deg" type="number" min="-45" max="45" step="any" placeholder="± degrees"></div>
-        <div class="field"><label for="roadMax">Road-wheel angle at servo MAX (°)</label><input id="roadMax" name="road_angle_max_deg" type="number" min="-45" max="45" step="any" placeholder="± degrees"></div>
-        <div class="field full"><div class="note">Servo command endpoints: <strong id="servoRange">—</strong>. Measure pulse distance and road-wheel angles physically; do not guess these values.</div></div>
+        <div class="field full"><label for="maxWheelAngle">Maximum effective wheel angle (°)</label><input id="maxWheelAngle" name="max_wheel_angle_deg" type="number" min="0.1" max="45" step="any" placeholder="Default estimate: 25°"></div>
+        <div class="field full"><div class="note">Servo command limits come from Manual Control: <strong id="servoRange">—</strong>. The 25° default is an editable starting estimate, not a measured angle.</div></div>
         <div class="field full calib-actions"><button type="submit" class="primary">Save calibration</button><button type="button" id="enableTelemetry">Enable encoder</button></div>
       </form>
       <div class="note" id="mapMessage">The map origin reset only affects the displayed estimate. It never resets the Arduino encoder counter or issues motor commands.</div>
@@ -78,8 +77,7 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
     c=c||{};
     byId("pulseDistance").value=c.pulse_distance_cm==null?"":c.pulse_distance_cm;
     byId("wheelbase").value=c.wheelbase_cm==null?"":c.wheelbase_cm;
-    byId("roadMin").value=c.road_angle_min_deg==null?"":c.road_angle_min_deg;
-    byId("roadMax").value=c.road_angle_max_deg==null?"":c.road_angle_max_deg;
+    byId("maxWheelAngle").value=c.max_wheel_angle_deg==null?25:c.max_wheel_angle_deg;
     calibrationLoaded=true;
   }
   function metric(id,value){byId(id).textContent=value;}
@@ -160,7 +158,7 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
       overlay.innerHTML="<div><strong>Encoder data is not live</strong>"+escapeHtml(s.message||"Waiting for fresh ODOM1 telemetry.")+"</div>";
     }else if(!s.trajectory_available){
       overlay.style.display="grid";
-      overlay.innerHTML="<div><strong>2D encoder path needs calibration</strong>"+escapeHtml(s.message||"Enter distance per pulse, wheelbase and road-wheel angle endpoints. The arrow is only the live steering command, not travelled position.")+"</div>";
+      overlay.innerHTML="<div><strong>2D encoder path needs calibration</strong>"+escapeHtml(s.message||"Enter distance per pulse, wheelbase and maximum effective wheel angle. The arrow is only the live steering command, not travelled position.")+"</div>";
     }else{
       overlay.style.display="none";
     }
@@ -188,8 +186,8 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
       byId("servoRange").textContent=numberText(data.servo_min,0)+" – "+numberText(data.servo_max,0)+" (center "+numberText(data.servo_center,0)+")";
       fillCalibration(data.calibration);
       byId("calibrationNotice").textContent=data.trajectory_available
-        ?"Calibration active. The displayed trace is an estimated path and can drift."
-        :"A 2D trajectory is only an estimate. A pulse-distance calibration is required for distance; wheelbase and steering calibration are required for XY.";
+        ?"Model active. Pulse totals and servo commands are recorded per sample; the 25° default can be adjusted to improve the estimated trace."
+        :"A pulse-distance calibration is required for distance; wheelbase and an effective steering-angle estimate are required for XY.";
       byId("calibrationNotice").classList.toggle("warn",!data.trajectory_available);
       if(data.last_error)userMessage=data.last_error;
       if(userMessage)byId("mapMessage").textContent=userMessage;
@@ -205,8 +203,7 @@ button,a.button{border:1px solid var(--line);background:#172934;color:var(--text
     var payload={
       pulse_distance_cm:byId("pulseDistance").value.trim()===""?null:Number(byId("pulseDistance").value),
       wheelbase_cm:byId("wheelbase").value.trim()===""?null:Number(byId("wheelbase").value),
-      road_angle_min_deg:byId("roadMin").value.trim()===""?null:Number(byId("roadMin").value),
-      road_angle_max_deg:byId("roadMax").value.trim()===""?null:Number(byId("roadMax").value)
+      max_wheel_angle_deg:byId("maxWheelAngle").value.trim()===""?25:Number(byId("maxWheelAngle").value)
     };
     try{
       var r=await fetch("/api/encoder-map/calibration",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
