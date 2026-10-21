@@ -110,6 +110,22 @@ class ManualControlSafetyTests(unittest.TestCase):
             html,
         )
 
+    def test_camera_stream_encodes_each_capture_once_and_serves_latest_jpeg(self):
+        source = (PYTHON_ROOT / "test" / "test_manual_control.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("latest_camera_jpeg=None", source)
+        self.assertIn("latest_camera_jpeg = encoded.tobytes()", source)
+        self.assertIn("last_frame_at = 0.0", source)
+        self.assertNotIn('ok,jpg=cv2.imencode(".jpg",frame', source)
+
+    def test_mobile_layout_uses_dynamic_viewport_safe_areas_and_landscape_rules(self):
+        html = manual.INDEX_HTML
+        self.assertIn("height:100dvh", html)
+        self.assertIn("env(safe-area-inset-bottom)", html)
+        self.assertIn("@media(max-height:500px) and (orientation:landscape)", html)
+        self.assertIn("}, 33); // ~30 Hz", html)
+
     def test_priority_stop_is_immediate_then_refreshed_at_ten_hz(self):
         interval = manual.PRIORITY_STOP_REFRESH_INTERVAL
         self.assertTrue(manual._priority_stop_due(True, False, 1.0, 1.0))
