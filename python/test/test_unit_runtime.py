@@ -2,7 +2,7 @@ import base_config
 import sys
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import threading
 import time
 import types
