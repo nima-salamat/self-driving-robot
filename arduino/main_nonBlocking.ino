@@ -932,14 +932,15 @@ SERIAL EVENT
 void serialEvent() {
   while (Serial.available()) {
     char c = Serial.read();
-
-    if (emergencyStopActive) {
-      continue;
-    }
+    if (emergencyStopActive) continue;
 
     if (c == '\n' || c == '\r') {
-      if (inputString.length()) stringComplete = true;
-    } else {
+      if (inputString.length()) {
+        stringComplete = true;
+        // Consume only one command per loop pass; leave later lines in Serial's buffer.
+        break;
+      }
+    } else if (!stringComplete) {
       inputString += c;
     }
   }

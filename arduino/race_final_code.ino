@@ -1370,8 +1370,12 @@ void serialEvent() {
     if (emergencyStopActive) continue;
 
     if (c == '\n' || c == '\r') {
-      if (inputString.length()) stringComplete = true;
-    } else {
+      if (inputString.length()) {
+        stringComplete = true;
+        // Consume only one command per loop pass; leave later lines in Serial's buffer.
+        break;
+      }
+    } else if (!stringComplete) {
       inputString += c;
     }
   }
