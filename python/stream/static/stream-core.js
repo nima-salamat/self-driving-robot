@@ -1853,6 +1853,45 @@ function mapGroupToDefaultVar(g){
     const commandHistoryList=document.getElementById('arduino_command_history_list');
     const commandHistoryCount=document.getElementById('arduino_command_history_count');
     const commandHistoryClear=document.getElementById('arduino_command_history_clear');
+    const commandFavoriteKey='self-driving-robot:arduino-command-favorites:'+String((window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.mode)||'default').toLowerCase();
+    const commandFavorites=window.StreamState.createCommandFavorites({storage:commandHistoryStorage,key:commandFavoriteKey,limit:25});
+    const commandFavoriteList=document.getElementById('arduino_command_favorites_list');
+    const commandFavoriteCount=document.getElementById('arduino_command_favorite_count');
+    const commandFavoriteAdd=document.getElementById('arduino_command_favorite_add');
+    function syncCommandFavoriteAdd(){if(commandFavoriteAdd)commandFavoriteAdd.disabled=!input.value.trim();}
+    function renderArduinoCommandFavorites(){
+      const items=commandFavorites.snapshot();
+      if(commandFavoriteCount)commandFavoriteCount.textContent=String(items.length);
+      if(!commandFavoriteList)return;
+      commandFavoriteList.replaceChildren();
+      if(!items.length){const empty=document.createElement('li');empty.className='arduino-history-empty';empty.textContent='No favorite commands saved yet.';commandFavoriteList.appendChild(empty);return;}
+      items.slice().reverse().forEach(function(item){
+        const row=document.createElement('li'),load=document.createElement('button'),remove=document.createElement('button');
+        load.type='button';load.className='arduino-favorite-load';load.setAttribute('aria-label','Load favorite '+item.label);
+        const label=document.createElement('span');label.className='arduino-favorite-label';label.textContent=item.label;
+        const command=document.createElement('span');command.className='arduino-favorite-command';command.textContent=item.command;
+        load.appendChild(label);load.appendChild(command);
+        load.addEventListener('click',function(){
+          input.value=item.command;commandHistory.edit(item.command);syncCommandFavoriteAdd();
+          try{input.setSelectionRange(item.command.length,item.command.length);}catch(_){}
+          input.focus();if(feedback)feedback.textContent='Loaded favorite "'+item.label+'"; press Enter or Send to transmit.';
+        });
+        remove.type='button';remove.className='ghost arduino-favorite-delete';remove.textContent='×';
+        remove.title='Remove favorite '+item.label;remove.setAttribute('aria-label','Remove favorite '+item.label);
+        remove.addEventListener('click',function(){commandFavorites.remove(item.label);renderArduinoCommandFavorites();});
+        row.appendChild(load);row.appendChild(remove);commandFavoriteList.appendChild(row);
+      });
+    }
+    if(commandFavoriteAdd)commandFavoriteAdd.addEventListener('click',function(){
+      const command=input.value.trim();
+      if(!command){if(feedback)feedback.textContent='Enter a command before saving a favorite.';return;}
+      const label=window.prompt('Name this favorite (1–48 characters):','');
+      if(label===null)return;
+      const item=commandFavorites.add(label,command);
+      if(!item){if(feedback)feedback.textContent='Favorite not saved: enter a name and one ASCII command line without control characters.';return;}
+      renderArduinoCommandFavorites();
+      if(feedback)feedback.textContent='Favorite saved: '+item.label+'. Loading it will not send it.';
+    });
     function renderArduinoCommandHistory(){
       const items=commandHistory.snapshot();
       if(commandHistoryCount)commandHistoryCount.textContent=String(items.length);
@@ -1867,7 +1906,7 @@ function mapGroupToDefaultVar(g){
         button.type='button';button.className='arduino-history-entry';button.textContent=value;
         button.title='Fill the command field only; does not send this command.';
         button.addEventListener('click',function(){
-          input.value=value;commandHistory.edit(value);
+          input.value=value;commandHistory.edit(value);syncCommandFavoriteAdd();
           try{input.setSelectionRange(value.length,value.length);}catch(_){}
           input.focus();
           if(feedback)feedback.textContent='Loaded from history; press Enter or Send to transmit.';
@@ -1890,7 +1929,9 @@ function mapGroupToDefaultVar(g){
       if(event.key==='ArrowUp'){if(recallArduinoCommand(-1)){event.preventDefault();event.stopPropagation();}}
       else if(event.key==='ArrowDown'){if(recallArduinoCommand(1)){event.preventDefault();event.stopPropagation();}}
     });
-    input.addEventListener('input',function(){commandHistory.edit(input.value);});
+    input.addEventListener('input',function(){commandHistory.edit(input.value);syncCommandFavoriteAdd();});
+    renderArduinoCommandFavorites();
+    syncCommandFavoriteAdd();
     form.addEventListener('submit',async(event)=>{
       event.preventDefault();
       const command=input.value.trim();

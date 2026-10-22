@@ -30,6 +30,43 @@ function createCommandHistory(options){
   function clear(){items=[];index=0;draft='';persist();}
   return {remember,move,edit,resetAfterSend,clear,get length(){return items.length;},get index(){return index;},snapshot:()=>items.slice()};
 }
+function createCommandFavorites(options){
+  options=options||{};
+  const storage=options.storage||null,key=String(options.key||'');
+  const limit=Math.max(1,Math.min(100,Math.floor(Number(options.limit)||25)));
+  let items=[];
+  function normalize(label,command){
+    label=String(label==null?'':label).trim().slice(0,48);
+    command=String(command==null?'':command).trim().slice(0,256);
+    if(!label||!command||/[\\x00-\\x1f\\x7f]/.test(label)||/[^\\x20-\\x7e]/.test(command))return null;
+    return {label,command};
+  }
+  try{
+    const saved=storage&&key?JSON.parse(storage.getItem(key)||'[]'):[];
+    if(Array.isArray(saved))saved.forEach(value=>{
+      if(!value||typeof value!=='object')return;
+      const item=normalize(value.label,value.command);if(!item)return;
+      const existing=items.findIndex(entry=>entry.label.toLowerCase()===item.label.toLowerCase());
+      if(existing>=0)items[existing]=item;else items.push(item);
+    });
+    if(items.length>limit)items=items.slice(-limit);
+  }catch(_){items=[];}
+  function persist(){try{if(storage&&key)storage.setItem(key,JSON.stringify(items));}catch(_){}}
+  function add(label,command){
+    const item=normalize(label,command);if(!item)return null;
+    const existing=items.findIndex(entry=>entry.label.toLowerCase()===item.label.toLowerCase());
+    if(existing>=0)items[existing]=item;else items.push(item);
+    if(items.length>limit)items=items.slice(-limit);
+    persist();return {...item};
+  }
+  function remove(label){
+    const index=items.findIndex(item=>item.label.toLowerCase()===String(label==null?'':label).trim().toLowerCase());
+    if(index<0)return false;
+    items.splice(index,1);persist();return true;
+  }
+  function clear(){items=[];persist();}
+  return {add,remove,clear,get length(){return items.length;},snapshot:()=>items.map(item=>({...item}))};
+}
 function normalizeEditorTool(value){return ['select','pan','annotate','ruler'].includes(value)?value:'select';}
 function normalizeWorkspaceToolState(view){
   view=view&&typeof view==='object'?view:{};
@@ -42,5 +79,5 @@ function normalizeWorkspaceToolState(view){
   if(crosshairEnabled&&rangeValid)point={space:saved.space,u:u,v:v};
   return {editorTool:normalizeEditorTool(view.tool),crosshairEnabled,crosshairPoint:point,crosshairPinned:!!point};
 }
-root.StreamState=Object.freeze({createCommandHistory,normalizeEditorTool,normalizeWorkspaceToolState});
+root.StreamState=Object.freeze({createCommandHistory,createCommandFavorites,normalizeEditorTool,normalizeWorkspaceToolState});
 })(typeof window!=='undefined'?window:globalThis);

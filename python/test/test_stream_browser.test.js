@@ -57,6 +57,17 @@ async function waitForServer(child){
     await page.locator('#arduino_command_history_clear').click();
     assert.equal(await page.locator('#arduino_command_history_count').textContent(),'0');
     assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]');
+    const dialogPromise=page.waitForEvent('dialog');
+    const favoriteClick=page.locator('#arduino_command_favorite_add').click();
+    const favoriteDialog=await dialogPromise;
+    await favoriteDialog.accept('Parking position');
+    await favoriteClick;
+    await page.waitForFunction(()=>document.querySelector('#arduino_command_favorite_count').textContent==='1',null,{timeout:3000});
+    await page.locator('#arduino_command_favorites_panel > summary').click();
+    await page.locator('#arduino_command_favorites_list .arduino-favorite-load').click();
+    assert.equal(await page.locator('#arduino_custom_command').inputValue(),'servo 95','Loading a favorite should only fill the input');
+    assert.match(await page.locator('#arduino_command_feedback').textContent(),/Loaded favorite "Parking position"/);
+    assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]');
     await page.locator('#console_toggle_btn').click();
     await page.waitForFunction(()=>window.StreamState&&document.querySelector('#video_canvas'),null,{timeout:10000});
     const checkbox=page.locator('#ext_crosshair');

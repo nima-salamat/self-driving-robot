@@ -139,7 +139,12 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <ol id="arduino_command_history_list" aria-label="Previously sent Arduino commands"></ol>
       </details>
       <button type="button" class="ghost" id="arduino_command_history_clear">Clear history</button>
+      <button type="button" class="ghost" id="arduino_command_favorite_add" disabled>Save input as favorite</button>
     </div>
+    <details id="arduino_command_favorites_panel" class="arduino-command-favorites">
+      <summary>Favorite commands <span class="arduino-command-history-count" id="arduino_command_favorite_count">0</span></summary>
+      <ol id="arduino_command_favorites_list" aria-label="Named favorite Arduino commands"></ol>
+    </details>
     <div class="arduino-command-feedback" id="arduino_command_feedback" role="status" aria-live="polite">Ready. Connect Arduino and stop/lift the wheels before testing motion commands.</div>
   </div>
 </div>

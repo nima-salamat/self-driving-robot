@@ -428,6 +428,10 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("createCommandHistory", state)
         self.assertIn('id="arduino_command_history_list"', template)
         self.assertIn('id="arduino_command_history_clear"', template)
+        self.assertIn("createCommandFavorites", state)
+        self.assertIn("commandFavorites.add(label,command)", core)
+        self.assertIn('id="arduino_command_favorites_list"', template)
+        self.assertIn('id="arduino_command_favorite_add"', template)
         self.assertIn("press Enter or Send to transmit.", template)
         self.assertIn("↑ / ↓ recalls previously sent commands.", template)
 

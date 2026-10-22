@@ -41,6 +41,26 @@ test('clearing history removes persisted values and resets navigation state',()=
   history.remember('stop');
   assert.deepEqual(history.snapshot(),['stop']);
 });
+test('favorites are labeled, case-insensitive, bounded, validated, and persisted',()=>{
+  const storage=fakeStorage();
+  const favorites=globalThis.StreamState.createCommandFavorites({storage,key:'favorites',limit:2});
+  assert.deepEqual(favorites.add('Park position','servo 95'),{label:'Park position',command:'servo 95'});
+  favorites.add('park POSITION','servo 100');
+  assert.equal(favorites.length,1,'A label is unique ignoring case and updates the existing entry');
+  favorites.add('Safety stop','stop');
+  favorites.add('Lights','led 1');
+  assert.deepEqual(favorites.snapshot(),[
+    {label:'Safety stop',command:'stop'},
+    {label:'Lights',command:'led 1'}
+  ]);
+  assert.deepEqual(JSON.parse(storage.get('favorites')),favorites.snapshot());
+  assert.equal(favorites.add('Bad command','servo 95\\nsecond'),null);
+  assert.equal(favorites.add('Unicode','停'),null);
+  assert.equal(favorites.remove('safety STOP'),true);
+  assert.equal(favorites.remove('missing'),false);
+  favorites.clear();
+  assert.deepEqual(JSON.parse(storage.get('favorites')),[]);
+});
 test('disabled crosshair cannot restore a pinned workspace point',()=>{
   const state=normalizeWorkspaceToolState({tool:'ruler',crosshair:false,crosshairPoint:{space:'image',u:.4,v:.7}});
   assert.equal(state.editorTool,'ruler');assert.equal(state.crosshairEnabled,false);assert.equal(state.crosshairPoint,null);assert.equal(state.crosshairPinned,false);
