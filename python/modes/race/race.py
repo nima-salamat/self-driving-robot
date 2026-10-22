@@ -816,6 +816,7 @@ class Robot:
                                 "perception_valid": True,
                                 "debug": {"combined": frame_resized},
                             }
+                            publish_vision_debug(config_race, result)
                             self.handle_debug_stream(
                                 result, frame_resized, int(getattr(config_race, "SERVO_CENTER", SERVO_CENTER)),
                                 False, "stopped"
