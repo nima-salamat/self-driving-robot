@@ -136,14 +136,20 @@ async function diagnostics(){
  finally{$('wb_diagnostics_btn').disabled=!writable;}
 }
 function cursor(e){
- const c=$('video_canvas'),r=c.getBoundingClientRect();if(!r.width||!r.height)return;
+ const c=$('video_canvas'),r=c&&c.getBoundingClientRect();if(!c||!r||!r.width||!r.height)return;
  const x=(e.clientX-r.left)*c.width/r.width,y=(e.clientY-r.top)*c.height/r.height;let b=null;
  try{if(typeof getImgBounds==='function')b=getImgBounds();}catch(_){}
- const inside=!!b&&x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
- if(inside){const u=(x-b.ix)/b.iw,v=(y-b.iy)/b.ih,w=Number(frameSourceWidth)||c.width,h=Number(frameSourceHeight)||c.height;
+ if(b&&b.iw>0&&b.ih>0){
+  const u=(x-b.ix)/b.iw,v=(y-b.iy)/b.ih,w=Number(frameSourceWidth)||Number(lastFrameImage&&lastFrameImage.naturalWidth)||c.width,h=Number(frameSourceHeight)||Number(lastFrameImage&&lastFrameImage.naturalHeight)||c.height;
+  const outside=u<0||u>1||v<0||v>1,description=outside?'Extrapolated from frame origin (0,0); pointer outside visible frame.':'Image-relative pixel coordinates.';
   $('cad_cursor_x').textContent='X: '+Math.round(u*w)+' px';$('cad_cursor_y').textContent='Y: '+Math.round(v*h)+' px';
-  $('cad_cursor_u').textContent='U: '+(u*100).toFixed(2)+'%';$('cad_cursor_v').textContent='V: '+(v*100).toFixed(2)+'%';$('cad_cursor_z').textContent='Z: — (no camera depth data)';
- }else{$('cad_cursor_x').textContent='Canvas X: '+Math.round(x)+' px';$('cad_cursor_y').textContent='Canvas Y: '+Math.round(y)+' px';$('cad_cursor_u').textContent='U: n/a outside frame';$('cad_cursor_v').textContent='V: n/a outside frame';$('cad_cursor_z').textContent='Z: 0 (editor plane only)';}
+  $('cad_cursor_u').textContent='U: '+(u*100).toFixed(1)+'%';$('cad_cursor_v').textContent='V: '+(v*100).toFixed(1)+'%';
+  $('cad_cursor_z').textContent='Z: — (camera depth unavailable)';
+  ['cad_cursor_x','cad_cursor_y','cad_cursor_u','cad_cursor_v'].forEach(id=>{if($(id))$(id).title=description;});
+ }else{
+  $('cad_cursor_x').textContent='X: '+Math.round(x)+' canvas px';$('cad_cursor_y').textContent='Y: '+Math.round(y)+' canvas px';
+  $('cad_cursor_u').textContent='U: —';$('cad_cursor_v').textContent='V: —';$('cad_cursor_z').textContent='Z: — (camera depth unavailable)';
+ }
 }
 function bind(id,fn,target){if($(id))$(id).addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>msg(target||'wb_diagnostics_status',e.message,true)));}
 document.addEventListener('DOMContentLoaded',function(){

@@ -699,7 +699,9 @@ class StreamConfigurationMixin:
             elif not isinstance(point, dict) or point.get("space") not in {"image", "canvas"}:
                 raise ValueError("view.crosshairPoint must use image or canvas coordinates")
             else:
-                clean_point = {"space": point["space"]}
+                space = point["space"]
+                clean_point = {"space": space}
+                minimum, maximum = (-1000000.0, 1000000.0) if space == "image" else (0.0, 1.0)
                 for axis in ("u", "v"):
                     if isinstance(point.get(axis), bool):
                         raise ValueError(f"view.crosshairPoint.{axis} must be numeric")
@@ -707,14 +709,18 @@ class StreamConfigurationMixin:
                         coordinate = float(point.get(axis))
                     except (TypeError, ValueError):
                         raise ValueError(f"view.crosshairPoint.{axis} must be numeric") from None
-                    if not math.isfinite(coordinate) or not 0.0 <= coordinate <= 1.0:
-                        raise ValueError(f"view.crosshairPoint.{axis} must be between 0 and 1")
+                    if not math.isfinite(coordinate) or not minimum <= coordinate <= maximum:
+                        raise ValueError(f"view.crosshairPoint.{axis} is out of range for {space} coordinates")
                     clean_point[axis] = coordinate
                 clean_view["crosshairPoint"] = clean_point
         if "gridMode" in view:
             if view["gridMode"] not in {"off", "grid", "dots"}:
                 raise ValueError("view.gridMode must be off, grid, or dots")
             clean_view["gridMode"] = view["gridMode"]
+        if "gridStyle" in view:
+            if view["gridStyle"] not in {"grid", "dots"}:
+                raise ValueError("view.gridStyle must be grid or dots")
+            clean_view["gridStyle"] = view["gridStyle"]
         for key, minimum, maximum in (("gridSpacing", 0.025, 0.25), ("gridOpacity", 0.05, 1.0), ("gridThickness", 0.5, 3.0), ("gridDotSize", 1.0, 6.0), ("keyboardNudgePx", 1.0, 100.0), ("streamFps", 1.0, 30.0), ("mmPerSourcePixel", 0.0, 10000.0)):
             if key in view:
                 if isinstance(view[key], bool):
@@ -789,17 +795,19 @@ class StreamConfigurationMixin:
                 continue
             if not isinstance(item, dict) or item.get("kind") not in {"marker", "note", "ruler"}:
                 raise ValueError("annotation has an unsupported kind")
-            entry = {"kind": item["kind"]}
+            space = item.get("space", "image")
+            if space not in {"image", "canvas"}:
+                raise ValueError("annotation space must be image or canvas")
+            entry = {"kind": item["kind"], "space": space}
+            minimum, maximum = (-1000000.0, 1000000.0) if space == "image" else (0.0, 1.0)
             for key in ("u", "v", "u2", "v2"):
                 if key in item:
+                    if isinstance(item[key], bool):
+                        raise ValueError("annotation coordinates must be numeric")
                     val = float(item[key])
-                    if not math.isfinite(val) or not 0 <= val <= 1:
-                        raise ValueError("annotation coordinates must be normalized between 0 and 1")
+                    if not math.isfinite(val) or not minimum <= val <= maximum:
+                        raise ValueError("annotation coordinates are out of range for " + space + " coordinates")
                     entry[key] = val
-            if "space" in item:
-                if item["space"] not in {"image", "canvas"}:
-                    raise ValueError("annotation space must be image or canvas")
-                entry["space"] = item["space"]
             if "distancePx" in item:
                 if isinstance(item["distancePx"], bool):
                     raise ValueError("annotation distance must be numeric")

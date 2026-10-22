@@ -1744,16 +1744,16 @@ function clearCadReadout(){
 function updateCadReadout(e){
   const r=canvas.getBoundingClientRect();
   if(!r.width||!r.height){clearCadReadout();return;}
-  const p=canvasPointFromEvent(e),b=getImgBounds(),u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih;
-  if(!Number.isFinite(u)||!Number.isFinite(v)||u<0||u>1||v<0||v>1){
-    clearCadReadout();
-    return;
-  }
-  const source=getSourceFrameSize();
+  const p=canvasPointFromEvent(e),b=getImgBounds(),source=getSourceFrameSize();
+  if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(b.iw)||!Number.isFinite(b.ih)||b.iw<=0||b.ih<=0){clearCadReadout();return;}
+  // Keep the frame origin at (0,0); letterbox/pan space produces extrapolated coordinates.
+  const u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih,outside=u<0||u>1||v<0||v>1;
   readout.x.textContent='X: '+Math.round(u*source.width)+' px';
   readout.y.textContent='Y: '+Math.round(v*source.height)+' px';
   readout.u.textContent='U: '+(u*100).toFixed(1)+' %';
   readout.v.textContent='V: '+(v*100).toFixed(1)+' %';
+  const description=outside?'Extrapolated from image origin (0,0); pointer is outside the displayed frame.':'Image-relative coordinates.';
+  readout.x.title=description;readout.y.title=description;readout.u.title=description;readout.v.title=description;
 }
 canvas.addEventListener('mousemove',updateCadReadout,{passive:true});
 canvas.addEventListener('mouseleave',clearCadReadout,{passive:true});

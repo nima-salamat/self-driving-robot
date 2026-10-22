@@ -6,6 +6,7 @@ const jsonClone = function(value){return JSON.parse(JSON.stringify(value));};
 const EXT_LAYERS = ['RL','LL','CW','ST','OBJ','BEV'];
 let extGrid=false, extSnap=false, extCrosshair=false, crosshairPinned=false, extAnnotationsVisible=true, extCrosshairPoint=null;
 let mmPerSourcePixel=0;
+let lastVisibleGridMode='grid';
 let gridColor='#69bed2', keyboardNudgePx=5, streamFps=8.3, streamJpegQuality=85, streamQualityDraftDirty=false;
 window.__isEditorSnapEnabled=()=>extSnap;
 window.__getStreamKeyboardNudgePx=()=>keyboardNudgePx;
@@ -109,26 +110,26 @@ function drawPrecisionOverlay(){
  const z=getOverlayScale(),cr=canvas.getBoundingClientRect(),sr=stage.getBoundingClientRect(),left=sr.left+stage.clientLeft,top=sr.top+stage.clientTop;
  svg.style.left=(cr.left-left)+'px';svg.style.top=(cr.top-top)+'px';svg.style.width=Math.max(1,cr.width)+'px';svg.style.height=Math.max(1,cr.height)+'px';
  svg.setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);svg.replaceChildren();
- const b=extImageBounds(),visibleGrid=gridMode!=='off'&&extGrid&&(!currentConfig||!currentConfig.ui||!currentConfig.ui.visible||currentConfig.ui.visible.GRID!==false);
+ const b=extImageBounds(),referenceBounds=typeof getBaseImgBounds==='function'?getBaseImgBounds():b,visibleGrid=gridMode!=='off'&&extGrid;
  if(visibleGrid){
-  // Replaces the image-only getGridStepX() grid with a square grid spanning the canvas.
-  const step=Math.max(gridMode==='dots'?10:8,Math.max(.025,Math.min(.25,Number(gridSpacing)||.05))*b.ih),stroke=/^#[0-9a-f]{6}$/i.test(gridColor)?gridColor:'#69bed2',alpha=Math.max(.05,Math.min(1,Number(gridOpacity)||.35));
+  // Grid pitch is based on the fit-to-canvas frame, not the zoomed image bounds.
+  const step=Math.max(gridMode==='dots'?10:8,Math.max(.025,Math.min(.25,Number(gridSpacing)||.05))*referenceBounds.ih),fixedScale=Math.max(.01,Number(referenceBounds.scale)||1),stroke=/^#[0-9a-f]{6}$/i.test(gridColor)?gridColor:'#69bed2',alpha=Math.max(.05,Math.min(1,Number(gridOpacity)||.35));
   const fc=Math.floor((0-b.ix)/step),lc=Math.ceil((canvas.width-b.ix)/step),fr=Math.floor((0-b.iy)/step),lr=Math.ceil((canvas.height-b.iy)/step);
   if(gridMode==='dots'){
-   const radius=Math.max(.6,Number(gridDotSize||2)*z);
+   const radius=Math.max(.6,Number(gridDotSize||2)*fixedScale);
    for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x<0||x>canvas.width)continue;for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('circle',{cx:x,cy:y,r:radius,fill:stroke,'fill-opacity':alpha});}}
   }else{
-   for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x>=0&&x<=canvas.width)addSVG('line',{x1:x,y1:0,x2:x,y2:canvas.height,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*z)});}
+   for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x>=0&&x<=canvas.width)addSVG('line',{x1:x,y1:0,x2:x,y2:canvas.height,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*fixedScale)});}
    for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('line',{x1:0,y1:y,x2:canvas.width,y2:y,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*z)});}
   }
-  addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.5,gridThickness*z)});
+  addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.5,gridThickness*fixedScale)});
  }
  if(extCrosshairPoint&&(extCrosshair||crosshairPinned)){
   const cp=crosshairCanvasPoint(extCrosshairPoint,b);
   addSVG('line',{x1:0,y1:cp.y,x2:canvas.width,y2:cp.y,stroke:'#f8fafc','stroke-width':z,'stroke-dasharray':(6*z)+' '+(4*z)});
   addSVG('line',{x1:cp.x,y1:0,x2:cp.x,y2:canvas.height,stroke:'#f8fafc','stroke-width':z,'stroke-dasharray':(6*z)+' '+(4*z)});
   const inside=cp.x>=b.ix&&cp.x<=b.ix+b.iw&&cp.y>=b.iy&&cp.y<=b.iy+b.ih;
-  const textLabel=inside?'Image X '+Math.round((cp.x-b.ix)/b.iw*(frameSourceWidth||canvas.width))+' · Y '+Math.round((cp.y-b.iy)/b.ih*(frameSourceHeight||canvas.height))+' px':'Canvas X '+Math.round(cp.x)+' · Y '+Math.round(cp.y)+' px · Z=0 editor plane';
+  const textLabel=extCrosshairPoint.space==='image'?'Image X '+Math.round(Number(extCrosshairPoint.u)*(frameSourceWidth||canvas.width))+' · Y '+Math.round(Number(extCrosshairPoint.v)*(frameSourceHeight||canvas.height))+' px':'Canvas X '+Math.round(cp.x)+' · Y '+Math.round(cp.y)+' px · Z=0 editor plane';
   const label=addSVG('text',{x:Math.max(4,Math.min(canvas.width-240,cp.x+8*z)),y:Math.max(14,Math.min(canvas.height-4,cp.y-8*z)),fill:'#fff','font-size':Math.max(9,11*z),'paint-order':'stroke','stroke':'#07101a','stroke-width':3*z});label.textContent=textLabel;
  }
  if(editorTool==='ruler'&&rulerStart&&rulerHoverPoint){
@@ -197,12 +198,11 @@ window.onWorkspaceViewLockChanged=function(){
 function pointFromEvent(event){
  const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return null;
  let x=(event.clientX-r.left)*(canvas.width/r.width),y=(event.clientY-r.top)*(canvas.height/r.height),b=extImageBounds();
- const pointerWasInside=x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
- if(extSnap){const step=Math.max(8,(Number(gridSpacing)||.05)*b.ih);x=b.ix+Math.round((x-b.ix)/step)*step;y=b.iy+Math.round((y-b.iy)/step)*step;}
- if(pointerWasInside){x=Math.max(b.ix,Math.min(b.ix+b.iw,x));y=Math.max(b.iy,Math.min(b.iy+b.ih,y));}else{x=Math.max(0,Math.min(canvas.width,x));y=Math.max(0,Math.min(canvas.height,y));}
- const cu=x/Math.max(1,canvas.width),cv=y/Math.max(1,canvas.height),inside=x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
- const u=inside?(x-b.ix)/b.iw:cu,v=inside?(y-b.iy)/b.ih:cv;
- return{x:x,y:y,u:u,v:v,canvasX:x,canvasY:y,canvasU:cu,canvasV:cv,space:inside?'image':'canvas',sourceX:inside?Math.round(u*(frameSourceWidth||canvas.width)):null,sourceY:inside?Math.round(v*(frameSourceHeight||canvas.height)):null};
+ const pointerInsideImage=x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
+ if(pointerInsideImage&&extSnap){const step=Math.max(8,(Number(gridSpacing)||.05)*b.ih);x=b.ix+Math.round((x-b.ix)/step)*step;y=b.iy+Math.round((y-b.iy)/step)*step;x=Math.max(b.ix,Math.min(b.ix+b.iw,x));y=Math.max(b.iy,Math.min(b.iy+b.ih,y));}
+ const canvasU=x/Math.max(1,canvas.width),canvasV=y/Math.max(1,canvas.height),u=(x-b.ix)/Math.max(1,b.iw),v=(y-b.iy)/Math.max(1,b.ih);
+ const sourceWidth=Number(frameSourceWidth)||Number(lastFrameImage&&lastFrameImage.naturalWidth)||canvas.width,sourceHeight=Number(frameSourceHeight)||Number(lastFrameImage&&lastFrameImage.naturalHeight)||canvas.height;
+ return{x:x,y:y,u:u,v:v,canvasX:x,canvasY:y,canvasU:canvasU,canvasV:canvasV,space:'image',sourceX:Math.round(u*sourceWidth),sourceY:Math.round(v*sourceHeight)};
 }
 function refreshAnnotationList(){
   const root=$('ext_annotations_list');if(!root)return;root.replaceChildren();
@@ -219,7 +219,7 @@ function refreshAnnotationList(){
 let settingsBeforeOpen=null,settingsReturnFocus=null;
 function currentEditorSettings(){return{gridMode,gridSpacing,gridOpacity,gridThickness,gridDotSize,gridColor,keyboardNudgePx,streamFps,snap:extSnap,roiAppearance:{labelFontSize:roiAppearance.labelFontSize,labelFontWeight:String(roiAppearance.labelFontWeight),outlineThickness:roiAppearance.outlineThickness,handleSize:roiAppearance.handleSize,showShapeType:!!roiAppearance.showShapeType}};}
 function syncSettingsFormControls(a){$('roi_setting_grid_mode').value=a.gridMode;$('roi_setting_grid_spacing').value=String(a.gridSpacing);$('roi_setting_grid_spacing_value').textContent=Number((a.gridSpacing*100).toFixed(1))+'% of frame height';$('roi_setting_grid_color').value=a.gridColor||'#69bed2';$('roi_setting_stream_fps').value=String(a.streamFps||8.3);$('roi_setting_stream_fps_value').textContent=Number(a.streamFps||8.3).toFixed(1)+' FPS target';$('roi_setting_grid_opacity').value=String(a.gridOpacity);$('roi_setting_grid_thickness').value=String(a.gridThickness);$('roi_setting_grid_dot_size').value=String(a.gridDotSize);$('roi_setting_keyboard_nudge').value=String(a.keyboardNudgePx||5);$('roi_setting_snap').checked=!!a.snap;$('roi_setting_label_size').value=String(a.roiAppearance.labelFontSize);$('roi_setting_label_size_value').textContent=a.roiAppearance.labelFontSize+' px at 100%';$('roi_setting_label_weight').value=String(a.roiAppearance.labelFontWeight);$('roi_setting_label_shape').checked=!!a.roiAppearance.showShapeType;$('roi_setting_outline_thickness').value=String(a.roiAppearance.outlineThickness);$('roi_setting_handle_size').value=String(a.roiAppearance.handleSize);}
-function applyEditorSettings(a,redraw=true){gridMode=['off','grid','dots'].includes(a.gridMode)?a.gridMode:'off';gridSpacing=Math.max(.025,Math.min(.25,Number(a.gridSpacing)||.05));gridColor=/^#[0-9a-f]{6}$/i.test(String(a.gridColor||''))?String(a.gridColor).toLowerCase():'#69bed2';streamFps=Math.max(1,Math.min(30,Math.round((Number(a.streamFps)||8.3)*10)/10));if(typeof window.setStreamDisplayFps==='function')window.setStreamDisplayFps(streamFps);gridOpacity=Math.max(.05,Math.min(1,Number(a.gridOpacity)||.35));gridThickness=Math.max(.5,Math.min(3,Number(a.gridThickness)||1));gridDotSize=Math.max(1,Math.min(6,Number(a.gridDotSize)||2));keyboardNudgePx=Math.round(Math.max(1,Math.min(100,Number(a.keyboardNudgePx)||5)));extGrid=gridMode!=='off';extSnap=!!a.snap;const r=a.roiAppearance||{};roiAppearance={labelFontSize:Math.max(6,Math.min(32,Number(r.labelFontSize)||12)),labelFontWeight:['400','500','600','700'].includes(String(r.labelFontWeight))?String(r.labelFontWeight):'700',outlineThickness:Math.max(.5,Math.min(6,Number(r.outlineThickness)||2)),handleSize:Math.max(4,Math.min(24,Number(r.handleSize)||10)),showShapeType:r.showShapeType===true};if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if(redraw){renderWorkspaceCanvas();drawPrecisionOverlay();}}
+function applyEditorSettings(a,redraw=true){if(gridMode==='grid'||gridMode==='dots')lastVisibleGridMode=gridMode;gridMode=['off','grid','dots'].includes(a.gridMode)?a.gridMode:'off';if(gridMode==='grid'||gridMode==='dots')lastVisibleGridMode=gridMode;gridSpacing=Math.max(.025,Math.min(.25,Number(a.gridSpacing)||.05));gridColor=/^#[0-9a-f]{6}$/i.test(String(a.gridColor||''))?String(a.gridColor).toLowerCase():'#69bed2';streamFps=Math.max(1,Math.min(30,Math.round((Number(a.streamFps)||8.3)*10)/10));if(typeof window.setStreamDisplayFps==='function')window.setStreamDisplayFps(streamFps);gridOpacity=Math.max(.05,Math.min(1,Number(a.gridOpacity)||.35));gridThickness=Math.max(.5,Math.min(3,Number(a.gridThickness)||1));gridDotSize=Math.max(1,Math.min(6,Number(a.gridDotSize)||2));keyboardNudgePx=Math.round(Math.max(1,Math.min(100,Number(a.keyboardNudgePx)||5)));extGrid=gridMode!=='off';extSnap=!!a.snap;const r=a.roiAppearance||{};roiAppearance={labelFontSize:Math.max(6,Math.min(32,Number(r.labelFontSize)||12)),labelFontWeight:['400','500','600','700'].includes(String(r.labelFontWeight))?String(r.labelFontWeight):'700',outlineThickness:Math.max(.5,Math.min(6,Number(r.outlineThickness)||2)),handleSize:Math.max(4,Math.min(24,Number(r.handleSize)||10)),showShapeType:r.showShapeType===true};if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if(redraw){renderWorkspaceCanvas();drawPrecisionOverlay();}}
 function readEditorSettingsForm(){return{gridMode:$('roi_setting_grid_mode').value,gridSpacing:Number($('roi_setting_grid_spacing').value),gridColor:$('roi_setting_grid_color').value,streamFps:Number($('roi_setting_stream_fps').value),gridOpacity:Number($('roi_setting_grid_opacity').value),gridThickness:Number($('roi_setting_grid_thickness').value),gridDotSize:Number($('roi_setting_grid_dot_size').value),keyboardNudgePx:Number($('roi_setting_keyboard_nudge').value),snap:$('roi_setting_snap').checked,roiAppearance:{labelFontSize:Number($('roi_setting_label_size').value),labelFontWeight:$('roi_setting_label_weight').value,showShapeType:$('roi_setting_label_shape').checked,outlineThickness:Number($('roi_setting_outline_thickness').value),handleSize:Number($('roi_setting_handle_size').value)}};}
 function previewEditorSettings(){const a=readEditorSettingsForm();applyEditorSettings(a);syncSettingsFormControls(a);}
 async function refreshStreamJpegQualityFromServer(){try{const response=await nativeFetch('/api/stream/quality',{cache:'no-store'});if(!response.ok)return;const data=await response.json();const quality=Number(data.quality);if(!Number.isInteger(quality)||quality<30||quality>100)return;streamJpegQuality=quality;const qualityInput=$('roi_setting_jpeg_quality');const qualityValue=$('roi_setting_jpeg_quality_value');if(qualityInput&&!streamQualityDraftDirty&&$('roi_settings_dialog').classList.contains('is-open')){qualityInput.value=String(quality);if(qualityValue)qualityValue.textContent=quality+' / 100';}}catch(error){if(typeof recordApiEvent==='function')recordApiEvent('warn','Could not read Stream JPEG quality: '+(error&&error.message?error.message:'request failed'));}}
@@ -299,10 +299,10 @@ function downloadText(data,filename,mime){
 }
 function collectWorkspace(){
   const layers={};EXT_LAYERS.forEach(key=>{layers[key]={visible:!!(ui.visible||{})[key],opacity:Number((ui.opacity||{})[key]==null?1:(ui.opacity||{})[key])};});
-  layers.ANNOTATIONS={visible:extAnnotationsVisible,opacity:1};layers.GRID={visible:gridMode!=='off',opacity:gridOpacity};
+  layers.ANNOTATIONS={visible:extAnnotationsVisible,opacity:1};layers.GRID={visible:extGrid,opacity:gridOpacity};
   const panels={};document.querySelectorAll('.right-panel details.dock-panel').forEach(p=>{if(p.id)panels[p.id]=p.open;});
   const rect=document.querySelector('.right-panel').getBoundingClientRect(),paneWidth=parseFloat(getComputedStyle(document.querySelector('.container')).getPropertyValue('--right-pane-width'))||rect.width||315;
-  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,viewLocked:typeof window.isWorkspaceViewLocked==='function'?window.isWorkspaceViewLocked():false,grid:gridMode!=='off',gridMode:gridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,crosshairPoint:extCrosshairPoint?{space:extCrosshairPoint.space,u:extCrosshairPoint.u,v:extCrosshairPoint.v}:null,mmPerSourcePixel:mmPerSourcePixel,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
+  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,viewLocked:typeof window.isWorkspaceViewLocked==='function'?window.isWorkspaceViewLocked():false,grid:extGrid,gridMode:gridMode,gridStyle:lastVisibleGridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,crosshairPoint:extCrosshairPoint?{space:extCrosshairPoint.space,u:extCrosshairPoint.u,v:extCrosshairPoint.v}:null,mmPerSourcePixel:mmPerSourcePixel,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
     roiAppearance:{labelFontSize:roiAppearance.labelFontSize,labelFontWeight:String(roiAppearance.labelFontWeight),outlineThickness:roiAppearance.outlineThickness,handleSize:roiAppearance.handleSize,showShapeType:!!roiAppearance.showShapeType},panels:panels,layers:layers,annotations:extAnnotations};
 }
 async function saveWorkspace(){
@@ -318,7 +318,7 @@ window.collectStreamWorkspace=collectWorkspace;
 function applyWorkspace(workspace){
   if(!workspace||typeof workspace!=='object')return;const view=workspace.view||{};
   if(typeof view.zoom==='number'&&typeof setWorkspaceZoom==='function'){workspaceZoom=Math.max(.3,Math.min(4,view.zoom));viewPanX=Number(view.panX)||0;viewPanY=Number(view.panY)||0;$('workspace_zoom').value=String(workspaceZoom);}
-  gridMode=['off','grid','dots'].includes(view.gridMode)?view.gridMode:(view.grid===true?'grid':'off');
+  gridMode=['off','grid','dots'].includes(view.gridMode)?view.gridMode:(view.grid===true?'grid':'off');lastVisibleGridMode=['grid','dots'].includes(view.gridStyle)?view.gridStyle:((gridMode==='grid'||gridMode==='dots')?gridMode:'grid');
   gridSpacing=Math.max(.025,Math.min(.25,Number(view.gridSpacing)||.05));gridColor=/^#[0-9a-f]{6}$/i.test(String(view.gridColor||''))?String(view.gridColor).toLowerCase():'#69bed2';gridOpacity=Math.max(.05,Math.min(1,Number(view.gridOpacity)||.35));
   gridThickness=Math.max(.5,Math.min(3,Number(view.gridThickness)||1));gridDotSize=Math.max(1,Math.min(6,Number(view.gridDotSize)||2));keyboardNudgePx=Math.round(Math.max(1,Math.min(100,Number(view.keyboardNudgePx)||5)));if(view.streamFps!=null){streamFps=Math.max(1,Math.min(30,Math.round(Number(view.streamFps)*10)/10));if(typeof window.setStreamDisplayFps==='function')window.setStreamDisplayFps(streamFps);}
   const a=workspace.roiAppearance&&typeof workspace.roiAppearance==='object'?workspace.roiAppearance:{};
@@ -1647,7 +1647,7 @@ function installExtension(){
     canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair)extCrosshairPoint=point;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?point:null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
   }
   if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
-  $('ext_grid').addEventListener('change',function(){gridMode=this.checked?(gridMode==='dots'?'dots':'grid'):'off';extGrid=gridMode!=='off';drawPrecisionOverlay();scheduleWorkspaceSave();});
+  $('ext_grid').addEventListener('change',function(){if(this.checked){if(gridMode==='off')gridMode=lastVisibleGridMode;extGrid=gridMode!=='off';}else{if(gridMode==='grid'||gridMode==='dots')lastVisibleGridMode=gridMode;gridMode='off';extGrid=false;}renderWorkspaceCanvas();scheduleWorkspaceSave();});
   $('roi_settings_open').addEventListener('click',openEditorSettings);$('roi_settings_close').addEventListener('click',()=>closeEditorSettings(true));$('roi_settings_cancel').addEventListener('click',()=>closeEditorSettings(true));
   $('roi_settings_apply').addEventListener('click',async()=>{const qualityInput=$('roi_setting_jpeg_quality');const requestedQuality=qualityInput?Number(qualityInput.value):streamJpegQuality;try{if(requestedQuality!==streamJpegQuality||streamQualityDraftDirty){if(!STREAM_CONTROL_ALLOWED)throw new Error('Stream controls are disabled; JPEG quality was not changed.');const response=await nativeFetch('/api/stream/quality',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quality:requestedQuality})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||('HTTP '+response.status));streamJpegQuality=Number(data.quality);}previewEditorSettings();scheduleWorkspaceSave();closeEditorSettings(false);showToast('Editor settings applied'+(requestedQuality!==85?' · JPEG quality '+streamJpegQuality:''));}catch(error){showToast('Could not apply JPEG quality: '+(error&&error.message?error.message:'request failed'));}});$('roi_settings_reset').addEventListener('click',resetEditorSettingsDraft);
   const settingsModalElement=$('roi_settings_dialog');settingsModalElement.addEventListener('click',e=>{if(e.target===settingsModalElement)closeEditorSettings(true);});settingsModalElement.querySelectorAll('input,select').forEach(el=>['input','change'].forEach(evt=>el.addEventListener(evt,previewEditorSettings)));
