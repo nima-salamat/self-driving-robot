@@ -161,6 +161,7 @@ function drawPrecisionOverlay(){
 }
 
 
+window.drawPrecisionOverlay=drawPrecisionOverlay;
 function updateEditorStatus(text){if($('ext_editor_status'))$('ext_editor_status').textContent=text;}
 function updateActiveToolBanner(){
   const banner=$('active_tool_banner'),label=$('active_tool_label');if(!banner||!label)return;
