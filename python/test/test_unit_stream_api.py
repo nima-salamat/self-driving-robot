@@ -401,6 +401,20 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn(".container:not(.dock-hidden) > .panel-resize-handle {\n    display: flex !important;", css)
         self.assertIn(".panel-resize-handle { display:none !important; }", css)
 
+    def test_arduino_manual_command_history_supports_up_down_and_persisted_successes(self):
+        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
+        template = (PYTHON_ROOT / "stream" / "templates" / "stream.html").read_text(encoding="utf-8")
+        self.assertIn("self-driving-robot:arduino-command-history:", core)
+        self.assertIn("const COMMAND_HISTORY_LIMIT=100", core)
+        self.assertIn("input.addEventListener('keydown',function(event)", core)
+        self.assertIn("if(event.key==='ArrowUp')", core)
+        self.assertIn("else if(event.key==='ArrowDown')", core)
+        self.assertIn("function recallArduinoCommand(direction)", core)
+        self.assertIn("rememberArduinoCommand(result.command||command)", core)
+        self.assertIn("event.preventDefault();event.stopPropagation();", core)
+        self.assertIn("↑ / ↓ recalls previously sent commands.", template)
+        self.assertIn("press Enter or Send to transmit.", template)
+
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
         core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")

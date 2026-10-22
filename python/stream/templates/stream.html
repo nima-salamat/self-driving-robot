@@ -131,7 +131,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <input id="arduino_custom_command" name="command" type="text" maxlength="256" spellcheck="false" placeholder="Enter one command, e.g. servo 95" aria-label="Custom Arduino command">
         <button type="submit" class="btn" id="arduino_command_send_btn">Send to Arduino</button>
       </div>
-      <div class="small-muted">Send sends one ASCII command line. The automatic-command toggle does not block manual sends.</div>
+      <div class="small-muted">↑ / ↓ recalls previously sent commands. Recalling only fills this field; press Enter or Send to transmit. Commands are saved in this browser for this mode. Send sends one ASCII command line; the automatic-command toggle does not block manual sends.</div>
     </form>
     <div class="arduino-command-feedback" id="arduino_command_feedback" role="status" aria-live="polite">Ready. Connect Arduino and stop/lift the wheels before testing motion commands.</div>
   </div>
