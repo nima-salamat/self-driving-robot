@@ -35,8 +35,27 @@ async function waitForServer(child){
     await waitForServer(server);
     browser=await chromium.launch({headless:true,args:['--no-sandbox']});
     const page=await browser.newPage({viewport:{width:1365,height:900}});
-    const pageErrors=[];
+    const pageErrors=[],consoleErrors=[],criticalRequestFailures=[],commandRequests=[];
     page.on('pageerror',error=>pageErrors.push(error.message));
+    page.on('console',message=>{if(message.type()==='error'&&!message.text().includes('favicon.ico'))consoleErrors.push(message.text());});
+    page.on('requestfailed',request=>{
+      let pathname='';
+      try{pathname=new URL(request.url()).pathname;}catch(_){}
+      if(pathname.endsWith('.js')||['/api/workspace','/api/arduino-command','/api/diagnostics/bundle'].includes(pathname)){
+        criticalRequestFailures.push(pathname+': '+(request.failure()?.errorText||'request failed'));
+      }
+    });
+    page.on('request',request=>{
+      if(new URL(request.url()).pathname==='/api/arduino-command'&&request.method()==='POST'){
+        commandRequests.push(request.postData()||'');
+      }
+    });
+    let diagnosticPayload=null;
+    page.on('request',request=>{
+      if(new URL(request.url()).pathname==='/api/diagnostics/bundle'&&request.method()==='POST'){
+        try{diagnosticPayload=JSON.parse(request.postData()||'{}');}catch(_){diagnosticPayload=null;}
+      }
+    });
     await page.addInitScript(()=>{
       localStorage.setItem('self-driving-robot:arduino-command-history:city',JSON.stringify(['servo 90','servo 95']));
     });
@@ -51,6 +70,18 @@ async function waitForServer(child){
     await page.locator('#arduino_command_history_panel > summary').click();
     const historyButtons=page.locator('#arduino_command_history_list .arduino-history-entry');
     assert.equal(await historyButtons.count(),2,'Saved commands should appear in the visible history');
+    const commandInput=page.locator('#arduino_custom_command');
+    await page.waitForFunction(()=>!document.querySelector('#arduino_custom_command').disabled,null,{timeout:5000});
+    await commandInput.fill('draft command');
+    await commandInput.press('ArrowUp');
+    assert.equal(await commandInput.inputValue(),'servo 95','ArrowUp should recall the newest command');
+    await commandInput.press('ArrowUp');
+    assert.equal(await commandInput.inputValue(),'servo 90','A second ArrowUp should recall the prior command');
+    await commandInput.press('ArrowDown');
+    assert.equal(await commandInput.inputValue(),'servo 95','ArrowDown should move forward in history');
+    await commandInput.press('ArrowDown');
+    assert.equal(await commandInput.inputValue(),'draft command','ArrowDown should restore the current draft');
+    assert.equal(commandRequests.length,0,'Browsing the command history must never submit a serial command');
     await historyButtons.first().click();
     assert.equal(await page.locator('#arduino_custom_command').inputValue(),'servo 95','Newest command should fill the input');
     assert.equal(await page.locator('#arduino_command_feedback').textContent(),'Loaded from history; press Enter or Send to transmit.');
@@ -68,6 +99,22 @@ async function waitForServer(child){
     assert.equal(await page.locator('#arduino_custom_command').inputValue(),'servo 95','Loading a favorite should only fill the input');
     assert.match(await page.locator('#arduino_command_feedback').textContent(),/Loaded favorite "Parking position"/);
     assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]');
+
+    await page.route('**/api/arduino-command',route=>route.fulfill({
+      status:503,contentType:'application/json',body:JSON.stringify({message:'simulated serial transport failure'})
+    }));
+    await commandInput.fill('motor 100');
+    await page.locator('#arduino_command_send_btn').click();
+    await page.waitForFunction(()=>document.querySelector('#arduino_command_feedback').textContent.includes('Command failed: simulated serial transport failure'),null,{timeout:5000});
+    assert.equal(commandRequests.length,1,'Only an explicit Send click may submit a command');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]','Failed sends must not become successful history entries');
+    await page.unroute('**/api/arduino-command');
+    await page.waitForFunction(()=>!document.querySelector('#arduino_command_send_btn').disabled,null,{timeout:5000});
+    await commandInput.fill('status');
+    await page.locator('#arduino_command_send_btn').click();
+    await page.waitForFunction(()=>document.querySelector('#arduino_command_feedback').textContent.includes('Transmitted: status'),null,{timeout:5000});
+    assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('self-driving-robot:arduino-command-history:city'))),['status']);
+
     await page.locator('#console_toggle_btn').click();
     await page.waitForFunction(()=>window.StreamState&&document.querySelector('#video_canvas'),null,{timeout:10000});
     const checkbox=page.locator('#ext_crosshair');
@@ -95,6 +142,8 @@ async function waitForServer(child){
     await zoom.press('Enter');
     assert.equal(await zoom.inputValue(),'150%','Zoom percentage entry should apply');
     assert.ok(Math.abs((await page.evaluate(()=>window.collectStreamWorkspace().view.zoom))-1.5)<0.001);
+    assert.equal(await page.locator('#ext_workspace_save_status').getAttribute('data-state'),'unsaved','A local edit must be visibly unsaved before debounce completes');
+    await page.waitForFunction(()=>document.querySelector('#ext_workspace_save_status').dataset.state==='saved',null,{timeout:8000});
 
     await page.locator('#ext_grid').check();
     await page.waitForFunction(()=>window.collectStreamWorkspace().view.grid===true,null,{timeout:5000});
@@ -117,7 +166,29 @@ async function waitForServer(child){
     await page.locator('#ext_ruler').check();
     const rulerBox=await page.locator('#video_canvas').boundingBox();
     await page.mouse.click(rulerBox.x+rulerBox.width*0.30,rulerBox.y+rulerBox.height*0.55);
+    const readRulerAnchor=()=>page.evaluate(()=>{
+      const lines=Array.from(document.querySelectorAll('#ext_precision_overlay line'));
+      const line=lines.find(node=>node.getAttribute('stroke')==='#22d3ee');
+      const frame=Array.from(document.querySelectorAll('#ext_precision_overlay rect')).find(node=>node.getAttribute('stroke')==='#69bed2');
+      if(!line||!frame)return null;
+      const x=Number(line.getAttribute('x1')),y=Number(line.getAttribute('y1'));
+      const left=Number(frame.getAttribute('x')),top=Number(frame.getAttribute('y'));
+      const width=Number(frame.getAttribute('width')),height=Number(frame.getAttribute('height'));
+      return {u:(x-left)/width,v:(y-top)/height,x1:x,y1:y,x2:Number(line.getAttribute('x2')),y2:Number(line.getAttribute('y2'))};
+    });
+    await page.waitForFunction(()=>!!Array.from(document.querySelectorAll('#ext_precision_overlay line')).find(node=>node.getAttribute('stroke')==='#22d3ee'),null,{timeout:5000});
+    const anchorBeforeMove=await readRulerAnchor();
+    assert.ok(anchorBeforeMove,'Ruler preview should draw its first point and line');
     await page.mouse.move(rulerBox.x+rulerBox.width*0.50,rulerBox.y+rulerBox.height*0.65,{steps:3});
+    const anchorAfterMove=await readRulerAnchor();
+    assert.ok(Math.abs(anchorAfterMove.u-anchorBeforeMove.u)<0.001&&Math.abs(anchorAfterMove.v-anchorBeforeMove.v)<0.001,'Moving the cursor must not move the first ruler point');
+    assert.ok(Math.abs(anchorAfterMove.x2-anchorBeforeMove.x2)>1||Math.abs(anchorAfterMove.y2-anchorBeforeMove.y2)>1,'Ruler preview endpoint should follow the cursor');
+    await zoom.fill('125%');await zoom.press('Enter');
+    await page.waitForFunction(()=>Math.abs(window.collectStreamWorkspace().view.zoom-1.25)<0.001,null,{timeout:5000});
+    const anchorAfterZoom=await readRulerAnchor();
+    assert.ok(anchorAfterZoom&&Math.abs(anchorAfterZoom.u-anchorBeforeMove.u)<0.01&&Math.abs(anchorAfterZoom.v-anchorBeforeMove.v)<0.01,'Zoom must preserve the ruler start in image coordinates');
+    await zoom.fill('150%');await zoom.press('Enter');
+    await page.waitForFunction(()=>Math.abs(window.collectStreamWorkspace().view.zoom-1.5)<0.001,null,{timeout:5000});
     await page.mouse.click(rulerBox.x+rulerBox.width*0.50,rulerBox.y+rulerBox.height*0.65);
     await page.waitForFunction(()=>window.collectStreamWorkspace().annotations.some(item=>item.kind==='ruler'),null,{timeout:5000});
     await page.keyboard.press('Escape');
@@ -175,8 +246,28 @@ async function waitForServer(child){
     assert.equal(await page.locator('#ext_grid').isChecked(),true,'Grid should restore after reload');
     assert.equal(await page.locator('#workspace_zoom_percent').inputValue(),'150%','Zoom should restore after reload');
     assert.equal(await page.locator('#video_canvas').evaluate(canvas=>canvas.classList.contains('crosshair-active')),false);
+
+    const diagnosticsPanel=page.locator('#ext_profiles_bundle_panel');
+    if(!(await diagnosticsPanel.evaluate(node=>node.open)))await diagnosticsPanel.locator('summary').click();
+    assert.equal(await page.locator('#wb_diagnostics_include_frame').isChecked(),false,'Camera images should be opt-in');
+    assert.equal(await page.locator('#wb_diagnostics_include_stages').isChecked(),false,'Vision stage images should be opt-in');
+    const diagnosticDialogPromise=page.waitForEvent('dialog');
+    const diagnosticDownloadPromise=page.waitForEvent('download');
+    const diagnosticClickPromise=page.locator('#wb_diagnostics_btn').click();
+    const diagnosticDialog=await diagnosticDialogPromise;
+    assert.match(diagnosticDialog.message(),/best-effort, not anonymization/i);
+    await diagnosticDialog.accept();
+    const [diagnosticDownload]=await Promise.all([diagnosticDownloadPromise,diagnosticClickPromise]);
+    assert.equal(diagnosticDownload.suggestedFilename(),'stream-diagnostics.zip');
+    await page.waitForFunction(()=>document.querySelector('#wb_diagnostics_status').textContent.includes('Text-only diagnostics ZIP exported'),null,{timeout:8000});
+    assert.equal(diagnosticPayload.include_frame,false);
+    assert.equal(diagnosticPayload.include_stages,false);
+    assert.equal(diagnosticPayload.frame,null);
+    assert.deepEqual(diagnosticPayload.stages,{});
     assert.deepEqual(pageErrors,[],'Stream UI must not throw uncaught browser exceptions');
-    console.log('Stream browser smoke test passed: startup, tools, Escape, zoom/grid/pan/ruler, failed-save retry, reload, and no uncaught page errors.');
+    assert.deepEqual(criticalRequestFailures,[],'Critical scripts and API requests must not fail at the network layer');
+    assert.deepEqual(consoleErrors,[],'Browser console should not contain errors during the smoke test');
+    console.log('Stream browser smoke test passed: startup, real ArrowUp/Down history, send failures, tools, ruler anchor through zoom, save retry/reload, text-only diagnostics, and browser error monitoring.');
   }catch(error){
     error.message+='\nFixture server output:\n'+serverOutput;
     throw error;

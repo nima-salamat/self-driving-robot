@@ -207,9 +207,105 @@ class StreamApiTests(unittest.TestCase):
         stream_dir = PYTHON_ROOT / "stream"
         workbench = (stream_dir / "static" / "stream-workbench.js").read_text(encoding="utf-8")
         template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
-        self.assertIn("if(!confirm('The ZIP can include a camera frame", workbench)
-        self.assertIn("Export only if you intend to review this data and share it deliberately.", workbench)
-        self.assertIn("recent logs. A privacy confirmation appears before export", template)
+        self.assertIn("if(!confirm('Diagnostics ZIP always includes '", workbench)
+        self.assertIn("include_frame:includeFrame", workbench)
+        self.assertIn("include_stages:includeStages", workbench)
+        self.assertIn('id="wb_diagnostics_include_frame"', template)
+        self.assertIn('id="wb_diagnostics_include_stages"', template)
+        self.assertIn("redaction is best-effort, not anonymization", template)
+
+    def _diagnostic_test_image_data_url(self):
+        import base64
+        import cv2
+
+        ok, encoded = cv2.imencode(".jpg", np.zeros((16, 24, 3), dtype=np.uint8))
+        self.assertTrue(ok)
+        return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
+
+    def test_diagnostic_bundle_respects_image_options_and_redacts_logs(self):
+        import zipfile
+        from collections import deque
+
+        import stream
+
+        streamer = WebStreamer(self.make_config())
+        client = streamer.app.test_client()
+        image_url = self._diagnostic_test_image_data_url()
+        recent_logs = deque([{
+            "timestamp": 1.0,
+            "level": "WARNING",
+            "logger": "stream",
+            "message": "request failed token=diagnostic-test-secret",
+        }])
+
+        with patch.object(stream, "_STREAM_LOGS", recent_logs):
+            text_only = client.post("/api/diagnostics/bundle", json={
+                "include_frame": False,
+                "include_stages": False,
+                "frame": image_url,
+                "stages": {"preview": image_url},
+            })
+            self.assertEqual(text_only.status_code, 200, text_only.get_data(as_text=True))
+            with zipfile.ZipFile(io.BytesIO(text_only.data)) as archive:
+                self.assertEqual(archive.namelist(), ["diagnostic.json"])
+                snapshot = json.loads(archive.read("diagnostic.json").decode("utf-8"))
+            self.assertTrue(snapshot["export_options"]["images_omitted"])
+            self.assertFalse(snapshot["export_options"]["camera_frame_included"])
+            self.assertEqual(snapshot["export_options"]["vision_stage_images_included"], [])
+            self.assertNotIn("diagnostic-test-secret", json.dumps(snapshot))
+            self.assertIn("[REDACTED]", json.dumps(snapshot))
+
+            frame_only = client.post("/api/diagnostics/bundle", json={
+                "include_frame": True,
+                "include_stages": False,
+                "frame": image_url,
+                "stages": {"preview": image_url},
+            })
+            self.assertEqual(frame_only.status_code, 200, frame_only.get_data(as_text=True))
+            with zipfile.ZipFile(io.BytesIO(frame_only.data)) as archive:
+                self.assertIn("current_frame.jpg", archive.namelist())
+                self.assertFalse(any(name.startswith("vision_stages/") for name in archive.namelist()))
+                frame = archive.read("current_frame.jpg")
+            self.assertTrue(frame.startswith(b"\xff\xd8"))
+
+            stages_only = client.post("/api/diagnostics/bundle", json={
+                "include_frame": False,
+                "include_stages": True,
+                "frame": image_url,
+                "stages": {"preview": image_url},
+            })
+            self.assertEqual(stages_only.status_code, 200, stages_only.get_data(as_text=True))
+            with zipfile.ZipFile(io.BytesIO(stages_only.data)) as archive:
+                names = archive.namelist()
+                self.assertIn("vision_stages/preview.jpg", names)
+                self.assertNotIn("current_frame.jpg", names)
+
+    def test_diagnostic_bundle_rejects_invalid_json_options_images_and_stage_names(self):
+        client = WebStreamer(self.make_config()).app.test_client()
+        image_url = self._diagnostic_test_image_data_url()
+
+        invalid_json_shape = client.post(
+            "/api/diagnostics/bundle", data="[]", content_type="application/json"
+        )
+        self.assertEqual(invalid_json_shape.status_code, 400)
+
+        invalid_flags = client.post("/api/diagnostics/bundle", json={"include_frame": "yes"})
+        self.assertEqual(invalid_flags.status_code, 400)
+
+        bad_frame = client.post("/api/diagnostics/bundle", json={
+            "include_frame": True, "frame": "data:image/jpeg;base64,not-valid",
+        })
+        self.assertEqual(bad_frame.status_code, 400)
+
+        bad_stage_name = client.post("/api/diagnostics/bundle", json={
+            "include_stages": True, "stages": {"../camera": image_url},
+        })
+        self.assertEqual(bad_stage_name.status_code, 400)
+
+        too_many_stages = client.post("/api/diagnostics/bundle", json={
+            "include_stages": True, "stages": {"stage_" + str(i): image_url for i in range(13)},
+        })
+        self.assertEqual(too_many_stages.status_code, 400)
 
     def test_workspace_keyboard_shortcuts_and_command_search_are_complete(self):
         stream_dir = PYTHON_ROOT / "stream"

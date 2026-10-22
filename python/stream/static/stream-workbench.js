@@ -131,17 +131,34 @@ async function importProfile(file){
  await api('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'import',name,profile})});await refreshProfiles();$('wb_profile_select').value=name;msg('wb_profile_status','Imported "'+name+'". Load is a separate STOP-gated action.');
 }
 async function diagnostics(){
- if(!confirm('The ZIP can include a camera frame, detector-stage images, configuration, health details, and recent logs. These may reveal your environment or robot setup. Export only if you intend to review this data and share it deliberately. Continue?'))return;
- $('wb_diagnostics_btn').disabled=true;msg('wb_diagnostics_status','Collecting config, health, logs, current frame and preview stages…');
+ const includeFrame=!!$('wb_diagnostics_include_frame').checked;
+ const includeStages=!!$('wb_diagnostics_include_stages').checked;
+ const contents=['configuration','Vision settings','runtime/health details','Workspace/profile metadata','and recent log text'];
+ if(includeFrame)contents.push('the current camera frame');
+ if(includeStages)contents.push('up to 12 Vision stage images');
+ if(!confirm('Diagnostics ZIP always includes '+contents.join(', ')+'. File paths and robot/environment details may be present. Log secret redaction is best-effort, not anonymization; inspect the archive before sharing. Continue?'))return;
+ $('wb_diagnostics_btn').disabled=true;
+ const frameOption=$('wb_diagnostics_include_frame'),stagesOption=$('wb_diagnostics_include_stages');
+ frameOption.disabled=true;stagesOption.disabled=true;
+ msg('wb_diagnostics_status',includeFrame||includeStages?'Collecting selected diagnostic data and text metadata…':'Collecting text/JSON diagnostics only…');
  try{
-  let frame=null;try{frame=frameUrl();}catch(_){}
-  const stages=Object.assign(liveStageImage?{['live_'+String(liveStageName||'stage').replace(/[^a-z0-9_-]/g,'_')]:liveStageImage}:{},previewImages);
-  const r=await nativeFetch('/api/diagnostics/bundle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frame,stages})});
+  let frame=null;
+  if(includeFrame){
+   try{frame=frameUrl();}catch(error){throw new Error('Could not read the current camera frame: '+(error.message||error));}
+   if(!frame)throw new Error('No camera frame is available. Refresh the camera before including it.');
+  }
+  let stages={};
+  if(includeStages){
+   const candidates=Object.assign(liveStageImage?{['live_'+String(liveStageName||'stage').replace(/[^a-z0-9_-]/g,'_')]:liveStageImage}:{},previewImages);
+   stages=Object.fromEntries(Object.entries(candidates).slice(0,12));
+  }
+  const r=await nativeFetch('/api/diagnostics/bundle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_frame:includeFrame,include_stages:includeStages,frame,stages})});
   if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||('HTTP '+r.status));}
-  const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stream-diagnostics.zip';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
-  msg('wb_diagnostics_status','ZIP exported. Inspect it before sharing; it may contain a camera frame and config metadata.');
- }catch(e){msg('wb_diagnostics_status','Export failed: '+e.message,true);}
- finally{$('wb_diagnostics_btn').disabled=!writable;}
+  const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stream-diagnostics.zip';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+  msg('wb_diagnostics_status',includeFrame||includeStages?'ZIP exported with selected images. Redaction is best-effort; inspect it before sharing.':'Text-only diagnostics ZIP exported. It still contains configuration and logs; inspect it before sharing.');
+ }catch(e){msg('wb_diagnostics_status','Export failed: '+(e.message||e),true);}
+ finally{$('wb_diagnostics_btn').disabled=!writable;frameOption.disabled=false;stagesOption.disabled=false;}
 }
 function cursor(e){
  const c=$('video_canvas'),r=c&&c.getBoundingClientRect();if(!c||!r||!r.width||!r.height)return;

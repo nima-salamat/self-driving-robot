@@ -18,6 +18,53 @@ os.environ["STREAM_PASSWORD"] = ""
 import stream
 from stream import WebStreamer
 
+
+class FakeArduinoConnection:
+    """Simulated serial transport for browser tests; never opens a physical port."""
+
+    enabled = True
+    connected = True
+    state = "CONNECTED"
+    automatic_commands_enabled = False
+
+    def __init__(self):
+        self.commands = []
+
+    def telemetry_status(self, limit=50):
+        return {
+            "state": "CONNECTED",
+            "connected": True,
+            "lines": [],
+            "lines_received": 0,
+            "bytes_received": 0,
+            "dropped_lines": 0,
+            "buffered_lines": 0,
+            "line_rate_hz": 0.0,
+            "last_line_age_s": None,
+            "reconnect_failures": 0,
+            "connected_age_s": 1.0,
+            "error": None,
+        }
+
+    def send_custom_command(self, command):
+        self.commands.append(command)
+        return True
+
+    def send_custom_command_with_ack(self, command, timeout=0.75):
+        self.commands.append(command)
+        return {
+            "transmitted": True,
+            "acknowledged": True,
+            "command_id": len(self.commands),
+            "ack_status": "RECEIVED",
+            "timed_out": False,
+        }
+
+    def set_automatic_commands_enabled(self, enabled):
+        self.automatic_commands_enabled = bool(enabled)
+        return self.automatic_commands_enabled
+
+
 def main():
     port = int(os.environ.get("STREAM_BROWSER_TEST_PORT", "41982"))
     tmp = tempfile.TemporaryDirectory(prefix="stream-browser-test-")
@@ -36,8 +83,10 @@ def main():
         USE_ML_LANE_DETECTOR=False,
         CITY_LANE_DETECTOR="default",
         RUN_LVL="STOP",
-        WITHOUT_ARDUINO=True,
+        WITHOUT_ARDUINO=False,
+        READ_ARDUINO_OUTPUT=True,
         SEND_AUTOMATIC_ARDUINO_COMMANDS=False,
+        arduino_connection=FakeArduinoConnection(),
         debug_frames_list=[np.zeros((240, 320, 3), dtype=np.uint8)],
         stream_frame_seq=1,
     )

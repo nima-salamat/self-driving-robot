@@ -483,11 +483,54 @@ class StreamVisionMixin:
                        source="actual runtime perception result; this endpoint does not re-run the detector")
 
     def diagnostic_bundle_api(self):
-        body=request.get_json(silent=True) or {}
+        max_request_bytes = 40 * 1024 * 1024
+        if request.content_length is not None and request.content_length > max_request_bytes:
+            return jsonify(success=False, message="diagnostic request exceeds the 40 MiB limit"), 413
+
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="request body must be a JSON object"), 400
+        include_frame = body.get("include_frame", bool(body.get("frame")))
+        include_stages = body.get("include_stages", bool(body.get("stages")))
+        if not isinstance(include_frame, bool) or not isinstance(include_stages, bool):
+            return jsonify(success=False, message="include_frame and include_stages must be booleans"), 400
+
+        def validate_image(value, limit, field_name):
+            payload = self._data_url_bytes(value, limit=limit)
+            decoded = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+            if decoded is None or decoded.size == 0:
+                raise ValueError(field_name + " must contain a decodable JPEG or PNG image")
+            if decoded.shape[0] > 8192 or decoded.shape[1] > 8192:
+                raise ValueError(field_name + " dimensions must not exceed 8192 by 8192 pixels")
+            extension = ".png" if value.startswith("data:image/png;") else ".jpg"
+            return payload, extension
+
+        frame_payload = None
+        stage_payloads = []
         try:
-            timestamp=time.time()
-            snapshot={"created_at":timestamp,"mode":self._mode_slug(),"run_level":str(getattr(self.config,"RUN_LVL","UNKNOWN")),
-                "config":self._full_config_snapshot(),"vision":self._vision_tuning_snapshot()}
+            if include_frame:
+                frame_payload = validate_image(body.get("frame"), 3 * 1024 * 1024, "frame")
+
+            if include_stages:
+                stages = body.get("stages", {})
+                if not isinstance(stages, dict):
+                    raise ValueError("stages must be a JSON object when include_stages is enabled")
+                if len(stages) > 12:
+                    raise ValueError("at most 12 Vision stage images may be included")
+                for name, value in stages.items():
+                    if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9_-]{1,48}", name):
+                        raise ValueError("Vision stage names must use 1-48 lowercase letters, digits, underscores or hyphens")
+                    payload, extension = validate_image(value, 2 * 1024 * 1024, "Vision stage " + name)
+                    stage_payloads.append((name, payload, extension))
+
+            timestamp = time.time()
+            snapshot = {
+                "created_at": timestamp,
+                "mode": self._mode_slug(),
+                "run_level": str(getattr(self.config, "RUN_LVL", "UNKNOWN")),
+                "config": self._full_config_snapshot(),
+                "vision": self._vision_tuning_snapshot(),
+            }
             lock = getattr(self.config, "stream_vision_debug_lock", None)
             if lock is None:
                 live = getattr(self.config, "stream_vision_debug_snapshot", None)
@@ -497,39 +540,68 @@ class StreamVisionMixin:
             if isinstance(live, dict):
                 live_debug = live.get("debug") if isinstance(live.get("debug"), dict) else {}
                 live_result = live.get("result", {}) if isinstance(live.get("result"), dict) else {}
+                monotonic_at = live.get("monotonic_at")
+                try:
+                    result_age_ms = max(0.0, (time.monotonic() - float(monotonic_at)) * 1000.0)
+                except (TypeError, ValueError, OverflowError):
+                    result_age_ms = None
                 snapshot["live_vision"] = {
                     "timestamp": live.get("timestamp"),
                     "mode": live.get("mode"),
-                    "result_age_ms": max(0.0, (time.monotonic() - float(live.get("monotonic_at", time.monotonic()))) * 1000.0),
+                    "result_age_ms": result_age_ms,
                     "result": self._live_json_value(live_result),
                     "debug_available": bool(live_debug),
-                    "stages": sorted(key for key, value in live_debug.items()
-                                     if isinstance(value, np.ndarray) and value.ndim in (2, 3)),
+                    "stages": sorted(
+                        key for key, value in live_debug.items()
+                        if isinstance(value, np.ndarray) and value.ndim in (2, 3)
+                    ),
                 }
             else:
                 snapshot["live_vision"] = {"available": False}
             try:
-                health=self.health()
-                snapshot["health"]=health.get_json(silent=True) if hasattr(health,"get_json") else None
-            except Exception:snapshot["health"]={"available":False}
-            workspace=self._read_json_file(self._state_filename("workspace"),{"workspace":{},"profiles":{}})
-            snapshot["workspace"]=workspace.get("workspace",{});snapshot["workspace_profiles"]=sorted((workspace.get("profiles") or {}).keys())
-            snapshot["recent_logs"]=[{"timestamp":v.get("timestamp"),"level":v.get("level"),"logger":v.get("logger"),"message":_stream_module._redact_log_message(v.get("message",""))} for v in list(_stream_module._STREAM_LOGS)[-200:]]
-            out=io.BytesIO()
-            with zipfile.ZipFile(out,"w",compression=zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr("diagnostic.json",json.dumps(snapshot,ensure_ascii=False,indent=2,default=str))
-                if body.get("frame"):archive.writestr("current_frame.jpg",self._data_url_bytes(body["frame"],limit=3*1024*1024))
-                stages=body.get("stages",{})
-                if isinstance(stages,dict):
-                    for name,value in list(stages.items())[:12]:
-                        if not re.fullmatch(r"[a-z0-9_-]{1,48}",str(name)):continue
-                        try:archive.writestr("vision_stages/"+name+".jpg",self._data_url_bytes(value,limit=2*1024*1024))
-                        except ValueError:pass
+                health = self.health()
+                snapshot["health"] = health.get_json(silent=True) if hasattr(health, "get_json") else None
+            except Exception:
+                snapshot["health"] = {"available": False}
+            workspace = self._read_json_file(self._state_filename("workspace"), {"workspace": {}, "profiles": {}})
+            snapshot["workspace"] = workspace.get("workspace", {})
+            snapshot["workspace_profiles"] = sorted((workspace.get("profiles") or {}).keys())
+            snapshot["recent_logs"] = [
+                {
+                    "timestamp": value.get("timestamp"),
+                    "level": value.get("level"),
+                    "logger": value.get("logger"),
+                    "message": _stream_module._redact_log_message(value.get("message", "")),
+                }
+                for value in list(_stream_module._STREAM_LOGS)[-200:]
+            ]
+            snapshot["export_options"] = {
+                "camera_frame_included": frame_payload is not None,
+                "vision_stage_images_included": [name for name, _payload, _extension in stage_payloads],
+                "images_omitted": frame_payload is None and not stage_payloads,
+                "log_redaction": "best-effort; inspect logs and configuration before sharing",
+            }
+
+            out = io.BytesIO()
+            with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("diagnostic.json", json.dumps(snapshot, ensure_ascii=False, indent=2, default=str))
+                if frame_payload is not None:
+                    payload, extension = frame_payload
+                    archive.writestr("current_frame" + extension, payload)
+                for name, payload, extension in stage_payloads:
+                    archive.writestr("vision_stages/" + name + extension, payload)
             out.seek(0)
-            return send_file(out,mimetype="application/zip",as_attachment=True,download_name=f"stream-diagnostics-{self._mode_slug()}-{int(timestamp)}.zip")
+            return send_file(
+                out,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name=f"stream-diagnostics-{self._mode_slug()}-{int(timestamp)}.zip",
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
         except Exception:
             logger.exception("Could not create Stream diagnostic bundle")
-            return jsonify(success=False,message="diagnostic bundle creation failed"),500
+            return jsonify(success=False, message="diagnostic bundle creation failed"), 500
 
 
 def register_vision_routes(app,streamer):
