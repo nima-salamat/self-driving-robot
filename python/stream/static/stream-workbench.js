@@ -5,7 +5,7 @@ const mode=String(window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.mode||'city')
 const writable=!!(window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.streamControl);
 const hough=[['LANE_THRESHOLD','wb_lane_threshold'],['HOUGH_THRESHOLD','wb_hough_threshold'],['HOUGH_MIN_LINE_LENGTH','wb_hough_min_len'],['HOUGH_MAX_LINE_GAP','wb_hough_gap'],['HOUGH_BLUR_KERNEL','wb_hough_blur']];
 const blsf=[['BLSF_RANDOM_SEED','wb_blsf_seed'],['BLSF_MIN_SEGMENT_LENGTH','wb_blsf_min_segment'],['BLSF_ANGLE_LIMIT_DEG','wb_blsf_angle'],['BLSF_STRAIGHT_BAND_DEG','wb_blsf_straight'],['BLSF_MIN_ANGLE_VOTE','wb_blsf_vote'],['BLSF_MEDIAN_KERNEL','wb_blsf_median'],['BLSF_LOCAL_THRESHOLD','wb_blsf_local'],['BLSF_NUM_WINDOWS','wb_blsf_windows'],['BLSF_WINDOW_WIDTH_FACTOR','wb_blsf_width'],['BLSF_RANSAC_ITERATIONS','wb_blsf_iterations'],['BLSF_RANSAC_INLIER_THRESHOLD','wb_blsf_ransac'],['BLSF_MIN_FIT_POINTS','wb_blsf_fit_points'],['BLSF_DEFAULT_LANE_WIDTH','wb_blsf_lane_width'],['BLSF_FALLBACK_HALF_LANE_WIDTH','wb_blsf_half_width'],['BLSF_STEERING_KP','wb_blsf_kp'],['BLSF_STEERING_SMOOTHING','wb_blsf_smoothing'],['BLSF_NO_LANE_STEERING','wb_blsf_no_lane']];
-let previewImages={},liveTimer=null,liveRequest=false;
+let previewImages={},liveTimer=null,liveRequest=false,liveStageImage=null,liveStageName=null;
 async function api(url,options){const r=await nativeFetch(url,Object.assign({cache:'no-store'},options||{})),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.reason||('HTTP '+r.status));return j;}
 function msg(id,value,error){const node=$(id);if(node){node.textContent=value;node.dataset.tone=error?'error':'normal';}}
 function fill(fields,data){fields.forEach(([key,id])=>{if($(id)&&data[key]!=null)$(id).value=String(data[key]);});}
@@ -15,6 +15,8 @@ async function refreshVision(){
   $('wb_hough_morph').checked=!!s.HOUGH_MORPH_CLOSE;$('wb_sign_area_enabled').checked=!!s.SIGN_AREA_FILTER_ENABLED;
   $('wb_sign_min_area').value=String(s.SIGN_AREA_MIN_PX2);$('wb_sign_targets').value=(s.SIGN_AREA_FILTER_TARGETS||['STOP']).join(', ');
   $('wb_detector').value=mode==='city'?(s.CITY_LANE_DETECTOR||'default'):(s.USE_ML_LANE_DETECTOR?'ml':'default');
+  const blsfOption=$('wb_detector').querySelector('option[value="blsf-beta"]');if(blsfOption)blsfOption.disabled=mode!=='city';
+  const mlOption=$('wb_detector').querySelector('option[value="ml"]');if(mlOption)mlOption.disabled=mode==='city';
   $('wb_blsf_fields').hidden=mode!=='city'||$('wb_detector').value!=='blsf-beta';
   $('wb_detector_help').textContent=mode==='city'?'Detector selection and BLSF constructor settings require restart.':'Race ML selection is startup-only; the live pipeline is not swapped by Stream.';
   msg('wb_vision_status','Mode '+d.mode+' · RUN_LVL='+d.run_level+(d.controls_enabled?' · controls enabled':' · read-only'));
@@ -65,9 +67,9 @@ async function refreshLiveDebug(){
    select.value=available.includes(current)?current:(available.includes('annotated')?'annotated':available[0]);
   }
   const image=$('wb_live_image');
-  if(!d.available){image.hidden=true;image.removeAttribute('src');msg('wb_live_status',d.reason||'No image-shaped runtime diagnostics are available yet.');msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));return;}
+  if(!d.available){liveStageImage=null;liveStageName=null;image.hidden=true;image.removeAttribute('src');msg('wb_live_status',d.reason||'No image-shaped runtime diagnostics are available yet.');msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));return;}
   if(d.stage&&select.value!==d.stage)select.value=d.stage;
-  image.src=d.stage_image;image.hidden=false;
+  liveStageImage=d.stage_image;liveStageName=d.stage;image.src=d.stage_image;image.hidden=false;
   const age=Number(d.summary&&d.summary.age_ms);
   msg('wb_live_status','Actual runtime stage: '+d.stage+(Number.isFinite(age)?' · result age '+age.toFixed(0)+' ms':'')+(d.requested_stage_available===false?' · requested stage unavailable; showing fallback':''));
   msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));
@@ -122,7 +124,8 @@ async function diagnostics(){
  $('wb_diagnostics_btn').disabled=true;msg('wb_diagnostics_status','Collecting config, health, logs, current frame and preview stages…');
  try{
   let frame=null;try{frame=frameUrl();}catch(_){}
-  const r=await nativeFetch('/api/diagnostics/bundle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frame,stages:previewImages})});
+  const stages=Object.assign(liveStageImage?{['live_'+String(liveStageName||'stage').replace(/[^a-z0-9_-]/g,'_')]:liveStageImage}:{},previewImages);
+  const r=await nativeFetch('/api/diagnostics/bundle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frame,stages})});
   if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||('HTTP '+r.status));}
   const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stream-diagnostics.zip';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
   msg('wb_diagnostics_status','ZIP exported. Inspect it before sharing; it may contain a camera frame and config metadata.');
