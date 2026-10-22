@@ -463,6 +463,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("const baseStep=Math.max(.001,Math.max(.025,Math.min(.25,Number(gridSpacing)||.05))*b.ih)", extensions)
         self.assertIn("const minScreenPitch=gridMode==='dots'?8:10,stride=Math.max(1,Math.ceil(minScreenPitch/baseStep)),step=baseStep*stride", extensions)
         self.assertIn("svg.replaceChildren()", extensions)
+        self.assertIn("const radius=Math.max(.6,Math.min(24,(Number(gridDotSize)||2)*z))", extensions)
         self.assertIn("window.drawPrecisionOverlay=drawPrecisionOverlay", extensions)
         self.assertIn("firstColumn=Math.floor((0-b.ix)/step)", extensions)
         self.assertIn("firstRow=Math.floor((0-b.iy)/step)", extensions)

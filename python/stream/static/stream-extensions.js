@@ -121,7 +121,7 @@ function drawPrecisionOverlay(){
   const firstRow=Math.floor((0-b.iy)/step),lastRow=Math.ceil((canvas.height-b.iy)/step);
   if(gridMode==='dots'){
    // Dot radius is screen-stable; dot coordinates and pitch follow image zoom.
-   const radius=Math.max(.6,Math.min(12,Number(gridDotSize)||2));
+   const radius=Math.max(.6,Math.min(24,(Number(gridDotSize)||2)*z));
    for(let i=firstColumn;i<=lastColumn;i++){const x=b.ix+i*step;if(x<0||x>canvas.width)continue;for(let j=firstRow;j<=lastRow;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('circle',{cx:x,cy:y,r:radius,fill:stroke,'fill-opacity':alpha});}}
   }else{
    // Keep grid strokes legible while line positions scale with the frame.
