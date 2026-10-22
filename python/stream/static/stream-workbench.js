@@ -67,11 +67,18 @@ async function refreshLiveDebug(){
    select.value=available.includes(current)?current:(available.includes('annotated')?'annotated':available[0]);
   }
   const image=$('wb_live_image');
-  if(!d.available){liveStageImage=null;liveStageName=null;image.hidden=true;image.removeAttribute('src');msg('wb_live_status',d.reason||'No image-shaped runtime diagnostics are available yet.');msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));return;}
+  const freshness=String(d.summary&&d.summary.freshness||'unknown');
+  const age=Number(d.summary&&d.summary.age_ms);
+  const ageLabel=Number.isFinite(age)?' · result age '+age.toFixed(0)+' ms':'';
+  if(!d.available){
+   liveStageImage=null;liveStageName=null;image.hidden=true;image.removeAttribute('src');
+   const stateLabel=freshness==='stale'?'STALE runtime result':'Runtime result';
+   msg('wb_live_status',stateLabel+ageLabel+' · '+(d.reason||'No image-shaped runtime diagnostics are available yet.'),freshness==='stale');
+   msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));return;
+  }
   if(d.stage&&select.value!==d.stage)select.value=d.stage;
   liveStageImage=d.stage_image;liveStageName=d.stage;image.src=d.stage_image;image.hidden=false;
-  const age=Number(d.summary&&d.summary.age_ms);
-  msg('wb_live_status','Actual runtime stage: '+d.stage+(Number.isFinite(age)?' · result age '+age.toFixed(0)+' ms':'')+(d.requested_stage_available===false?' · requested stage unavailable; showing fallback':''));
+  msg('wb_live_status',(freshness==='stale'?'STALE runtime stage: ':'Actual runtime stage: ')+d.stage+ageLabel+(d.requested_stage_available===false?' · requested stage unavailable; showing fallback':''),freshness==='stale');
   msg('wb_live_summary',JSON.stringify(d.summary||{},null,2));
  }catch(error){msg('wb_live_status','Live debug unavailable: '+error.message,true);}
  finally{liveRequest=false;}

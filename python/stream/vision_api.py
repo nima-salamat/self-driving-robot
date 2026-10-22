@@ -381,10 +381,14 @@ class StreamVisionMixin:
         except (TypeError, ValueError, OverflowError):
             age_ms = None
         result = snapshot.get("result", {}) if isinstance(snapshot.get("result"), dict) else {}
+        stale_after_ms = 1500.0
+        freshness = "unknown" if age_ms is None else ("stale" if age_ms > stale_after_ms else "fresh")
         summary = {
             "mode": snapshot.get("mode", self._mode_slug()),
             "captured_at": snapshot.get("timestamp"),
             "age_ms": age_ms,
+            "freshness": freshness,
+            "stale_after_ms": stale_after_ms,
             "result": self._live_json_value(result),
         }
         if not debug:
