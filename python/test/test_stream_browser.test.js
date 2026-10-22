@@ -56,6 +56,14 @@ async function waitForServer(child){
         try{diagnosticPayload=JSON.parse(request.postData()||'{}');}catch(_){diagnosticPayload=null;}
       }
     });
+    // Simulate connection telemetry in the browser only; the Flask fixture stays --without-arduino.
+    await page.route('**/api/arduino-output',route=>route.fulfill({
+      status:200,contentType:'application/json',body:JSON.stringify({
+        enabled:true,connected:true,state:'CONNECTED',lines:[],
+        automatic_commands_enabled:false,without_arduino:false,hardware_available:true,
+        message:'Browser-test simulated Arduino connection; no serial device is open.'
+      })
+    }));
     await page.addInitScript(()=>{
       localStorage.setItem('self-driving-robot:arduino-command-history:city',JSON.stringify(['servo 90','servo 95']));
     });
@@ -100,20 +108,28 @@ async function waitForServer(child){
     assert.match(await page.locator('#arduino_command_feedback').textContent(),/Loaded favorite "Parking position"/);
     assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]');
 
-    await page.route('**/api/arduino-command',route=>route.fulfill({
-      status:503,contentType:'application/json',body:JSON.stringify({message:'simulated serial transport failure'})
-    }));
+    await page.route('**/api/arduino-command',route=>{
+      const body=route.request().postDataJSON()||{};
+      if(body.command==='motor 100'){
+        return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'simulated serial transport failure'})});
+      }
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+        success:true,command:String(body.command||''),delivery_status:'transmitted_unconfirmed',
+        device_acknowledged:false,execution_confirmed:false
+      })});
+    });
     await commandInput.fill('motor 100');
     await page.locator('#arduino_command_send_btn').click();
     await page.waitForFunction(()=>document.querySelector('#arduino_command_feedback').textContent.includes('Command failed: simulated serial transport failure'),null,{timeout:5000});
     assert.equal(commandRequests.length,1,'Only an explicit Send click may submit a command');
     assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]','Failed sends must not become successful history entries');
-    await page.unroute('**/api/arduino-command');
     await page.waitForFunction(()=>!document.querySelector('#arduino_command_send_btn').disabled,null,{timeout:5000});
     await commandInput.fill('status');
     await page.locator('#arduino_command_send_btn').click();
     await page.waitForFunction(()=>document.querySelector('#arduino_command_feedback').textContent.includes('Transmitted: status'),null,{timeout:5000});
     assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('self-driving-robot:arduino-command-history:city'))),['status']);
+    assert.equal(commandRequests.length,2,'Only the two explicit Send clicks may submit commands');
+    await page.unroute('**/api/arduino-command');
 
     await page.locator('#console_toggle_btn').click();
     await page.waitForFunction(()=>window.StreamState&&document.querySelector('#video_canvas'),null,{timeout:10000});
