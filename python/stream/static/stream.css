@@ -204,6 +204,7 @@ canvas {
 .workspace-save-row { justify-content: space-between; min-height: 24px; }
 .workspace-save-status { min-width: 0; overflow-wrap: anywhere; font-size: 11px; color: var(--muted); }
 .workspace-save-status[data-state="saving"] { color: var(--accent); }
+.workspace-save-status[data-state="unsaved"] { color: #fbbf24; }
 .workspace-save-status[data-state="saved"] { color: #86d9ad; }
 .workspace-save-status[data-state="error"] { color: #fca5a5; }
 #ext_workspace_save_retry { flex: 0 0 auto; padding: 4px 8px; font-size: 11px; }

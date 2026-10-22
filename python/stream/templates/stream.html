@@ -306,7 +306,7 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
       <div class="form-row"><button type="button" class="ghost" id="ext_annotate_btn">Place Note / Marker</button><button type="button" class="ghost" id="ext_export_annotations">Export Annotations</button><button type="button" class="ghost" id="ext_clear_annotations">Clear Annotations</button></div>
       <div class="small-muted">Operational ROI regions are edited through Properties. Notes and ruler measurements are workspace annotations only.</div>
       <div class="form-row"><button type="button" class="ghost" id="ext_save_workspace">Save Workspace</button><button type="button" class="ghost" id="ext_capture_frame">Add Frame Snapshot</button></div>
-      <div class="form-row workspace-save-row"><span class="workspace-save-status" id="ext_workspace_save_status" data-state="idle" role="status" aria-live="polite">Workspace status unknown</span><button type="button" class="ghost" id="ext_workspace_save_retry" hidden>Retry save</button></div>
+      <div class="form-row workspace-save-row"><span class="workspace-save-status" id="ext_workspace_save_status" data-state="idle" role="status" aria-live="polite">No local changes yet</span><button type="button" class="ghost" id="ext_workspace_save_retry" hidden>Retry save</button></div>
       <div class="small-muted" id="ext_editor_status">Select a tool, then click the camera frame to place a marker or measure a distance.</div>
       <div id="ext_annotations_list" class="ext-list"></div>
       <div class="section-title" style="margin-top:10px">Workspace Profiles</div>

@@ -372,8 +372,17 @@ function persistWorkspaceImmediately(){
 window.applyStreamWorkspace=function(workspace){applyWorkspace(workspace);renderWorkspaceCanvas();drawPrecisionOverlay();scheduleWorkspaceSave();};
 function scheduleWorkspaceSave(){
   if(extSaveTimer)clearTimeout(extSaveTimer);
+  // Invalidate older save responses immediately, not after the debounce delay.
+  workspaceSaveRequestSequence++;
+  setWorkspaceSaveStatus('unsaved','Unsaved changes · save scheduled');
   extSaveTimer=setTimeout(function(){extSaveTimer=null;saveWorkspace().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace persistence failed: '+err.message);});},450);
 }
+window.addEventListener('beforeunload',function(event){
+  const status=$('ext_workspace_save_status');
+  if(!status||!['unsaved','saving','error'].includes(status.dataset.state))return;
+  event.preventDefault();
+  event.returnValue='';
+});
 window.collectStreamWorkspace=collectWorkspace;
 function applyWorkspace(workspace){
   if(!workspace||typeof workspace!=='object')return;const view=workspace.view||{};
