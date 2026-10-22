@@ -103,6 +103,7 @@ function rulerDistance(a,b){
  return Math.hypot((b.canvasU-a.canvasU)*canvas.width,(b.canvasV-a.canvasV)*canvas.height);
 }
 function annotationXY(item,b){const u=Number(item.u)||0,v=Number(item.v)||0;return item.space==='canvas'?{x:u*canvas.width,y:v*canvas.height}:{x:b.ix+u*b.iw,y:b.iy+v*b.ih};}
+function crosshairCanvasPoint(point,b){if(!point)return null;if(point.space==='image'&&Number.isFinite(Number(point.u))&&Number.isFinite(Number(point.v)))return{x:b.ix+Number(point.u)*b.iw,y:b.iy+Number(point.v)*b.ih};if(point.space==='canvas'&&Number.isFinite(Number(point.u))&&Number.isFinite(Number(point.v)))return{x:Number(point.u)*canvas.width,y:Number(point.v)*canvas.height};return{x:Number(point.x)||0,y:Number(point.y)||0};}
 function drawPrecisionOverlay(){
  const svg=$('ext_precision_overlay'),stage=$('canvas_stage');if(!svg||!canvas||!stage)return;
  const z=getOverlayScale(),cr=canvas.getBoundingClientRect(),sr=stage.getBoundingClientRect(),left=sr.left+stage.clientLeft,top=sr.top+stage.clientTop;
@@ -123,11 +124,12 @@ function drawPrecisionOverlay(){
   addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.5,gridThickness*z)});
  }
  if(extCrosshairPoint&&(extCrosshair||crosshairPinned)){
-  addSVG('line',{x1:0,y1:extCrosshairPoint.y,x2:canvas.width,y2:extCrosshairPoint.y,stroke:'#f8fafc','stroke-width':z,'stroke-dasharray':(6*z)+' '+(4*z)});
-  addSVG('line',{x1:extCrosshairPoint.x,y1:0,x2:extCrosshairPoint.x,y2:canvas.height,stroke:'#f8fafc','stroke-width':z,'stroke-dasharray':(6*z)+' '+(4*z)});
-  const inside=extCrosshairPoint.x>=b.ix&&extCrosshairPoint.x<=b.ix+b.iw&&extCrosshairPoint.y>=b.iy&&extCrosshairPoint.y<=b.iy+b.ih;
-  const textLabel=inside?'Image X '+Math.round((extCrosshairPoint.x-b.ix)/b.iw*(frameSourceWidth||canvas.width))+' · Y '+Math.round((extCrosshairPoint.y-b.iy)/b.ih*(frameSourceHeight||canvas.height))+' px':'Canvas X '+Math.round(extCrosshairPoint.x)+' · Y '+Math.round(extCrosshairPoint.y)+' px · Z=0 editor plane';
-  const label=addSVG('text',{x:Math.max(4,Math.min(canvas.width-240,extCrosshairPoint.x+8*z)),y:Math.max(14,Math.min(canvas.height-4,extCrosshairPoint.y-8*z)),fill:'#fff','font-size':Math.max(9,11*z),'paint-order':'stroke','stroke':'#07101a','stroke-width':3*z});label.textContent=textLabel;
+  const cp=crosshairCanvasPoint(extCrosshairPoint,b);
+  addSVG('line',{x1:0,y1:cp.y,x2:canvas.width,y2:cp.y,stroke:'#f8fafc','stroke-width':z,'stroke-dasharray':(6*z)+' '+(4*z)});
+  addSVG('line',{x1:cp.x,y1:0,x2:cp.x,y2:canvas.height,stroke:'#f8fafc','stroke-width':z,'stroke-dasharray':(6*z)+' '+(4*z)});
+  const inside=cp.x>=b.ix&&cp.x<=b.ix+b.iw&&cp.y>=b.iy&&cp.y<=b.iy+b.ih;
+  const textLabel=inside?'Image X '+Math.round((cp.x-b.ix)/b.iw*(frameSourceWidth||canvas.width))+' · Y '+Math.round((cp.y-b.iy)/b.ih*(frameSourceHeight||canvas.height))+' px':'Canvas X '+Math.round(cp.x)+' · Y '+Math.round(cp.y)+' px · Z=0 editor plane';
+  const label=addSVG('text',{x:Math.max(4,Math.min(canvas.width-240,cp.x+8*z)),y:Math.max(14,Math.min(canvas.height-4,cp.y-8*z)),fill:'#fff','font-size':Math.max(9,11*z),'paint-order':'stroke','stroke':'#07101a','stroke-width':3*z});label.textContent=textLabel;
  }
  if(editorTool==='ruler'&&rulerStart&&rulerHoverPoint){
   const a=rulerStart,c=rulerHoverPoint;addSVG('line',{x1:a.x,y1:a.y,x2:c.x,y2:c.y,stroke:'#22d3ee','stroke-width':Math.max(1,2*z),'stroke-dasharray':(6*z)+' '+(3*z)});
@@ -195,9 +197,9 @@ window.onWorkspaceViewLockChanged=function(){
 function pointFromEvent(event){
  const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return null;
  let x=(event.clientX-r.left)*(canvas.width/r.width),y=(event.clientY-r.top)*(canvas.height/r.height),b=extImageBounds();
+ const pointerWasInside=x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
  if(extSnap){const step=Math.max(8,(Number(gridSpacing)||.05)*b.ih);x=b.ix+Math.round((x-b.ix)/step)*step;y=b.iy+Math.round((y-b.iy)/step)*step;}
- const wasInside=x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
- if(wasInside){x=Math.max(b.ix,Math.min(b.ix+b.iw,x));y=Math.max(b.iy,Math.min(b.iy+b.ih,y));}else{x=Math.max(0,Math.min(canvas.width,x));y=Math.max(0,Math.min(canvas.height,y));}
+ if(pointerWasInside){x=Math.max(b.ix,Math.min(b.ix+b.iw,x));y=Math.max(b.iy,Math.min(b.iy+b.ih,y));}else{x=Math.max(0,Math.min(canvas.width,x));y=Math.max(0,Math.min(canvas.height,y));}
  const cu=x/Math.max(1,canvas.width),cv=y/Math.max(1,canvas.height),inside=x>=b.ix&&x<=b.ix+b.iw&&y>=b.iy&&y<=b.iy+b.ih;
  const u=inside?(x-b.ix)/b.iw:cu,v=inside?(y-b.iy)/b.ih:cv;
  return{x:x,y:y,u:u,v:v,canvasX:x,canvasY:y,canvasU:cu,canvasV:cv,space:inside?'image':'canvas',sourceX:inside?Math.round(u*(frameSourceWidth||canvas.width)):null,sourceY:inside?Math.round(v*(frameSourceHeight||canvas.height)):null};
@@ -237,7 +239,7 @@ async function copyCoordinateText(text){
 function onCustomPointerDown(event){
  if(extCrosshair&&event.button===0){
   event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const p=pointFromEvent(event);if(!p)return;
-  extCrosshairPoint={x:p.x,y:p.y};crosshairPinned=true;const coordinateText=p.space==='image'?p.u.toFixed(3)+', '+p.v.toFixed(3):Math.round(p.canvasX)+', '+Math.round(p.canvasY);
+  extCrosshairPoint=p;crosshairPinned=true;const coordinateText=p.space==='image'?p.u.toFixed(3)+', '+p.v.toFixed(3):Math.round(p.canvasX)+', '+Math.round(p.canvasY);
   extCrosshair=false;if($('ext_crosshair'))$('ext_crosshair').checked=false;if(canvas)canvas.classList.remove('crosshair-active');
   drawPrecisionOverlay();scheduleWorkspaceSave();
   copyCoordinateText(coordinateText).then(()=>{const text=p.space==='image'?'Captured image U,V: '+coordinateText+'.':'Captured canvas X,Y px: '+coordinateText+'. Z is not real depth.';updateEditorStatus(text);showToast('Copied coordinates: '+coordinateText);}).catch(()=>{updateEditorStatus('Captured point: '+coordinateText+'. Clipboard unavailable.');showToast('Point: '+coordinateText);});
@@ -300,7 +302,7 @@ function collectWorkspace(){
   layers.ANNOTATIONS={visible:extAnnotationsVisible,opacity:1};layers.GRID={visible:gridMode!=='off',opacity:gridOpacity};
   const panels={};document.querySelectorAll('.right-panel details.dock-panel').forEach(p=>{if(p.id)panels[p.id]=p.open;});
   const rect=document.querySelector('.right-panel').getBoundingClientRect(),paneWidth=parseFloat(getComputedStyle(document.querySelector('.container')).getPropertyValue('--right-pane-width'))||rect.width||315;
-  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,viewLocked:typeof window.isWorkspaceViewLocked==='function'?window.isWorkspaceViewLocked():false,grid:gridMode!=='off',gridMode:gridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,mmPerSourcePixel:mmPerSourcePixel,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
+  return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,viewLocked:typeof window.isWorkspaceViewLocked==='function'?window.isWorkspaceViewLocked():false,grid:gridMode!=='off',gridMode:gridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,crosshairPoint:extCrosshairPoint?{space:extCrosshairPoint.space,u:extCrosshairPoint.u,v:extCrosshairPoint.v}:null,mmPerSourcePixel:mmPerSourcePixel,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
     roiAppearance:{labelFontSize:roiAppearance.labelFontSize,labelFontWeight:String(roiAppearance.labelFontWeight),outlineThickness:roiAppearance.outlineThickness,handleSize:roiAppearance.handleSize,showShapeType:!!roiAppearance.showShapeType},panels:panels,layers:layers,annotations:extAnnotations};
 }
 async function saveWorkspace(){
@@ -321,7 +323,7 @@ function applyWorkspace(workspace){
   gridThickness=Math.max(.5,Math.min(3,Number(view.gridThickness)||1));gridDotSize=Math.max(1,Math.min(6,Number(view.gridDotSize)||2));keyboardNudgePx=Math.round(Math.max(1,Math.min(100,Number(view.keyboardNudgePx)||5)));if(view.streamFps!=null){streamFps=Math.max(1,Math.min(30,Math.round(Number(view.streamFps)*10)/10));if(typeof window.setStreamDisplayFps==='function')window.setStreamDisplayFps(streamFps);}
   const a=workspace.roiAppearance&&typeof workspace.roiAppearance==='object'?workspace.roiAppearance:{};
   roiAppearance={labelFontSize:Math.max(6,Math.min(32,Number(a.labelFontSize)||12)),labelFontWeight:['400','500','600','700'].includes(String(a.labelFontWeight))?String(a.labelFontWeight):'700',outlineThickness:Math.max(.5,Math.min(6,Number(a.outlineThickness)||2)),handleSize:Math.max(4,Math.min(24,Number(a.handleSize)||10)),showShapeType:a.showShapeType===true};
-  extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;crosshairPinned=false;mmPerSourcePixel=Math.max(0,Math.min(10000,Number(view.mmPerSourcePixel)||0));if($('ext_measure_mm_per_px'))$('ext_measure_mm_per_px').value=String(mmPerSourcePixel);
+  extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;const savedCrosshair=view.crosshairPoint;extCrosshairPoint=savedCrosshair&&['image','canvas'].includes(savedCrosshair.space)&&Number.isFinite(Number(savedCrosshair.u))&&Number.isFinite(Number(savedCrosshair.v))?{space:savedCrosshair.space,u:Number(savedCrosshair.u),v:Number(savedCrosshair.v)}:null;crosshairPinned=!!extCrosshairPoint;mmPerSourcePixel=Math.max(0,Math.min(10000,Number(view.mmPerSourcePixel)||0));if($('ext_measure_mm_per_px'))$('ext_measure_mm_per_px').value=String(mmPerSourcePixel);
   if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
   if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();
@@ -1642,7 +1644,7 @@ function installExtension(){
     let svg=$('ext_precision_overlay');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);}
     canvas.addEventListener('pointerdown',onCustomPointerDown,true);
     installCoordinatePairPaste();
-    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair)extCrosshairPoint=point?{x:point.x,y:point.y}:null;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?point:null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
+    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair)extCrosshairPoint=point;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?point:null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
   }
   if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
   $('ext_grid').addEventListener('change',function(){gridMode=this.checked?(gridMode==='dots'?'dots':'grid'):'off';extGrid=gridMode!=='off';drawPrecisionOverlay();scheduleWorkspaceSave();});
