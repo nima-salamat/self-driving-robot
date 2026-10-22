@@ -843,12 +843,29 @@ class StreamConfigurationMixin:
             and not isinstance(stored_version, bool)
             and stored_version in {1, 2}
         )
+        stored_workspace = data.get("workspace", {})
+        stored_workspace_schema = (
+            stored_workspace.get("schemaVersion", 1)
+            if isinstance(stored_workspace, dict)
+            else 1
+        )
+        workspace_schema_supported = (
+            isinstance(stored_workspace_schema, int)
+            and not isinstance(stored_workspace_schema, bool)
+            and stored_workspace_schema in {1, 2}
+        )
         if request.method == "GET":
             migration_warning = None
             workspace = data.get("workspace", {})
             if not version_supported:
                 migration_warning = (
                     f"Saved workspace file version {stored_version!r} is unsupported; "
+                    "the data was left untouched and was not applied."
+                )
+                workspace = {}
+            elif not workspace_schema_supported:
+                migration_warning = (
+                    f"Saved workspace schemaVersion {stored_workspace_schema!r} is unsupported; "
                     "the data was left untouched and was not applied."
                 )
                 workspace = {}
@@ -875,6 +892,14 @@ class StreamConfigurationMixin:
                 success=False,
                 message=(
                     f"Unsupported workspace file version {stored_version!r}; "
+                    "refusing to overwrite saved data."
+                ),
+            ), 409
+        if not workspace_schema_supported:
+            return jsonify(
+                success=False,
+                message=(
+                    f"Unsupported saved workspace schemaVersion {stored_workspace_schema!r}; "
                     "refusing to overwrite saved data."
                 ),
             ), 409

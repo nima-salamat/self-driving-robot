@@ -1413,6 +1413,21 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(rejected.status_code, 409)
             self.assertEqual(filename.read_text(encoding="utf-8"), original)
 
+            future_data = {
+                "version": 1,
+                "workspace": {"schemaVersion": 99, "view": {"zoom": 2.0}},
+                "profiles": {},
+            }
+            original_nested = json.dumps(future_data)
+            filename.write_text(original_nested, encoding="utf-8")
+            nested_get = client.get("/api/workspace")
+            self.assertIn("schemaVersion 99", nested_get.get_json()["migration_warning"])
+            nested_post = client.post("/api/workspace", json={
+                "action": "save_workspace", "workspace": {"view": {"zoom": 1.5}},
+            })
+            self.assertEqual(nested_post.status_code, 409)
+            self.assertEqual(filename.read_text(encoding="utf-8"), original_nested)
+
             with self.assertRaises(ValueError):
                 streamer._sanitize_workspace({"schemaVersion": 99, "view": {}})
 
