@@ -484,6 +484,26 @@ class StreamVisionMixin:
             timestamp=time.time()
             snapshot={"created_at":timestamp,"mode":self._mode_slug(),"run_level":str(getattr(self.config,"RUN_LVL","UNKNOWN")),
                 "config":self._full_config_snapshot(),"vision":self._vision_tuning_snapshot()}
+            lock = getattr(self.config, "stream_vision_debug_lock", None)
+            if lock is None:
+                live = getattr(self.config, "stream_vision_debug_snapshot", None)
+            else:
+                with lock:
+                    live = getattr(self.config, "stream_vision_debug_snapshot", None)
+            if isinstance(live, dict):
+                live_debug = live.get("debug") if isinstance(live.get("debug"), dict) else {}
+                live_result = live.get("result", {}) if isinstance(live.get("result"), dict) else {}
+                snapshot["live_vision"] = {
+                    "timestamp": live.get("timestamp"),
+                    "mode": live.get("mode"),
+                    "result_age_ms": max(0.0, (time.monotonic() - float(live.get("monotonic_at", time.monotonic()))) * 1000.0),
+                    "result": self._live_json_value(live_result),
+                    "debug_available": bool(live_debug),
+                    "stages": sorted(key for key, value in live_debug.items()
+                                     if isinstance(value, np.ndarray) and value.ndim in (2, 3)),
+                }
+            else:
+                snapshot["live_vision"] = {"available": False}
             try:
                 health=self.health()
                 snapshot["health"]=health.get_json(silent=True) if hasattr(health,"get_json") else None
