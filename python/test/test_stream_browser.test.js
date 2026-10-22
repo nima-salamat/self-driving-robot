@@ -169,7 +169,8 @@ async function waitForServer(child){
     const readRulerAnchor=()=>page.evaluate(()=>{
       const lines=Array.from(document.querySelectorAll('#ext_precision_overlay line'));
       const line=lines.find(node=>node.getAttribute('stroke')==='#22d3ee');
-      const frame=Array.from(document.querySelectorAll('#ext_precision_overlay rect')).find(node=>node.getAttribute('stroke')==='#69bed2');
+      const frame=Array.from(document.querySelectorAll('#ext_precision_overlay rect')).find(node=>
+        node.getAttribute('fill')==='none'&&Number(node.getAttribute('width'))>0&&Number(node.getAttribute('height'))>0);
       if(!line||!frame)return null;
       const x=Number(line.getAttribute('x1')),y=Number(line.getAttribute('y1'));
       const left=Number(frame.getAttribute('x')),top=Number(frame.getAttribute('y'));

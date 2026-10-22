@@ -203,6 +203,7 @@ function setWorkspaceZoom(next,ax=canvas.width/2,ay=canvas.height/2,log=true){
   const nw=base.iw*z,nh=base.ih*z,scale=Math.max(0.0001,base.scale||1);
   viewPanX=(ax-u*nw-(canvas.width-nw)/2)/scale;viewPanY=(ay-v*nh-(canvas.height-nh)/2)/scale;
   if(slider)slider.value=String(z);renderWorkspaceCanvas();updateZoomStatus();
+  if(typeof window.scheduleStreamWorkspaceSave==='function')window.scheduleStreamWorkspaceSave();
   if(log)noteWorkspaceEvent('info','View zoom: '+Math.round(z*100)+'%');return true;
 }
 function updateWorkspaceViewLockUI(){

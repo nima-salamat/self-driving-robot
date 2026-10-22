@@ -377,6 +377,7 @@ function scheduleWorkspaceSave(){
   setWorkspaceSaveStatus('unsaved','Unsaved changes · save scheduled');
   extSaveTimer=setTimeout(function(){extSaveTimer=null;saveWorkspace().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace persistence failed: '+err.message);});},450);
 }
+window.scheduleStreamWorkspaceSave=scheduleWorkspaceSave;
 window.addEventListener('beforeunload',function(event){
   const status=$('ext_workspace_save_status');
   if(!status||!['unsaved','saving','error'].includes(status.dataset.state))return;
