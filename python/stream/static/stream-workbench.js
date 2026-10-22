@@ -131,6 +131,7 @@ async function importProfile(file){
  await api('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'import',name,profile})});await refreshProfiles();$('wb_profile_select').value=name;msg('wb_profile_status','Imported "'+name+'". Load is a separate STOP-gated action.');
 }
 async function diagnostics(){
+ if(!confirm('The ZIP can include a camera frame, detector-stage images, configuration, health details, and recent logs. These may reveal your environment or robot setup. Export only if you intend to review this data and share it deliberately. Continue?'))return;
  $('wb_diagnostics_btn').disabled=true;msg('wb_diagnostics_status','Collecting config, health, logs, current frame and preview stages…');
  try{
   let frame=null;try{frame=frameUrl();}catch(_){}

@@ -32,6 +32,20 @@ test('disabled crosshair cannot restore a pinned workspace point',()=>{
   const state=normalizeWorkspaceToolState({tool:'ruler',crosshair:false,crosshairPoint:{space:'image',u:.4,v:.7}});
   assert.equal(state.editorTool,'ruler');assert.equal(state.crosshairEnabled,false);assert.equal(state.crosshairPoint,null);assert.equal(state.crosshairPinned,false);
 });
+test('workspace state rejects null, empty, non-finite, and out-of-range coordinates',()=>{
+  for(const point of [
+    {space:'image',u:null,v:0.2},
+    {space:'image',u:'',v:0.2},
+    {space:'image',u:'NaN',v:0.2},
+    {space:'canvas',u:1.1,v:0.2},
+    {space:'canvas',u:0.2,v:-0.1},
+    {space:'image',u:1000001,v:0.2}
+  ]){
+    const state=normalizeWorkspaceToolState({crosshair:true,crosshairPoint:point});
+    assert.equal(state.crosshairPoint,null,JSON.stringify(point));
+    assert.equal(state.crosshairPinned,false,JSON.stringify(point));
+  }
+});
 test('workspace crosshair and tool values are normalized',()=>{
   const state=normalizeWorkspaceToolState({tool:'unknown',crosshair:true,crosshairPoint:{space:'image',u:'0.4',v:.7}});
   assert.equal(state.editorTool,'select');assert.deepEqual(state.crosshairPoint,{space:'image',u:.4,v:.7});assert.equal(state.crosshairPinned,true);

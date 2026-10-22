@@ -203,6 +203,14 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("max-height: min(55dvh, 360px)", css)
         self.assertIn("max-height: min(42dvh, 200px)", css)
 
+    def test_diagnostics_export_warns_and_requires_confirmation(self):
+        stream_dir = PYTHON_ROOT / "stream"
+        workbench = (stream_dir / "static" / "stream-workbench.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
+        self.assertIn("if(!confirm('The ZIP can include a camera frame", workbench)
+        self.assertIn("Export only if you intend to review this data and share it deliberately.", workbench)
+        self.assertIn("recent logs. A privacy confirmation appears before export", template)
+
     def test_workspace_keyboard_shortcuts_and_command_search_are_complete(self):
         stream_dir = PYTHON_ROOT / "stream"
         extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")

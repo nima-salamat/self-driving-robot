@@ -33,9 +33,12 @@ function normalizeEditorTool(value){return ['select','pan','annotate','ruler'].i
 function normalizeWorkspaceToolState(view){
   view=view&&typeof view==='object'?view:{};
   const crosshairEnabled=view.crosshair===true,saved=view.crosshairPoint;let point=null;
-  if(crosshairEnabled&&saved&&['image','canvas'].includes(saved.space)&&Number.isFinite(Number(saved.u))&&Number.isFinite(Number(saved.v))){
-    point={space:saved.space,u:Number(saved.u),v:Number(saved.v)};
-  }
+  const validSpace=saved&&['image','canvas'].includes(saved.space);
+  const hasCoordinates=saved&&saved.u!==null&&saved.u!==''&&saved.v!==null&&saved.v!=='';
+  const u=hasCoordinates?Number(saved.u):NaN,v=hasCoordinates?Number(saved.v):NaN;
+  const rangeValid=validSpace&&Number.isFinite(u)&&Number.isFinite(v)&&
+    (saved.space==='image'?(u>=-1000000&&u<=1000000&&v>=-1000000&&v<=1000000):(u>=0&&u<=1&&v>=0&&v<=1));
+  if(crosshairEnabled&&rangeValid)point={space:saved.space,u:u,v:v};
   return {editorTool:normalizeEditorTool(view.tool),crosshairEnabled,crosshairPoint:point,crosshairPinned:!!point};
 }
 root.StreamState=Object.freeze({createCommandHistory,normalizeEditorTool,normalizeWorkspaceToolState});
