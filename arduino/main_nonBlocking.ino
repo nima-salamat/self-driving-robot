@@ -515,6 +515,39 @@ void exitForceStop();
 void clearSerialBuffers();
 void handleTmButtons();
 
+/* Optional, backwards-compatible envelope for correlated Stream acknowledgements.
+ * Legacy commands remain unchanged; only lines starting with @<numeric-id> are wrapped.
+ * RECEIVED confirms parser-loop receipt only, never physical actuator completion.
+ */
+bool unwrapAckEnvelope(String &command, unsigned long &commandId) {
+  commandId = 0;
+  if (command.length() < 4 || command.charAt(0) != '@') return false;
+  int separator = command.indexOf(' ');
+  if (separator < 2 || separator > 10) return false;
+
+  String token = command.substring(1, separator);
+  for (unsigned int i = 0; i < token.length(); ++i) {
+    char digit = token.charAt(i);
+    if (digit < '0' || digit > '9') return false;
+  }
+
+  unsigned long parsed = (unsigned long)token.toInt();
+  if (parsed == 0 || parsed > 999999999UL) return false;
+  String payload = command.substring(separator + 1);
+  payload.trim();
+  if (!payload.length()) return false;
+
+  command = payload;
+  commandId = parsed;
+  return true;
+}
+
+void sendCommandAck(unsigned long commandId) {
+  Serial.print("ACK ");
+  Serial.print(commandId);
+  Serial.println(" RECEIVED");
+}
+
 /* =========================
 SETUP
 ========================= */
@@ -743,10 +776,12 @@ void loop() {
   if (stringComplete) {
     inputString.trim();
     String work = inputString;
-    work.toLowerCase();
-
     inputString = "";
     stringComplete = false;
+
+    unsigned long ackCommandId = 0;
+    bool ackRequested = unwrapAckEnvelope(work, ackCommandId);
+    work.toLowerCase();
 
     const bool motorCommand = work.startsWith("motor ");
     int requestedMotorSpeed = 0;
@@ -831,6 +866,8 @@ void loop() {
     else {
       queue.parseAndEnqueue(work);
     }
+
+    if (ackRequested) sendCommandAck(ackCommandId);
   }
 
   if (!hostStopRequested) {

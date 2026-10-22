@@ -821,6 +821,10 @@ class StreamRuntimeMixin:
         if not isinstance(body, dict):
             return jsonify(success=False, message="request body must be a JSON object"), 400
 
+        wait_for_ack = body.get("wait_for_ack", False)
+        if not isinstance(wait_for_ack, bool):
+            return jsonify(success=False, message="wait_for_ack must be a boolean"), 400
+
         command = body.get("command")
         if not isinstance(command, str):
             return jsonify(success=False, message="command must be a string"), 400
@@ -841,6 +845,51 @@ class StreamRuntimeMixin:
             return jsonify(success=False, message="Arduino serial connection is unavailable"), 409
         if not bool(getattr(connection, "connected", False)):
             return jsonify(success=False, message="Arduino is not connected; command was not sent"), 409
+
+        if wait_for_ack:
+            ack_sender = getattr(connection, "send_custom_command_with_ack", None)
+            if not callable(ack_sender):
+                return jsonify(
+                    success=False,
+                    message="This Arduino connection does not support ACK tracking. Update the Python runtime and flash ACK-enabled firmware first.",
+                ), 409
+            try:
+                ack_timeout = float(getattr(self.config, "ARDUINO_COMMAND_ACK_TIMEOUT_S", 0.75))
+            except (TypeError, ValueError, OverflowError):
+                ack_timeout = 0.75
+            outcome = ack_sender(command, timeout=ack_timeout)
+            if not isinstance(outcome, dict) or not outcome.get("transmitted"):
+                return jsonify(
+                    success=False,
+                    message="Arduino command could not be transmitted.",
+                    command_id=outcome.get("command_id") if isinstance(outcome, dict) else None,
+                ), 503
+
+            acknowledged = outcome.get("acknowledged") is True
+            delivery_status = "acknowledged_not_executed" if acknowledged else "ack_timeout"
+            message = (
+                "Arduino acknowledged receipt in its command loop; physical execution is not confirmed."
+                if acknowledged else
+                "No matching Arduino ACK arrived before timeout. The command may still have been received; do not blindly resend motion commands."
+            )
+            logger.info(
+                "Custom Arduino command %s from Stream terminal: id=%s status=%s",
+                "acknowledged" if acknowledged else "transmitted without ACK",
+                outcome.get("command_id"), outcome.get("ack_status"),
+            )
+            return jsonify(
+                success=True,
+                command=command,
+                command_id=outcome.get("command_id"),
+                delivery_status=delivery_status,
+                device_acknowledged=acknowledged,
+                execution_confirmed=False,
+                ack_status=outcome.get("ack_status"),
+                message=message,
+                automatic_commands_enabled=bool(
+                    getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
+                ),
+            )
 
         sender = getattr(connection, "send_custom_command", None)
         if not callable(sender):

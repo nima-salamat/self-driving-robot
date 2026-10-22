@@ -43,11 +43,20 @@ class _FakeArduinoConnection:
 
     def __init__(self):
         self.commands = []
+        self.ack_requests = []
+        self.ack_outcome = {
+            "transmitted": True, "acknowledged": True,
+            "command_id": 42, "ack_status": "RECEIVED",
+        }
         self.automatic_commands_enabled = False
 
     def send_custom_command(self, command):
         self.commands.append(command)
         return True
+
+    def send_custom_command_with_ack(self, command, timeout=0.75):
+        self.ack_requests.append((command, timeout))
+        return dict(self.ack_outcome)
 
     def set_automatic_commands_enabled(self, enabled):
         self.automatic_commands_enabled = bool(enabled)
@@ -137,6 +146,54 @@ class ArduinoCommandPolicyTests(unittest.TestCase):
         self.assertEqual(connection.commands, ["servo 95\n"])
         self.assertFalse(config.SEND_AUTOMATIC_ARDUINO_COMMANDS)
 
+    def test_ack_mode_correlates_firmware_receipt_without_claiming_execution(self):
+        connection = _FakeArduinoConnection()
+        streamer, config = self.make_streamer(connection)
+        client = streamer.app.test_client()
+
+        response = client.post(
+            "/api/arduino-command",
+            json={"command": "servo 95", "wait_for_ack": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["command_id"], 42)
+        self.assertEqual(payload["delivery_status"], "acknowledged_not_executed")
+        self.assertTrue(payload["device_acknowledged"])
+        self.assertFalse(payload["execution_confirmed"])
+        self.assertEqual(connection.ack_requests[0][0], "servo 95")
+        self.assertEqual(connection.commands, [])
+        self.assertIn("physical execution is not confirmed", payload["message"])
+
+    def test_ack_timeout_reports_unknown_outcome_without_suggesting_retry(self):
+        connection = _FakeArduinoConnection()
+        connection.ack_outcome = {
+            "transmitted": True, "acknowledged": False,
+            "command_id": 43, "ack_status": None, "timed_out": True,
+        }
+        streamer, _ = self.make_streamer(connection)
+        payload = streamer.app.test_client().post(
+            "/api/arduino-command",
+            json={"command": "motor 100", "wait_for_ack": True},
+        ).get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["delivery_status"], "ack_timeout")
+        self.assertFalse(payload["device_acknowledged"])
+        self.assertFalse(payload["execution_confirmed"])
+        self.assertIn("do not blindly resend", payload["message"])
+
+    def test_wait_for_ack_requires_a_boolean(self):
+        connection = _FakeArduinoConnection()
+        streamer, _ = self.make_streamer(connection)
+        response = streamer.app.test_client().post(
+            "/api/arduino-command",
+            json={"command": "servo 95", "wait_for_ack": "yes"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(connection.commands, [])
+        self.assertEqual(connection.ack_requests, [])
+
     def test_custom_command_endpoint_rejects_multiline_and_read_only_mode(self):
         connection = _FakeArduinoConnection()
         streamer, config = self.make_streamer(connection)
@@ -200,6 +257,9 @@ class ArduinoCommandPolicyTests(unittest.TestCase):
         self.assertIn('id="console_arduino_notice"', template)
         self.assertIn('id="arduino_commands_hardware_notice"', template)
         self.assertIn('id="arduino_custom_command"', template)
+        self.assertIn('id="arduino_command_wait_ack"', template)
+        self.assertIn("wait_for_ack:waitForAck", javascript)
+        self.assertIn("acknowledged_not_executed", javascript)
         self.assertIn("/api/arduino-command", javascript)
         self.assertIn("SEND_AUTOMATIC_ARDUINO_COMMANDS", javascript)
         self.assertIn("policyToggle.addEventListener('click'", javascript)

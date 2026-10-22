@@ -1944,19 +1944,27 @@ function mapGroupToDefaultVar(g){
       sendButton.disabled=true;
       if(feedback)feedback.textContent='Sending custom command…';
       try{
+        const ackToggle=document.getElementById('arduino_command_wait_ack');
+        const waitForAck=!!(ackToggle&&ackToggle.checked);
         const response=await fetch('/api/arduino-command',{
-          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command})
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,wait_for_ack:waitForAck})
         });
         const result=await response.json().catch(()=>({}));
         if(!response.ok||!result.success)throw new Error(result.message||('HTTP '+response.status));
-        if(result.delivery_status==='transmitted_unconfirmed'){
+        if(result.delivery_status==='acknowledged_not_executed'){
+          if(feedback)feedback.textContent='Arduino ACK #'+result.command_id+': command reached the firmware command loop; physical execution is NOT confirmed.';
+          noteWorkspaceEvent('info','Arduino acknowledged command receipt #'+result.command_id+'; execution remains unconfirmed.','arduino-commands');
+        }else if(result.delivery_status==='ack_timeout'){
+          if(feedback)feedback.textContent='No Arduino ACK for command #'+result.command_id+'. The command may have been received; do not blindly retry a motion command.';
+          noteWorkspaceEvent('warn','ACK timeout for Arduino command #'+result.command_id+'; outcome is unknown.','arduino-commands');
+        }else if(result.delivery_status==='transmitted_unconfirmed'){
           if(feedback)feedback.textContent='Transmitted: '+result.command+' — serial write succeeded; Arduino acknowledgement and execution are not confirmed.';
+          noteWorkspaceEvent('info','Custom Arduino command transmitted without firmware ACK: '+result.command,'arduino-commands');
         }else if(feedback)feedback.textContent='Sent: '+result.command;
         commandHistory.remember(result.command||command);
         commandHistory.resetAfterSend();
         renderArduinoCommandHistory();
         input.value='';
-        noteWorkspaceEvent('info','Custom Arduino command transmitted (firmware acknowledgement unavailable): '+result.command,'arduino-commands');
       }catch(error){
         if(feedback)feedback.textContent='Command failed: '+(error.message||error);
         noteWorkspaceEvent('error','Custom Arduino command failed: '+(error.message||error),'arduino-commands');

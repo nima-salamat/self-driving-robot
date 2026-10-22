@@ -62,6 +62,9 @@ class ArduinoConnection:
         self._telemetry = deque(maxlen=max(1, int(telemetry_buffer_size)))
         self._telemetry_records = deque(maxlen=max(1, int(telemetry_buffer_size)))
         self._telemetry_lock = threading.Lock()
+        self._command_ack_lock = threading.Lock()
+        self._pending_command_acks = {}
+        self._next_command_ack_id = 1
         self._telemetry_enabled = bool(telemetry_enabled)
         self._max_telemetry_line_bytes = 4096
         self._print_telemetry = False
@@ -363,6 +366,19 @@ class ArduinoConnection:
                 self._telemetry.append(line)
                 self._telemetry_records.append({"line": line, "received_at": time.monotonic()})
 
+            parts = line.split()
+            if len(parts) == 3 and parts[0] == "ACK" and parts[1].isdigit() and parts[2] == "RECEIVED":
+                try:
+                    command_id = int(parts[1])
+                except ValueError:
+                    command_id = 0
+                if command_id > 0:
+                    with self._command_ack_lock:
+                        pending = self._pending_command_acks.get(command_id)
+                        if pending is not None:
+                            pending["status"] = "RECEIVED"
+                            pending["event"].set()
+
             if self._print_telemetry:
                 print(f"[Arduino] {line}", flush=True)
 
@@ -415,6 +431,49 @@ class ArduinoConnection:
     def send_custom_command(self, command):
         """Send an explicit Stream-terminal command even when automatic sends are disabled."""
         return self._send_serial_command(command)
+
+    @if_is_not_windows
+    def send_custom_command_with_ack(self, command, timeout=0.75):
+        """Send one command using an opt-in ACK envelope and wait for firmware receipt.
+
+        A RECEIVED ACK proves only that compatible firmware processed the line in
+        its command loop; it does not prove an actuator reached its target or a
+        queued maneuver completed.
+        """
+        if not isinstance(command, str):
+            return {"transmitted": False, "acknowledged": False, "command_id": None, "ack_status": None}
+        command = command.strip()
+        if not command or len(command) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in command):
+            return {"transmitted": False, "acknowledged": False, "command_id": None, "ack_status": None}
+        try:
+            command.encode("ascii")
+            timeout = max(0.05, min(2.0, float(timeout)))
+        except (UnicodeEncodeError, TypeError, ValueError, OverflowError):
+            return {"transmitted": False, "acknowledged": False, "command_id": None, "ack_status": None}
+
+        with self._command_ack_lock:
+            command_id = self._next_command_ack_id
+            self._next_command_ack_id = 1 if command_id >= 999999999 else command_id + 1
+            pending = {"event": threading.Event(), "status": None}
+            self._pending_command_acks[command_id] = pending
+
+        if not self._send_serial_command(f"@{command_id} {command}\n"):
+            with self._command_ack_lock:
+                self._pending_command_acks.pop(command_id, None)
+            return {"transmitted": False, "acknowledged": False, "command_id": command_id, "ack_status": None}
+
+        pending["event"].wait(timeout)
+        with self._command_ack_lock:
+            self._pending_command_acks.pop(command_id, None)
+            ack_status = pending["status"]
+        acknowledged = ack_status == "RECEIVED"
+        return {
+            "transmitted": True,
+            "acknowledged": acknowledged,
+            "command_id": command_id,
+            "ack_status": ack_status,
+            "timed_out": not acknowledged,
+        }
 
     def _send_serial_command(self, command):
         if not self.enabled:

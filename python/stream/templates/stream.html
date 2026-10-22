@@ -131,6 +131,8 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <input id="arduino_custom_command" name="command" type="text" maxlength="256" spellcheck="false" placeholder="Enter one command, e.g. servo 95" aria-label="Custom Arduino command">
         <button type="submit" class="btn" id="arduino_command_send_btn">Send to Arduino</button>
       </div>
+      <div class="form-row"><label class="wb-check"><input type="checkbox" id="arduino_command_wait_ack"> Wait for firmware ACK</label></div>
+      <div class="small-muted">ACK mode requires the updated ACK-enabled Arduino firmware to be flashed first. An ACK confirms receipt by the command loop only, not physical movement or completion. If an ACK times out, the command outcome is unknown; do not blindly retry motion commands.</div>
       <div class="small-muted">↑ / ↓ recalls previously sent commands. Recalling only fills this field; press Enter or Send to transmit. Commands are saved in this browser for this mode. Send sends one ASCII command line; the automatic-command toggle does not block manual sends.</div>
     </form>
     <div class="arduino-command-history-tools">
