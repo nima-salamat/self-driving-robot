@@ -37,7 +37,9 @@ async function waitForServer(child){
     const page=await browser.newPage({viewport:{width:1365,height:900}});
     const pageErrors=[];
     page.on('pageerror',error=>pageErrors.push(error.message));
-    const response=await page.goto(baseURL,{waitUntil:'networkidle',timeout:20000});
+    const workspaceLoaded=page.waitForResponse(response=>response.url().includes('/api/workspace')&&response.request().method()==='GET'&&response.ok(),{timeout:15000});
+    const response=await page.goto(baseURL,{waitUntil:'domcontentloaded',timeout:20000});
+    await workspaceLoaded;
     assert.equal(response.status(),200,'Stream dashboard should render');
 
     await page.waitForFunction(()=>window.StreamState&&document.querySelector('#video_canvas'),null,{timeout:10000});
@@ -68,7 +70,9 @@ async function waitForServer(child){
     assert.equal(persisted.data.workspace.view.crosshair,false,'Esc should persist Crosshair disabled');
     assert.equal(persisted.data.workspace.view.crosshairPoint,null,'Esc should clear its pinned point');
 
-    await page.reload({waitUntil:'networkidle',timeout:20000});
+    const workspaceLoadedAfterReload=page.waitForResponse(response=>response.url().includes('/api/workspace')&&response.request().method()==='GET'&&response.ok(),{timeout:15000});
+    await page.reload({waitUntil:'domcontentloaded',timeout:20000});
+    await workspaceLoadedAfterReload;
     await page.waitForFunction(()=>window.StreamState&&document.querySelector('#ext_crosshair'),null,{timeout:10000});
     await delay(150);
     assert.equal(await page.locator('#ext_crosshair').isChecked(),false,'Crosshair must stay off after reload');
