@@ -410,6 +410,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("if(event.key==='ArrowUp')", core)
         self.assertIn("else if(event.key==='ArrowDown')", core)
         self.assertIn("function recallArduinoCommand(direction)", core)
+        self.assertIn("if(commandHistoryIndex<commandHistory.length)commandHistoryIndex=commandHistory.length;", core)
         self.assertIn("rememberArduinoCommand(result.command||command)", core)
         self.assertIn("event.preventDefault();event.stopPropagation();", core)
         self.assertIn("↑ / ↓ recalls previously sent commands.", template)

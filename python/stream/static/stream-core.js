@@ -1894,8 +1894,9 @@ function mapGroupToDefaultVar(g){
       }
     });
     input.addEventListener('input',function(){
-      // Editing a recalled command detaches the navigation cursor; preserve this text as the draft.
-      if(commandHistoryIndex===commandHistory.length)commandHistoryDraft=input.value;
+      // Editing a recalled command detaches navigation and becomes the draft restored by ArrowDown.
+      if(commandHistoryIndex<commandHistory.length)commandHistoryIndex=commandHistory.length;
+      commandHistoryDraft=input.value;
     });
     form.addEventListener('submit',async(event)=>{
       event.preventDefault();
