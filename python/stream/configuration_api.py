@@ -798,7 +798,9 @@ class StreamConfigurationMixin:
             space = item.get("space", "image")
             if space not in {"image", "canvas"}:
                 raise ValueError("annotation space must be image or canvas")
-            entry = {"kind": item["kind"], "space": space}
+            entry = {"kind": item["kind"]}
+            if "space" in item:
+                entry["space"] = space
             minimum, maximum = (-1000000.0, 1000000.0) if space == "image" else (0.0, 1.0)
             for key in ("u", "v", "u2", "v2"):
                 if key in item:
