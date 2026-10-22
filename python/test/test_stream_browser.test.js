@@ -37,11 +37,27 @@ async function waitForServer(child){
     const page=await browser.newPage({viewport:{width:1365,height:900}});
     const pageErrors=[];
     page.on('pageerror',error=>pageErrors.push(error.message));
+    await page.addInitScript(()=>{
+      localStorage.setItem('self-driving-robot:arduino-command-history:city',JSON.stringify(['servo 90','servo 95']));
+    });
     const workspaceLoaded=page.waitForResponse(response=>response.url().includes('/api/workspace')&&response.request().method()==='GET'&&response.ok(),{timeout:15000});
     const response=await page.goto(baseURL,{waitUntil:'domcontentloaded',timeout:20000});
     await workspaceLoaded;
     assert.equal(response.status(),200,'Stream dashboard should render');
 
+    // History entries fill the input only; selecting one does not submit a command.
+    await page.locator('#console_toggle_btn').click();
+    await page.locator('[data-console-tab="arduino-commands"]').click();
+    await page.locator('#arduino_command_history_panel > summary').click();
+    const historyButtons=page.locator('#arduino_command_history_list .arduino-history-entry');
+    assert.equal(await historyButtons.count(),2,'Saved commands should appear in the visible history');
+    await historyButtons.first().click();
+    assert.equal(await page.locator('#arduino_custom_command').inputValue(),'servo 95','Newest command should fill the input');
+    assert.equal(await page.locator('#arduino_command_feedback').textContent(),'Loaded from history; press Enter or Send to transmit.');
+    await page.locator('#arduino_command_history_clear').click();
+    assert.equal(await page.locator('#arduino_command_history_count').textContent(),'0');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('self-driving-robot:arduino-command-history:city')),'[]');
+    await page.locator('#console_toggle_btn').click();
     await page.waitForFunction(()=>window.StreamState&&document.querySelector('#video_canvas'),null,{timeout:10000});
     const checkbox=page.locator('#ext_crosshair');
     await page.evaluate(()=>{

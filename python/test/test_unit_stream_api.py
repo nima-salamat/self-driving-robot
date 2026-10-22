@@ -423,7 +423,11 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("function recallArduinoCommand(direction)", core)
         self.assertIn("input.addEventListener('input',function(){commandHistory.edit(input.value);});", core)
         self.assertIn("commandHistory.remember(result.command||command)", core)
+        self.assertIn("renderArduinoCommandHistory()", core)
+        self.assertIn("commandHistory.clear()", core)
         self.assertIn("createCommandHistory", state)
+        self.assertIn('id="arduino_command_history_list"', template)
+        self.assertIn('id="arduino_command_history_clear"', template)
         self.assertIn("press Enter or Send to transmit.", template)
         self.assertIn("↑ / ↓ recalls previously sent commands.", template)
 

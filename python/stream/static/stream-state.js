@@ -27,7 +27,8 @@ function createCommandHistory(options){
   }
   function edit(value){if(index<items.length)index=items.length;draft=String(value==null?'':value);}
   function resetAfterSend(){index=items.length;draft='';}
-  return {remember,move,edit,resetAfterSend,get length(){return items.length;},get index(){return index;},snapshot:()=>items.slice()};
+  function clear(){items=[];index=0;draft='';persist();}
+  return {remember,move,edit,resetAfterSend,clear,get length(){return items.length;},get index(){return index;},snapshot:()=>items.slice()};
 }
 function normalizeEditorTool(value){return ['select','pan','annotate','ruler'].includes(value)?value:'select';}
 function normalizeWorkspaceToolState(view){

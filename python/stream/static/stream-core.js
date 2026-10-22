@@ -1850,6 +1850,36 @@ function mapGroupToDefaultVar(g){
     const commandHistoryKey='self-driving-robot:arduino-command-history:'+String((window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.mode)||'default').toLowerCase();
     let commandHistoryStorage=null;try{commandHistoryStorage=window.localStorage;}catch(_){}
     const commandHistory=window.StreamState.createCommandHistory({storage:commandHistoryStorage,key:commandHistoryKey,limit:100});
+    const commandHistoryList=document.getElementById('arduino_command_history_list');
+    const commandHistoryCount=document.getElementById('arduino_command_history_count');
+    const commandHistoryClear=document.getElementById('arduino_command_history_clear');
+    function renderArduinoCommandHistory(){
+      const items=commandHistory.snapshot();
+      if(commandHistoryCount)commandHistoryCount.textContent=String(items.length);
+      if(commandHistoryClear)commandHistoryClear.disabled=items.length===0;
+      if(!commandHistoryList)return;
+      commandHistoryList.replaceChildren();
+      if(!items.length){
+        const empty=document.createElement('li');empty.className='arduino-history-empty';empty.textContent='No commands sent in this browser for this mode yet.';commandHistoryList.appendChild(empty);return;
+      }
+      items.slice().reverse().forEach(function(value){
+        const row=document.createElement('li'),button=document.createElement('button');
+        button.type='button';button.className='arduino-history-entry';button.textContent=value;
+        button.title='Fill the command field only; does not send this command.';
+        button.addEventListener('click',function(){
+          input.value=value;commandHistory.edit(value);
+          try{input.setSelectionRange(value.length,value.length);}catch(_){}
+          input.focus();
+          if(feedback)feedback.textContent='Loaded from history; press Enter or Send to transmit.';
+        });
+        row.appendChild(button);commandHistoryList.appendChild(row);
+      });
+    }
+    if(commandHistoryClear)commandHistoryClear.addEventListener('click',function(){
+      commandHistory.clear();commandHistory.resetAfterSend();renderArduinoCommandHistory();
+      if(feedback)feedback.textContent='Saved command history cleared for this mode.';
+    });
+    renderArduinoCommandHistory();
     function recallArduinoCommand(direction){
       const result=commandHistory.move(direction,input.value);if(!result.handled)return false;
       input.value=result.value;const end=input.value.length;try{input.setSelectionRange(end,end);}catch(_){}
@@ -1883,6 +1913,7 @@ function mapGroupToDefaultVar(g){
         }else if(feedback)feedback.textContent='Sent: '+result.command;
         commandHistory.remember(result.command||command);
         commandHistory.resetAfterSend();
+        renderArduinoCommandHistory();
         input.value='';
         noteWorkspaceEvent('info','Custom Arduino command transmitted (firmware acknowledgement unavailable): '+result.command,'arduino-commands');
       }catch(error){

@@ -28,6 +28,19 @@ test('malformed or unavailable storage does not break command entry',()=>{
   const failing={getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}};
   const history=createCommandHistory({storage:failing,key:'history'});assert.equal(history.remember('stop'),'stop');assert.deepEqual(history.snapshot(),['stop']);
 });
+test('clearing history removes persisted values and resets navigation state',()=>{
+  const storage=fakeStorage();
+  const history=createCommandHistory({storage,key:'history'});
+  history.remember('servo 90');history.remember('servo 95');
+  assert.equal(history.move(-1,'draft').value,'servo 95');
+  history.clear();
+  assert.deepEqual(history.snapshot(),[]);
+  assert.deepEqual(JSON.parse(storage.get('history')),[]);
+  assert.equal(history.length,0);
+  assert.equal(history.move(-1,'new draft').handled,false);
+  history.remember('stop');
+  assert.deepEqual(history.snapshot(),['stop']);
+});
 test('disabled crosshair cannot restore a pinned workspace point',()=>{
   const state=normalizeWorkspaceToolState({tool:'ruler',crosshair:false,crosshairPoint:{space:'image',u:.4,v:.7}});
   assert.equal(state.editorTool,'ruler');assert.equal(state.crosshairEnabled,false);assert.equal(state.crosshairPoint,null);assert.equal(state.crosshairPinned,false);

@@ -1449,6 +1449,17 @@ canvas {
 #arduino_custom_command:focus { outline:1px solid var(--accent); border-color:var(--accent); }
 .arduino-command-input-row .btn { flex:0 0 auto; min-height:37px; }
 .arduino-command-feedback { padding:8px 10px; border-left:2px solid var(--accent); background:rgba(255,255,255,.025); color:var(--txt,#e6edf5); font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.arduino-command-history-tools { display:flex; align-items:flex-start; gap:8px; max-width:850px; }
+#arduino_command_history_panel { flex:1 1 auto; min-width:0; border:1px solid #334456; border-radius:5px; background:rgba(255,255,255,.02); }
+#arduino_command_history_panel>summary { padding:7px 9px; cursor:pointer; color:var(--txt,#e6edf5); font-size:11px; font-weight:650; }
+.arduino-command-history-count { display:inline-block; min-width:18px; margin-left:4px; padding:1px 5px; border-radius:9px; text-align:center; background:rgba(148,163,184,.16); color:var(--muted,#9bacbd); }
+#arduino_command_history_list { display:grid; gap:4px; max-height:160px; overflow:auto; margin:0; padding:0 7px 7px; list-style:none; }
+#arduino_command_history_list li { min-width:0; }
+#arduino_command_history_list .arduino-history-empty { padding:6px 3px; color:var(--muted,#9bacbd); font-size:11px; }
+#arduino_command_history_list .arduino-history-entry { display:block; width:100%; min-width:0; padding:6px 8px; border:1px solid #26384a; border-radius:4px; background:#0b1421; color:var(--txt,#e6edf5); font:12px ui-monospace,SFMono-Regular,Consolas,monospace; text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+#arduino_command_history_list .arduino-history-entry:hover { border-color:var(--accent); }
+#arduino_command_history_clear { flex:0 0 auto; font-size:11px; padding:7px 9px; }
+#arduino_command_history_clear:disabled { opacity:.5; cursor:not-allowed; }
 #arduino_command_send_btn:disabled { opacity:.6; cursor:wait; }
 @media(max-width:560px){ .arduino-command-input-row { align-items:stretch; flex-direction:column; } .arduino-command-input-row .btn { width:100%; } }
 
