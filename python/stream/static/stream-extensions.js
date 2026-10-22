@@ -103,6 +103,14 @@ function rulerDistance(a,b){
  if(a.space==='image'&&b.space==='image')return Math.hypot((b.u-a.u)*(frameSourceWidth||canvas.width),(b.v-a.v)*(frameSourceHeight||canvas.height));
  return Math.hypot((b.canvasU-a.canvasU)*canvas.width,(b.canvasV-a.canvasV)*canvas.height);
 }
+function snapshotRulerPoint(point){
+ if(!point)return null;
+ return Object.freeze({space:point.space==='canvas'?'canvas':'image',u:Number(point.u),v:Number(point.v),canvasU:Number(point.canvasU),canvasV:Number(point.canvasV),x:Number(point.x),y:Number(point.y)});
+}
+function rulerPointCanvasXY(point,b){
+ if(point.space==='image')return{x:b.ix+point.u*b.iw,y:b.iy+point.v*b.ih,space:point.space,u:point.u,v:point.v,canvasU:point.canvasU,canvasV:point.canvasV};
+ return{x:point.canvasU*canvas.width,y:point.canvasV*canvas.height,space:point.space,u:point.u,v:point.v,canvasU:point.canvasU,canvasV:point.canvasV};
+}
 function annotationXY(item,b){const u=Number(item.u)||0,v=Number(item.v)||0;return item.space==='canvas'?{x:u*canvas.width,y:v*canvas.height}:{x:b.ix+u*b.iw,y:b.iy+v*b.ih};}
 function crosshairCanvasPoint(point,b){if(!point)return null;if(point.space==='image'&&Number.isFinite(Number(point.u))&&Number.isFinite(Number(point.v)))return{x:b.ix+Number(point.u)*b.iw,y:b.iy+Number(point.v)*b.ih};if(point.space==='canvas'&&Number.isFinite(Number(point.u))&&Number.isFinite(Number(point.v)))return{x:Number(point.u)*canvas.width,y:Number(point.v)*canvas.height};return{x:Number(point.x)||0,y:Number(point.y)||0};}
 function drawPrecisionOverlay(){
@@ -139,7 +147,7 @@ function drawPrecisionOverlay(){
   const label=addSVG('text',{x:Math.max(4,Math.min(canvas.width-240,cp.x+8*z)),y:Math.max(14,Math.min(canvas.height-4,cp.y-8*z)),fill:'#fff','font-size':Math.max(9,11*z),'paint-order':'stroke','stroke':'#07101a','stroke-width':3*z});label.textContent=textLabel;
  }
  if(editorTool==='ruler'&&rulerStart&&rulerHoverPoint){
-  const a=rulerStart,c=rulerHoverPoint;addSVG('line',{x1:a.x,y1:a.y,x2:c.x,y2:c.y,stroke:'#22d3ee','stroke-width':Math.max(1,2*z),'stroke-dasharray':(6*z)+' '+(3*z)});
+  const a=rulerPointCanvasXY(rulerStart,b),c=rulerPointCanvasXY(rulerHoverPoint,b);addSVG('line',{x1:a.x,y1:a.y,x2:c.x,y2:c.y,stroke:'#22d3ee','stroke-width':Math.max(1,2*z),'stroke-dasharray':(6*z)+' '+(3*z)});
   addSVG('circle',{cx:a.x,cy:a.y,r:Math.max(3,(Number(roiAppearance.handleSize)||10)*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});addSVG('circle',{cx:c.x,cy:c.y,r:Math.max(3,(Number(roiAppearance.handleSize)||10)*.45*z),fill:'#22d3ee',stroke:'#e0faff','stroke-width':z});
   const label=addSVG('text',{x:(a.x+c.x)/2+7*z,y:(a.y+c.y)/2-7*z,fill:'#e0faff','font-size':Math.max(10,(Number(roiAppearance.labelFontSize)||12)*z),'font-weight':'700','paint-order':'stroke',stroke:'#07101a','stroke-width':3*z});
   label.textContent=formatRulerDistance(rulerDistance(a,c),a.space==='image'&&c.space==='image'?'image':'canvas');
@@ -260,7 +268,7 @@ function onCustomPointerDown(event){
   if(extAnnotations.length>250)extAnnotations.shift();refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();updateEditorStatus('Marker placed in '+p.space+' coordinate space.');
  }else if(!rulerStart){
   // Ruler start marked. Move the pointer to preview distance; click the second point to finish.
-  rulerStart=p;rulerHoverPoint=p;updateEditorStatus('Ruler start set. Click again to finish; points may be inside or outside the image.');updateActiveToolBanner();drawPrecisionOverlay();}
+  rulerStart=snapshotRulerPoint(p);rulerHoverPoint=snapshotRulerPoint(p);updateEditorStatus('Ruler start set. Click again to finish; points may be inside or outside the image.');updateActiveToolBanner();drawPrecisionOverlay();}
  else{
   const a=rulerStart,same=a.space==='image'&&p.space==='image';rulerStart=null;const space=same?'image':'canvas',u=same?a.u:a.canvasU,v=same?a.v:a.canvasV,u2=same?p.u:p.canvasU,v2=same?p.v:p.canvasV,dist=rulerDistance(a,p);
   extAnnotations.push({kind:'ruler',space:space,u:u,v:v,u2:u2,v2:v2,distancePx:dist,color:'#22d3ee'});rulerHoverPoint=null;updateEditorStatus('Ruler saved: '+formatRulerDistance(dist,space)+'.');updateActiveToolBanner();syncLayerControls();
@@ -1651,7 +1659,7 @@ function installExtension(){
     let svg=$('ext_precision_overlay');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);}
     canvas.addEventListener('pointerdown',onCustomPointerDown,true);
     installCoordinatePairPaste();
-    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair)extCrosshairPoint=point;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?point:null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
+    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair)extCrosshairPoint=point;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?snapshotRulerPoint(point):null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
   }
   if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
   $('ext_grid').addEventListener('change',function(){if(this.checked){if(gridMode==='off')gridMode=lastVisibleGridMode;extGrid=gridMode!=='off';}else{if(gridMode==='grid'||gridMode==='dots')lastVisibleGridMode=gridMode;gridMode='off';extGrid=false;}renderWorkspaceCanvas();scheduleWorkspaceSave();});
