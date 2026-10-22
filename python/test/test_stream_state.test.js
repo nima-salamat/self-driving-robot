@@ -54,7 +54,7 @@ test('favorites are labeled, case-insensitive, bounded, validated, and persisted
     {label:'Lights',command:'led 1'}
   ]);
   assert.deepEqual(JSON.parse(storage.get('favorites')),favorites.snapshot());
-  assert.equal(favorites.add('Bad command','servo 95\\nsecond'),null);
+  assert.equal(favorites.add('Bad command','servo 95'+String.fromCharCode(10)+'second'),null);
   assert.equal(favorites.add('Unicode','停'),null);
   assert.equal(favorites.remove('safety STOP'),true);
   assert.equal(favorites.remove('missing'),false);
