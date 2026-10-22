@@ -103,8 +103,11 @@ async function loadProfile(){
  if(!window.confirm('Load "'+name+'"? RUN_LVL must be STOP. Motion will not resume automatically.'))return;
  const d=await api('/api/profiles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'load',name})});
  if(typeof window.applyStreamWorkspace==='function')window.applyStreamWorkspace(d.workspace||{});
- await refreshVision();await refreshProfiles();msg('wb_profile_status','Loaded "'+name+'". Robot motion remains stopped.');
- if(typeof window.showToast==='function')window.showToast('Profile loaded; motion remains STOP.');
+ await refreshVision();await refreshProfiles();
+ const restart=Array.isArray(d.restart_required)?d.restart_required:[];
+ const notice=restart.length?'Loaded "'+name+'". Restart required for: '+restart.join(', ')+'. Robot motion remains stopped.':'Loaded "'+name+'". Robot motion remains stopped.';
+ msg('wb_profile_status',notice);
+ if(typeof window.showToast==='function')window.showToast(notice);
 }
 async function deleteProfile(){
  if(!writable)throw new Error('Stream is read-only.');const name=$('wb_profile_select').value||$('wb_profile_name').value.trim();if(!name)throw new Error('Choose a profile.');
