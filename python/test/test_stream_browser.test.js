@@ -96,11 +96,31 @@ async function waitForServer(child){
     await page.keyboard.press('Escape');
     await page.waitForFunction(()=>!document.querySelector('#ext_ruler').checked,null,{timeout:5000});
 
+    // Inject one save failure, then verify Retry reaches a successful save.
+    await delay(600);
+    await page.waitForFunction(()=>{
+      const status=document.querySelector('#ext_workspace_save_status');
+      return status&&status.dataset.state==='saved';
+    },null,{timeout:5000});
+    let failNextWorkspacePost=true;
+    await page.route('**/api/workspace',async route=>{
+      if(route.request().method()==='POST'&&failNextWorkspacePost){
+        failNextWorkspacePost=false;
+        await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Injected workspace failure for retry test'})});
+      }else await route.continue();
+    });
     await page.locator('#ext_save_workspace').click();
+    await page.waitForFunction(()=>{
+      const status=document.querySelector('#ext_workspace_save_status');
+      return status&&status.dataset.state==='error';
+    },null,{timeout:5000});
+    assert.equal(await page.locator('#ext_workspace_save_retry').isVisible(),true,'Failed save should expose Retry');
+    await page.locator('#ext_workspace_save_retry').click();
     await page.waitForFunction(()=>{
       const status=document.querySelector('#ext_workspace_save_status');
       return status&&status.dataset.state==='saved';
     },null,{timeout:8000});
+    await page.unroute('**/api/workspace');
 
     const persisted=await page.evaluate(async()=>{
       const response=await fetch('/api/workspace',{cache:'no-store'});
@@ -118,12 +138,18 @@ async function waitForServer(child){
     const workspaceLoadedAfterReload=page.waitForResponse(response=>response.url().includes('/api/workspace')&&response.request().method()==='GET'&&response.ok(),{timeout:15000});
     await page.reload({waitUntil:'domcontentloaded',timeout:20000});
     await workspaceLoadedAfterReload;
-    await page.waitForFunction(()=>window.StreamState&&document.querySelector('#ext_crosshair'),null,{timeout:10000});
-    await delay(150);
+    await page.waitForFunction(()=>window.StreamState&&typeof window.collectStreamWorkspace==='function',null,{timeout:10000});
+    await page.waitForFunction(()=>{
+      const workspace=window.collectStreamWorkspace();
+      return workspace&&workspace.view&&Math.abs(Number(workspace.view.zoom)-1.5)<0.001&&
+        workspace.view.grid===true&&workspace.annotations.some(item=>item.kind==='ruler');
+    },null,{timeout:10000});
     assert.equal(await page.locator('#ext_crosshair').isChecked(),false,'Crosshair must stay off after reload');
+    assert.equal(await page.locator('#ext_grid').isChecked(),true,'Grid should restore after reload');
+    assert.equal(await page.locator('#workspace_zoom_percent').inputValue(),'150%','Zoom should restore after reload');
     assert.equal(await page.locator('#video_canvas').evaluate(canvas=>canvas.classList.contains('crosshair-active')),false);
     assert.deepEqual(pageErrors,[],'Stream UI must not throw uncaught browser exceptions');
-    console.log('Stream browser smoke test passed: startup, Crosshair toggle/Escape, workspace persistence, reload, no uncaught page errors.');
+    console.log('Stream browser smoke test passed: startup, tools, Escape, zoom/grid/pan/ruler, failed-save retry, reload, and no uncaught page errors.');
   }catch(error){
     error.message+='\nFixture server output:\n'+serverOutput;
     throw error;
