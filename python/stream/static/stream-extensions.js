@@ -12,6 +12,7 @@ window.__isEditorSnapEnabled=()=>extSnap;
 window.__getStreamKeyboardNudgePx=()=>keyboardNudgePx;
 let editorTool='select', rulerStart=null, rulerHoverPoint=null, internalWorkspaceToolSync=false, extAnnotations=[], extFrameGallery=[], extRuntimeSample=[];
 let undoStack=[], redoStack=[], currentConfig=null, internalConfigWrite=0, extSaveTimer=null, extHealthTimer=null, extSettingsTimer=null;
+let workspaceSaveChain=Promise.resolve();
 let serverLogsVisible=[], workspaceProfileNames=[], presetNames=[], historyItems=[];
 let frameCompareImage=null, cameraSupportedControlNames=[], cameraSettingsEditable=false;
 const cameraDraftDirty = new Set();
@@ -173,15 +174,37 @@ window.drawPrecisionOverlay=drawPrecisionOverlay;
 function updateEditorStatus(text){if($('ext_editor_status'))$('ext_editor_status').textContent=text;}
 function updateActiveToolBanner(){
   const banner=$('active_tool_banner'),label=$('active_tool_label');if(!banner||!label)return;
-  const active=editorTool!=='select';
+  const pinned=!!(crosshairPinned&&extCrosshairPoint),crosshairActive=!!extCrosshair;
+  const active=editorTool!=='select'||crosshairActive||pinned;
   banner.hidden=!active;
   if(!active)return;
+  if(crosshairActive){
+    label.textContent=pinned?'Crosshair mode is active · point pinned; click another point to reposition · Esc to exit':'Crosshair mode is active · move to inspect coordinates, click to pin/copy · Esc to exit';
+    return;
+  }
+  if(pinned){
+    label.textContent='Crosshair point pinned · Esc to clear';
+    return;
+  }
   const messages={
-    pan:'Pan mode is active · drag the camera to move the view',
-    annotate:'Note / marker mode is active · click the image to place an annotation',
-    ruler:rulerStart?'Ruler mode is active · move to preview the distance, click again to finish':'Ruler mode is active · click two points to measure distance'
+    pan:'Pan mode is active · drag the camera to move the view · Esc to exit',
+    annotate:'Note / marker mode is active · click the image to place an annotation · Esc to exit',
+    ruler:rulerStart?'Ruler mode is active · move to preview the distance, click again to finish · Esc to exit':'Ruler mode is active · click two points to measure distance · Esc to exit'
   };
   label.textContent=messages[editorTool]||('Tool mode: '+editorTool);
+}
+function persistCrosshairWorkspaceNow(){
+  persistWorkspaceImmediately().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Could not persist Crosshair state: '+err.message);showToast('Crosshair state could not be saved: '+err.message);});
+}
+function exitActiveTools(){
+  const hadCrosshair=!!(extCrosshair||crosshairPinned||extCrosshairPoint);
+  if(editorTool!=='select')setEditorTool('select',true,false);
+  extCrosshair=false;crosshairPinned=false;extCrosshairPoint=null;
+  if($('ext_crosshair'))$('ext_crosshair').checked=false;
+  if(canvas)canvas.classList.remove('crosshair-active');
+  updateActiveToolBanner();drawPrecisionOverlay();
+  updateEditorStatus(hadCrosshair?'Crosshair cleared. Press X to enable it again.':'Select / Edit ROI mode active.');
+  persistCrosshairWorkspaceNow();
 }
 function setEditorTool(tool,syncCore=true,persist=true){
   editorTool=['select','pan','annotate','ruler'].includes(tool)?tool:'select';
@@ -241,7 +264,7 @@ async function refreshStreamJpegQualityFromServer(){try{const response=await nat
 function openEditorSettings(){const m=$('roi_settings_dialog');streamQualityDraftDirty=false;settingsBeforeOpen=currentEditorSettings();settingsReturnFocus=document.activeElement;syncSettingsFormControls(settingsBeforeOpen);const qualityInput=$('roi_setting_jpeg_quality');if(qualityInput){qualityInput.value=String(streamJpegQuality);qualityInput.disabled=!STREAM_CONTROL_ALLOWED;}const qualityValue=$('roi_setting_jpeg_quality_value');if(qualityValue)qualityValue.textContent=streamJpegQuality+' / 100';m.classList.add('is-open');m.setAttribute('aria-hidden','false');$('roi_setting_grid_mode').focus();refreshStreamJpegQualityFromServer();}
 function closeEditorSettings(restore){const m=$('roi_settings_dialog');if(restore&&settingsBeforeOpen)applyEditorSettings(settingsBeforeOpen);if(restore){const qualityInput=$('roi_setting_jpeg_quality');if(qualityInput)qualityInput.value=String(streamJpegQuality);const qualityValue=$('roi_setting_jpeg_quality_value');if(qualityValue)qualityValue.textContent=streamJpegQuality+' / 100';}m.classList.remove('is-open');m.setAttribute('aria-hidden','true');streamQualityDraftDirty=false;if(settingsReturnFocus&&settingsReturnFocus.focus)settingsReturnFocus.focus();settingsBeforeOpen=null;}
 function resetEditorSettingsDraft(){const a={gridMode:'off',gridSpacing:.05,gridColor:'#69bed2',streamFps:8.3,gridOpacity:.35,gridThickness:1,gridDotSize:2,keyboardNudgePx:5,snap:false,roiAppearance:{labelFontSize:12,labelFontWeight:'700',outlineThickness:2,handleSize:10,showShapeType:false}};syncSettingsFormControls(a);const qualityInput=$('roi_setting_jpeg_quality');if(qualityInput)qualityInput.value=String(STREAM_CONTROL_ALLOWED?85:streamJpegQuality);streamQualityDraftDirty=!!STREAM_CONTROL_ALLOWED;const qualityValue=$('roi_setting_jpeg_quality_value');if(qualityValue)qualityValue.textContent=(qualityInput?qualityInput.value:streamJpegQuality)+' / 100';applyEditorSettings(a);}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();closeEditorSettings(true);}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();e.stopImmediatePropagation();closeEditorSettings(true);}});
 
 async function copyCoordinateText(text){
   try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return true;}}catch(_){}
@@ -255,8 +278,7 @@ function onCustomPointerDown(event){
  if(extCrosshair&&event.button===0){
   event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const p=pointFromEvent(event);if(!p)return;
   extCrosshairPoint=p;crosshairPinned=true;const coordinateText=p.space==='image'?p.u.toFixed(3)+', '+p.v.toFixed(3):Math.round(p.canvasX)+', '+Math.round(p.canvasY);
-  extCrosshair=false;if($('ext_crosshair'))$('ext_crosshair').checked=false;if(canvas)canvas.classList.remove('crosshair-active');
-  drawPrecisionOverlay();scheduleWorkspaceSave();
+  updateActiveToolBanner();drawPrecisionOverlay();persistCrosshairWorkspaceNow();
   copyCoordinateText(coordinateText).then(()=>{const text=p.space==='image'?'Captured image U,V: '+coordinateText+'.':'Captured canvas X,Y px: '+coordinateText+'. Z is not real depth.';updateEditorStatus(text);showToast('Copied coordinates: '+coordinateText);}).catch(()=>{updateEditorStatus('Captured point: '+coordinateText+'. Clipboard unavailable.');showToast('Point: '+coordinateText);});
   return;
  }
@@ -321,13 +343,20 @@ function collectWorkspace(){
     roiAppearance:{labelFontSize:roiAppearance.labelFontSize,labelFontWeight:String(roiAppearance.labelFontWeight),outlineThickness:roiAppearance.outlineThickness,handleSize:roiAppearance.handleSize,showShapeType:!!roiAppearance.showShapeType},panels:panels,layers:layers,annotations:extAnnotations};
 }
 async function saveWorkspace(){
-  const response=await nativeFetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_workspace',workspace:collectWorkspace()})});
+  const body=JSON.stringify({action:'save_workspace',workspace:collectWorkspace()});
+  const request=workspaceSaveChain.catch(function(){}).then(function(){return nativeFetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:body});});
+  workspaceSaveChain=request.then(function(){},function(){});
+  const response=await request;
   const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));return data;
+}
+function persistWorkspaceImmediately(){
+  if(extSaveTimer){clearTimeout(extSaveTimer);extSaveTimer=null;}
+  return saveWorkspace();
 }
 window.applyStreamWorkspace=function(workspace){applyWorkspace(workspace);renderWorkspaceCanvas();drawPrecisionOverlay();scheduleWorkspaceSave();};
 function scheduleWorkspaceSave(){
   if(extSaveTimer)clearTimeout(extSaveTimer);
-  extSaveTimer=setTimeout(function(){saveWorkspace().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace persistence failed: '+err.message);});},450);
+  extSaveTimer=setTimeout(function(){extSaveTimer=null;saveWorkspace().catch(function(err){if(typeof recordApiEvent==='function')recordApiEvent('warn','Workspace persistence failed: '+err.message);});},450);
 }
 window.collectStreamWorkspace=collectWorkspace;
 function applyWorkspace(workspace){
@@ -338,8 +367,8 @@ function applyWorkspace(workspace){
   gridThickness=Math.max(.5,Math.min(3,Number(view.gridThickness)||1));gridDotSize=Math.max(1,Math.min(6,Number(view.gridDotSize)||2));keyboardNudgePx=Math.round(Math.max(1,Math.min(100,Number(view.keyboardNudgePx)||5)));if(view.streamFps!=null){streamFps=Math.max(1,Math.min(30,Math.round(Number(view.streamFps)*10)/10));if(typeof window.setStreamDisplayFps==='function')window.setStreamDisplayFps(streamFps);}
   const a=workspace.roiAppearance&&typeof workspace.roiAppearance==='object'?workspace.roiAppearance:{};
   roiAppearance={labelFontSize:Math.max(6,Math.min(32,Number(a.labelFontSize)||12)),labelFontWeight:['400','500','600','700'].includes(String(a.labelFontWeight))?String(a.labelFontWeight):'700',outlineThickness:Math.max(.5,Math.min(6,Number(a.outlineThickness)||2)),handleSize:Math.max(4,Math.min(24,Number(a.handleSize)||10)),showShapeType:a.showShapeType===true};
-  extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;const savedCrosshair=view.crosshairPoint;extCrosshairPoint=savedCrosshair&&['image','canvas'].includes(savedCrosshair.space)&&Number.isFinite(Number(savedCrosshair.u))&&Number.isFinite(Number(savedCrosshair.v))?{space:savedCrosshair.space,u:Number(savedCrosshair.u),v:Number(savedCrosshair.v)}:null;crosshairPinned=!!extCrosshairPoint;mmPerSourcePixel=Math.max(0,Math.min(10000,Number(view.mmPerSourcePixel)||0));if($('ext_measure_mm_per_px'))$('ext_measure_mm_per_px').value=String(mmPerSourcePixel);
-  if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;
+  extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;const savedCrosshair=view.crosshairPoint;extCrosshairPoint=extCrosshair&&savedCrosshair&&['image','canvas'].includes(savedCrosshair.space)&&Number.isFinite(Number(savedCrosshair.u))&&Number.isFinite(Number(savedCrosshair.v))?{space:savedCrosshair.space,u:Number(savedCrosshair.u),v:Number(savedCrosshair.v)}:null;crosshairPinned=!!(extCrosshair&&extCrosshairPoint);mmPerSourcePixel=Math.max(0,Math.min(10000,Number(view.mmPerSourcePixel)||0));if($('ext_measure_mm_per_px'))$('ext_measure_mm_per_px').value=String(mmPerSourcePixel);
+  if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
   if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();
   editorTool=['select','pan','annotate','ruler'].includes(view.tool)?view.tool:'select';
@@ -1659,7 +1688,7 @@ function installExtension(){
     let svg=$('ext_precision_overlay');if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='ext_precision_overlay';svg.setAttribute('aria-hidden','true');stage.appendChild(svg);}
     canvas.addEventListener('pointerdown',onCustomPointerDown,true);
     installCoordinatePairPaste();
-    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair)extCrosshairPoint=point;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?snapshotRulerPoint(point):null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
+    canvas.addEventListener('pointermove',function(e){const point=pointFromEvent(e);if(extCrosshair&&!crosshairPinned)extCrosshairPoint=point;rulerHoverPoint=(editorTool==='ruler'&&rulerStart&&point)?snapshotRulerPoint(point):null;if(extCrosshair||crosshairPinned||(editorTool==='ruler'&&rulerStart))drawPrecisionOverlay();});
   }
   if($('ext_export_annotations'))$('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-annotations.json','application/json');};
   $('ext_grid').addEventListener('change',function(){if(this.checked){if(gridMode==='off')gridMode=lastVisibleGridMode;extGrid=gridMode!=='off';}else{if(gridMode==='grid'||gridMode==='dots')lastVisibleGridMode=gridMode;gridMode='off';extGrid=false;}renderWorkspaceCanvas();scheduleWorkspaceSave();});
@@ -1669,7 +1698,7 @@ function installExtension(){
   const jpegQualityInput=$('roi_setting_jpeg_quality');
   if(jpegQualityInput)jpegQualityInput.addEventListener('input',function(){streamQualityDraftDirty=true;const label=$('roi_setting_jpeg_quality_value');if(label)label.textContent=this.value+' / 100';});
   $('ext_snap').addEventListener('change',function(){extSnap=this.checked;scheduleWorkspaceSave();});
-  $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;crosshairPinned=false;extCrosshairPoint=null;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);drawPrecisionOverlay();scheduleWorkspaceSave();if(extCrosshair)updateEditorStatus('Crosshair active: click anywhere on the canvas, including outside the image, to capture coordinates.');else updateEditorStatus('Crosshair disabled; the pinned crosshair point was cleared and will not return after restart.');});
+  $('ext_crosshair').addEventListener('change',function(){extCrosshair=this.checked;crosshairPinned=false;extCrosshairPoint=null;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);updateActiveToolBanner();drawPrecisionOverlay();updateEditorStatus(extCrosshair?'Crosshair active: move to inspect coordinates, click to pin/copy, or press Esc to exit.':'Crosshair disabled; the pinned point was cleared.');persistCrosshairWorkspaceNow();});
   $('ext_measure_scale_apply').addEventListener('click',function(){const value=Number($('ext_measure_mm_per_px').value);if(!Number.isFinite(value)||value<0||value>10000){showToast('Scale must be 0 to 10000 mm per image pixel.');return;}mmPerSourcePixel=value;drawPrecisionOverlay();scheduleWorkspaceSave();updateEditorStatus(value>0?'Metric ruler enabled on a calibrated plane; perspective/depth affects accuracy.':'Metric scale disabled; ruler shows pixels.');showToast(value>0?'Planar scale applied.':'Pixel measurements enabled.');});
   $('ext_overlays').addEventListener('change',function(){showRectsCheckbox.checked=this.checked;if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();renderWorkspaceCanvas();scheduleWorkspaceSave();});
   showRectsCheckbox.addEventListener('change',function(){if($('ext_overlays'))$('ext_overlays').checked=this.checked;if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();});
@@ -1726,8 +1755,8 @@ function installExtension(){
   $('ext_stream_exit_cancel').onclick=closeStreamExitDialog;
   $('ext_stream_exit_confirm').onclick=function(){requestStreamShutdown().catch(function(){});};
   $('ext_stream_exit_dialog').addEventListener('click',function(e){if(e.target===this)closeStreamExitDialog();});
-  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&$('ext_stream_exit_dialog').classList.contains('is-open')){e.preventDefault();closeStreamExitDialog();}});
-  $('active_tool_cancel').onclick=function(){setEditorTool('select');};
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&$('ext_stream_exit_dialog').classList.contains('is-open')){e.preventDefault();e.stopImmediatePropagation();closeStreamExitDialog();}});
+  $('active_tool_cancel').onclick=exitActiveTools;
   $('ext_encoder_reset').onclick=async function(){if(!confirm('Reset only the displayed odometry origin? Hardware counters will not be reset.'))return;const r=await nativeFetch('/api/encoder-map/reset-origin',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));showToast('Displayed odometry origin reset');};
   $('ext_frame_compare_close').onclick=function(){$('ext_frame_compare').style.display='none';};
   $('ext_frame_compare').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
@@ -1744,9 +1773,9 @@ function installExtension(){
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyK'){e.preventDefault();openCommandPalette();return;}
     if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.code==='KeyE'){e.preventDefault();exportFullConfig().catch(function(err){showToast('Export failed: '+err.message);});return;}
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyS'){e.preventDefault();saveWorkspace().then(function(){showToast('Workspace saved');}).catch(function(err){showToast('Save failed: '+err.message);});return;}
-    if($('ext_command_palette').style.display==='flex'&&e.code==='Escape'){closeCommandPalette();return;}
+    if($('ext_command_palette').style.display==='flex'&&e.code==='Escape'){e.preventDefault();closeCommandPalette();return;}
+    if(e.code==='Escape'&&!$('roi_settings_dialog').classList.contains('is-open')&&!$('ext_stream_exit_dialog').classList.contains('is-open')&&(editorTool!=='select'||extCrosshair||crosshairPinned||extCrosshairPoint)){e.preventDefault();e.stopPropagation();exitActiveTools();return;}
     if(e.target&&(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable))return;
-    if(e.code==='Escape'&&editorTool!=='select'&&!$('roi_settings_dialog').classList.contains('is-open')){e.preventDefault();setEditorTool('select');return;}
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyZ'){e.preventDefault();if(e.shiftKey)doRedo();else doUndo();return;}
     if((e.ctrlKey||e.metaKey)&&e.code==='KeyY'){e.preventDefault();doRedo();return;}
     if(!e.ctrlKey&&!e.metaKey&&!e.altKey){
