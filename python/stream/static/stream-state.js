@@ -38,10 +38,11 @@ function createCommandFavorites(options){
   function normalize(label,command){
     label=String(label==null?'':label).trim().slice(0,48);
     command=String(command==null?'':command).trim().slice(0,256);
-    if(!label||!command||/[\\x00-\\x1f\\x7f]/.test(label)||/[^\\x20-\\x7e]/.test(command))return null;
+    const labelSafe=label.split('').every(ch=>{const code=ch.charCodeAt(0);return code>=32&&code!==127;});
+    const commandSafe=command.split('').every(ch=>{const code=ch.charCodeAt(0);return code>=32&&code<=126;});
+    if(!label||!command||!labelSafe||!commandSafe)return null;
     return {label,command};
-  }
-  try{
+  }  try{
     const saved=storage&&key?JSON.parse(storage.getItem(key)||'[]'):[];
     if(Array.isArray(saved))saved.forEach(value=>{
       if(!value||typeof value!=='object')return;
