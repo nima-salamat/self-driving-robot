@@ -10,12 +10,13 @@ from arduino.arduino_connection import ArduinoConnection
 
 
 class FakeSerial:
-    def __init__(self, fail_safe_state=False, respond_to_ack=True):
+    def __init__(self, fail_safe_state=False, respond_to_ack=True, ack_id_offset=0):
         self.is_open = True
         self.writes = []
         self._read_buffer = bytearray()
         self.fail_safe_state = fail_safe_state
         self.respond_to_ack = respond_to_ack
+        self.ack_id_offset = int(ack_id_offset)
 
     @property
     def in_waiting(self):
@@ -27,8 +28,8 @@ class FakeSerial:
             raise OSError("simulated safe-state failure")
         self.writes.append(data)
         if self.respond_to_ack and data.startswith(b"@"):
-            command_id = data[1:].split(b" ", 1)[0]
-            self._read_buffer.extend(b"ACK " + command_id + b" RECEIVED\n")
+            command_id = int(data[1:].split(b" ", 1)[0]) + self.ack_id_offset
+            self._read_buffer.extend(f"ACK {command_id} RECEIVED\n".encode("ascii"))
         return len(data)
 
     def flush(self):
@@ -143,6 +144,58 @@ class ArduinoReconnectTests(unittest.TestCase):
             self.assertFalse(result["acknowledged"])
             self.assertIsNone(result["ack_status"])
             self.assertTrue(result["timed_out"])
+        finally:
+            connection.enabled = False
+            connection.close.__wrapped__(connection)
+
+    def test_custom_command_ack_with_unrelated_id_times_out(self):
+        connection = ArduinoConnection(enabled=False)
+        serial = FakeSerial(ack_id_offset=1000)
+        connection.enabled = True
+        connection._state = ArduinoConnection.CONNECTED
+        connection._connected_event.set()
+        connection.serial_connection = serial
+        try:
+            result = connection.send_custom_command_with_ack("motor 100", timeout=0.05)
+            self.assertTrue(result["transmitted"])
+            self.assertFalse(result["acknowledged"])
+            self.assertEqual(result["command_id"], 1)
+            self.assertIsNone(result["ack_status"])
+            self.assertTrue(result["timed_out"])
+            self.assertIn("ACK 1001 RECEIVED", [record["line"] for record in connection.telemetry_records()])
+        finally:
+            connection.enabled = False
+            connection.close.__wrapped__(connection)
+
+    def test_late_ack_from_timed_out_command_cannot_acknowledge_next_command(self):
+        connection = ArduinoConnection(enabled=False)
+        serial = FakeSerial(respond_to_ack=False)
+        connection.enabled = True
+        connection._state = ArduinoConnection.CONNECTED
+        connection._connected_event.set()
+        connection.serial_connection = serial
+        try:
+            first = connection.send_custom_command_with_ack("motor 100", timeout=0.05)
+            self.assertEqual(first["command_id"], 1)
+            self.assertTrue(first["timed_out"])
+            self.assertFalse(first["acknowledged"])
+
+            # Inject a late response only after command 1 has left the pending map.
+            serial._read_buffer.extend(b"ACK 1 RECEIVED\n")
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                if any(record["line"] == "ACK 1 RECEIVED" for record in connection.telemetry_records()):
+                    break
+                time.sleep(0.001)
+            self.assertIn("ACK 1 RECEIVED", [record["line"] for record in connection.telemetry_records()])
+
+            second = connection.send_custom_command_with_ack("servo 95", timeout=0.05)
+            self.assertEqual(second["command_id"], 2)
+            self.assertTrue(second["transmitted"])
+            self.assertFalse(second["acknowledged"])
+            self.assertIsNone(second["ack_status"])
+            self.assertTrue(second["timed_out"])
+            self.assertEqual(serial.writes, [b"@1 motor 100\n", b"@2 servo 95\n"])
         finally:
             connection.enabled = False
             connection.close.__wrapped__(connection)
