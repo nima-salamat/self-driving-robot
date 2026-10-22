@@ -465,6 +465,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("gridStyle:lastVisibleGridMode", extensions)
         self.assertIn("referenceBounds.ih", extensions)
         self.assertIn("fixedScale=Math.max(.01,Number(referenceBounds.scale)||1)", extensions)
+        self.assertIn("'stroke-width':Math.max(.4,gridThickness*fixedScale)", extensions)
         self.assertIn("if(pointerInsideImage&&extSnap)", extensions)
         self.assertIn("space:'image'", extensions)
         self.assertIn("svg.replaceChildren()", extensions)

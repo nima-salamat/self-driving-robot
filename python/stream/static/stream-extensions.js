@@ -120,7 +120,7 @@ function drawPrecisionOverlay(){
    for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x<0||x>canvas.width)continue;for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('circle',{cx:x,cy:y,r:radius,fill:stroke,'fill-opacity':alpha});}}
   }else{
    for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x>=0&&x<=canvas.width)addSVG('line',{x1:x,y1:0,x2:x,y2:canvas.height,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*fixedScale)});}
-   for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('line',{x1:0,y1:y,x2:canvas.width,y2:y,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*z)});}
+   for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('line',{x1:0,y1:y,x2:canvas.width,y2:y,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*fixedScale)});}
   }
   addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.5,gridThickness*fixedScale)});
  }
