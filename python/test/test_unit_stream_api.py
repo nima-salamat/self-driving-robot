@@ -459,7 +459,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("extCrosshair=false", extensions)
         self.assertIn("e.code==='KeyK'", extensions)
         self.assertIn("e.code==='KeyS'", extensions)
-        self.assertIn("getGridStepX()", extensions)
+        self.assertIn("referenceBounds.ih", extensions)
         self.assertIn("gridColor", extensions)
         self.assertIn("let lastVisibleGridMode='grid'", extensions)
         self.assertIn("gridStyle:lastVisibleGridMode", extensions)
@@ -555,12 +555,14 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("document.addEventListener('visibilitychange'", core)
         self.assertIn("window.addEventListener('online'", core)
 
-    def test_cursor_readout_clears_when_pointer_leaves_frame(self):
+    def test_cursor_readout_keeps_frame_relative_coordinates_outside_frame(self):
         core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
         self.assertIn("function clearCadReadout()", core)
         self.assertIn("canvas.addEventListener('mouseleave',clearCadReadout", core)
         self.assertIn("window.addEventListener('blur',clearCadReadout", core)
-        self.assertIn("!Number.isFinite(u)||!Number.isFinite(v)||u<0||u>1||v<0||v>1", core)
+        self.assertIn("const u=(p.x-b.ix)/b.iw,v=(p.y-b.iy)/b.ih,outside=u<0||u>1||v<0||v>1", core)
+        self.assertIn("readout.x.textContent='X: '+Math.round(u*source.width)+' px'", core)
+        self.assertIn("readout.u.textContent='U: '+(u*100).toFixed(1)+' %'", core)
         # BEV control points deliberately keep a wider range than ordinary ROIs.
         self.assertIn("Math.max(-5.0, Math.min(5.0", core)
 

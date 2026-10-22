@@ -801,7 +801,7 @@ class StreamConfigurationMixin:
             entry = {"kind": item["kind"]}
             if "space" in item:
                 entry["space"] = space
-            minimum, maximum = (-1000000.0, 1000000.0) if space == "image" else (0.0, 1.0)
+            minimum, maximum = (-1000000.0, 1000000.0) if "space" in item and space == "image" else (0.0, 1.0)
             for key in ("u", "v", "u2", "v2"):
                 if key in item:
                     if isinstance(item[key], bool):
