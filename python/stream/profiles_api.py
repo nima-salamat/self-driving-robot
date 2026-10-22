@@ -77,7 +77,7 @@ class StreamProfilesMixin:
                 before_config=self._full_config_snapshot();before_vision=self._vision_tuning_snapshot()
                 workspace_file=self._state_filename("workspace");before_workspace=self._read_json_file(workspace_file,self._workspace_default())
                 try:
-                    self._apply_full_config(config,"loaded profile "+name);self._apply_vision_settings(vision,persist=True)
+                    self._apply_full_config(config,"loaded profile "+name);vision_apply=self._apply_vision_settings(vision,persist=True)
                     workspace_state=dict(before_workspace);workspace_state["workspace"]=workspace
                     self._write_json_atomic(workspace_file,workspace_state)
                     data["active_profile"]=name;self._write_json_atomic(self._profiles_file(),data)
@@ -87,7 +87,7 @@ class StreamProfilesMixin:
                         self._apply_vision_settings(before_vision,persist=True);self._write_json_atomic(workspace_file,before_workspace)
                     except Exception:logger.exception("Profile rollback was incomplete")
                     raise
-                return jsonify(success=True,name=name,config=self._full_config_snapshot(),vision=self._vision_tuning_snapshot(),workspace=workspace,active_profile=name)
+                return jsonify(success=True,name=name,config=self._full_config_snapshot(),vision=self._vision_tuning_snapshot(),restart_required=vision_apply.get("restart_required",[]),workspace=workspace,active_profile=name)
             return jsonify(success=False,message="action must be save, load, delete, import, or export"),400
         except (TypeError,ValueError) as exc:return jsonify(success=False,message=str(exc)),400
         except Exception:
