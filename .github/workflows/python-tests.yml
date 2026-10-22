@@ -26,6 +26,12 @@ jobs:
         run: node --check python/stream/static/stream-state.js && node --check python/stream/static/stream-core.js && node --check python/stream/static/stream-extensions.js && node --check python/stream/static/stream-workbench.js
       - name: Test browser-side state helpers
         run: node --test python/test/test_stream_state.test.js
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.55.0
+      - name: Install Chromium for Stream UI smoke tests
+        run: npx playwright install --with-deps chromium
+      - name: Run Stream browser smoke test
+        run: node python/test/test_stream_browser.test.js
       - name: Compile Python
         run: python -m compileall -q python
       - name: Run hardware-free unit tests
