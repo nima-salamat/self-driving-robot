@@ -421,7 +421,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("if(event.key==='ArrowUp')", core)
         self.assertIn("else if(event.key==='ArrowDown')", core)
         self.assertIn("function recallArduinoCommand(direction)", core)
-        self.assertIn("input.addEventListener('input',function(){commandHistory.edit(input.value);});", core)
+        self.assertIn("input.addEventListener('input',function(){commandHistory.edit(input.value);syncCommandFavoriteAdd();});", core)
         self.assertIn("commandHistory.remember(result.command||command)", core)
         self.assertIn("renderArduinoCommandHistory()", core)
         self.assertIn("commandHistory.clear()", core)
