@@ -402,19 +402,22 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn(".panel-resize-handle { display:none !important; }", css)
 
     def test_arduino_manual_command_history_supports_up_down_and_persisted_successes(self):
-        core = (PYTHON_ROOT / "stream" / "static" / "stream-core.js").read_text(encoding="utf-8")
-        template = (PYTHON_ROOT / "stream" / "templates" / "stream.html").read_text(encoding="utf-8")
+        stream_dir = PYTHON_ROOT / "stream"
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
+        state = (stream_dir / "static" / "stream-state.js").read_text(encoding="utf-8")
+        template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
         self.assertIn("self-driving-robot:arduino-command-history:", core)
-        self.assertIn("const COMMAND_HISTORY_LIMIT=100", core)
+        self.assertIn("window.StreamState.createCommandHistory", core)
+        self.assertIn("limit:100", core)
         self.assertIn("input.addEventListener('keydown',function(event)", core)
         self.assertIn("if(event.key==='ArrowUp')", core)
         self.assertIn("else if(event.key==='ArrowDown')", core)
         self.assertIn("function recallArduinoCommand(direction)", core)
-        self.assertIn("if(commandHistoryIndex<commandHistory.length)commandHistoryIndex=commandHistory.length;", core)
-        self.assertIn("rememberArduinoCommand(result.command||command)", core)
-        self.assertIn("event.preventDefault();event.stopPropagation();", core)
-        self.assertIn("↑ / ↓ recalls previously sent commands.", template)
+        self.assertIn("input.addEventListener('input',function(){commandHistory.edit(input.value);});", core)
+        self.assertIn("commandHistory.remember(result.command||command)", core)
+        self.assertIn("createCommandHistory", state)
         self.assertIn("press Enter or Send to transmit.", template)
+        self.assertIn("↑ / ↓ recalls previously sent commands.", template)
 
     def test_stream_editor_precision_and_layout_hooks_are_present(self):
         stream_dir = PYTHON_ROOT / "stream"
@@ -475,7 +478,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("function persistWorkspaceImmediately()", extensions)
         self.assertIn("function exitActiveTools()", extensions)
         self.assertIn("Crosshair mode is active · move to inspect coordinates, click to pin/copy · Esc to exit", extensions)
-        self.assertIn("extCrosshair&&savedCrosshair&&['image','canvas'].includes(savedCrosshair.space)", extensions)
+        self.assertIn("window.StreamState.normalizeWorkspaceToolState(view)", extensions)
         self.assertIn("extCrosshairPoint=p;crosshairPinned=true", extensions)
         self.assertNotIn("extCrosshair=false;if($('ext_crosshair'))$('ext_crosshair').checked=false", extensions)
         self.assertIn("e.code==='Escape'&&!$('roi_settings_dialog').classList.contains('is-open')&&!$('ext_stream_exit_dialog').classList.contains('is-open')&&(editorTool!=='select'||extCrosshair||crosshairPinned||extCrosshairPoint)", extensions)
