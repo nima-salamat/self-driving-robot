@@ -470,7 +470,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("space:'image'", extensions)
         self.assertIn("svg.replaceChildren()", extensions)
         self.assertIn("readout.x.textContent='X: '+Math.round(u*source.width)+' px'", core)
-        self.assertIn("const outside=u<0||u>1||v<0||v>1", core)
+        self.assertIn("outside=u<0||u>1||v<0||v>1", core)
         self.assertIn('minimum, maximum = (-1000000.0, 1000000.0) if space == "image" else (0.0, 1.0)', (PYTHON_ROOT / "stream" / "configuration_api.py").read_text(encoding="utf-8"))
         self.assertIn("annotation coordinates are out of range for ", (PYTHON_ROOT / "stream" / "configuration_api.py").read_text(encoding="utf-8"))
         self.assertIn("keyboardNudgePx", extensions)
