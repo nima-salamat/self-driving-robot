@@ -692,6 +692,25 @@ class StreamConfigurationMixin:
                 if not isinstance(view[key], bool):
                     raise ValueError(f"view.{key} must be boolean")
                 clean_view[key] = view[key]
+        if "crosshairPoint" in view:
+            point = view["crosshairPoint"]
+            if point is None:
+                clean_view["crosshairPoint"] = None
+            elif not isinstance(point, dict) or point.get("space") not in {"image", "canvas"}:
+                raise ValueError("view.crosshairPoint must use image or canvas coordinates")
+            else:
+                clean_point = {"space": point["space"]}
+                for axis in ("u", "v"):
+                    if isinstance(point.get(axis), bool):
+                        raise ValueError(f"view.crosshairPoint.{axis} must be numeric")
+                    try:
+                        coordinate = float(point.get(axis))
+                    except (TypeError, ValueError):
+                        raise ValueError(f"view.crosshairPoint.{axis} must be numeric") from None
+                    if not math.isfinite(coordinate) or not 0.0 <= coordinate <= 1.0:
+                        raise ValueError(f"view.crosshairPoint.{axis} must be between 0 and 1")
+                    clean_point[axis] = coordinate
+                clean_view["crosshairPoint"] = clean_point
         if "gridMode" in view:
             if view["gridMode"] not in {"off", "grid", "dots"}:
                 raise ValueError("view.gridMode must be off, grid, or dots")
