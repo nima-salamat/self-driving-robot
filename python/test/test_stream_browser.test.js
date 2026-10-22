@@ -62,6 +62,46 @@ async function waitForServer(child){
       return status&&status.dataset.state==='saved';
     },null,{timeout:8000});
 
+    // Exercise actual zoom, grid and pan interaction handlers in the live dashboard.
+    const zoom=page.locator('#workspace_zoom_percent');
+    await zoom.fill('150%');
+    await zoom.press('Enter');
+    assert.equal(await zoom.inputValue(),'150%','Zoom percentage entry should apply');
+    assert.ok(Math.abs((await page.evaluate(()=>window.collectStreamWorkspace().view.zoom))-1.5)<0.001);
+
+    await page.locator('#ext_grid').check();
+    await page.waitForFunction(()=>window.collectStreamWorkspace().view.grid===true,null,{timeout:5000});
+    await page.waitForFunction(()=>document.querySelector('#ext_precision_overlay').childElementCount>0,null,{timeout:5000});
+
+    const beforePan=await page.evaluate(()=>window.collectStreamWorkspace().view);
+    await page.locator('[data-tool="pan"]').click();
+    const canvasBox=await page.locator('#video_canvas').boundingBox();
+    assert.ok(canvasBox&&canvasBox.width>100&&canvasBox.height>100,'Camera canvas should have a measurable viewport');
+    await page.mouse.move(canvasBox.x+canvasBox.width*0.30,canvasBox.y+canvasBox.height*0.35);
+    await page.mouse.down();
+    await page.mouse.move(canvasBox.x+canvasBox.width*0.38,canvasBox.y+canvasBox.height*0.42,{steps:5});
+    await page.mouse.up();
+    await page.waitForFunction(prior=>{
+      const view=window.collectStreamWorkspace().view;
+      return Math.abs(view.panX-prior.panX)>1||Math.abs(view.panY-prior.panY)>1;
+    },beforePan,{timeout:5000});
+
+    await page.locator('[data-tool="select"]').click();
+    await page.locator('#ext_ruler').check();
+    const rulerBox=await page.locator('#video_canvas').boundingBox();
+    await page.mouse.click(rulerBox.x+rulerBox.width*0.30,rulerBox.y+rulerBox.height*0.55);
+    await page.mouse.move(rulerBox.x+rulerBox.width*0.50,rulerBox.y+rulerBox.height*0.65,{steps:3});
+    await page.mouse.click(rulerBox.x+rulerBox.width*0.50,rulerBox.y+rulerBox.height*0.65);
+    await page.waitForFunction(()=>window.collectStreamWorkspace().annotations.some(item=>item.kind==='ruler'),null,{timeout:5000});
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(()=>!document.querySelector('#ext_ruler').checked,null,{timeout:5000});
+
+    await page.locator('#ext_save_workspace').click();
+    await page.waitForFunction(()=>{
+      const status=document.querySelector('#ext_workspace_save_status');
+      return status&&status.dataset.state==='saved';
+    },null,{timeout:8000});
+
     const persisted=await page.evaluate(async()=>{
       const response=await fetch('/api/workspace',{cache:'no-store'});
       return {ok:response.ok,data:await response.json()};
@@ -69,6 +109,11 @@ async function waitForServer(child){
     assert.equal(persisted.ok,true,'Workspace API should remain available');
     assert.equal(persisted.data.workspace.view.crosshair,false,'Esc should persist Crosshair disabled');
     assert.equal(persisted.data.workspace.view.crosshairPoint,null,'Esc should clear its pinned point');
+    assert.ok(Math.abs(Number(persisted.data.workspace.view.zoom)-1.5)<0.001,'Zoom should persist');
+    assert.equal(persisted.data.workspace.view.grid,true,'Grid visibility should persist');
+    assert.ok(Math.abs(Number(persisted.data.workspace.view.panX)-Number(beforePan.panX))>1||
+      Math.abs(Number(persisted.data.workspace.view.panY)-Number(beforePan.panY))>1,'Pan should persist');
+    assert.ok(persisted.data.workspace.annotations.some(item=>item.kind==='ruler'),'Ruler measurement should persist');
 
     const workspaceLoadedAfterReload=page.waitForResponse(response=>response.url().includes('/api/workspace')&&response.request().method()==='GET'&&response.ok(),{timeout:15000});
     await page.reload({waitUntil:'domcontentloaded',timeout:20000});
