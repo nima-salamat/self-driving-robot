@@ -18,8 +18,14 @@ jobs:
           python-version: "3.11"
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pyserial numpy opencv-python-headless flask flask-socketio onnxruntime
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: Check JavaScript syntax
-        run: node --check python/stream/static/stream-core.js && node --check python/stream/static/stream-extensions.js
+        run: node --check python/stream/static/stream-state.js && node --check python/stream/static/stream-core.js && node --check python/stream/static/stream-extensions.js && node --check python/stream/static/stream-workbench.js
+      - name: Test browser-side state helpers
+        run: node --test python/test/test_stream_state.test.js
       - name: Compile Python
         run: python -m compileall -q python
       - name: Run hardware-free unit tests

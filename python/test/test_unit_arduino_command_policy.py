@@ -130,7 +130,11 @@ class ArduinoCommandPolicyTests(unittest.TestCase):
         response = client.post("/api/arduino-command", json={"command": "servo 95"})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["success"])
-        self.assertEqual(connection.commands, ["servo 95\n"])
+        payload = response.get_json()
+        self.assertEqual(payload["delivery_status"], "transmitted_unconfirmed")
+        self.assertFalse(payload["device_acknowledged"])
+        self.assertFalse(payload["execution_confirmed"])
+        self.assertEqual(connection.commands, ["servo 95\\n"])
         self.assertFalse(config.SEND_AUTOMATIC_ARDUINO_COMMANDS)
 
     def test_custom_command_endpoint_rejects_multiline_and_read_only_mode(self):

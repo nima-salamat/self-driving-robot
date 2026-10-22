@@ -852,6 +852,9 @@ class StreamRuntimeMixin:
         return jsonify(
             success=True,
             command=command,
+            delivery_status="transmitted_unconfirmed",
+            device_acknowledged=False,
+            execution_confirmed=False,
             automatic_commands_enabled=bool(
                 getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
             ),

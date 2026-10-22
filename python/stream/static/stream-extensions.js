@@ -342,12 +342,28 @@ function collectWorkspace(){
   return {view:{zoom:workspaceZoom,panX:viewPanX,panY:viewPanY,viewLocked:typeof window.isWorkspaceViewLocked==='function'?window.isWorkspaceViewLocked():false,grid:extGrid,gridMode:gridMode,gridStyle:lastVisibleGridMode,gridSpacing:gridSpacing,gridColor:gridColor,gridOpacity:gridOpacity,gridThickness:gridThickness,gridDotSize:gridDotSize,keyboardNudgePx:keyboardNudgePx,streamFps:streamFps,snap:extSnap,crosshair:extCrosshair,crosshairPoint:extCrosshairPoint?{space:extCrosshairPoint.space,u:extCrosshairPoint.u,v:extCrosshairPoint.v}:null,mmPerSourcePixel:mmPerSourcePixel,showRuler:editorTool==='ruler',overlays:!!showRectsCheckbox.checked,tool:editorTool,rightPaneWidth:paneWidth},
     roiAppearance:{labelFontSize:roiAppearance.labelFontSize,labelFontWeight:String(roiAppearance.labelFontWeight),outlineThickness:roiAppearance.outlineThickness,handleSize:roiAppearance.handleSize,showShapeType:!!roiAppearance.showShapeType},panels:panels,layers:layers,annotations:extAnnotations};
 }
+function setWorkspaceSaveStatus(state,message){
+  const status=$('ext_workspace_save_status'),retry=$('ext_workspace_save_retry');
+  if(status){status.dataset.state=state;status.textContent=message;}
+  if(retry){retry.hidden=state!=='error';retry.disabled=state==='saving';}
+}
+let workspaceSaveRequestSequence=0;
 async function saveWorkspace(){
+  const sequence=++workspaceSaveRequestSequence;
+  setWorkspaceSaveStatus('saving','Saving workspace…');
   const body=JSON.stringify({action:'save_workspace',workspace:collectWorkspace()});
   const request=workspaceSaveChain.catch(function(){}).then(function(){return nativeFetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:body});});
   workspaceSaveChain=request.then(function(){},function(){});
-  const response=await request;
-  const data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.message||('HTTP '+response.status));return data;
+  try{
+    const response=await request;
+    const data=await response.json().catch(function(){return {};});
+    if(!response.ok)throw new Error(data.message||('HTTP '+response.status));
+    if(sequence===workspaceSaveRequestSequence)setWorkspaceSaveStatus('saved','Saved · '+new Date().toLocaleTimeString());
+    return data;
+  }catch(error){
+    if(sequence===workspaceSaveRequestSequence)setWorkspaceSaveStatus('error','Save failed: '+(error.message||error));
+    throw error;
+  }
 }
 function persistWorkspaceImmediately(){
   if(extSaveTimer){clearTimeout(extSaveTimer);extSaveTimer=null;}
@@ -367,11 +383,12 @@ function applyWorkspace(workspace){
   gridThickness=Math.max(.5,Math.min(3,Number(view.gridThickness)||1));gridDotSize=Math.max(1,Math.min(6,Number(view.gridDotSize)||2));keyboardNudgePx=Math.round(Math.max(1,Math.min(100,Number(view.keyboardNudgePx)||5)));if(view.streamFps!=null){streamFps=Math.max(1,Math.min(30,Math.round(Number(view.streamFps)*10)/10));if(typeof window.setStreamDisplayFps==='function')window.setStreamDisplayFps(streamFps);}
   const a=workspace.roiAppearance&&typeof workspace.roiAppearance==='object'?workspace.roiAppearance:{};
   roiAppearance={labelFontSize:Math.max(6,Math.min(32,Number(a.labelFontSize)||12)),labelFontWeight:['400','500','600','700'].includes(String(a.labelFontWeight))?String(a.labelFontWeight):'700',outlineThickness:Math.max(.5,Math.min(6,Number(a.outlineThickness)||2)),handleSize:Math.max(4,Math.min(24,Number(a.handleSize)||10)),showShapeType:a.showShapeType===true};
-  extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=!!view.crosshair;const savedCrosshair=view.crosshairPoint;extCrosshairPoint=extCrosshair&&savedCrosshair&&['image','canvas'].includes(savedCrosshair.space)&&Number.isFinite(Number(savedCrosshair.u))&&Number.isFinite(Number(savedCrosshair.v))?{space:savedCrosshair.space,u:Number(savedCrosshair.u),v:Number(savedCrosshair.v)}:null;crosshairPinned=!!(extCrosshair&&extCrosshairPoint);mmPerSourcePixel=Math.max(0,Math.min(10000,Number(view.mmPerSourcePixel)||0));if($('ext_measure_mm_per_px'))$('ext_measure_mm_per_px').value=String(mmPerSourcePixel);
+  const toolState=window.StreamState.normalizeWorkspaceToolState(view);
+  extGrid=gridMode!=='off';extSnap=!!view.snap;extCrosshair=toolState.crosshairEnabled;extCrosshairPoint=toolState.crosshairPoint;crosshairPinned=toolState.crosshairPinned;mmPerSourcePixel=Math.max(0,Math.min(10000,Number(view.mmPerSourcePixel)||0));if($('ext_measure_mm_per_px'))$('ext_measure_mm_per_px').value=String(mmPerSourcePixel);
   if($('ext_grid'))$('ext_grid').checked=extGrid;if($('ext_snap'))$('ext_snap').checked=extSnap;if($('ext_crosshair'))$('ext_crosshair').checked=extCrosshair;if(canvas)canvas.classList.toggle('crosshair-active',extCrosshair);
   if($('ext_overlays'))$('ext_overlays').checked=view.overlays!==false;if(typeof view.overlays==='boolean')showRectsCheckbox.checked=view.overlays;
   if(typeof window.syncStreamOverlayControlUI==='function')window.syncStreamOverlayControlUI();
-  editorTool=['select','pan','annotate','ruler'].includes(view.tool)?view.tool:'select';
+  editorTool=toolState.editorTool;
   const layers=workspace.layers||{};extAnnotationsVisible=!layers.ANNOTATIONS||layers.ANNOTATIONS.visible!==false;
   if(typeof window.setWorkspaceViewLocked==='function')window.setWorkspaceViewLocked(view.viewLocked===true,false,false);
   if(typeof view.rightPaneWidth==='number'&&view.rightPaneWidth>=250&&view.rightPaneWidth<=700)document.querySelector('.container').style.setProperty('--right-pane-width',view.rightPaneWidth+'px');
@@ -1706,6 +1723,7 @@ function installExtension(){
   $('ext_ruler').addEventListener('change',function(){setEditorTool(this.checked?'ruler':'select');});
   $('ext_clear_annotations').onclick=function(){if(!extAnnotations.length)return;if(confirm('Clear all notes and ruler measurements from the workspace?')){extAnnotations=[];refreshAnnotationList();syncLayerControls();drawPrecisionOverlay();scheduleWorkspaceSave();}};
   $('ext_save_workspace').onclick=function(){saveWorkspace().then(function(){showToast('Workspace layout saved');}).catch(function(err){showToast(err.message);});};
+  if($('ext_workspace_save_retry'))$('ext_workspace_save_retry').onclick=function(){saveWorkspace().catch(function(err){showToast('Workspace save failed: '+err.message);});};
   $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
   $('ext_profile_save').onclick=function(){profileAction('save').catch(function(e){showToast(e.message);});};$('ext_profile_load').onclick=function(){profileAction('load').catch(function(e){showToast(e.message);});};$('ext_profile_delete').onclick=function(){profileAction('delete').catch(function(e){showToast(e.message);});};
   $('ext_export_config').onclick=function(){exportFullConfig().catch(function(e){showToast(e.message);});};

@@ -1848,56 +1848,19 @@ function mapGroupToDefaultVar(g){
     // Local command history behaves like an interactive serial console: Up/Down recall only;
     // pressing Enter/Send is still the only action that transmits a command.
     const commandHistoryKey='self-driving-robot:arduino-command-history:'+String((window.STREAM_BOOTSTRAP&&window.STREAM_BOOTSTRAP.mode)||'default').toLowerCase();
-    const COMMAND_HISTORY_LIMIT=100;
-    let commandHistory=[];
-    let commandHistoryIndex=0;
-    let commandHistoryDraft='';
-    try{
-      const saved=JSON.parse(window.localStorage.getItem(commandHistoryKey)||'[]');
-      if(Array.isArray(saved))commandHistory=saved.filter(value=>typeof value==='string'&&value.trim()).map(value=>value.trim().slice(0,256)).slice(-COMMAND_HISTORY_LIMIT);
-    }catch(_){commandHistory=[];}
-    commandHistoryIndex=commandHistory.length;
-    function persistCommandHistory(){
-      try{window.localStorage.setItem(commandHistoryKey,JSON.stringify(commandHistory.slice(-COMMAND_HISTORY_LIMIT)));}catch(_){}
-    }
-    function rememberArduinoCommand(value){
-      const command=String(value||'').trim().slice(0,256);
-      if(!command)return;
-      if(commandHistory[commandHistory.length-1]!==command)commandHistory.push(command);
-      if(commandHistory.length>COMMAND_HISTORY_LIMIT)commandHistory=commandHistory.slice(-COMMAND_HISTORY_LIMIT);
-      commandHistoryIndex=commandHistory.length;
-      commandHistoryDraft='';
-      persistCommandHistory();
-    }
+    let commandHistoryStorage=null;try{commandHistoryStorage=window.localStorage;}catch(_){}
+    const commandHistory=window.StreamState.createCommandHistory({storage:commandHistoryStorage,key:commandHistoryKey,limit:100});
     function recallArduinoCommand(direction){
-      if(!commandHistory.length)return false;
-      if(direction<0){
-        if(commandHistoryIndex===commandHistory.length)commandHistoryDraft=input.value;
-        if(commandHistoryIndex<=0)return false;
-        commandHistoryIndex--;
-        input.value=commandHistory[commandHistoryIndex];
-      }else{
-        if(commandHistoryIndex>=commandHistory.length)return false;
-        commandHistoryIndex++;
-        input.value=commandHistoryIndex===commandHistory.length?commandHistoryDraft:commandHistory[commandHistoryIndex];
-      }
-      const end=input.value.length;
-      try{input.setSelectionRange(end,end);}catch(_){}
+      const result=commandHistory.move(direction,input.value);if(!result.handled)return false;
+      input.value=result.value;const end=input.value.length;try{input.setSelectionRange(end,end);}catch(_){}
       return true;
     }
     input.addEventListener('keydown',function(event){
       if(event.isComposing||event.altKey||event.ctrlKey||event.metaKey)return;
-      if(event.key==='ArrowUp'){
-        if(recallArduinoCommand(-1)){event.preventDefault();event.stopPropagation();}
-      }else if(event.key==='ArrowDown'){
-        if(recallArduinoCommand(1)){event.preventDefault();event.stopPropagation();}
-      }
+      if(event.key==='ArrowUp'){if(recallArduinoCommand(-1)){event.preventDefault();event.stopPropagation();}}
+      else if(event.key==='ArrowDown'){if(recallArduinoCommand(1)){event.preventDefault();event.stopPropagation();}}
     });
-    input.addEventListener('input',function(){
-      // Editing a recalled command detaches navigation and becomes the draft restored by ArrowDown.
-      if(commandHistoryIndex<commandHistory.length)commandHistoryIndex=commandHistory.length;
-      commandHistoryDraft=input.value;
-    });
+    input.addEventListener('input',function(){commandHistory.edit(input.value);});
     form.addEventListener('submit',async(event)=>{
       event.preventDefault();
       const command=input.value.trim();
@@ -1915,11 +1878,13 @@ function mapGroupToDefaultVar(g){
         });
         const result=await response.json().catch(()=>({}));
         if(!response.ok||!result.success)throw new Error(result.message||('HTTP '+response.status));
-        if(feedback)feedback.textContent='Sent: '+result.command;
-        rememberArduinoCommand(result.command||command);
-        commandHistoryIndex=commandHistory.length;commandHistoryDraft='';
+        if(result.delivery_status==='transmitted_unconfirmed'){
+          if(feedback)feedback.textContent='Transmitted: '+result.command+' — serial write succeeded; Arduino acknowledgement and execution are not confirmed.';
+        }else if(feedback)feedback.textContent='Sent: '+result.command;
+        commandHistory.remember(result.command||command);
+        commandHistory.resetAfterSend();
         input.value='';
-        noteWorkspaceEvent('info','Custom Arduino command sent: '+result.command,'arduino-commands');
+        noteWorkspaceEvent('info','Custom Arduino command transmitted (firmware acknowledgement unavailable): '+result.command,'arduino-commands');
       }catch(error){
         if(feedback)feedback.textContent='Command failed: '+(error.message||error);
         noteWorkspaceEvent('error','Custom Arduino command failed: '+(error.message||error),'arduino-commands');
