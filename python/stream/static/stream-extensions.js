@@ -110,19 +110,25 @@ function drawPrecisionOverlay(){
  const z=getOverlayScale(),cr=canvas.getBoundingClientRect(),sr=stage.getBoundingClientRect(),left=sr.left+stage.clientLeft,top=sr.top+stage.clientTop;
  svg.style.left=(cr.left-left)+'px';svg.style.top=(cr.top-top)+'px';svg.style.width=Math.max(1,cr.width)+'px';svg.style.height=Math.max(1,cr.height)+'px';
  svg.setAttribute('viewBox','0 0 '+canvas.width+' '+canvas.height);svg.replaceChildren();
- const b=extImageBounds(),referenceBounds=typeof getBaseImgBounds==='function'?getBaseImgBounds():b,visibleGrid=gridMode!=='off'&&extGrid;
+ const b=extImageBounds(),visibleGrid=gridMode!=='off'&&extGrid;
  if(visibleGrid){
-  // Grid pitch is based on the fit-to-canvas frame, not the zoomed image bounds.
-  const step=Math.max(gridMode==='dots'?10:8,Math.max(.025,Math.min(.25,Number(gridSpacing)||.05))*referenceBounds.ih),fixedScale=Math.max(.01,Number(referenceBounds.scale)||1),stroke=/^#[0-9a-f]{6}$/i.test(gridColor)?gridColor:'#69bed2',alpha=Math.max(.05,Math.min(1,Number(gridOpacity)||.35));
-  const fc=Math.floor((0-b.ix)/step),lc=Math.ceil((canvas.width-b.ix)/step),fr=Math.floor((0-b.iy)/step),lr=Math.ceil((canvas.height-b.iy)/step);
+  // Grid coordinates belong to the image plane. Zoom changes pitch; pan moves its origin.
+  const baseStep=Math.max(.001,Math.max(.025,Math.min(.25,Number(gridSpacing)||.05))*b.ih);
+  // At low zoom skip whole lattice intervals rather than shifting the grid or rendering thousands of dots.
+  const minScreenPitch=gridMode==='dots'?8:10,stride=Math.max(1,Math.ceil(minScreenPitch/baseStep)),step=baseStep*stride;
+  const stroke=/^#[0-9a-f]{6}$/i.test(gridColor)?gridColor:'#69bed2',alpha=Math.max(.05,Math.min(1,Number(gridOpacity)||.35));
+  const firstColumn=Math.floor((0-b.ix)/step),lastColumn=Math.ceil((canvas.width-b.ix)/step);
+  const firstRow=Math.floor((0-b.iy)/step),lastRow=Math.ceil((canvas.height-b.iy)/step);
   if(gridMode==='dots'){
-   const radius=Math.max(.6,Number(gridDotSize||2)*fixedScale);
-   for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x<0||x>canvas.width)continue;for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('circle',{cx:x,cy:y,r:radius,fill:stroke,'fill-opacity':alpha});}}
+   // Dot radius is screen-stable; dot coordinates and pitch follow image zoom.
+   const radius=Math.max(.6,Math.min(12,Number(gridDotSize)||2));
+   for(let i=firstColumn;i<=lastColumn;i++){const x=b.ix+i*step;if(x<0||x>canvas.width)continue;for(let j=firstRow;j<=lastRow;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('circle',{cx:x,cy:y,r:radius,fill:stroke,'fill-opacity':alpha});}}
   }else{
-   for(let i=fc;i<=lc;i++){const x=b.ix+i*step;if(x>=0&&x<=canvas.width)addSVG('line',{x1:x,y1:0,x2:x,y2:canvas.height,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*fixedScale)});}
-   for(let j=fr;j<=lr;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('line',{x1:0,y1:y,x2:canvas.width,y2:y,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,gridThickness*fixedScale)});}
+   // Keep grid strokes legible while line positions scale with the frame.
+   for(let i=firstColumn;i<=lastColumn;i++){const x=b.ix+i*step;if(x>=0&&x<=canvas.width)addSVG('line',{x1:x,y1:0,x2:x,y2:canvas.height,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,Number(gridThickness)||1)});}
+   for(let j=firstRow;j<=lastRow;j++){const y=b.iy+j*step;if(y>=0&&y<=canvas.height)addSVG('line',{x1:0,y1:y,x2:canvas.width,y2:y,stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.4,Number(gridThickness)||1)});}
   }
-  addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.5,gridThickness*fixedScale)});
+  addSVG('rect',{x:b.ix,y:b.iy,width:b.iw,height:b.ih,fill:'none',stroke:stroke,'stroke-opacity':alpha,'stroke-width':Math.max(.5,Number(gridThickness)||1)});
  }
  if(extCrosshairPoint&&(extCrosshair||crosshairPinned)){
   const cp=crosshairCanvasPoint(extCrosshairPoint,b);
