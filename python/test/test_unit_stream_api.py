@@ -1367,6 +1367,55 @@ class StreamApiTests(unittest.TestCase):
             self.assertEqual(queried.status_code, 200)
             self.assertIn("config", queried.get_json())
 
+    def test_workspace_schema_migrates_v1_and_protects_future_versions(self):
+        import json
+        import tempfile
+
+        config = self.make_config()
+        streamer = WebStreamer(config)
+        client = streamer.app.test_client()
+        with tempfile.TemporaryDirectory() as tmp_dir, patch("stream.BASE_DIR", tmp_dir):
+            filename = Path(tmp_dir) / "city_workspace.json"
+            filename.write_text(json.dumps({
+                "version": 1,
+                "workspace": {
+                    "view": {"tool": "roi_trapezoid", "zoom": 1.4},
+                    "annotations": [{"kind": "roi_trapezoid", "x": 0.1, "y": 0.2}],
+                },
+                "profiles": {},
+            }), encoding="utf-8")
+
+            response = client.get("/api/workspace")
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertEqual(payload["version"], 2)
+            self.assertEqual(payload["workspace_schema_version"], 2)
+            self.assertIsNone(payload["migration_warning"])
+            self.assertEqual(payload["workspace"]["schemaVersion"], 2)
+            self.assertEqual(payload["workspace"]["view"]["tool"], "select")
+            self.assertEqual(payload["workspace"]["view"]["zoom"], 1.4)
+            self.assertEqual(payload["workspace"]["annotations"], [])
+
+            future_data = {
+                "version": 99,
+                "workspace": {"schemaVersion": 99, "view": {"zoom": 2.0}},
+                "profiles": {},
+            }
+            original = json.dumps(future_data)
+            filename.write_text(original, encoding="utf-8")
+            future_get = client.get("/api/workspace")
+            self.assertEqual(future_get.status_code, 200)
+            self.assertIn("unsupported", future_get.get_json()["migration_warning"])
+            self.assertEqual(future_get.get_json()["workspace"], {})
+            rejected = client.post("/api/workspace", json={
+                "action": "save_workspace", "workspace": {"view": {"zoom": 1.5}},
+            })
+            self.assertEqual(rejected.status_code, 409)
+            self.assertEqual(filename.read_text(encoding="utf-8"), original)
+
+            with self.assertRaises(ValueError):
+                streamer._sanitize_workspace({"schemaVersion": 99, "view": {}})
+
     def test_workspace_migrates_legacy_visual_custom_roi_annotations(self):
         import tempfile
 
@@ -1388,6 +1437,7 @@ class StreamApiTests(unittest.TestCase):
             )
             self.assertEqual(migrated.status_code, 200, migrated.get_data(as_text=True))
             workspace = migrated.get_json()["workspace"]
+            self.assertEqual(workspace["schemaVersion"], 2)
             self.assertEqual(workspace["view"]["tool"], "select")
             self.assertEqual(workspace["view"]["rightPaneWidth"], 380.0)
             self.assertEqual(workspace["annotations"], [

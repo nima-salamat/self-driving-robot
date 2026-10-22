@@ -471,7 +471,9 @@ async function doRedo(){
 }
 async function refreshWorkspaceProfiles(){
   const data=await nativeFetch('/api/workspace',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
-  workspaceProfileNames=data.profiles||[];const select=$('ext_profile_select');select.replaceChildren();
+  workspaceProfileNames=data.profiles||[];
+  if(data.migration_warning){updateEditorStatus(data.migration_warning);if(typeof recordApiEvent==='function')recordApiEvent('warn',data.migration_warning);}
+  const select=$('ext_profile_select');select.replaceChildren();
   if(!workspaceProfileNames.length){const o=document.createElement('option');o.value='';o.textContent='No saved profiles';select.appendChild(o);}
   workspaceProfileNames.forEach(function(name){const o=document.createElement('option');o.value=name;o.textContent=name;select.appendChild(o);});
   if(data.workspace&&Object.keys(data.workspace).length)applyWorkspace(data.workspace);

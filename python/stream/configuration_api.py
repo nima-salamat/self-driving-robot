@@ -666,14 +666,19 @@ class StreamConfigurationMixin:
         return jsonify(success=True, presets=[{"name": key, "mode": value.get("mode"), "saved_at": value.get("saved_at")} for key, value in sorted(presets.items())])
 
     def _workspace_default(self):
-        return {"version": 1, "workspace": {}, "profiles": {}}
+        return {"version": 2, "workspace": {}, "profiles": {}}
 
     def _sanitize_workspace(self, workspace):
         if not isinstance(workspace, dict):
             raise ValueError("workspace must be a JSON object")
         if len(json.dumps(workspace, ensure_ascii=False)) > 250000:
             raise ValueError("workspace data exceeds 250 KB")
-        clean = {}
+        schema_version = workspace.get("schemaVersion", 1)
+        if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version not in {1, 2}:
+            raise ValueError(f"unsupported workspace schemaVersion: {schema_version!r}")
+        # v1 workspaces are migrated through the same normalizer below. Older
+        # visual-only ROI tools/shapes are already converted/removed there.
+        clean = {"schemaVersion": 2}
         view = workspace.get("view", {})
         if not isinstance(view, dict):
             raise ValueError("view must be an object")
@@ -828,10 +833,51 @@ class StreamConfigurationMixin:
     def workspace_api(self):
         filename = self._state_filename("workspace")
         data = self._read_json_file(filename, self._workspace_default())
+        if not isinstance(data, dict):
+            data = self._workspace_default()
         if not isinstance(data.get("profiles"), dict):
             data["profiles"] = {}
+        stored_version = data.get("version", 1)
+        version_supported = (
+            isinstance(stored_version, int)
+            and not isinstance(stored_version, bool)
+            and stored_version in {1, 2}
+        )
         if request.method == "GET":
-            return jsonify(version=1, workspace=data.get("workspace", {}), profiles=sorted(data["profiles"].keys()))
+            migration_warning = None
+            workspace = data.get("workspace", {})
+            if not version_supported:
+                migration_warning = (
+                    f"Saved workspace file version {stored_version!r} is unsupported; "
+                    "the data was left untouched and was not applied."
+                )
+                workspace = {}
+            elif workspace:
+                try:
+                    workspace = self._sanitize_workspace(workspace)
+                except (TypeError, ValueError) as exc:
+                    migration_warning = (
+                        f"Saved workspace could not be migrated ({exc}); "
+                        "the original data was left untouched and was not applied."
+                    )
+                    workspace = {}
+            else:
+                workspace = {}
+            return jsonify(
+                version=2,
+                workspace_schema_version=2,
+                workspace=workspace,
+                profiles=sorted(data["profiles"].keys()),
+                migration_warning=migration_warning,
+            )
+        if not version_supported:
+            return jsonify(
+                success=False,
+                message=(
+                    f"Unsupported workspace file version {stored_version!r}; "
+                    "refusing to overwrite saved data."
+                ),
+            ), 409
         body = request.get_json(silent=True) or {}
         action = str(body.get("action", "save_workspace"))
         try:
@@ -851,11 +897,19 @@ class StreamConfigurationMixin:
                 name = str(body.get("name", "")).strip()
                 if name not in data["profiles"]:
                     return jsonify(success=False, message="profile not found"), 404
-                return jsonify(success=True, workspace=data["profiles"][name], name=name)
+                migrated = self._sanitize_workspace(data["profiles"][name])
+                return jsonify(success=True, workspace=migrated, name=name, workspace_schema_version=2)
             else:
                 return jsonify(success=False, message="unsupported workspace action"), 400
+            data["version"] = 2
             self._write_json_atomic(filename, data)
-            return jsonify(success=True, workspace=data.get("workspace", {}), profiles=sorted(data["profiles"].keys()))
+            return jsonify(
+                success=True,
+                version=2,
+                workspace_schema_version=2,
+                workspace=data.get("workspace", {}),
+                profiles=sorted(data["profiles"].keys()),
+            )
         except (TypeError, ValueError) as exc:
             return jsonify(success=False, message=str(exc)), 400
         except Exception:
