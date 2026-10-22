@@ -290,3 +290,17 @@ See the Python README for the complete command-line workflow.
 The configurable firmware has its own protocol contract and should be paired with its matching Python profile.
 
 Do not assume that a profile for \`main_configurable_v1.ino\` can be used with another firmware generation.
+
+
+## Optional Stream command acknowledgements
+
+The ACK envelope is currently implemented only in `main_nonBlocking.ino` and `race_final_code.ino`:
+
+~~~text
+@<command-id> <normal command>
+ACK <command-id> RECEIVED
+~~~
+
+The Stream terminal sends this envelope only when **Wait for firmware ACK** is enabled. Keep that option off for other firmware generations, including `main_nonBlocking_v2.ino` and `main_configurable_v1.ino`, until their firmware implements the same protocol. The default unchecked mode preserves the legacy command format.
+
+`RECEIVED` confirms that the matching firmware command loop consumed the input line. It is not confirmation that a servo reached its angle, a motor reached a speed, or an encoder maneuver completed. A timeout means the outcome is unknown; do not blindly retry a motion command. Hardware flashing and on-robot behavior must be verified on the actual Arduino.

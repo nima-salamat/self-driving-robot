@@ -28,7 +28,7 @@ class FakeSerial:
         self.writes.append(data)
         if self.respond_to_ack and data.startswith(b"@"):
             command_id = data[1:].split(b" ", 1)[0]
-            self._read_buffer.extend(b"ACK " + command_id + b" RECEIVED\\n")
+            self._read_buffer.extend(b"ACK " + command_id + b" RECEIVED\n")
         return len(data)
 
     def flush(self):
@@ -125,7 +125,7 @@ class ArduinoReconnectTests(unittest.TestCase):
             self.assertEqual(result["ack_status"], "RECEIVED")
             self.assertEqual(result["command_id"], 1)
             self.assertFalse(result["timed_out"])
-            self.assertEqual(serial.writes, [b"@1 servo 95\\n"])
+            self.assertEqual(serial.writes, [b"@1 servo 95\n"])
         finally:
             connection.enabled = False
             connection.close.__wrapped__(connection)
