@@ -8,7 +8,7 @@ function createCommandHistory(options){
     if(Array.isArray(saved))items=saved.filter(value=>typeof value==='string'&&value.trim()).map(value=>value.trim().slice(0,256)).slice(-limit);
   }catch(_){items=[];}
   index=items.length;
-  function persist(){try{if(storage&&key)storage.setItem(key,JSON.stringify(items.slice(-limit));}catch(_){}}
+  function persist(){try{if(storage&&key)storage.setItem(key,JSON.stringify(items.slice(-limit)));}catch(_){}}
   function remember(value){
     const command=String(value==null?'':value).trim().slice(0,256);if(!command)return '';
     if(items[items.length-1]!==command)items.push(command);
