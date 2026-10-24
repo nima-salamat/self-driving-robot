@@ -1363,7 +1363,7 @@ function executeCommand(name){
     'exit-stream':function(){if(window.openStreamExitDialog)window.openStreamExitDialog();else showToast('Stream exit dialog is unavailable.');},
     freeze:function(){const b=$('freeze_btn');if(b)b.click();},unfreeze:function(){const b=$('unfreeze_btn');if(b)b.click();},
     shortcuts:function(){if(window.openStreamShortcuts)window.openStreamShortcuts();},
-    export:exportFullConfig,import:function(){$('ext_config_file').click();},undo:doUndo,redo:doRedo,
+    export:exportFullConfig,import:function(){const input=$('ext_config_file');if(input)input.click();else showToast('Full configuration import is unavailable.');},undo:doUndo,redo:doRedo,
     fit:function(){fitWorkspaceView();},overlays:function(){$('ext_overlays').click();},grid:function(){$('ext_grid').click();},crosshair:function(){$('ext_crosshair').click();},
     'view-lock':function(){if(typeof window.setWorkspaceViewLocked==='function')window.setWorkspaceViewLocked(!window.isWorkspaceViewLocked());},
     select:function(){setEditorTool('select');},pan:function(){setEditorTool(editorTool==='pan'?'select':'pan');},
@@ -1738,9 +1738,8 @@ function installExtension(){
   if($('ext_workspace_save_retry'))$('ext_workspace_save_retry').onclick=function(){saveWorkspace().catch(function(err){showToast('Workspace save failed: '+err.message);});};
   $('ext_capture_frame').onclick=addFrameSnapshot;$('ext_clear_gallery').onclick=function(){extFrameGallery=[];renderFrameGallery();};
   $('ext_profile_save').onclick=function(){profileAction('save').catch(function(e){showToast(e.message);});};$('ext_profile_load').onclick=function(){profileAction('load').catch(function(e){showToast(e.message);});};$('ext_profile_delete').onclick=function(){profileAction('delete').catch(function(e){showToast(e.message);});};
-  $('ext_export_config').onclick=function(){exportFullConfig().catch(function(e){showToast(e.message);});};
-  $('ext_import_config').onclick=function(){$('ext_config_file').click();};$('ext_config_file').addEventListener('change',function(){if(this.files&&this.files[0])importFullConfigFile(this.files[0]);this.value='';});
-  $('ext_undo').onclick=doUndo;$('ext_redo').onclick=doRedo;
+  const configFileInput=$('ext_config_file');
+  if(configFileInput)configFileInput.addEventListener('change',function(){if(this.files&&this.files[0])importFullConfigFile(this.files[0]);this.value='';});
   $('ext_preset_save').onclick=function(){presetAction('save').then(refreshHistory).catch(function(e){showToast(e.message);});};
   $('ext_preset_apply').onclick=function(){presetAction('apply').catch(function(e){showToast(e.message);});};
   $('ext_preset_delete').onclick=function(){presetAction('delete').catch(function(e){showToast(e.message);});};
