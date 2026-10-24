@@ -312,6 +312,7 @@ class StreamApiTests(unittest.TestCase):
         extensions = (stream_dir / "static" / "stream-extensions.js").read_text(encoding="utf-8")
         template = (stream_dir / "templates" / "stream.html").read_text(encoding="utf-8")
         css = (stream_dir / "static" / "stream.css").read_text(encoding="utf-8")
+        core = (stream_dir / "static" / "stream-core.js").read_text(encoding="utf-8")
 
         for menu_id, mnemonic in (("file", "F"), ("edit", "E"), ("view", "V"), ("tools", "T"), ("help", "H")):
             self.assertIn('data-menu-id="' + menu_id + '"', template)
@@ -332,6 +333,25 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("Focus panel navigation; use ↑/↓, Space or Enter", template)
         self.assertIn("Increase / decrease console height by one step", template)
         self.assertIn("Refresh configuration values &amp; advanced settings", template)
+
+        # Catch stale element IDs that would throw during extension startup and
+        # prevent all later command-palette and keyboard listeners from binding.
+        import re
+        template_ids = set(re.findall(r'\bid=["\']([^"\']+)["\']', template))
+        handler_ids = set(re.findall(
+            r"""\$\(['"]([A-Za-z][A-Za-z0-9_-]*)['"]\)\s*\.(?:onclick|onchange|oninput|addEventListener)\b""",
+            extensions,
+        ))
+        self.assertFalse(
+            handler_ids - template_ids,
+            "Stream extension binds event handlers to missing template IDs: "
+            + ", ".join(sorted(handler_ids - template_ids)),
+        )
+        self.assertIn('id="ext_config_file"', template)
+        self.assertIn('data-action="import-config"', template)
+        self.assertIn("case 'import-config':", core)
+        self.assertNotIn("$('ext_export_config').onclick", extensions)
+        self.assertNotIn("$('ext_undo').onclick=doUndo", extensions)
 
     def _valid_camera_calibration_bytes(self):
         payload = io.BytesIO()
