@@ -11,7 +11,8 @@ SIMULATOR_KEYS = {
     "SIMULATOR_VEHICLE_FILTER", "CITY_LANE_DETECTOR", "SIMULATOR_LIDAR_ENABLED",
     "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_CHANNELS",
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
-    "SIMULATOR_CAMERA_FOV", "SIMULATOR_TARGET_SPEED",
+    "SIMULATOR_CAMERA_FOV", "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
+    "SIMULATOR_CAMERA_PITCH", "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "SIMULATOR_TARGET_SPEED",
     "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STOP_ON_LOST_LANE",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "SIMULATOR_STEERING_INVERTED", "SIMULATOR_AVIS_SENSOR_ANGLE",
@@ -36,7 +37,11 @@ NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_
 ROI_KEYS = {"RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
             "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
             "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"}
-NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | {"SIMULATOR_THROTTLE_LIMIT", "ENCODER_WHEELBASE_CM"}
+NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | {
+    "SIMULATOR_THROTTLE_LIMIT", "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
+    "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
+    "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL",
+}
 
 
 def settings_path(config, mode):
@@ -57,6 +62,12 @@ def _defaults(mode, backend):
         "SIMULATOR_LIDAR_POINTS_PER_SECOND": 56000,
         "SIMULATOR_LIDAR_ROTATION_FREQUENCY": 10.0,
         "SIMULATOR_CAMERA_FOV": 90.0,
+        "SIMULATOR_CAMERA_X": 1.45,
+        "SIMULATOR_CAMERA_Y": 0.0,
+        "SIMULATOR_CAMERA_Z": 1.8,
+        "SIMULATOR_CAMERA_PITCH": -8.0,
+        "SIMULATOR_CAMERA_YAW": 0.0,
+        "SIMULATOR_CAMERA_ROLL": 0.0,
         # CARLA target speed is km/h; AVIS target speed is API percentage.
         "SIMULATOR_TARGET_SPEED": 25.0 if avis else 20.0,
         "SIMULATOR_THROTTLE_LIMIT": 0.35,
@@ -125,6 +136,15 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_THROTTLE_LIMIT must be between 0 and 1")
             if key in ROI_KEYS and not 0 <= value <= 1:
                 raise ValueError(f"{key} must be between 0 and 1")
+            camera_axis = key.removeprefix("SIMULATOR_CAMERA_")
+            if camera_axis in {"X", "Y"} and not -20 <= value <= 20:
+                raise ValueError(f"{key} must be between -20 and 20 meters")
+            if camera_axis == "Z" and not -5 <= value <= 15:
+                raise ValueError("SIMULATOR_CAMERA_Z must be between -5 and 15 meters")
+            if camera_axis == "PITCH" and not -90 <= value <= 90:
+                raise ValueError("SIMULATOR_CAMERA_PITCH must be between -90 and 90 degrees")
+            if camera_axis in {"YAW", "ROLL"} and not -180 <= value <= 180:
+                raise ValueError(f"{key} must be between -180 and 180 degrees")
             if key == "ENCODER_WHEELBASE_CM" and value <= 0:
                 raise ValueError("ENCODER_WHEELBASE_CM must be positive")
         clean[key] = value
