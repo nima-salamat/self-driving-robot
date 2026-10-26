@@ -251,6 +251,8 @@ def register_simulator_routes(app, streamer):
                 if not state.get("active"):
                     return jsonify(success=False, message="Open the camera placement studio first"), 409
                 adapter.preview_camera_mount(patch)
+                if body.get("follow_mount", False) is True:
+                    adapter.snap_camera_editor_to_mount()
             elif action == "save_mount":
                 transform = body.get("transform")
                 if not isinstance(transform, dict) or set(transform) != CAMERA_MOUNT_KEYS:
