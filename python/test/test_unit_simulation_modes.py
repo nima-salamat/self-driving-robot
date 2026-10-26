@@ -159,6 +159,11 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("lidar-expand", page_text)
                     else:
                         self.assertNotIn('id="camera-editor-modal"', page_text)
+                        self.assertIn("AVIS Engine · Top-down range sensors", page_text)
+                        self.assertIn('id="avis-sensor-view"', page_text)
+                        self.assertIn('id="avis-sensor-expand"', page_text)
+                        self.assertIn("No valid reading", page_text)
+                        self.assertNotIn('id="lidar-view"', page_text)
 
                     state = client.get("/api/simulation/settings")
                     self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
