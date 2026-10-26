@@ -14,6 +14,7 @@ from utils.parser import parse_args
 from utils.preflight import run_preflight
 from utils.runtime_metrics import RuntimeMetrics
 from utils.processing_rate import DEFAULT_TARGET_FPS
+from modes.registry import get_mode_spec, is_simulation_mode
 import base_config
 
 
@@ -80,6 +81,23 @@ def _apply_cli_overrides(config, args):
         # suppress noisy HTTP polling logs even if stale JSON sets it true.
         "STREAM_REQUEST_LOGS": getattr(args, "stream_request_logs", False),
         "TARGET_PROCESSING_FPS": getattr(args, "target_fps", DEFAULT_TARGET_FPS),
+        "SIMULATOR_HOST": getattr(args, "simulator_host", None),
+        "SIMULATOR_PORT": getattr(args, "simulator_port", None),
+        "SIMULATOR_TIMEOUT_S": getattr(args, "simulator_timeout", None),
+        "SIMULATOR_VEHICLE_FILTER": getattr(args, "simulator_vehicle_filter", None),
+        "SIMULATOR_LIDAR_ENABLED": getattr(args, "simulator_lidar", None),
+        "SIMULATOR_LIDAR_RANGE_M": getattr(args, "simulator_lidar_range_m", None),
+        "SIMULATOR_LIDAR_CHANNELS": getattr(args, "simulator_lidar_channels", None),
+        "SIMULATOR_LIDAR_POINTS_PER_SECOND": getattr(args, "simulator_lidar_points_per_second", None),
+        "SIMULATOR_CAMERA_FOV": getattr(args, "simulator_camera_fov", None),
+        "SIMULATOR_TARGET_SPEED": getattr(args, "simulator_target_speed", None),
+        "SIMULATOR_THROTTLE_LIMIT": getattr(args, "simulator_throttle_limit", None),
+        "SIMULATOR_STOP_ON_LOST_LANE": getattr(args, "simulator_stop_on_lost_lane", None),
+        "SIMULATOR_STOP_ON_CROSSWALK": getattr(args, "simulator_stop_on_crosswalk", None),
+        "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": getattr(args, "simulator_obstacle_stop_distance_cm", None),
+        "SIMULATOR_LIDAR_ROTATION_FREQUENCY": getattr(args, "simulator_lidar_rotation_frequency", None),
+        "SIMULATOR_STEERING_INVERTED": getattr(args, "simulator_steering_inverted", None),
+        "SIMULATOR_AVIS_SENSOR_ANGLE": getattr(args, "simulator_avis_sensor_angle", None),
     }
 
     for name, value in overrides.items():
@@ -197,8 +215,8 @@ def _validate_opt_in_features(config, args):
     if args.encoder_map:
         if not args.stream:
             raise SystemExit("--encoder-map requires --stream")
-        if args.without_arduino or getattr(config, "WITHOUT_ARDUINO", False):
-            raise SystemExit("--encoder-map requires an active Arduino serial connection")
+        if not is_simulation_mode(args.mode) and (args.without_arduino or getattr(config, "WITHOUT_ARDUINO", False)):
+            raise SystemExit("--encoder-map requires an active Arduino serial connection outside simulator modes")
         positive(encoder_pulse_distance, "--encoder-pulse-distance-cm or active mode ENCODER_PULSE_DISTANCE_CM")
         wheelbase = encoder_wheelbase
         road_min = encoder_road_min
@@ -267,21 +285,40 @@ def _validate_selected_config(config):
 
 if __name__ == "__main__":
     args = parse_args()
+    spec = get_mode_spec(args.mode)
 
-    if args.mode == "city":
+    if spec.config_profile == "city":
         from modes.city import config_city as config
-        from modes.city import start
-
         set_city_mode()
     else:
         from modes.race import config_race as config
-        from modes.race import start
-
         set_race_mode()
 
+    if spec.runtime_kind == "simulation":
+        from modes.simulation import start
+    elif args.mode == "city":
+        from modes.city import start
+    else:
+        from modes.race import start
+
+    base_config.MODE = args.mode
+    base_config.CONFIG_MODULE = config
     json_config.load()
+    config.MODE = args.mode
+    if spec.runtime_kind == "simulation":
+        from modes.simulation.settings import load_simulator_settings
+        load_simulator_settings(config, args.mode, spec.simulator_backend)
+        config.SIMULATION_VISION_PROFILE = spec.vision_profile
+        config.WITHOUT_ARDUINO = True
+        config.READ_ARDUINO_OUTPUT = False
     _apply_platform_defaults(config)
+
     _apply_cli_overrides(config, args)
+    if spec.runtime_kind == "simulation":
+        # This is an adapter-backed runtime, so the physical serial channel is
+        # always unavailable regardless of the hardware-oriented CLI default.
+        config.WITHOUT_ARDUINO = True
+        config.READ_ARDUINO_OUTPUT = False
     _validate_opt_in_features(config, args)
     _validate_selected_config(config)
 
@@ -292,11 +329,65 @@ if __name__ == "__main__":
     if args.traffic_light_wait_before_check and not args.traffic_lights:
         raise SystemExit("--traffic-light-wait-before-check requires --traffic-lights")
 
-    if args.ml_lane_model is not None and args.mode != "race":
-        raise SystemExit("--ml-lane-model is currently supported only in race mode")
+    if args.ml_lane_model is not None and args.mode not in {"race", "avis-race"}:
+        raise SystemExit("--ml-lane-model is supported only with Race vision (race or avis-race mode)")
 
-    if args.city_lane_detector is not None and args.mode != "city":
-        raise SystemExit("--city-lane-detector is currently supported only in city mode")
+    if args.city_lane_detector is not None and args.mode not in {"city", "carla", "avis"}:
+        raise SystemExit("--city-lane-detector is supported only with City vision (city, carla or avis mode)")
+
+    if spec.runtime_kind == "simulation" and args.arduino_config:
+        raise SystemExit("--arduino-config is unavailable in simulator modes; virtual actuator I/O is used")
+    if spec.runtime_kind != "simulation" and any(
+        getattr(args, name, None) is not None
+        for name in (
+            "simulator_host", "simulator_port", "simulator_timeout",
+            "simulator_vehicle_filter", "simulator_lidar", "simulator_lidar_range_m",
+            "simulator_lidar_channels", "simulator_lidar_points_per_second",
+            "simulator_lidar_rotation_frequency", "simulator_camera_fov", "simulator_target_speed",
+            "simulator_throttle_limit", "simulator_stop_on_lost_lane", "simulator_stop_on_crosswalk",
+            "simulator_obstacle_stop_distance_cm",
+            "simulator_steering_inverted", "simulator_avis_sensor_angle",
+        )
+    ):
+        raise SystemExit("--simulator-* options require a simulator mode")
+
+    if spec.runtime_kind == "simulation":
+        if args.camera_mode is not None or args.camera_index is not None:
+            raise SystemExit("Physical camera options are unavailable in simulator modes; configure the simulator camera instead")
+        if getattr(args, "multiprocess_camera", False):
+            raise SystemExit("--multiprocess is not available for simulator adapters yet")
+        carla_only_options = (
+            "simulator_vehicle_filter", "simulator_lidar", "simulator_lidar_range_m",
+            "simulator_lidar_channels", "simulator_lidar_points_per_second",
+            "simulator_lidar_rotation_frequency", "simulator_camera_fov",
+        )
+        if spec.simulator_backend != "carla" and any(
+            getattr(args, name, None) is not None for name in carla_only_options
+        ):
+            raise SystemExit("CARLA sensor/vehicle options require --mode carla")
+        if spec.simulator_backend != "avis" and args.simulator_avis_sensor_angle is not None:
+            raise SystemExit("--simulator-avis-sensor-angle requires --mode avis or --mode avis-race")
+        if spec.vision_profile != "city" and args.simulator_stop_on_crosswalk is not None:
+            raise SystemExit("--simulator-stop-on-crosswalk is supported only with City vision")
+        if (args.simulator_stop_on_crosswalk is not None and
+                getattr(config, "CITY_LANE_DETECTOR", "default") == "blsf-beta"):
+            raise SystemExit("--simulator-stop-on-crosswalk requires the default City vision processor")
+        if args.simulator_target_speed is not None and args.simulator_target_speed > 100:
+            raise SystemExit("--simulator-target-speed must be at most 100 (km/h for CARLA, percent for AVIS)")
+        if args.simulator_obstacle_stop_distance_cm is not None and args.simulator_obstacle_stop_distance_cm > 500:
+            raise SystemExit("--simulator-obstacle-stop-distance-cm must be between 0 and 500")
+        if args.simulator_lidar_range_m is not None and args.simulator_lidar_range_m > 500:
+            raise SystemExit("--simulator-lidar-range-m must be at most 500")
+        if args.simulator_lidar_channels is not None and args.simulator_lidar_channels > 256:
+            raise SystemExit("--simulator-lidar-channels must be at most 256")
+        if args.simulator_lidar_points_per_second is not None and args.simulator_lidar_points_per_second > 2000000:
+            raise SystemExit("--simulator-lidar-points-per-second must be at most 2000000")
+        if args.simulator_lidar_rotation_frequency is not None and args.simulator_lidar_rotation_frequency > 50:
+            raise SystemExit("--simulator-lidar-rotation-frequency must be at most 50")
+        if args.simulator_camera_fov is not None and not 10 <= args.simulator_camera_fov <= 150:
+            raise SystemExit("--simulator-camera-fov must be between 10 and 150 degrees")
+        if args.simulator_timeout is not None and args.simulator_timeout > 60:
+            raise SystemExit("--simulator-timeout must be at most 60 seconds")
 
     if args.arduino_config and args.without_arduino:
         raise SystemExit("--arduino-config cannot be used together with --without-arduino")

@@ -1,0 +1,8 @@
+# Optional dependencies for simulator modes; do not install these on the robot's hardware-only environment.
+# CARLA 0.9.16 PyPI wheels exist for CPython 3.10-3.12 on Windows x86-64 and Linux x86-64 (glibc 2.31+).
+# For other platforms/Python versions, install the matching wheel from the CARLA distribution.
+carla==0.9.16; python_version >= "3.10" and python_version < "3.13" and (platform_machine == "x86_64" or platform_machine == "AMD64")
+
+# AVIS Engine has not published an installable PyPI package (the official API README says pip installation is coming soon).
+# A compatible TCP client is bundled in python/avisengine.py and python/avisengine_utils.py.
+# Its NumPy/OpenCV requirements are already listed in requirements.txt.

@@ -11,6 +11,23 @@ for _global_name, _global_value in vars(_stream_module).items():
 
 class StreamPagesMixin:
     def index(self):
+        capabilities = mode_capabilities(self.config)
+        if capabilities.get("editor_profile") == "simulator":
+            response = Response(
+                render_template(
+                    "simulator_editor.html",
+                    mode=getattr(self.config, "MODE", "simulation"),
+                    caps=capabilities,
+                    auth_enabled=bool(self.auth_enabled),
+                ),
+                mimetype="text/html",
+            )
+            response.headers.update({
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            })
+            return response
         values = {var: self.get_base_var(var) for var in VARIABLES}
         advanced_current = self.get_all_advanced()
         response = Response(
@@ -24,7 +41,7 @@ class StreamPagesMixin:
                 stream_control=bool(
                     getattr(self.config, "STREAM_ALLOW_CONTROL", False)
                 ),
-                capabilities=mode_capabilities(self.config),
+                capabilities=capabilities,
                 servo_min_angle=float(getattr(self.config, "MIN_SERVO_ANGLE", 55)),
                 servo_max_angle=float(getattr(self.config, "MAX_SERVO_ANGLE", 125)),
                 encoder_map_enabled=bool(getattr(self.config, "ENCODER_MAP_ENABLED", False)),

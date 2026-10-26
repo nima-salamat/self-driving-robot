@@ -194,39 +194,58 @@ def _check_arduino(report, config):
         report.add("Arduino", False, f"{type(exc).__name__}: {exc}")
 
 
+def _check_simulator_endpoint(report, config):
+    backend = str(getattr(config, "SIMULATOR_BACKEND", "")).lower()
+    module_name = "carla" if backend == "carla" else "avisengine"
+    _check_import(report, module_name, label=backend.upper() + " Python API")
+    host = str(getattr(config, "SIMULATOR_HOST", "127.0.0.1"))
+    port = int(getattr(config, "SIMULATOR_PORT", 2000 if backend == "carla" else 25001))
+    timeout = min(2.0, max(0.1, float(getattr(config, "SIMULATOR_TIMEOUT_S", 5.0))))
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            report.add(backend.upper() + " server", True, f"{host}:{port} accepts TCP connections")
+    except OSError as exc:
+        report.add(backend.upper() + " server", False, f"{host}:{port} not reachable: {exc}")
+
+
 def run_preflight(config):
     report = PreflightReport()
-
-    monotonic_before = time.monotonic()
-    wall_before = time.time()
-    monotonic_after = time.monotonic()
-    wall_after = time.time()
+    monotonic_before, wall_before = time.monotonic(), time.time()
+    monotonic_after, wall_after = time.monotonic(), time.time()
     report.add(
         "system clock",
         monotonic_after > monotonic_before and wall_after >= wall_before,
         "wall clock and monotonic clock are advancing",
     )
 
-    dependencies = ["numpy", "cv2", "flask", "serial"]
-    if (
-        bool(getattr(config, "USE_SIGN", False))
-        and str(getattr(config, "SIGN_DETECTOR_METHOD", "yolo")).lower() == "yolo"
-    ):
-        dependencies.append("onnxruntime")
+    mode = str(getattr(config, "MODE", "city")).lower()
+    try:
+        from modes.registry import SIMULATOR_MODES
+    except Exception:
+        SIMULATOR_MODES = frozenset()
+    simulation = mode in SIMULATOR_MODES
+    dependencies = ["numpy", "cv2", "flask"]
+    if not simulation:
+        dependencies.append("serial")
+        if (bool(getattr(config, "USE_SIGN", False)) and
+                str(getattr(config, "SIGN_DETECTOR_METHOD", "yolo")).lower() == "yolo"):
+            dependencies.append("onnxruntime")
     if bool(getattr(config, "USE_ML_LANE_DETECTOR", False)):
         dependencies.append("ncnn")
-
     for module_name in dependencies:
-        label = (
-            "NCNN ML lane runtime"
-            if module_name == "ncnn"
-            else module_name
-        )
-        _check_import(report, module_name, label=label)
+        _check_import(report, module_name,
+                      label="NCNN ML lane runtime" if module_name == "ncnn" else module_name)
 
     _check_output_storage(report, config)
-    _check_models(report, config)
-    _check_camera(report, config)
-    _check_arduino(report, config)
+    if simulation:
+        _check_simulator_endpoint(report, config)
+        report.add("camera source", True, "frames are provided by the selected simulator adapter")
+        report.add("Arduino / motor / encoder", True,
+                   "physical hardware not required; virtual actuator and motion-derived encoder are used",
+                   critical=False)
+    else:
+        _check_models(report, config)
+        _check_camera(report, config)
+        _check_arduino(report, config)
     _check_stream_port(report, config)
     return report

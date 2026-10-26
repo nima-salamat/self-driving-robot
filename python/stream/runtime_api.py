@@ -939,7 +939,7 @@ class StreamRuntimeMixin:
             controlling_settings={
                 "lane_detector": (
                     "CITY_LANE_DETECTOR"
-                    if mode == "city"
+                    if capabilities.get("vision_profile", mode) == "city"
                     else "USE_ML_LANE_DETECTOR"
                 ),
                 "marker_mode": ["WITH_SIGN", "WITH_APRILTAG"],

@@ -192,6 +192,7 @@ class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin
         from .media_api import register_media_routes
         from .runtime_api import register_runtime_routes
         from .configuration_api import register_configuration_routes
+        from .simulator_api import register_simulator_routes
 
         register_auth_routes(self.app, self)
         register_page_routes(self.app, self)
@@ -201,6 +202,7 @@ class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin
         register_configuration_routes(self.app, self)
         register_vision_routes(self.app, self)
         register_profile_routes(self.app, self)
+        register_simulator_routes(self.app, self)
 
 
 def _stream_access_urls(bind_host, port):

@@ -77,6 +77,26 @@ python python/main.py --mode city --without-arduino
 python python/main.py --mode race --without-arduino --performance --target-fps 40 --multiprocess
 ```
 
+### Simulator modes (CARLA and AVIS Engine)
+
+The simulator modes use the same City/Race vision processors through separate adapter/runtime layers. They do not instantiate the physical camera, Arduino serial controller, or hardware encoder.
+
+Install simulator extras on a system that runs the simulator client. The CARLA API wheel is optional; the AVIS Engine TCP client is bundled with this repository:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-simulators.txt
+python python/main.py --mode carla --stream
+python python/main.py --mode avis --stream
+python python/main.py --mode avis-race --stream
+```
+
+Start the CARLA server or AVIS Engine simulator separately. Defaults are `127.0.0.1:2000` for CARLA and `127.0.0.1:25001` for AVIS; override them with `--simulator-host` and `--simulator-port`. CARLA mode creates an RGB camera and, by default, ray-cast LiDAR. AVIS modes expose native left/front/right distance readings instead of pretending they are LiDAR. The editor also exposes a forward-range stop threshold that uses CARLA front-sector LiDAR or the AVIS front distance sensor; set it to `0` to disable that extra range stop.
+
+The simulator dashboard has a dedicated editor and persists to `python/carla.sim.json`, `python/avis.sim.json`, and `python/avis-race.sim.json`; those files do not overwrite the physical `city.json` or `race.json`. Simulator steering/throttle/brake commands and virtual encoder pulses are simulation telemetry, not physical Arduino or encoder measurements. Start at a low target speed and verify steering direction in the simulator.
+
+See [Simulator mode architecture and setup](docs/SIMULATOR_MODES.md) for adapter contracts and feature boundaries.
+
 The BLSF detector and supported ML lane models are documented in [`python/README.md`](python/README.md). BLSF is experimental; validate detector changes on representative footage and at low speed before physical use.
 
 ## Configuration

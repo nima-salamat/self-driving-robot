@@ -12,3 +12,6 @@ python/assets/dataset_connector/
 .env
 .env.*
 !.env.example
+
+# Mode-specific simulator overrides contain local endpoints and editor tuning.
+python/*.sim.json

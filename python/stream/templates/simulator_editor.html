@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulator Workbench · Self-Driving Robot</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='stream.css') }}">
+<style>
+:root{color-scheme:dark;--sim-bg:#10151d;--sim-panel:#171e28;--sim-panel2:#1c2633;--sim-border:#2b3747;--sim-text:#e5edf5;--sim-muted:#93a4b8;--sim-accent:#73c5ff;--sim-green:#71d9a0;--sim-warn:#ffc56d;--sim-red:#ff8282}
+*{box-sizing:border-box}body{margin:0;background:var(--sim-bg);color:var(--sim-text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overflow:auto}
+a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{border:1px solid var(--sim-border);background:var(--sim-panel2);border-radius:8px;padding:8px 11px;cursor:pointer}button:hover{border-color:var(--sim-accent)}button:disabled{opacity:.45;cursor:not-allowed}
+.sim-top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:#111923;border-bottom:1px solid var(--sim-border)}.sim-brand{font-weight:750;letter-spacing:.02em}.sim-mode{font-size:12px;padding:4px 8px;border-radius:5px;background:#23374b;color:#b8e3ff}.sim-subtitle{color:var(--sim-muted);font-size:12px}.sim-spacer{flex:1}.sim-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sim-muted)}.led{width:8px;height:8px;border-radius:50%;background:#6b7888}.led.on{background:var(--sim-green);box-shadow:0 0 9px #71d9a055}.led.error{background:var(--sim-red)}
+.sim-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(330px,.9fr);gap:12px;padding:12px;align-items:start}.stack{display:grid;gap:12px;min-width:0}.panel{background:var(--sim-panel);border:1px solid var(--sim-border);border-radius:11px;overflow:hidden;min-width:0}.panel-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--sim-border)}.panel-head h2,.panel-head h3{margin:0;font-size:14px;font-weight:700}.panel-head p{margin:2px 0 0;color:var(--sim-muted);font-size:12px}.panel-content{padding:13px 14px}.muted{color:var(--sim-muted)}.eyebrow{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--sim-muted);font-weight:700}.camera-wrap{position:relative;background:#080b10;min-height:230px;display:flex;align-items:center;justify-content:center}.camera-wrap img{display:block;width:100%;height:auto;max-height:68vh;object-fit:contain}.camera-chip{position:absolute;top:10px;left:10px;background:#080b10dd;border:1px solid #ffffff24;padding:4px 7px;border-radius:5px;font-size:11px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{background:var(--sim-panel2);border:1px solid var(--sim-border);border-radius:8px;padding:10px;min-width:0}.metric .value{font-size:20px;font-weight:730;margin-top:3px;overflow-wrap:anywhere}.metric .unit{font-size:11px;color:var(--sim-muted);font-weight:500}.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;font-size:13px}.pill{display:inline-flex;align-items:center;border:1px solid var(--sim-border);border-radius:999px;padding:3px 8px;font-size:11px;color:var(--sim-muted)}.pill.live{color:var(--sim-green);border-color:#366e58}.sensor-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.range-item{background:var(--sim-panel2);padding:9px;border-radius:8px;min-width:0}.range-number{font-weight:700;font-size:16px}.range-track{height:5px;margin-top:9px;border-radius:5px;background:#2c3745;overflow:hidden}.range-fill{height:100%;width:0;background:var(--sim-accent);border-radius:5px}.lidar-canvas{display:block;width:100%;height:290px;background:#0c1219;border:1px solid var(--sim-border);border-radius:8px}.grid-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.field{display:grid;gap:5px;min-width:0}.field label{font-size:12px;color:var(--sim-muted)}.field input,.field select{width:100%;min-width:0;background:#0d141c;border:1px solid var(--sim-border);border-radius:7px;padding:8px}.field input[type=checkbox]{width:auto;accent-color:var(--sim-accent)}.check-field{display:flex;align-items:center;gap:8px;padding:7px 0;color:var(--sim-text);font-size:12px}.check-field input{accent-color:var(--sim-accent)}.setting-block{padding:12px 0;border-bottom:1px solid var(--sim-border)}.setting-block:first-child{padding-top:0}.setting-block:last-child{border-bottom:0;padding-bottom:0}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.primary{background:#234965;border-color:#3c7297}.msg{font-size:12px;color:var(--sim-muted);margin-top:9px;min-height:17px}.msg.bad{color:var(--sim-red)}.msg.good{color:var(--sim-green)}.options{display:grid;gap:8px}.option-group{border:1px solid var(--sim-border);border-radius:8px;padding:10px;background:var(--sim-panel2)}.option-group h4{margin:0 0 4px;font-size:12px}.option-group p{margin:0;color:var(--sim-muted);font-size:12px}.console{max-height:240px;overflow:auto;background:#0b1016;padding:8px;border-radius:7px;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.event{display:grid;grid-template-columns:72px 1fr;gap:8px;padding:4px 0;border-bottom:1px solid #1d2732;overflow-wrap:anywhere}.event:last-child{border-bottom:0}.event time{color:#6f8397}.event.INFO .event-msg{color:#c2d4e5}.event.WARNING .event-msg{color:var(--sim-warn)}.event.ERROR .event-msg{color:var(--sim-red)}.note{font-size:12px;color:var(--sim-muted);line-height:1.5}.note strong{color:var(--sim-text)}.section-hide{display:none!important}.status-message{padding:9px 12px;border-radius:8px;border:1px solid var(--sim-border);color:var(--sim-muted);font-size:12px}.status-message.error{border-color:#84464a;color:#ffb0b0}
+@media(max-width:1020px){.sim-layout{grid-template-columns:1fr}.camera-wrap img{max-height:none}}@media(max-width:520px){.sim-layout{padding:7px;gap:8px}.sim-top{padding:10px;flex-wrap:wrap}.grid-two{grid-template-columns:1fr}.sensor-columns{gap:5px}.panel-content{padding:10px}.metrics{gap:6px}}
+</style>
+{% if auth_enabled %}
+<script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
+{% endif %}
+</head>
+<body>
+<header class="sim-top">
+  <div class="sim-brand">SDR / SIMULATOR WORKBENCH</div>
+  <span class="sim-mode">{{ mode|upper }}</span>
+  <span class="pill">{{ caps.simulator_backend|upper }} API</span>
+  <span class="pill">{{ caps.vision_profile|upper }} VISION</span>
+  <span class="sim-spacer"></span>
+  <div class="sim-status"><span id="connection-led" class="led"></span><span id="connection-label">Connecting…</span></div>
+  <button id="refresh" type="button">Refresh</button>
+</header>
+<main class="sim-layout">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="frame-age" class="pill">No frame</span></div>
+      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><img id="camera" src="/video_feed" alt="Simulator camera frame"></div>
+      <div class="panel-content">
+        <div id="runtime-error" class="status-message section-hide"></div>
+        <div class="metrics">
+          <div class="metric"><div class="eyebrow">Lane estimate</div><div id="lane-value" class="value">—</div><div id="lane-valid" class="unit">Waiting for image</div></div>
+          <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
+          <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">Virtual servo scale and normalized steering</div></div>
+          <div class="metric"><div class="eyebrow">Throttle / brake</div><div id="motion-value" class="value">—</div><div id="motion-reason" class="unit">Safe stop until perception is valid</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel {% if not caps.supports_lidar %}section-hide{% endif %}" id="lidar-panel">
+      <div class="panel-head"><div><h2>CARLA · LiDAR point cloud</h2><p>Sensor-local top-down preview; x is forward and y is lateral</p></div><span class="sim-spacer"></span><span id="lidar-count" class="pill">0 points</span></div>
+      <div class="panel-content"><canvas id="lidar-view" class="lidar-canvas" width="720" height="290"></canvas><div class="note" id="lidar-note">LiDAR uses CARLA's ray-cast point cloud. It is separate from camera-based lane processing.</div></div>
+    </section>
+
+    <section class="panel {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="range-panel">
+      <div class="panel-head"><div><h2>AVIS Engine · Distance sensors</h2><p>Native range readings, in centimeters—not a LiDAR point cloud</p></div></div>
+      <div class="panel-content"><div class="sensor-columns">
+        <div class="range-item"><div class="eyebrow">Left</div><div id="range-left" class="range-number">—</div><div class="range-track"><div id="bar-left" class="range-fill"></div></div></div>
+        <div class="range-item"><div class="eyebrow">Front / middle</div><div id="range-front" class="range-number">—</div><div class="range-track"><div id="bar-front" class="range-fill"></div></div></div>
+        <div class="range-item"><div class="eyebrow">Right</div><div id="range-right" class="range-number">—</div><div class="range-track"><div id="bar-right" class="range-fill"></div></div></div>
+      </div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><div><h2>Virtual I/O</h2><p>Software equivalents for hardware features not present in the simulator</p></div><span class="pill live">SIMULATED</span></div>
+      <div class="panel-content">
+        <div class="metrics">
+          <div class="metric"><div class="eyebrow">Virtual encoder</div><div id="encoder-count" class="value">0</div><div class="unit">Estimated pulses</div></div>
+          <div class="metric"><div class="eyebrow">Estimated travel</div><div id="encoder-distance" class="value">0 <span class="unit">cm</span></div><div class="unit">Derived from simulator motion telemetry</div></div>
+        </div>
+        <p class="note">These values are simulated telemetry, not physical encoder measurements. CARLA distance is estimated from vehicle movement; AVIS distance is estimated from reported speed.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><div><h2>Virtual actuator console</h2><p>Structured steering, speed, brake and safety events replacing the physical Arduino serial console</p></div><span class="sim-spacer"></span><button id="clear-events" type="button">Clear view</button></div>
+      <div class="panel-content"><div class="console" id="event-console" aria-live="polite"><div class="muted">Waiting for runtime events…</div></div></div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><div><h2>Mode-aware editor</h2><p id="editor-description">Settings are isolated in a mode-specific file.</p></div></div>
+      <div class="panel-content">
+        <div id="save-message" class="msg" role="status"></div>
+        <form id="settings-form">
+          <div class="setting-block">
+            <h3 class="section-title">Simulator connection</h3>
+            <div class="grid-two">
+              <div class="field"><label for="sim-host">Host / IP</label><input id="sim-host" name="SIMULATOR_HOST" autocomplete="off" required></div>
+              <div class="field"><label for="sim-port">Port</label><input id="sim-port" name="SIMULATOR_PORT" type="number" min="1" max="65535" step="1" required></div>
+              <div class="field"><label for="sim-timeout">Connection timeout (s)</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="60" step=".1" required></div>
+              <div class="field {% if caps.simulator_backend != 'carla' %}section-hide{% endif %}" id="vehicle-filter-field"><label for="vehicle-filter">CARLA vehicle blueprint filter</label><input id="vehicle-filter" name="SIMULATOR_VEHICLE_FILTER"></div>
+            </div>
+          </div>
+          <div class="setting-block {% if not caps.supports_lidar %}section-hide{% endif %}" id="lidar-settings">
+            <h3 class="section-title">CARLA sensor configuration <span class="pill">Restart required</span></h3>
+            <label class="check-field"><input id="lidar-enabled" type="checkbox" name="SIMULATOR_LIDAR_ENABLED"> Enable ray-cast LiDAR</label>
+            <div class="grid-two">
+              <div class="field"><label for="lidar-range">LiDAR range (m)</label><input id="lidar-range" type="number" min="1" max="500" step="1" name="SIMULATOR_LIDAR_RANGE_M"></div>
+              <div class="field"><label for="lidar-channels">Channels</label><input id="lidar-channels" type="number" min="1" max="256" step="1" name="SIMULATOR_LIDAR_CHANNELS"></div>
+              <div class="field"><label for="lidar-pps">Points / second</label><input id="lidar-pps" type="number" min="100" max="2000000" step="100" name="SIMULATOR_LIDAR_POINTS_PER_SECOND"></div>
+              <div class="field"><label for="lidar-rotation">LiDAR rotation frequency (Hz)</label><input id="lidar-rotation" type="number" min="1" max="50" step="1" name="SIMULATOR_LIDAR_ROTATION_FREQUENCY"></div>
+              <div class="field"><label for="camera-fov">Camera FOV (degrees)</label><input id="camera-fov" type="number" min="10" max="150" step="1" name="SIMULATOR_CAMERA_FOV"></div>
+            </div>
+          </div>
+          <div class="setting-block {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="avis-settings">
+            <h3 class="section-title">AVIS sensor setup</h3>
+            <div class="grid-two">
+              <div class="field"><label for="avis-angle">Distance sensor angle (degrees)</label><input id="avis-angle" type="number" min="-90" max="90" step="1" name="SIMULATOR_AVIS_SENSOR_ANGLE"></div>
+            </div>
+          </div>
+          <div class="setting-block">
+            <h3 class="section-title">Virtual vehicle safety</h3>
+            <div class="grid-two">
+              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="100" step="1" name="SIMULATOR_TARGET_SPEED" required></div>
+              <div class="field"><label for="throttle-limit">Throttle limit (0–1)</label><input id="throttle-limit" type="number" min="0" max="1" step=".05" name="SIMULATOR_THROTTLE_LIMIT" required></div>
+              <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
+            </div>
+            <label class="check-field"><input id="stop-lost-lane" type="checkbox" name="SIMULATOR_STOP_ON_LOST_LANE"> Brake when no valid lane is detected</label>
+            <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
+            <label class="check-field"><input id="steering-inverted" type="checkbox" name="SIMULATOR_STEERING_INVERTED"> Invert simulator steering direction</label>
+          </div>
+          <div class="setting-block {% if caps.vision_profile != 'race' %}section-hide{% endif %}">
+            <h3 class="section-title">Race vision options</h3>
+            <label class="check-field"><input id="ml-lane-enabled" type="checkbox" name="USE_ML_LANE_DETECTOR"> Enable ML lane model (requires NCNN model files)</label>
+            <div class="field"><label for="ml-lane-model">ML lane model</label><select id="ml-lane-model" name="ML_LANE_MODEL"><option value="unet_depthwise_nano">UNet depthwise nano</option><option value="unet_depthwise_small">UNet depthwise small</option></select></div>
+            <p class="note">Changing the Race lane model requires a restart because the vision processor is initialized once per runtime.</p>
+          </div>
+          <div class="setting-block">
+            <h3 class="section-title">Shared vision processing <span class="pill">{{ caps.vision_profile|upper }} profile</span></h3>
+            <label class="check-field"><input id="use-bev" type="checkbox" name="USE_BEV"> Bird's-eye perspective transform (BEV)</label>
+            <label class="check-field"><input id="debug-overlay" type="checkbox" name="DEBUG"> Debug overlays</label>
+            <div class="field {% if caps.vision_profile != 'city' %}section-hide{% endif %}"><label for="city-lane-detector">City lane detector</label><select id="city-lane-detector" name="CITY_LANE_DETECTOR"><option value="default">Default City processor</option><option value="blsf-beta">BLSF beta</option></select></div>
+            <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
+          </div>
+          <div class="setting-block">
+            <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
+            <div class="grid-two">
+              <div class="field"><label for="rl-top">Right-lane ROI top</label><input id="rl-top" type="number" min="0" max=".99" step=".01" name="RL_TOP_ROI"></div>
+              <div class="field"><label for="rl-bottom">Right-lane ROI bottom</label><input id="rl-bottom" type="number" min=".01" max="1" step=".01" name="RL_BOTTOM_ROI"></div>
+              <div class="field"><label for="rl-left">Right-lane ROI left</label><input id="rl-left" type="number" min="0" max=".99" step=".01" name="RL_LEFT_ROI"></div>
+              <div class="field"><label for="rl-right">Right-lane ROI right</label><input id="rl-right" type="number" min=".01" max="1" step=".01" name="RL_RIGHT_ROI"></div>
+              <div class="field"><label for="ll-top">Left-lane ROI top</label><input id="ll-top" type="number" min="0" max=".99" step=".01" name="LL_TOP_ROI"></div>
+              <div class="field"><label for="ll-bottom">Left-lane ROI bottom</label><input id="ll-bottom" type="number" min=".01" max="1" step=".01" name="LL_BOTTOM_ROI"></div>
+              <div class="field"><label for="ll-left">Left-lane ROI left</label><input id="ll-left" type="number" min="0" max=".99" step=".01" name="LL_LEFT_ROI"></div>
+              <div class="field"><label for="ll-right">Left-lane ROI right</label><input id="ll-right" type="number" min=".01" max="1" step=".01" name="LL_RIGHT_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-top">Crosswalk ROI top</label><input id="cw-top" type="number" min="0" max=".99" step=".01" name="CW_TOP_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-bottom">Crosswalk ROI bottom</label><input id="cw-bottom" type="number" min=".01" max="1" step=".01" name="CW_BOTTOM_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-left">Crosswalk ROI left</label><input id="cw-left" type="number" min="0" max=".99" step=".01" name="CW_LEFT_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min=".01" max="1" step=".01" name="CW_RIGHT_ROI"></div>
+            </div>
+          </div>
+          <div class="actions"><button type="button" id="reload-settings">Reload saved</button><button class="primary" type="submit" id="save-settings">Save settings</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><div><h2>Feature map</h2><p>Options separated by shared vision, active mode and simulator capability</p></div></div>
+      <div class="panel-content"><div class="options" id="option-groups">
+        {% for group in caps.option_groups %}
+        <div class="option-group"><h4>{{ group.title }}</h4><p>{{ group.description }}</p></div>
+        {% endfor %}
+      </div></div>
+    </section>
+    <section class="panel"><div class="panel-head"><div><h2>Integration notes</h2><p>What the adapter abstracts away</p></div></div><div class="panel-content">
+      <p class="note"><strong>Vision:</strong> {{ caps.vision_profile|capitalize }} image processing is reused directly; the camera source changes, not the algorithm.</p>
+      <p class="note"><strong>Arduino:</strong> there is no hardware serial channel here. Structured simulator actuator events are shown in the virtual console.</p>
+      <p class="note"><strong>Encoder:</strong> pulse count/distance are estimated from simulator movement, not treated as a hardware-grade measurement.</p>
+      <p class="note"><strong>Restart:</strong> host/port, CARLA vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.</p>
+    </div></section>
+  </div>
+</main>
+<script>
+(function(){
+"use strict";
+const mode = {{ mode|tojson }};
+const caps = {{ caps|tojson }};
+const $ = function(id){ return document.getElementById(id); };
+const camera = $("camera");
+const seenEvents = new Set();
+let eventKeys = [];
+function setText(id, value){ const e=$(id); if(e) e.textContent = value; }
+function numeric(value, places){ return Number.isFinite(Number(value)) ? Number(value).toFixed(places||0) : "—"; }
+function status(message, good){ const e=$("save-message"); e.textContent=message||""; e.className="msg"+(good===true?" good":good===false?" bad":""); }
+function populate(s){
+  const fields = {
+    "sim-host":"SIMULATOR_HOST","sim-port":"SIMULATOR_PORT","sim-timeout":"SIMULATOR_TIMEOUT_S",
+    "vehicle-filter":"SIMULATOR_VEHICLE_FILTER","lidar-range":"SIMULATOR_LIDAR_RANGE_M",
+    "lidar-channels":"SIMULATOR_LIDAR_CHANNELS","lidar-pps":"SIMULATOR_LIDAR_POINTS_PER_SECOND",
+    "lidar-rotation":"SIMULATOR_LIDAR_ROTATION_FREQUENCY","camera-fov":"SIMULATOR_CAMERA_FOV",
+    "avis-angle":"SIMULATOR_AVIS_SENSOR_ANGLE","obstacle-stop-distance":"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+    "ml-lane-model":"ML_LANE_MODEL",
+    "target-speed":"SIMULATOR_TARGET_SPEED",
+    "throttle-limit":"SIMULATOR_THROTTLE_LIMIT","pulse-distance":"ENCODER_PULSE_DISTANCE_CM",
+    "city-lane-detector":"CITY_LANE_DETECTOR",
+    "rl-top":"RL_TOP_ROI","rl-bottom":"RL_BOTTOM_ROI","rl-left":"RL_LEFT_ROI","rl-right":"RL_RIGHT_ROI",
+    "ll-top":"LL_TOP_ROI","ll-bottom":"LL_BOTTOM_ROI","ll-left":"LL_LEFT_ROI","ll-right":"LL_RIGHT_ROI",
+    "cw-top":"CW_TOP_ROI","cw-bottom":"CW_BOTTOM_ROI","cw-left":"CW_LEFT_ROI","cw-right":"CW_RIGHT_ROI"
+  };
+  Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
+  ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled"].forEach(function(id){
+    if(!$(id)) return;
+    const key=$(id).name;
+    if(s[key]!==undefined) $(id).checked=!!s[key];
+  });
+  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h)");
+}
+async function loadSettings(){
+  const response=await fetch("/api/simulation/settings",{cache:"no-store"});
+  const data=await response.json();
+  if(!response.ok||!data.success) throw new Error(data.message||"Could not load simulator settings");
+  populate(data.settings||{});
+  $("save-settings").disabled=!data.controls_enabled;
+  $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
+  $("editor-description").textContent=mode+" · "+caps.vision_profile+" vision · settings isolated from physical mode JSON";
+  if(data.option_groups){
+    const parent=$("option-groups"); parent.replaceChildren();
+    data.option_groups.forEach(function(group){
+      const card=document.createElement("div"); card.className="option-group";
+      const h=document.createElement("h4"); h.textContent=group.title;
+      const p=document.createElement("p"); p.textContent=group.description;
+      card.append(h,p); parent.append(card);
+    });
+  }
+}
+function drawLidar(points){
+  const canvas=$("lidar-view"); if(!canvas) return;
+  const ctx=canvas.getContext("2d"), w=canvas.width, h=canvas.height;
+  ctx.clearRect(0,0,w,h); ctx.fillStyle="#0c1219"; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle="#253444"; ctx.lineWidth=1;
+  for(let i=1;i<5;i++){const x=w*i/5;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let i=1;i<5;i++){const y=h*i/5;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  const maxRange=Number(($("lidar-range")||{}).value)||50;
+  const scale=Math.min((w-30)/(2*maxRange),(h-20)/maxRange);
+  ctx.strokeStyle="#526477";ctx.beginPath();ctx.moveTo(w/2,h-10);ctx.lineTo(w/2,10);ctx.stroke();
+  ctx.fillStyle="#a3b5c8";ctx.font="11px system-ui";ctx.fillText("VEHICLE",w/2+7,h-12);ctx.fillText("FORWARD ↑",w/2+7,17);
+  ctx.fillStyle="#75d6ff";
+  (points||[]).forEach(function(p){ if(!Array.isArray(p)||p.length<2)return; const x=w/2+Number(p[1])*scale;const y=h-10-Number(p[0])*scale;if(x<0||x>w||y<0||y>h)return;ctx.fillRect(x,y,2,2);});
+}
+function renderRanges(ranges){
+  ["left","front","right"].forEach(function(key){
+    const value=ranges&&ranges[key]!==undefined?ranges[key]:null;
+    setText("range-"+key,value===null||!Number.isFinite(Number(value))?"—":numeric(value,0)+" cm");
+    const bar=$("bar-"+key);if(bar)bar.style.width=value===null?"0%":Math.max(0,Math.min(100,Number(value)/300*100))+"%";
+  });
+}
+function renderEvents(events){
+  const consoleEl=$("event-console"); if(!consoleEl)return;
+  const valid=(events||[]).slice(-60), fresh=[];
+  valid.forEach(function(event){
+    const key=String(event.timestamp)+"|"+String(event.level)+"|"+String(event.message);
+    if(!seenEvents.has(key)){seenEvents.add(key);fresh.push(event);}
+  });
+  if(!eventKeys.length) consoleEl.replaceChildren();
+  fresh.forEach(function(event){
+    const row=document.createElement("div");row.className="event "+String(event.level||"INFO").toUpperCase();
+    const t=document.createElement("time");t.textContent=new Date(Number(event.timestamp)*1000).toLocaleTimeString();
+    const m=document.createElement("span");m.className="event-msg";m.textContent=event.message||"";
+    row.append(t,m);consoleEl.append(row);eventKeys.push(row);
+  });
+  while(eventKeys.length>100){const old=eventKeys.shift();if(old.parentNode)old.parentNode.removeChild(old);}
+  if(!eventKeys.length)consoleEl.textContent="No actuator events yet.";
+  consoleEl.scrollTop=consoleEl.scrollHeight;
+}
+async function poll(){
+  try{
+    const response=await fetch("/api/simulation/state",{cache:"no-store"});
+    const d=await response.json();
+    if(!response.ok) throw new Error(d.message||"Simulation runtime unavailable");
+    $("connection-led").className="led"+(d.connected?" on":" error");
+    setText("connection-label",d.connected?"Connected · "+d.backend.toUpperCase():"Waiting for simulator");
+    setText("frame-age",d.frame_age_ms===null?"No frame":numeric(d.frame_age_ms,0)+" ms old");
+    setText("lane-value",d.lane_type||"none");
+    setText("lane-valid",d.perception_valid?"Perception valid":"Invalid lane estimate · safety policy applies");
+    setText("speed-value",numeric(d.speed_kmh,1)+" km/h");
+    setText("steer-value",numeric(d.steering_angle,1)+"° / "+numeric(d.steering_normalized,2));
+    setText("motion-value",numeric(d.command.throttle,2)+" / "+numeric(d.command.brake,2));
+    setText("motion-reason",d.command.reason||"");
+    setText("encoder-count",String(d.virtual_io.pulses||0));
+    setText("encoder-distance",numeric(d.virtual_io.distance_cm,1)+" cm");
+    const err=$("runtime-error");
+    if(d.error){err.textContent=d.error;err.classList.remove("section-hide");err.classList.add("error");}
+    else {err.textContent="";err.classList.add("section-hide");}
+    if(caps.supports_lidar){
+      setText("lidar-count",numeric(d.sensors.lidar_point_count,0)+" points");
+      setText("lidar-note",d.sensors.lidar_available?"Ray-cast LiDAR active · nearest point "+(d.sensors.lidar_nearest_m===null?"—":numeric(d.sensors.lidar_nearest_m,1)+" m"):"LiDAR has not delivered a packet or is disabled.");
+      drawLidar(d.sensors.lidar_points_xy||[]);
+    }
+    if(caps.supports_range_sensors) renderRanges(d.sensors.ranges_cm||{});
+    renderEvents(d.events||[]);
+  }catch(error){
+    $("connection-led").className="led error";setText("connection-label","Disconnected / waiting");
+    const box=$("runtime-error");box.textContent=error.message;box.classList.remove("section-hide");
+  }
+}
+$("settings-form").addEventListener("submit",async function(event){
+  event.preventDefault();status("Saving settings…");
+  const s={
+    SIMULATOR_HOST:$("sim-host").value.trim(),
+    SIMULATOR_PORT:Number($("sim-port").value),
+    SIMULATOR_TIMEOUT_S:Number($("sim-timeout").value),
+    SIMULATOR_TARGET_SPEED:Number($("target-speed").value),
+    SIMULATOR_THROTTLE_LIMIT:Number($("throttle-limit").value),
+    SIMULATOR_STOP_ON_LOST_LANE:$("stop-lost-lane").checked,
+    SIMULATOR_STOP_ON_CROSSWALK:$("stop-crosswalk") ? $("stop-crosswalk").checked : false,
+    SIMULATOR_STEERING_INVERTED:$("steering-inverted").checked,
+    USE_BEV:$("use-bev").checked,DEBUG:$("debug-overlay").checked,
+    SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:Number($("obstacle-stop-distance").value),
+    ENCODER_PULSE_DISTANCE_CM:Number($("pulse-distance").value)
+  };
+  [
+    ["rl-top","RL_TOP_ROI"],["rl-bottom","RL_BOTTOM_ROI"],["rl-left","RL_LEFT_ROI"],["rl-right","RL_RIGHT_ROI"],
+    ["ll-top","LL_TOP_ROI"],["ll-bottom","LL_BOTTOM_ROI"],["ll-left","LL_LEFT_ROI"],["ll-right","LL_RIGHT_ROI"],
+    ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
+  ].forEach(function(pair){const el=$(pair[0]);if(el&&el.value!=="")s[pair[1]]=Number(el.value);});
+  if(caps.vision_profile==="city") s.CITY_LANE_DETECTOR=$("city-lane-detector").value;
+  if(caps.vision_profile==="race"){
+    s.USE_ML_LANE_DETECTOR=$("ml-lane-enabled").checked;
+    s.ML_LANE_MODEL=$("ml-lane-model").value;
+  }
+  if(caps.simulator_backend==="carla") s.SIMULATOR_VEHICLE_FILTER=$("vehicle-filter").value.trim() || "vehicle.*";
+  if(caps.supports_lidar){
+    s.SIMULATOR_LIDAR_ENABLED=$("lidar-enabled").checked;
+    s.SIMULATOR_LIDAR_RANGE_M=Number($("lidar-range").value);
+    s.SIMULATOR_LIDAR_CHANNELS=Number($("lidar-channels").value);
+    s.SIMULATOR_LIDAR_POINTS_PER_SECOND=Number($("lidar-pps").value);
+    s.SIMULATOR_LIDAR_ROTATION_FREQUENCY=Number($("lidar-rotation").value);
+    s.SIMULATOR_CAMERA_FOV=Number($("camera-fov").value);
+  }
+  if(caps.supports_range_sensors)s.SIMULATOR_AVIS_SENSOR_ANGLE=Number($("avis-angle").value);
+  try{
+    const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:s})});
+    const data=await response.json();
+    if(!response.ok||!data.success)throw new Error(data.message||"Save failed");
+    status(data.message+(data.restart_required&&data.restart_required.length?" Restart required for: "+data.restart_required.join(", "):""),true);
+    await loadSettings();
+  }catch(error){status(error.message,false);}
+});
+$("reload-settings").addEventListener("click",function(){loadSettings().then(function(){status("Loaded saved settings.",true);}).catch(function(e){status(e.message,false);});});
+$("refresh").addEventListener("click",function(){poll();});
+$("clear-events").addEventListener("click",function(){$("event-console").replaceChildren();eventKeys=[];seenEvents.clear();});
+camera.addEventListener("error",function(){camera.alt="Waiting for the simulator to publish its first camera frame.";});
+loadSettings().catch(function(e){status(e.message,false);});
+poll();setInterval(poll,650);
+})();
+</script>
+</body>
+</html>

@@ -235,12 +235,15 @@ def load():
     import modes.city.config_city as config_city
     import modes.race.config_race as config_race
 
-    config_module = config_city if base_config.MODE == "city" else config_race
-    filename = Path(base_config.BASE_DIR) / (
-        "city.json" if base_config.MODE == "city" else "race.json"
+    mode = str(getattr(base_config, "MODE", "city")).lower()
+    profile = "race" if mode in {"race", "avis-race"} else "city"
+    selected = getattr(base_config, "CONFIG_MODULE", None)
+    config_module = selected if selected in (config_city, config_race) else (
+        config_city if profile == "city" else config_race
     )
+    filename = Path(base_config.BASE_DIR) / (profile + ".json")
 
     if getattr(config_module, "CHANGE_WITH_JSON", False):
         _load_into(config_module, str(filename))
 
-    logger.info("Configuration loaded: %s", filename)
+    logger.info("Configuration profile %s loaded for mode %s: %s", profile, mode, filename)

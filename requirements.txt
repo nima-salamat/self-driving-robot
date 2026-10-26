@@ -5,3 +5,6 @@ pyserial
 onnxruntime
 ncnn
 flask-socketio
+
+# Optional simulator APIs are deliberately separate so hardware-only installs stay portable.
+# See requirements-simulators.txt for platform/Python compatibility notes.

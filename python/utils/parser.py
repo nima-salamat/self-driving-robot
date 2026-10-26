@@ -2,6 +2,7 @@ import argparse
 import math
 
 from utils.processing_rate import DEFAULT_TARGET_FPS
+from modes.registry import get_mode_names
 
 
 def _positive_finite_fps(value):
@@ -31,6 +32,36 @@ def _confidence(value):
     return number
 
 
+def _port(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be an integer from 1 to 65535")
+    if not 1 <= number <= 65535:
+        raise argparse.ArgumentTypeError("must be an integer from 1 to 65535")
+    return number
+
+
+def _positive_int(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
+def _sensor_angle(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be an integer between -90 and 90")
+    if not -90 <= number <= 90:
+        raise argparse.ArgumentTypeError("must be an integer between -90 and 90")
+    return number
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Self-driving robot runtime.",
@@ -38,9 +69,9 @@ def parse_args(argv=None):
 
     parser.add_argument(
         "--mode",
-        choices=["city", "race"],
+        choices=get_mode_names(),
         default="city",
-        help="Run mode (default: city).",
+        help="Run mode: city/race for hardware; carla/avis/avis-race for simulators (default: city).",
     )
 
     parser.add_argument(
@@ -275,6 +306,33 @@ def parse_args(argv=None):
             "classical BLSF pipeline; default keeps the existing detector."
         ),
     )
+
+    parser.add_argument("--simulator-host", default=None, help="Simulator host/IP.")
+    parser.add_argument("--simulator-port", type=_port, default=None, help="Simulator port (CARLA 2000; AVIS Engine 25001).")
+    parser.add_argument("--simulator-timeout", dest="simulator_timeout", type=_positive_finite_fps, default=None, metavar="SECONDS")
+    parser.add_argument("--simulator-vehicle-filter", default=None, help="CARLA vehicle blueprint filter.")
+    lidar_group = parser.add_mutually_exclusive_group()
+    lidar_group.add_argument("--simulator-lidar", dest="simulator_lidar", action="store_true", default=None)
+    lidar_group.add_argument("--no-simulator-lidar", dest="simulator_lidar", action="store_false", default=None)
+    parser.add_argument("--simulator-lidar-range-m", type=_positive_finite_fps, default=None)
+    parser.add_argument("--simulator-lidar-channels", type=_positive_int, default=None)
+    parser.add_argument("--simulator-lidar-points-per-second", type=_positive_int, default=None)
+    parser.add_argument("--simulator-lidar-rotation-frequency", type=_positive_finite_fps, default=None)
+    parser.add_argument("--simulator-camera-fov", type=_positive_finite_fps, default=None)
+    parser.add_argument("--simulator-target-speed", type=_finite_nonnegative, default=None, help="km/h for CARLA; 0..100 percent for AVIS.")
+    parser.add_argument("--simulator-throttle-limit", type=_confidence, default=None)
+    lane_group = parser.add_mutually_exclusive_group()
+    lane_group.add_argument("--simulator-stop-on-lost-lane", dest="simulator_stop_on_lost_lane", action="store_true", default=None)
+    lane_group.add_argument("--simulator-keep-speed-on-lost-lane", dest="simulator_stop_on_lost_lane", action="store_false", default=None)
+    crosswalk_group = parser.add_mutually_exclusive_group()
+    crosswalk_group.add_argument("--simulator-stop-on-crosswalk", dest="simulator_stop_on_crosswalk", action="store_true", default=None)
+    crosswalk_group.add_argument("--simulator-continue-on-crosswalk", dest="simulator_stop_on_crosswalk", action="store_false", default=None)
+    steer_group = parser.add_mutually_exclusive_group()
+    steer_group.add_argument("--simulator-steering-inverted", dest="simulator_steering_inverted", action="store_true", default=None)
+    steer_group.add_argument("--simulator-steering-normal", dest="simulator_steering_inverted", action="store_false", default=None)
+    parser.add_argument("--simulator-avis-sensor-angle", type=_sensor_angle, default=None, metavar="DEGREES")
+    parser.add_argument("--simulator-obstacle-stop-distance-cm", type=_finite_nonnegative, default=None,
+                        metavar="CM", help="Brake when the nearest forward range is at or below this distance; 0 disables the range stop.")
 
     args = parser.parse_args(argv)
     # A dashboard access-mode flag is an explicit request to run the dashboard.
