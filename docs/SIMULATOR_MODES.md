@@ -48,7 +48,7 @@ The right-side sliders control the actual vehicle-mounted camera's local X/Y/Z o
 
 Opening the studio puts the CARLA vehicle on the brake and suppresses autonomous throttle until the studio closes. The CARLA sensor camera uses the saved mount on the next launch. Camera FOV and sensor-creation parameters still require a restart. Live world navigation requires a running, compatible CARLA server and `--stream-control`.
 
-The CARLA LiDAR card shows a live bird's-eye point-cloud view with range rings and distance-based point colors; use **Expand view** for a larger viewport. AVIS retains native distance-sensor range bars rather than a fabricated LiDAR cloud.
+The CARLA LiDAR card shows a live 360-degree bird's-eye point-cloud view with range rings and distance-based point colors; use **Expand view** for a larger viewport. AVIS has a separate top-down three-sensor distance diagram with live left/front/right range rays, centimeter labels, adjustable side-angle context, proximity colors, unknown-reading handling and an expanded viewport. That AVIS diagram visualizes the three actual reported ranges; it does not claim to locate objects or synthesize a LiDAR point cloud. Only the front/middle reading is used by the current forward-stop rule; side readings are shown for awareness and monitoring.
 
 Each mode persists only its own whitelisted simulator overrides:
 
