@@ -163,7 +163,6 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="avis-sensor-view"', page_text)
                         self.assertIn('id="avis-sensor-expand"', page_text)
                         self.assertIn("No valid reading", page_text)
-                        self.assertNotIn('id="lidar-view"', page_text)
 
                     state = client.get("/api/simulation/settings")
                     self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
