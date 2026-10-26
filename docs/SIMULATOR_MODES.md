@@ -40,6 +40,16 @@ Useful command-line settings include `--simulator-target-speed`, `--simulator-th
 
 Simulator modes render `simulator_editor.html` and use `/api/simulation/state` and `/api/simulation/settings` rather than the generic hardware editor. The page groups shared vision, active vision profile, backend-specific sensors and virtual I/O. Use `--stream-control` to enable settings writes; without it the dashboard is intentionally read-only. Host/port, model selection, encoder geometry and sensor-creation changes require a restart; supported controller and vision settings are saved immediately.
 
+### CARLA camera placement studio
+
+In CARLA mode, open **Open camera placement studio** from the CARLA sensor settings. The full-screenable modal creates a second, independent RGB camera in world space so it can fly around the map without changing the active vehicle camera. Use `W/A/S/D` to fly, `Q/E` to move vertically, arrow keys to rotate, hold Shift to move faster, or drag the viewport to look around. The world coordinates and angles are displayed over the preview.
+
+The right-side sliders control the actual vehicle-mounted camera's local X/Y/Z offset (meters) and pitch/yaw/roll (degrees). The changes are applied live to the attached camera but are not persisted until **Save mount** is pressed. **Snap view to vehicle camera** is a convenient starting point; **Use current world view as mount** converts the free camera's world pose into the vehicle's local coordinates. **Level mount** zeros pitch and roll. Closing/discarding the studio restores the last saved mount.
+
+Opening the studio puts the CARLA vehicle on the brake and suppresses autonomous throttle until the studio closes. The CARLA sensor camera uses the saved mount on the next launch. Camera FOV and sensor-creation parameters still require a restart. Live world navigation requires a running, compatible CARLA server and `--stream-control`.
+
+The CARLA LiDAR card shows a live bird's-eye point-cloud view with range rings and distance-based point colors; use **Expand view** for a larger viewport. AVIS retains native distance-sensor range bars rather than a fabricated LiDAR cloud.
+
 Each mode persists only its own whitelisted simulator overrides:
 
 - `python/carla.sim.json`
