@@ -315,10 +315,17 @@ if __name__ == "__main__":
 
     _apply_cli_overrides(config, args)
     if spec.runtime_kind == "simulation":
-        # This is an adapter-backed runtime, so the physical serial channel is
-        # always unavailable regardless of the hardware-oriented CLI default.
+        # These modes use a dedicated adapter/controller and intentionally do
+        # not inherit physical-only orchestration flags from city.json/race.json.
         config.WITHOUT_ARDUINO = True
         config.READ_ARDUINO_OUTPUT = False
+        for name in (
+            "WITH_SIGN", "WITH_APRILTAG", "USE_SIGN", "DETECT_OBJECT",
+            "RECORD_VIDEO", "TRAFFIC_LIGHTS_ENABLED",
+            "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", "CONFIDENCE_AWARE_ENABLED",
+        ):
+            if hasattr(config, name):
+                setattr(config, name, False)
     _validate_opt_in_features(config, args)
     _validate_selected_config(config)
 
@@ -372,8 +379,10 @@ if __name__ == "__main__":
         if (args.simulator_stop_on_crosswalk is not None and
                 getattr(config, "CITY_LANE_DETECTOR", "default") == "blsf-beta"):
             raise SystemExit("--simulator-stop-on-crosswalk requires the default City vision processor")
-        if args.simulator_target_speed is not None and args.simulator_target_speed > 100:
-            raise SystemExit("--simulator-target-speed must be at most 100 (km/h for CARLA, percent for AVIS)")
+        if args.simulator_target_speed is not None:
+            maximum_speed = 100 if spec.simulator_backend == "avis" else 200
+            if args.simulator_target_speed > maximum_speed:
+                raise SystemExit(f"--simulator-target-speed must be at most {maximum_speed} for {spec.simulator_backend.upper()}")
         if args.simulator_obstacle_stop_distance_cm is not None and args.simulator_obstacle_stop_distance_cm > 500:
             raise SystemExit("--simulator-obstacle-stop-distance-cm must be between 0 and 500")
         if args.simulator_lidar_range_m is not None and args.simulator_lidar_range_m > 500:

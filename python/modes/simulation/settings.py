@@ -115,8 +115,8 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_CAMERA_FOV must be between 10 and 150 degrees")
             if key == "SIMULATOR_LIDAR_ROTATION_FREQUENCY" and value > 50:
                 raise ValueError("SIMULATOR_LIDAR_ROTATION_FREQUENCY must be at most 50 Hz")
-            if key == "SIMULATOR_TARGET_SPEED" and value > 100:
-                raise ValueError("SIMULATOR_TARGET_SPEED must be at most 100")
+            if key == "SIMULATOR_TARGET_SPEED" and value > 200:
+                raise ValueError("SIMULATOR_TARGET_SPEED must be at most 200")
             if key == "SIMULATOR_LIDAR_RANGE_M" and value > 500:
                 raise ValueError("SIMULATOR_LIDAR_RANGE_M must be at most 500 meters")
             if key == "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" and value > 500:
@@ -146,6 +146,9 @@ def load_simulator_settings(config, mode, backend):
             values = _validate_settings(json.load(handle))
         for key, value in values.items():
             setattr(config, key, value)
+    target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
+    if backend == "avis" and target > 100:
+        raise ValueError("AVIS Engine target speed must be between 0 and 100")
     return path
 
 

@@ -36,8 +36,29 @@ async function waitForServer(child){
     browser=await chromium.launch({headless:true,args:['--no-sandbox']});
     const page=await browser.newPage({viewport:{width:1365,height:900}});
     const pageErrors=[],consoleErrors=[],criticalRequestFailures=[],commandRequests=[];
+    const unexpectedHttpResponses=[],expectedInjectedFailures=[];
     page.on('pageerror',error=>pageErrors.push(error.message));
-    page.on('console',message=>{if(message.type()==='error'&&!message.text().includes('favicon.ico'))consoleErrors.push(message.text());});
+    // This smoke test intentionally injects two HTTP 503 responses to verify
+    // failed serial sends and workspace-save retry. Those Chromium console
+    // notices are expected; every unexpected HTTP error still fails below.
+    page.on('response',response=>{
+      if(response.status()<400)return;
+      let pathname='';
+      try{pathname=new URL(response.url()).pathname;}catch(_){}
+      if(pathname==='/favicon.ico')return;
+      const method=response.request().method();
+      if(response.status()===503&&method==='POST'&&
+          (pathname==='/api/arduino-command'||pathname==='/api/workspace')){
+        expectedInjectedFailures.push(pathname);
+      }else{
+        unexpectedHttpResponses.push(response.status()+' '+method+' '+pathname);
+      }
+    });
+    page.on('console',message=>{
+      if(message.type()!=='error'||message.text().includes('favicon.ico'))return;
+      if(message.text().includes('Failed to load resource: the server responded with a status of 503 (Service Unavailable)'))return;
+      consoleErrors.push(message.text());
+    });
     page.on('requestfailed',request=>{
       let pathname='';
       try{pathname=new URL(request.url()).pathname;}catch(_){}
@@ -283,7 +304,9 @@ async function waitForServer(child){
     assert.deepEqual(diagnosticPayload.stages,{});
     assert.deepEqual(pageErrors,[],'Stream UI must not throw uncaught browser exceptions');
     assert.deepEqual(criticalRequestFailures,[],'Critical scripts and API requests must not fail at the network layer');
-    assert.deepEqual(consoleErrors,[],'Browser console should not contain errors during the smoke test');
+    assert.deepEqual(unexpectedHttpResponses,[],'Only the two explicitly injected HTTP 503 responses are allowed');
+    assert.deepEqual(expectedInjectedFailures.sort(),['/api/arduino-command','/api/workspace'],'Failure-path tests should each observe their intended 503 response');
+    assert.deepEqual(consoleErrors,[],'Browser console should not contain unexpected errors during the smoke test');
     console.log('Stream browser smoke test passed: startup, real ArrowUp/Down history, send failures, tools, ruler anchor through zoom, save retry/reload, text-only diagnostics, and browser error monitoring.');
   }catch(error){
     error.message+='\nFixture server output:\n'+serverOutput;

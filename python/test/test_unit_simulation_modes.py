@@ -64,6 +64,12 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertTrue(config.SIMULATOR_LIDAR_ENABLED is False)
             self.assertNotEqual(carla_path, avis_path)
 
+    def test_avis_target_speed_remains_percentage_limited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
+            with self.assertRaisesRegex(ValueError, "AVIS Engine target speed"):
+                save_simulator_settings(config, "avis", {"SIMULATOR_TARGET_SPEED": 150})
+
     def test_settings_reject_unknown_invalid_and_cross_field_values(self):
         with self.assertRaises(ValueError):
             _validate_settings({"SIMULATOR_PASSWORD": "unexpected"})
@@ -71,6 +77,7 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"SIMULATOR_PORT": 99999})
         with self.assertRaises(ValueError):
             _validate_settings({"SIMULATOR_TARGET_SPEED": -1})
+        self.assertEqual(_validate_settings({"SIMULATOR_TARGET_SPEED": 150})["SIMULATOR_TARGET_SPEED"], 150)
         with self.assertRaises(ValueError):
             _validate_settings({"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 501})
         self.assertEqual(_validate_settings({"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 0})["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"], 0)
@@ -145,6 +152,17 @@ class VirtualControllerTests(unittest.TestCase):
             self.assertEqual(fake.angle, 15)
             adapter.close()
             self.assertIn(("stop",), fake.commands)
+
+    def test_avis_adapter_returns_none_when_server_has_no_camera_frame(self):
+        class EmptyCar:
+            def getImage(self):
+                return None
+            def getData(self):
+                return None
+        adapter = AvisAdapter(SimpleNamespace())
+        adapter.car = EmptyCar()
+        adapter.connected = True
+        self.assertIsNone(adapter.read())
 
     def test_cli_accepts_simulation_modes_and_options(self):
         args = parse_args(["--mode", "carla", "--simulator-host", "10.0.0.2",

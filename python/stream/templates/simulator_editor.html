@@ -109,7 +109,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="setting-block">
             <h3 class="section-title">Virtual vehicle safety</h3>
             <div class="grid-two">
-              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="100" step="1" name="SIMULATOR_TARGET_SPEED" required></div>
+              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="1" name="SIMULATOR_TARGET_SPEED" required></div>
               <div class="field"><label for="throttle-limit">Throttle limit (0–1)</label><input id="throttle-limit" type="number" min="0" max="1" step=".05" name="SIMULATOR_THROTTLE_LIMIT" required></div>
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
@@ -202,7 +202,7 @@ function populate(s){
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
   });
-  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h)");
+  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, up to 200)");
 }
 async function loadSettings(){
   const response=await fetch("/api/simulation/settings",{cache:"no-store"});
@@ -301,7 +301,6 @@ $("settings-form").addEventListener("submit",async function(event){
     SIMULATOR_TARGET_SPEED:Number($("target-speed").value),
     SIMULATOR_THROTTLE_LIMIT:Number($("throttle-limit").value),
     SIMULATOR_STOP_ON_LOST_LANE:$("stop-lost-lane").checked,
-    SIMULATOR_STOP_ON_CROSSWALK:$("stop-crosswalk") ? $("stop-crosswalk").checked : false,
     SIMULATOR_STEERING_INVERTED:$("steering-inverted").checked,
     USE_BEV:$("use-bev").checked,DEBUG:$("debug-overlay").checked,
     SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:Number($("obstacle-stop-distance").value),
@@ -312,6 +311,7 @@ $("settings-form").addEventListener("submit",async function(event){
     ["ll-top","LL_TOP_ROI"],["ll-bottom","LL_BOTTOM_ROI"],["ll-left","LL_LEFT_ROI"],["ll-right","LL_RIGHT_ROI"],
     ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
   ].forEach(function(pair){const el=$(pair[0]);if(el&&el.value!=="")s[pair[1]]=Number(el.value);});
+  if(caps.supports_crosswalk) s.SIMULATOR_STOP_ON_CROSSWALK=$("stop-crosswalk").checked;
   if(caps.vision_profile==="city") s.CITY_LANE_DETECTOR=$("city-lane-detector").value;
   if(caps.vision_profile==="race"){
     s.USE_ML_LANE_DETECTOR=$("ml-lane-enabled").checked;

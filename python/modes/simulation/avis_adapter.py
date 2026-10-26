@@ -32,6 +32,12 @@ class AvisAdapter(SimulatorAdapter):
         result = self.car.connect(host, port)
         if result is False:
             raise RuntimeError(f"AVIS Engine connection to {host}:{port} failed")
+        # getData() is a synchronous request/response call in the current AVIS
+        # TCP API. Bound its blocking time so a dead server cannot leave the
+        # last throttle command active for the API's default five seconds.
+        sock = getattr(self.car, "sock", None)
+        if sock is not None and callable(getattr(sock, "settimeout", None)):
+            sock.settimeout(min(1.0, max(0.1, float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 5.0)))))
         self.connected = True
         self.set_sensor_angle(int(getattr(self.config, "SIMULATOR_AVIS_SENSOR_ANGLE", 0)))
         logger.info("Connected to AVIS Engine at %s:%s", host, port)
@@ -75,12 +81,6 @@ class AvisAdapter(SimulatorAdapter):
         # Do not re-stamp a cached frame as fresh when a response had no image.
         if frame is not None and frame is previous_frame:
             return None
-        if frame is None and data is not None:
-            for name in ("image", "Image", "frame", "Frame"):
-                candidate = getattr(data, name, None)
-                if candidate is not None:
-                    frame = candidate
-                    break
         if frame is None:
             return None
         frame = np.asarray(frame)

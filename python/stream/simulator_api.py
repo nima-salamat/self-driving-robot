@@ -84,9 +84,12 @@ def register_simulator_routes(app, streamer):
                 target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
             except (TypeError, ValueError, OverflowError):
                 return jsonify(success=False, message="SIMULATOR_TARGET_SPEED must be numeric"), 400
-            if not math.isfinite(target_speed) or target_speed < 0 or (backend == "avis" and target_speed > 100):
-                return jsonify(success=False, message="Target speed must be non-negative (maximum 100 for AVIS)"), 400
+            maximum_speed = 100 if backend == "avis" else 200
+            if not math.isfinite(target_speed) or target_speed < 0 or target_speed > maximum_speed:
+                return jsonify(success=False, message=f"Target speed must be between 0 and {maximum_speed} for {backend.upper()}"), 400
             patch["SIMULATOR_TARGET_SPEED"] = target_speed
+        if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
+            return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
         if "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in patch:
             try:
                 obstacle_distance = float(patch["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"])
