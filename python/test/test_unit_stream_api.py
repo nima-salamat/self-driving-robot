@@ -245,7 +245,7 @@ class StreamApiTests(unittest.TestCase):
                 "frame": image_url,
                 "stages": {"preview": image_url},
             })
-            self.assertEqual(text_only.status_code, 200, text_only.get_data(as_text=True))
+            self.assertEqual(text_only.status_code, 200, text_only.data[:200])
             with zipfile.ZipFile(io.BytesIO(text_only.data)) as archive:
                 self.assertEqual(archive.namelist(), ["diagnostic.json"])
                 snapshot = json.loads(archive.read("diagnostic.json").decode("utf-8"))
