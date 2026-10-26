@@ -354,7 +354,7 @@ function avisRangeColor(value,threshold,key){
   if(threshold>0&&distance<=Math.max(threshold*1.5,threshold+10))return "#ffd079";
   return "#75d6ff";
 }
-function drawAvisSensors(ranges){
+function drawAvisSensors(ranges,stale){
   const canvas=$("avis-sensor-view");if(!canvas)return;
   const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
   ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
@@ -383,12 +383,12 @@ function drawAvisSensors(ranges){
     const theta=sensor.angle*Math.PI/180;
     const dx=Math.sin(theta)*distance*scale;
     const dy=-Math.cos(theta)*distance*scale;
-    const color=avisRangeColor(raw,threshold,sensor.key);
+    const color=stale?"#7d8b9b":avisRangeColor(raw,threshold,sensor.key);
     ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=valid?3:2;ctx.setLineDash(valid?[]:[5,5]);
     ctx.beginPath();ctx.moveTo(sensor.x,sensor.y);ctx.lineTo(sensor.x+dx,sensor.y+dy);ctx.stroke();ctx.setLineDash([]);
     ctx.beginPath();ctx.arc(sensor.x,sensor.y,5,0,Math.PI*2);ctx.fill();
     if(valid){ctx.beginPath();ctx.arc(sensor.x+dx,sensor.y+dy,4,0,Math.PI*2);ctx.fill();}
-    const label=valid?(Number(raw)>maxRange?">300":numeric(raw,0))+" cm":"NO ECHO";
+    const label=valid?((stale?"STALE · ":"")+(Number(raw)>maxRange?">300":numeric(raw,0))+" cm"):"NO ECHO";
     ctx.font="bold 12px system-ui";ctx.textAlign=sensor.key==="left"?"left":sensor.key==="right"?"right":"center";
     let labelX=sensor.x+dx+(sensor.key==="left"?8:sensor.key==="right"?-8:0);
     let labelY=sensor.y+dy-8;
@@ -409,8 +409,9 @@ function drawAvisSensors(ranges){
   ctx.restore();
   setText("avis-angle-hint","Side angle: ±"+numeric(sideAngle,0)+"°");
 }
-function renderRanges(ranges){
+function renderRanges(ranges,frameAgeMs){
   const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
+  const age=Number(frameAgeMs),stale=frameAgeMs===null||!Number.isFinite(age)||age>1500;
   let valid=0,nearest=null,stopCount=0;
   ["left","front","right"].forEach(function(key){
     const raw=ranges&&ranges[key]!==undefined?ranges[key]:null;
@@ -419,13 +420,24 @@ function renderRanges(ranges){
     if(good){valid++;nearest=nearest===null?value:Math.min(nearest,value);if(key==="front"&&threshold>0&&value<=threshold)stopCount++;}
     const valueEl=$("range-"+key);
     if(valueEl)valueEl.innerHTML=good?numeric(value,0)+' <span class="unit">cm</span>':'— <span class="unit">cm</span>';
-    const bar=$("bar-"+key);if(bar){bar.style.width=good?Math.max(0,Math.min(100,value/300*100))+"%":"0%";bar.style.background=avisRangeColor(value,threshold,key);}
-    setText("range-"+key+"-state",avisRangeStatus(value,threshold,key));
+    const bar=$("bar-"+key);
+    if(bar){bar.style.width=good?Math.max(0,Math.min(100,value/300*100))+"%":"0%";bar.style.background=stale?"#7d8b9b":avisRangeColor(value,threshold,key);}
+    setText("range-"+key+"-state",stale?"Stale sample":avisRangeStatus(value,threshold,key));
   });
-  drawAvisSensors(ranges);
-  if(valid===0){setText("avis-sensor-state","No valid readings");$("avis-sensor-state").className="pill";setText("avis-sensor-note","AVIS returned no usable distance values in this sample. Unknown readings are not interpreted as obstacles.");}
-  else if(stopCount){setText("avis-sensor-state",stopCount+" at threshold");$("avis-sensor-state").className="pill";setText("avis-sensor-note","At least one range value is at/below the configured front-range stop threshold. Only the FRONT sensor participates in the existing autonomous stop rule.");}
-  else{setText("avis-sensor-state",valid+"/3 sensors live");$("avis-sensor-state").className="pill live";setText("avis-sensor-note","Nearest valid reading: "+numeric(nearest,0)+" cm. The drawing is schematic: sensor rays communicate measured range, not the position or shape of an object.");}
+  drawAvisSensors(ranges,stale);
+  if(stale){
+    setText("avis-sensor-state","Stale · last sample");$("avis-sensor-state").className="pill";
+    setText("avis-sensor-note","Last sensor sample is "+(Number.isFinite(age)?numeric(age,0)+" ms old":"not timestamped")+". Distances remain visible as last-known values, but the diagram is greyed out and must not be treated as live.");
+  }else if(valid===0){
+    setText("avis-sensor-state","No valid readings");$("avis-sensor-state").className="pill";
+    setText("avis-sensor-note","AVIS returned no usable distance values in this sample. Unknown readings are not interpreted as obstacles.");
+  }else if(stopCount){
+    setText("avis-sensor-state","Front at threshold");$("avis-sensor-state").className="pill";
+    setText("avis-sensor-note","The FRONT sensor is at/below the configured forward-stop threshold. Side sensors remain monitoring-only in the current autonomous stop rule.");
+  }else{
+    setText("avis-sensor-state",valid+"/3 sensors live");$("avis-sensor-state").className="pill live";
+    setText("avis-sensor-note","Nearest valid reading: "+numeric(nearest,0)+" cm. The drawing is schematic: sensor rays communicate measured range, not the position or shape of an object.");
+  }
 }
 function renderEvents(events){
   const consoleEl=$("event-console"); if(!consoleEl)return;
@@ -469,7 +481,7 @@ async function poll(){
       setText("lidar-note",d.sensors.lidar_available?"Ray-cast LiDAR active · nearest point "+(d.sensors.lidar_nearest_m===null?"—":numeric(d.sensors.lidar_nearest_m,1)+" m"):"LiDAR has not delivered a packet or is disabled.");
       drawLidar(d.sensors.lidar_points_xy||[]);
     }
-    if(caps.supports_range_sensors) renderRanges(d.sensors.ranges_cm||{});
+    if(caps.supports_range_sensors) renderRanges(d.sensors.ranges_cm||{},d.frame_age_ms);
     renderEvents(d.events||[]);
   }catch(error){
     $("connection-led").className="led error";setText("connection-label","Disconnected / waiting");
