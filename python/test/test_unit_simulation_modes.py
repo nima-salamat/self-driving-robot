@@ -93,6 +93,65 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 0.3})
 
 
+class SimulatorEditorTests(unittest.TestCase):
+    def test_simulator_editor_renders_with_mode_specific_capabilities(self):
+        import os
+        import stream
+        from stream import WebStreamer
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(stream, "BASE_DIR", directory), patch.dict(
+                os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""}
+            ):
+                for mode, backend, profile in (
+                    ("carla", "carla", "city"),
+                    ("avis", "avis", "city"),
+                    ("avis-race", "avis", "race"),
+                ):
+                    config = SimpleNamespace(
+                        BASE_DIR=directory,
+                        MODE=mode,
+                        SIMULATOR_BACKEND=backend,
+                        SIMULATION_VISION_PROFILE=profile,
+                        STREAM=True,
+                        STREAM_HOST="127.0.0.1",
+                        STREAM_PORT=41990,
+                        STREAM_ALLOW_CONTROL=False,
+                        RECORD_VIDEO=False,
+                        USE_BEV=False,
+                        USE_ML_LANE_DETECTOR=False,
+                        CITY_LANE_DETECTOR="default",
+                        WITHOUT_ARDUINO=True,
+                        READ_ARDUINO_OUTPUT=False,
+                        SEND_AUTOMATIC_ARDUINO_COMMANDS=False,
+                        MIN_SERVO_ANGLE=50,
+                        SERVO_CENTER=95,
+                        MAX_SERVO_ANGLE=130,
+                        debug_frames_list=[None, None],
+                        stream_frame_seq=1,
+                        OUTPUT_DIR=directory,
+                    )
+                    client = WebStreamer(config).app.test_client()
+                    page = client.get("/")
+                    self.assertEqual(page.status_code, 200, page.data[:300])
+                    self.assertIn("Simulator camera", page.get_data(as_text=True))
+                    self.assertIn(mode.upper(), page.get_data(as_text=True))
+                    self.assertIn("no-store", page.headers.get("Cache-Control", ""))
+
+                    state = client.get("/api/simulation/settings")
+                    self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
+                    payload = state.get_json()
+                    self.assertEqual(payload["backend"], backend)
+                    self.assertEqual(payload["vision_profile"], profile)
+                    self.assertFalse(payload["controls_enabled"])
+
+                    denied = client.post(
+                        "/api/simulation/settings",
+                        json={"SIMULATOR_TARGET_SPEED": 5.0},
+                    )
+                    self.assertEqual(denied.status_code, 403)
+
+
 class VirtualControllerTests(unittest.TestCase):
     def setUp(self):
         self.config = SimpleNamespace(
