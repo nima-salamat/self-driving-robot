@@ -214,6 +214,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <button type="button" id="camera-snap-mount">Snap view to vehicle camera</button>
             <button type="button" id="camera-level-mount">Level mount (pitch/roll 0°)</button>
             <button type="button" id="camera-level-view">Level free view</button>
+            <button type="button" id="camera-restore-saved">Reload saved mount</button>
             <button type="button" id="camera-reset-mount">Reset mount defaults</button>
             <button type="button" class="primary" id="camera-use-view">Use current world view as mount</button>
           </div>
@@ -419,8 +420,137 @@ $("reload-settings").addEventListener("click",function(){loadSettings().then(fun
 $("refresh").addEventListener("click",function(){poll();});
 $("clear-events").addEventListener("click",function(){$("event-console").replaceChildren();eventKeys=[];seenEvents.clear();});
 camera.addEventListener("error",function(){camera.alt="Waiting for the simulator to publish its first camera frame.";});
+
+function setCameraStatus(message,bad){
+  const el=$("camera-editor-status");if(!el)return;
+  el.textContent=message||"";el.className="msg"+(bad?" bad":"");
+}
+const mountFields=[
+  ["SIMULATOR_CAMERA_X","cam-x"],["SIMULATOR_CAMERA_Y","cam-y"],["SIMULATOR_CAMERA_Z","cam-z"],
+  ["SIMULATOR_CAMERA_PITCH","cam-pitch"],["SIMULATOR_CAMERA_YAW","cam-yaw"],["SIMULATOR_CAMERA_ROLL","cam-roll"]
+];
+let cameraEditorOpen=false,cameraMoveTimer=null,cameraImageTimer=null,cameraStateTimer=null,cameraPreviewTimer=null;
+let cameraHeldKeys=new Set(),cameraMovePending=false,cameraLookYaw=0,cameraLookPitch=0,cameraLastPointer=null;
+function updateCameraMountInputs(mount){
+  if(!mount)return;
+  mountFields.forEach(function(item){
+    const key=item[0],id=item[1],el=$(id);if(!el||mount[key]===undefined)return;
+    el.value=String(Number(mount[key]));
+    const out=$(id+"-value");if(out)out.textContent=numeric(mount[key],2);
+  });
+}
+function readCameraMount(){
+  const out={};mountFields.forEach(function(item){out[item[0]]=Number($(item[1]).value);});return out;
+}
+function updateCameraMountOutputs(){
+  mountFields.forEach(function(item){const el=$(item[1]),out=$(item[1]+"-value");if(el&&out)out.textContent=numeric(el.value,2);});
+}
+function renderCameraWorld(state){
+  const world=state&&state.world_transform;
+  if(world)setText("camera-world-readout","World camera\nX "+numeric(world.x,2)+" m · Y "+numeric(world.y,2)+" m · Z "+numeric(world.z,2)+" m\nPitch "+numeric(world.pitch,1)+"° · Yaw "+numeric(world.yaw,1)+"° · Roll "+numeric(world.roll,1)+"°");
+  if(state&&state.active)setText("camera-editor-mode","FREE-FLY ACTIVE");
+}
+async function cameraAction(action,payload){
+  const response=await fetch("/api/simulation/carla-camera",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action:action},payload||{})),cache:"no-store"});
+  const data=await response.json().catch(function(){return {success:false,message:"Server returned an unreadable response"};});
+  if(!response.ok||!data.success)throw new Error(data.message||"Camera editor operation failed");
+  if(data.state)renderCameraWorld(data.state);
+  return data.state||null;
+}
+async function pollCameraEditorState(){
+  try{const response=await fetch("/api/simulation/carla-camera",{cache:"no-store"});const data=await response.json();if(!response.ok||!data.success)throw new Error(data.message||"Camera state unavailable");renderCameraWorld(data.state);}
+  catch(error){setCameraStatus(error.message,true);}
+}
+function queueCameraMountPreview(){
+  updateCameraMountOutputs();if(!cameraEditorOpen)return;
+  clearTimeout(cameraPreviewTimer);cameraPreviewTimer=setTimeout(async function(){
+    try{await cameraAction("preview_mount",{transform:readCameraMount(),follow_mount:true});setCameraStatus("Live vehicle-camera preview applied · not saved yet.",false);}
+    catch(error){setCameraStatus(error.message,true);}
+  },110);
+}
+async function openCameraEditor(){
+  if(!$("camera-editor-modal")||$("open-camera-editor").disabled)return;
+  try{
+    const state=await cameraAction("open");
+    cameraEditorOpen=true;$("camera-editor-modal").setAttribute("aria-hidden","false");
+    if(state&&state.mount)updateCameraMountInputs(state.mount);
+    setCameraStatus("Live camera editor open. The CARLA vehicle is held on the brake while you edit.",false);
+    const refreshImage=function(){if(cameraEditorOpen)$("camera-editor-preview").src="/api/simulation/carla-camera/frame.jpg?t="+Date.now();};
+    refreshImage();cameraImageTimer=setInterval(refreshImage,180);
+    cameraStateTimer=setInterval(pollCameraEditorState,350);
+    cameraHeldKeys.clear();cameraMovePending=false;cameraLookYaw=0;cameraLookPitch=0;
+    cameraMoveTimer=setInterval(async function(){
+      if(!cameraEditorOpen||cameraMovePending)return;
+      let forward=(cameraHeldKeys.has("w")?1:0)-(cameraHeldKeys.has("s")?1:0);
+      let right=(cameraHeldKeys.has("d")?1:0)-(cameraHeldKeys.has("a")?1:0);
+      let up=(cameraHeldKeys.has("e")?1:0)-(cameraHeldKeys.has("q")?1:0);
+      let yaw=(cameraHeldKeys.has("arrowright")?1:0)-(cameraHeldKeys.has("arrowleft")?1:0);
+      let pitch=(cameraHeldKeys.has("arrowup")?1:0)-(cameraHeldKeys.has("arrowdown")?1:0);
+      const speed=Number($("camera-move-speed").value)||.18;
+      const factor=cameraHeldKeys.has("shift")?3:1;
+      forward*=speed*factor;right*=speed*factor;up*=speed*factor;yaw*=1.4*factor;pitch*=1.2*factor;
+      const lookYaw=Math.max(-8,Math.min(8,cameraLookYaw)),lookPitch=Math.max(-8,Math.min(8,cameraLookPitch));
+      cameraLookYaw-=lookYaw;cameraLookPitch-=lookPitch;yaw+=lookYaw;pitch+=lookPitch;
+      if(!forward&&!right&&!up&&!yaw&&!pitch)return;
+      cameraMovePending=true;
+      try{await cameraAction("move",{forward:forward,right:right,up:up,yaw:yaw,pitch:pitch});}
+      catch(error){setCameraStatus(error.message,true);}
+      finally{cameraMovePending=false;}
+    },70);
+  }catch(error){setCameraStatus(error.message,true);status(error.message,false);}
+}
+async function closeCameraEditor(discard){
+  if(!cameraEditorOpen)return;
+  cameraEditorOpen=false;cameraHeldKeys.clear();cameraLastPointer=null;
+  if(cameraMoveTimer)clearInterval(cameraMoveTimer);
+  if(cameraImageTimer)clearInterval(cameraImageTimer);
+  if(cameraStateTimer)clearInterval(cameraStateTimer);
+  clearTimeout(cameraPreviewTimer);
+  cameraMoveTimer=cameraImageTimer=cameraStateTimer=cameraPreviewTimer=null;
+  $("camera-editor-modal").setAttribute("aria-hidden","true");
+  $("camera-editor-preview").removeAttribute("src");
+  try{await cameraAction(discard?"discard":"close");setCameraStatus("Saved mount restored. Vehicle control can resume.",false);}
+  catch(error){status(error.message,false);}
+}
+function initCameraEditor(){
+  if(!$("camera-editor-modal"))return;
+  $("open-camera-editor").addEventListener("click",openCameraEditor);
+  $("close-camera-editor").addEventListener("click",function(){closeCameraEditor(true);});
+  $("camera-discard").addEventListener("click",function(){closeCameraEditor(true);});
+  $("camera-editor-modal").addEventListener("click",function(event){if(event.target===$("camera-editor-modal"))closeCameraEditor(true);});
+  $("camera-save-mount").addEventListener("click",async function(){
+    try{const state=await cameraAction("save_mount",{transform:readCameraMount()});if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("Saved to this CARLA mode's .sim.json file and applied live.",false);}
+    catch(error){setCameraStatus(error.message,true);}
+  });
+  mountFields.forEach(function(item){$(item[1]).addEventListener("input",queueCameraMountPreview);});
+  $("camera-snap-mount").addEventListener("click",async function(){try{const state=await cameraAction("snap_to_mount");renderCameraWorld(state);setCameraStatus("Free camera snapped to the current vehicle camera position.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-use-view").addEventListener("click",async function(){try{const state=await cameraAction("use_view_as_mount");if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("World camera pose transferred to the vehicle mount. Save mount to keep it.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-level-view").addEventListener("click",async function(){try{await cameraAction("level_view");setCameraStatus("Free camera horizon levelled.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-level-mount").addEventListener("click",function(){$("cam-pitch").value="0";$("cam-roll").value="0";queueCameraMountPreview();setCameraStatus("Mount pitch and roll set to zero. Save mount to persist.",false);});
+  $("camera-reset-mount").addEventListener("click",function(){updateCameraMountInputs({"SIMULATOR_CAMERA_X":1.45,"SIMULATOR_CAMERA_Y":0,"SIMULATOR_CAMERA_Z":1.8,"SIMULATOR_CAMERA_PITCH":-8,"SIMULATOR_CAMERA_YAW":0,"SIMULATOR_CAMERA_ROLL":0});queueCameraMountPreview();});
+  $("camera-restore-saved").addEventListener("click",async function(){try{const state=await cameraAction("restore_mount");if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("Saved mount restored to live preview.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-editor-preview").addEventListener("error",function(){if(cameraEditorOpen)setCameraStatus("Waiting for the CARLA fly-camera frame. Confirm that the simulator is ticking.",true);});
+  const viewport=$("camera-editor-viewport");
+  viewport.addEventListener("pointerdown",function(event){if(!cameraEditorOpen)return;cameraLastPointer={x:event.clientX,y:event.clientY};viewport.classList.add("dragging");viewport.setPointerCapture(event.pointerId);event.preventDefault();});
+  viewport.addEventListener("pointermove",function(event){if(!cameraLastPointer)return;const dx=event.clientX-cameraLastPointer.x,dy=event.clientY-cameraLastPointer.y;cameraLastPointer={x:event.clientX,y:event.clientY};cameraLookYaw=Math.max(-30,Math.min(30,cameraLookYaw+dx*.24));cameraLookPitch=Math.max(-30,Math.min(30,cameraLookPitch-dy*.24));});
+  function endLook(){cameraLastPointer=null;viewport.classList.remove("dragging");}
+  viewport.addEventListener("pointerup",endLook);viewport.addEventListener("pointercancel",endLook);viewport.addEventListener("lostpointercapture",endLook);
+  window.addEventListener("keydown",function(event){
+    if(!cameraEditorOpen)return;
+    if(event.key==="Escape"){event.preventDefault();closeCameraEditor(true);return;}
+    if(["INPUT","SELECT","TEXTAREA"].includes((event.target&&event.target.tagName)||""))return;
+    const key=event.key.toLowerCase();
+    if(["w","a","s","d","q","e","shift","arrowleft","arrowright","arrowup","arrowdown"].includes(key)){cameraHeldKeys.add(key);event.preventDefault();}
+  });
+  window.addEventListener("keyup",function(event){cameraHeldKeys.delete(event.key.toLowerCase());});
+  window.addEventListener("blur",function(){cameraHeldKeys.clear();});
+}
+
+initCameraEditor();
 loadSettings().catch(function(e){status(e.message,false);});
 poll();setInterval(poll,650);
+if($("lidar-expand"))$("lidar-expand").addEventListener("click",function(){const panel=$("lidar-panel");const expanded=panel.classList.toggle("lidar-panel-expanded");$("lidar-expand").textContent=expanded?"Exit expanded view":"Expand view";if(expanded&&document.documentElement.requestFullscreen){document.documentElement.requestFullscreen().catch(function(){});}else if(!expanded&&document.fullscreenElement&&document.exitFullscreen){document.exitFullscreen().catch(function(){});}});
+document.addEventListener("fullscreenchange",function(){const panel=$("lidar-panel");if(panel&&document.fullscreenElement===null&&panel.classList.contains("lidar-panel-expanded")){panel.classList.remove("lidar-panel-expanded");if($("lidar-expand"))$("lidar-expand").textContent="Expand view";}});
 })();
 </script>
 </body>
