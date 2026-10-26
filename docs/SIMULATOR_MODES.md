@@ -19,9 +19,9 @@ The shared City processor performs line and crosswalk image processing. Race mod
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install -r requirements-simulators.txt
-python python/main.py --mode carla --stream
-python python/main.py --mode avis --stream
-python python/main.py --mode avis-race --stream
+python python/main.py --mode carla --stream --stream-control
+python python/main.py --mode avis --stream --stream-control
+python python/main.py --mode avis-race --stream --stream-control
 ```
 
 Start the matching simulator server before the client. Defaults: CARLA `127.0.0.1:2000`; AVIS Engine `127.0.0.1:25001`. Use `--simulator-host` and `--simulator-port` to override. CARLA's server, client API version and Python wheel must be compatible. The optional CARLA requirement is limited to common x86-64 CPython 3.10–3.12 targets because those are the official PyPI wheel tags; for other platforms use the matching simulator-distributed wheel manually. The AVIS API is bundled as `python/avisengine.py` because the upstream repository does not currently provide a pip-installable package; its required NumPy/OpenCV dependencies are in the base requirements.
@@ -38,7 +38,7 @@ Useful command-line settings include `--simulator-target-speed`, `--simulator-th
 
 ## Editor settings and separation
 
-Simulator modes render `simulator_editor.html` and use `/api/simulation/state` and `/api/simulation/settings` rather than the generic hardware editor. The page groups shared vision, active vision profile, backend-specific sensors and virtual I/O. Host/port and sensor-creation changes require a restart; supported controller and vision settings are saved immediately.
+Simulator modes render `simulator_editor.html` and use `/api/simulation/state` and `/api/simulation/settings` rather than the generic hardware editor. The page groups shared vision, active vision profile, backend-specific sensors and virtual I/O. Use `--stream-control` to enable settings writes; without it the dashboard is intentionally read-only. Host/port, model selection, encoder geometry and sensor-creation changes require a restart; supported controller and vision settings are saved immediately.
 
 Each mode persists only its own whitelisted simulator overrides:
 

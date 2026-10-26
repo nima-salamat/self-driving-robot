@@ -86,12 +86,12 @@ Install simulator extras on a system that runs the simulator client. The CARLA A
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install -r requirements-simulators.txt
-python python/main.py --mode carla --stream
-python python/main.py --mode avis --stream
-python python/main.py --mode avis-race --stream
+python python/main.py --mode carla --stream --stream-control
+python python/main.py --mode avis --stream --stream-control
+python python/main.py --mode avis-race --stream --stream-control
 ```
 
-Start the CARLA server or AVIS Engine simulator separately. Defaults are `127.0.0.1:2000` for CARLA and `127.0.0.1:25001` for AVIS; override them with `--simulator-host` and `--simulator-port`. CARLA mode creates an RGB camera and, by default, ray-cast LiDAR. AVIS modes expose native left/front/right distance readings instead of pretending they are LiDAR. The editor also exposes a forward-range stop threshold that uses CARLA front-sector LiDAR or the AVIS front distance sensor; set it to `0` to disable that extra range stop.
+Use `--stream-control` to save simulator settings from the editor; without it the Stream interface is read-only. Start the CARLA server or AVIS Engine simulator separately. Defaults are `127.0.0.1:2000` for CARLA and `127.0.0.1:25001` for AVIS; override them with `--simulator-host` and `--simulator-port`. CARLA mode creates an RGB camera and, by default, ray-cast LiDAR. AVIS modes expose native left/front/right distance readings instead of pretending they are LiDAR. The editor also exposes a forward-range stop threshold that uses CARLA front-sector LiDAR or the AVIS front distance sensor; set it to `0` to disable that extra range stop.
 
 The simulator dashboard has a dedicated editor and persists to `python/carla.sim.json`, `python/avis.sim.json`, and `python/avis-race.sim.json`; those files do not overwrite the physical `city.json` or `race.json`. Simulator steering/throttle/brake commands and virtual encoder pulses are simulation telemetry, not physical Arduino or encoder measurements. Start at a low target speed and verify steering direction in the simulator.
 
