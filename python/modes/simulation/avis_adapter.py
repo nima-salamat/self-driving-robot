@@ -1,6 +1,7 @@
 """AVIS Engine adapter; its distance sensors are not presented as LiDAR."""
 import logging
 import math
+import threading
 import time
 import numpy as np
 from .base_adapter import SensorFrame, SimulatorAdapter
@@ -15,6 +16,7 @@ class AvisAdapter(SimulatorAdapter):
     def __init__(self, config):
         super().__init__(config)
         self.car = None
+        self._io_lock = threading.RLock()
         self._sequence = 0
         self._previous_at = None
 
@@ -44,13 +46,14 @@ class AvisAdapter(SimulatorAdapter):
         logger.info("Connected to AVIS Engine at %s:%s", host, port)
 
     def set_sensor_angle(self, angle):
-        if self.car is None:
+        with self._io_lock:
+            if self.car is None or not self.connected:
+                return False
+            method = getattr(self.car, "setSensorAngle", None)
+            if callable(method):
+                method(max(0, min(90, int(angle))))
+                return True
             return False
-        method = getattr(self.car, "setSensorAngle", None)
-        if callable(method):
-            method(max(0, min(90, int(angle))))
-            return True
-        return False
 
     @staticmethod
     def _range(value):
@@ -61,6 +64,12 @@ class AvisAdapter(SimulatorAdapter):
         return distance if math.isfinite(distance) and distance >= 0 else None
 
     def read(self, timeout=0.25):
+        # AVIS uses a single stateful TCP socket and a mutable command buffer;
+        # serialize frame requests with UI-driven sensor changes and controls.
+        with self._io_lock:
+            return self._read_locked(timeout)
+
+    def _read_locked(self, timeout=0.25):
         if not self.connected or self.car is None:
             return None
         try:
@@ -118,31 +127,33 @@ class AvisAdapter(SimulatorAdapter):
         )
 
     def apply_control(self, command):
-        if self.car is None or not self.connected:
-            return False
-        steering = max(-100, min(100, int(round(float(command.steering) * 100.0))))
-        speed = 0 if float(command.brake) >= 0.5 else max(
-            0, min(100, int(round(float(command.throttle) * 100.0)))
-        )
-        self.car.setSteering(steering)
-        self.car.setSpeed(speed)
-        return True
+        with self._io_lock:
+            if self.car is None or not self.connected:
+                return False
+            steering = max(-100, min(100, int(round(float(command.steering) * 100.0))))
+            speed = 0 if float(command.brake) >= 0.5 else max(
+                0, min(100, int(round(float(command.throttle) * 100.0)))
+            )
+            self.car.setSteering(steering)
+            self.car.setSpeed(speed)
+            return True
 
     def close(self):
-        car, self.car = self.car, None
-        if car is not None:
-            try:
-                car.stop()
-            except Exception:
+        with self._io_lock:
+            car, self.car = self.car, None
+            self.connected = False
+            if car is not None:
                 try:
-                    car.setSpeed(0)
+                    car.stop()
                 except Exception:
-                    pass
-            for name in ("disconnect", "close"):
-                method = getattr(car, name, None)
-                if callable(method):
                     try:
-                        method()
+                        car.setSpeed(0)
                     except Exception:
-                        logger.debug("AVIS %s failed during shutdown", name, exc_info=True)
-        self.connected = False
+                        pass
+                for name in ("disconnect", "close"):
+                    method = getattr(car, name, None)
+                    if callable(method):
+                        try:
+                            method()
+                        except Exception:
+                            logger.debug("AVIS %s failed during shutdown", name, exc_info=True)
