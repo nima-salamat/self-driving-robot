@@ -261,7 +261,7 @@ class StreamApiTests(unittest.TestCase):
                 "frame": image_url,
                 "stages": {"preview": image_url},
             })
-            self.assertEqual(frame_only.status_code, 200, frame_only.get_data(as_text=True))
+            self.assertEqual(frame_only.status_code, 200, frame_only.data[:200])
             with zipfile.ZipFile(io.BytesIO(frame_only.data)) as archive:
                 self.assertIn("current_frame.jpg", archive.namelist())
                 self.assertFalse(any(name.startswith("vision_stages/") for name in archive.namelist()))
@@ -274,7 +274,7 @@ class StreamApiTests(unittest.TestCase):
                 "frame": image_url,
                 "stages": {"preview": image_url},
             })
-            self.assertEqual(stages_only.status_code, 200, stages_only.get_data(as_text=True))
+            self.assertEqual(stages_only.status_code, 200, stages_only.data[:200])
             with zipfile.ZipFile(io.BytesIO(stages_only.data)) as archive:
                 names = archive.namelist()
                 self.assertIn("vision_stages/preview.jpg", names)
