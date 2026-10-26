@@ -29,15 +29,16 @@ class AvisAdapter(SimulatorAdapter):
         self.car = avisengine.Car()
         host = str(getattr(self.config, "SIMULATOR_HOST", "127.0.0.1"))
         port = int(getattr(self.config, "SIMULATOR_PORT", 25001))
+        # The bundled API uses one synchronous request/response socket. Limit
+        # both connection and frame-read waits so stale control cannot linger.
+        request_timeout = min(1.0, max(0.1, float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 1.0))))
+        self.car.timeout = request_timeout
         result = self.car.connect(host, port)
         if result is False:
             raise RuntimeError(f"AVIS Engine connection to {host}:{port} failed")
-        # getData() is a synchronous request/response call in the current AVIS
-        # TCP API. Bound its blocking time so a dead server cannot leave the
-        # last throttle command active for the API's default five seconds.
         sock = getattr(self.car, "sock", None)
         if sock is not None and callable(getattr(sock, "settimeout", None)):
-            sock.settimeout(min(1.0, max(0.1, float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 5.0)))))
+            sock.settimeout(request_timeout)
         self.connected = True
         self.set_sensor_angle(int(getattr(self.config, "SIMULATOR_AVIS_SENSOR_ANGLE", 0)))
         logger.info("Connected to AVIS Engine at %s:%s", host, port)

@@ -49,7 +49,7 @@ def _defaults(mode, backend):
     return {
         "SIMULATOR_HOST": "127.0.0.1",
         "SIMULATOR_PORT": 25001 if avis else 2000,
-        "SIMULATOR_TIMEOUT_S": 5.0,
+        "SIMULATOR_TIMEOUT_S": 1.0 if avis else 5.0,
         "SIMULATOR_VEHICLE_FILTER": "vehicle.*",
         "SIMULATOR_LIDAR_ENABLED": backend == "carla",
         "SIMULATOR_LIDAR_RANGE_M": 50.0,
@@ -149,6 +149,8 @@ def load_simulator_settings(config, mode, backend):
     target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
     if backend == "avis" and target > 100:
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
+    if backend == "avis" and float(getattr(config, "SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
+        raise ValueError("AVIS Engine request timeout must be at most 1 second")
     return path
 
 
@@ -164,6 +166,8 @@ def save_simulator_settings(config, mode, patch):
     values = _validate_settings(values)
     if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TARGET_SPEED", 0)) > 100:
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
+    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
+        raise ValueError("AVIS Engine request timeout must be at most 1 second")
     fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

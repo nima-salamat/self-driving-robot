@@ -69,6 +69,8 @@ class SimulatorSettingsTests(unittest.TestCase):
             config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
             with self.assertRaisesRegex(ValueError, "AVIS Engine target speed"):
                 save_simulator_settings(config, "avis", {"SIMULATOR_TARGET_SPEED": 150})
+            with self.assertRaisesRegex(ValueError, "request timeout"):
+                save_simulator_settings(config, "avis", {"SIMULATOR_TIMEOUT_S": 2.0})
 
     def test_settings_reject_unknown_invalid_and_cross_field_values(self):
         with self.assertRaises(ValueError):

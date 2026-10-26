@@ -40,6 +40,7 @@ class Car():
         # Keep each robot runtime isolated; the upstream API stores its socket
         # at class scope, which would otherwise share a closed socket on restart.
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.timeout = 5.0
         self.steering_value = 0
         self.speed_value = 0
         self.sensor_status = 1
@@ -77,7 +78,7 @@ class Car():
         Connecting to the simulator (server)
         '''
         try:
-            self.sock.settimeout(5.0)
+            self.sock.settimeout(float(getattr(self, "timeout", 5.0)))
             self.sock.connect((server, port))
             
             print("connected to ", server, port)

@@ -397,6 +397,9 @@ if __name__ == "__main__":
             raise SystemExit("--simulator-camera-fov must be between 10 and 150 degrees")
         if args.simulator_timeout is not None and args.simulator_timeout > 60:
             raise SystemExit("--simulator-timeout must be at most 60 seconds")
+        if (spec.simulator_backend == "avis" and args.simulator_timeout is not None
+                and args.simulator_timeout > 1.0):
+            raise SystemExit("--simulator-timeout must be at most 1 second for AVIS Engine")
 
     if args.arduino_config and args.without_arduino:
         raise SystemExit("--arduino-config cannot be used together with --without-arduino")

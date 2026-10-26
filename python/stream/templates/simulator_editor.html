@@ -85,7 +85,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <div class="grid-two">
               <div class="field"><label for="sim-host">Host / IP</label><input id="sim-host" name="SIMULATOR_HOST" autocomplete="off" required></div>
               <div class="field"><label for="sim-port">Port</label><input id="sim-port" name="SIMULATOR_PORT" type="number" min="1" max="65535" step="1" required></div>
-              <div class="field"><label for="sim-timeout">Connection timeout (s)</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="60" step=".1" required></div>
+              <div class="field"><label for="sim-timeout">Connection / request timeout (s)</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="{% if caps.simulator_backend == 'avis' %}1{% else %}60{% endif %}" step=".1" required><span class="note">{% if caps.simulator_backend == 'avis' %}AVIS Engine uses synchronous TCP requests; maximum 1 second{% else %}CARLA client timeout{% endif %}</span></div>
               <div class="field {% if caps.simulator_backend != 'carla' %}section-hide{% endif %}" id="vehicle-filter-field"><label for="vehicle-filter">CARLA vehicle blueprint filter</label><input id="vehicle-filter" name="SIMULATOR_VEHICLE_FILTER"></div>
             </div>
           </div>
