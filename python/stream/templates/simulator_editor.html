@@ -295,24 +295,33 @@ function drawLidar(points){
   const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
   ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
   const maxRange=Math.max(1,Number(($("lidar-range")||{}).value)||50);
-  const scale=Math.min((w-42)/(2*maxRange),(h-42)/maxRange);
-  const cx=w/2,oy=h-26;
+  const scale=Math.min((w-42)/(2*maxRange),(h-42)/(2*maxRange));
+  const cx=w/2,cy=h/2;
   ctx.lineWidth=1;ctx.strokeStyle="#26394a";
   for(let x=0;x<=w;x+=Math.max(36,Math.round(w/12))){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
-  for(let y=18;y<h;y+=Math.max(28,Math.round(h/6))){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
-  for(let r=5;r<=maxRange;r+=5){ctx.beginPath();ctx.arc(cx,oy,r*scale,Math.PI,Math.PI*2);ctx.strokeStyle="#334858";ctx.stroke();ctx.fillStyle="#7d93a7";ctx.font="10px ui-monospace,monospace";ctx.fillText(r+" m",cx+5,oy-r*scale+11);}
-  ctx.strokeStyle="#546d80";ctx.beginPath();ctx.moveTo(cx,oy);ctx.lineTo(cx,12);ctx.stroke();
-  ctx.fillStyle="#b4c6d7";ctx.font="11px system-ui";ctx.fillText("FRONT ↑",cx+8,15);
+  for(let y=0;y<=h;y+=Math.max(28,Math.round(h/8))){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  for(let r=5;r<=maxRange;r+=5){
+    ctx.beginPath();ctx.arc(cx,cy,r*scale,0,Math.PI*2);ctx.strokeStyle="#334858";ctx.stroke();
+    ctx.fillStyle="#7d93a7";ctx.font="10px ui-monospace,monospace";
+    ctx.fillText(r+" m",cx+4,cy-r*scale+11);
+  }
+  ctx.strokeStyle="#71879b";ctx.setLineDash([4,5]);
+  ctx.beginPath();ctx.moveTo(cx,8);ctx.lineTo(cx,h-8);ctx.moveTo(8,cy);ctx.lineTo(w-8,cy);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle="#b4c6d7";ctx.font="11px system-ui";ctx.fillText("FRONT ↑",cx+7,13);
   let visible=0;
   (points||[]).forEach(function(p){
     if(!Array.isArray(p)||p.length<2)return;
-    const fx=Number(p[0]),lat=Number(p[1]);if(!Number.isFinite(fx)||!Number.isFinite(lat))return;
-    const x=cx+lat*scale,y=oy-fx*scale;if(x<3||x>w-3||y<3||y>oy+2||fx<0)return;
-    const distance=Math.hypot(fx,lat);ctx.fillStyle=distance<8?"#ff8178":distance<20?"#ffd079":"#75d6ff";ctx.fillRect(x,y,2.5,2.5);visible++;
+    const fx=Number(p[0]),lat=Number(p[1]);
+    if(!Number.isFinite(fx)||!Number.isFinite(lat))return;
+    const x=cx+lat*scale,y=cy-fx*scale;
+    if(x<3||x>w-3||y<3||y>h-3)return;
+    const distance=Math.hypot(fx,lat);
+    ctx.fillStyle=distance<8?"#ff8178":distance<20?"#ffd079":"#75d6ff";
+    ctx.fillRect(x,y,2.5,2.5);visible++;
   });
-  ctx.save();ctx.translate(cx,oy-4);ctx.fillStyle="#e7f4ff";ctx.strokeStyle="#79cbff";ctx.lineWidth=1.5;
+  ctx.save();ctx.translate(cx,cy);ctx.fillStyle="#e7f4ff";ctx.strokeStyle="#79cbff";ctx.lineWidth=1.5;
   ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(10,8);ctx.lineTo(0,4);ctx.lineTo(-10,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
-  setText("lidar-note","Top-down preview · "+visible+" displayed points · near obstacles red, medium range amber, farther points cyan. Car nose points upward.");
+  setText("lidar-note","360° top-down cloud · "+visible+" displayed points · near points red, medium range amber, farther points cyan. Rings are 5 m apart.");
 }
 function renderRanges(ranges){
   ["left","front","right"].forEach(function(key){
