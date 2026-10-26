@@ -12,6 +12,17 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 .sim-top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:#111923;border-bottom:1px solid var(--sim-border)}.sim-brand{font-weight:750;letter-spacing:.02em}.sim-mode{font-size:12px;padding:4px 8px;border-radius:5px;background:#23374b;color:#b8e3ff}.sim-subtitle{color:var(--sim-muted);font-size:12px}.sim-spacer{flex:1}.sim-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sim-muted)}.led{width:8px;height:8px;border-radius:50%;background:#6b7888}.led.on{background:var(--sim-green);box-shadow:0 0 9px #71d9a055}.led.error{background:var(--sim-red)}
 .sim-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(330px,.9fr);gap:12px;padding:12px;align-items:start}.stack{display:grid;gap:12px;min-width:0}.panel{background:var(--sim-panel);border:1px solid var(--sim-border);border-radius:11px;overflow:hidden;min-width:0}.panel-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--sim-border)}.panel-head h2,.panel-head h3{margin:0;font-size:14px;font-weight:700}.panel-head p{margin:2px 0 0;color:var(--sim-muted);font-size:12px}.panel-content{padding:13px 14px}.muted{color:var(--sim-muted)}.eyebrow{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--sim-muted);font-weight:700}.camera-wrap{position:relative;background:#080b10;min-height:230px;display:flex;align-items:center;justify-content:center}.camera-wrap img{display:block;width:100%;height:auto;max-height:68vh;object-fit:contain}.camera-chip{position:absolute;top:10px;left:10px;background:#080b10dd;border:1px solid #ffffff24;padding:4px 7px;border-radius:5px;font-size:11px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{background:var(--sim-panel2);border:1px solid var(--sim-border);border-radius:8px;padding:10px;min-width:0}.metric .value{font-size:20px;font-weight:730;margin-top:3px;overflow-wrap:anywhere}.metric .unit{font-size:11px;color:var(--sim-muted);font-weight:500}.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;font-size:13px}.pill{display:inline-flex;align-items:center;border:1px solid var(--sim-border);border-radius:999px;padding:3px 8px;font-size:11px;color:var(--sim-muted)}.pill.live{color:var(--sim-green);border-color:#366e58}.sensor-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.range-item{background:var(--sim-panel2);padding:9px;border-radius:8px;min-width:0}.range-number{font-weight:700;font-size:16px}.range-track{height:5px;margin-top:9px;border-radius:5px;background:#2c3745;overflow:hidden}.range-fill{height:100%;width:0;background:var(--sim-accent);border-radius:5px}.lidar-canvas{display:block;width:100%;height:290px;background:#0c1219;border:1px solid var(--sim-border);border-radius:8px}.grid-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.field{display:grid;gap:5px;min-width:0}.field label{font-size:12px;color:var(--sim-muted)}.field input,.field select{width:100%;min-width:0;background:#0d141c;border:1px solid var(--sim-border);border-radius:7px;padding:8px}.field input[type=checkbox]{width:auto;accent-color:var(--sim-accent)}.check-field{display:flex;align-items:center;gap:8px;padding:7px 0;color:var(--sim-text);font-size:12px}.check-field input{accent-color:var(--sim-accent)}.setting-block{padding:12px 0;border-bottom:1px solid var(--sim-border)}.setting-block:first-child{padding-top:0}.setting-block:last-child{border-bottom:0;padding-bottom:0}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.primary{background:#234965;border-color:#3c7297}.msg{font-size:12px;color:var(--sim-muted);margin-top:9px;min-height:17px}.msg.bad{color:var(--sim-red)}.msg.good{color:var(--sim-green)}.options{display:grid;gap:8px}.option-group{border:1px solid var(--sim-border);border-radius:8px;padding:10px;background:var(--sim-panel2)}.option-group h4{margin:0 0 4px;font-size:12px}.option-group p{margin:0;color:var(--sim-muted);font-size:12px}.console{max-height:240px;overflow:auto;background:#0b1016;padding:8px;border-radius:7px;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.event{display:grid;grid-template-columns:72px 1fr;gap:8px;padding:4px 0;border-bottom:1px solid #1d2732;overflow-wrap:anywhere}.event:last-child{border-bottom:0}.event time{color:#6f8397}.event.INFO .event-msg{color:#c2d4e5}.event.WARNING .event-msg{color:var(--sim-warn)}.event.ERROR .event-msg{color:var(--sim-red)}.note{font-size:12px;color:var(--sim-muted);line-height:1.5}.note strong{color:var(--sim-text)}.section-hide{display:none!important}.status-message{padding:9px 12px;border-radius:8px;border:1px solid var(--sim-border);color:var(--sim-muted);font-size:12px}.status-message.error{border-color:#84464a;color:#ffb0b0}
 @media(max-width:1020px){.sim-layout{grid-template-columns:1fr}.camera-wrap img{max-height:none}}@media(max-width:520px){.sim-layout{padding:7px;gap:8px}.sim-top{padding:10px;flex-wrap:wrap}.grid-two{grid-template-columns:1fr}.sensor-columns{gap:5px}.panel-content{padding:10px}.metrics{gap:6px}}
+
+/* CARLA camera placement studio */
+.camera-studio-launch{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px;border:1px solid #314659;background:#111d29;border-radius:9px}.camera-studio-launch .note{margin:0;flex:1;min-width:190px}
+.camera-editor-modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:2vh 2vw;background:#03070cd9;backdrop-filter:blur(9px)}.camera-editor-modal[aria-hidden="false"]{display:flex}
+.camera-editor-window{display:flex;flex-direction:column;width:min(1500px,96vw);height:min(940px,96vh);background:#111923;border:1px solid #3a4e62;border-radius:13px;box-shadow:0 22px 90px #000b;overflow:hidden}
+.camera-editor-header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--sim-border);background:#151f2b;flex-shrink:0}.camera-editor-header h2{font-size:15px;margin:0}.camera-editor-header p{font-size:12px;color:var(--sim-muted);margin:3px 0 0}.camera-editor-main{display:grid;grid-template-columns:minmax(0,1fr) 325px;flex:1;min-height:0}
+.camera-editor-viewport{position:relative;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(ellipse at center,#172231,#05080c 80%);cursor:grab}.camera-editor-viewport.dragging{cursor:grabbing}.camera-editor-viewport img{display:block;width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none}.camera-editor-overlay{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;pointer-events:none}.camera-hint{max-width:450px;padding:9px 11px;border-radius:8px;border:1px solid #ffffff24;background:#07111ddd;color:#cfdeed;font-size:11px;line-height:1.6}.camera-world-readout{padding:8px 10px;border-radius:8px;background:#07111ddd;border:1px solid #ffffff24;color:#93d8ff;font:11px/1.55 ui-monospace,Consolas,monospace;white-space:pre-line}
+.camera-editor-controls{overflow:auto;min-height:0;padding:12px;background:#151e29;border-left:1px solid var(--sim-border)}.camera-editor-controls h3{font-size:12px;margin:0 0 10px}.camera-editor-controls .camera-control{padding:10px 0;border-bottom:1px solid #2a3745}.camera-editor-controls .camera-control:last-child{border-bottom:0}.camera-axis{display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;margin:9px 0}.camera-axis label{color:var(--sim-muted);font-size:11px}.camera-axis output{color:var(--sim-text);font:11px ui-monospace,Consolas,monospace;text-align:right}.camera-axis input{grid-column:1/3;width:100%;accent-color:var(--sim-accent);cursor:ew-resize}.camera-button-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.camera-button-grid button{padding:8px 7px;font-size:11px}.camera-button-grid button.primary{grid-column:1/3}.camera-editor-footer{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#0e151e;border-top:1px solid var(--sim-border);flex-shrink:0}.camera-editor-footer .msg{margin:0;flex:1}.camera-editor-footer button{white-space:nowrap}.camera-editor-footer .save-camera{background:#235b46;border-color:#347a5e}.camera-modal-close{font-size:19px;padding:3px 10px;line-height:1.2}.camera-keycap{display:inline-block;padding:1px 5px;border:1px solid #536679;border-radius:4px;font:10px ui-monospace,Consolas,monospace;background:#192735}.lidar-panel-expanded{position:fixed!important;inset:12px!important;z-index:90!important;display:flex!important;flex-direction:column;box-shadow:0 20px 80px #000c}.lidar-panel-expanded .panel-content{flex:1;display:flex;flex-direction:column;min-height:0}.lidar-panel-expanded .lidar-canvas{height:auto;flex:1;min-height:300px}.lidar-canvas{touch-action:pan-y}
+@media(max-width:900px){.camera-editor-main{grid-template-columns:1fr;grid-template-rows:minmax(220px,1fr) auto}.camera-editor-controls{max-height:42vh;border-left:0;border-top:1px solid var(--sim-border)}.camera-editor-window{height:96vh}.camera-editor-footer{flex-wrap:wrap}.camera-editor-footer .msg{flex-basis:100%;order:2}}
+@media(max-width:520px){.camera-editor-modal{padding:0}.camera-editor-window{width:100vw;height:100vh;border-radius:0}.camera-editor-header{padding:10px}.camera-world-readout{display:none}.camera-editor-footer button{font-size:11px;padding:7px}.camera-editor-controls{padding:10px}}
+
 </style>
 {% if auth_enabled %}
 <script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
@@ -44,7 +55,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
     </section>
 
     <section class="panel {% if not caps.supports_lidar %}section-hide{% endif %}" id="lidar-panel">
-      <div class="panel-head"><div><h2>CARLA · LiDAR point cloud</h2><p>Sensor-local top-down preview; x is forward and y is lateral</p></div><span class="sim-spacer"></span><span id="lidar-count" class="pill">0 points</span></div>
+      <div class="panel-head"><div><h2>CARLA · LiDAR top-down view</h2><p>Bird’s-eye sensor-local point cloud · front is up · distances shown in meters</p></div><span class="sim-spacer"></span><span id="lidar-count" class="pill">0 points</span><button type="button" id="lidar-expand">Expand view</button></div>
       <div class="panel-content"><canvas id="lidar-view" class="lidar-canvas" width="720" height="290"></canvas><div class="note" id="lidar-note">LiDAR uses CARLA's ray-cast point cloud. It is separate from camera-based lane processing.</div></div>
     </section>
 
@@ -99,6 +110,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="lidar-rotation">LiDAR rotation frequency (Hz)</label><input id="lidar-rotation" type="number" min="1" max="50" step="1" name="SIMULATOR_LIDAR_ROTATION_FREQUENCY"></div>
               <div class="field"><label for="camera-fov">Camera FOV (degrees)</label><input id="camera-fov" type="number" min="10" max="150" step="1" name="SIMULATOR_CAMERA_FOV"></div>
             </div>
+            <div class="camera-studio-launch"><button type="button" class="primary" id="open-camera-editor">Open camera placement studio ↗</button><p class="note">Explore the CARLA world with a free-fly camera, tune the vehicle-mounted sensor live, and save its position and rotation without restarting.</p></div>
           </div>
           <div class="setting-block {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="avis-settings">
             <h3 class="section-title">AVIS sensor setup</h3>
@@ -168,6 +180,60 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       <p class="note"><strong>Restart:</strong> host/port, CARLA vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.</p>
     </div></section>
   </div>
+
+{% if caps.simulator_backend == 'carla' %}
+<div id="camera-editor-modal" class="camera-editor-modal" aria-hidden="true">
+  <section class="camera-editor-window" role="dialog" aria-modal="true" aria-labelledby="camera-editor-title">
+    <header class="camera-editor-header">
+      <div><h2 id="camera-editor-title">CARLA · Camera Placement Studio</h2><p>Free-fly through the map, then apply the view as the vehicle's live camera mount.</p></div>
+      <span class="sim-spacer"></span><span class="pill" id="camera-editor-mode">WORLD CAMERA</span>
+      <button type="button" class="camera-modal-close" id="close-camera-editor" aria-label="Close camera placement studio">×</button>
+    </header>
+    <div class="camera-editor-main">
+      <div class="camera-editor-viewport" id="camera-editor-viewport">
+        <img id="camera-editor-preview" alt="Live CARLA world camera preview">
+        <div class="camera-editor-overlay">
+          <div class="camera-hint"><strong>Explore the world</strong><br><span class="camera-keycap">W</span> forward · <span class="camera-keycap">S</span> back · <span class="camera-keycap">A</span>/<span class="camera-keycap">D</span> strafe · <span class="camera-keycap">Q</span>/<span class="camera-keycap">E</span> down/up<br><span class="camera-keycap">←</span>/<span class="camera-keycap">→</span> yaw · <span class="camera-keycap">↑</span>/<span class="camera-keycap">↓</span> pitch · hold <span class="camera-keycap">Shift</span> to move faster · drag the view to look around</div>
+          <div class="camera-world-readout" id="camera-world-readout">World camera: waiting…</div>
+        </div>
+      </div>
+      <aside class="camera-editor-controls">
+        <div class="camera-control">
+          <h3>Vehicle-mounted camera transform</h3>
+          <p class="note">Position is relative to the vehicle origin, in meters. Changes preview live but are not saved until you press Save mount.</p>
+          <div class="camera-axis"><label for="cam-x">X · forward/back (m)</label><output id="cam-x-value">1.45</output><input type="range" id="cam-x" min="-20" max="20" step="0.05" value="1.45"></div>
+          <div class="camera-axis"><label for="cam-y">Y · lateral (m)</label><output id="cam-y-value">0.00</output><input type="range" id="cam-y" min="-20" max="20" step="0.05" value="0"></div>
+          <div class="camera-axis"><label for="cam-z">Z · height (m)</label><output id="cam-z-value">1.80</output><input type="range" id="cam-z" min="-5" max="15" step="0.05" value="1.8"></div>
+          <div class="camera-axis"><label for="cam-pitch">Pitch · tilt (°)</label><output id="cam-pitch-value">−8.00</output><input type="range" id="cam-pitch" min="-90" max="90" step="0.5" value="-8"></div>
+          <div class="camera-axis"><label for="cam-yaw">Yaw · rotate (°)</label><output id="cam-yaw-value">0.00</output><input type="range" id="cam-yaw" min="-180" max="180" step="0.5" value="0"></div>
+          <div class="camera-axis"><label for="cam-roll">Roll · bank (°)</label><output id="cam-roll-value">0.00</output><input type="range" id="cam-roll" min="-180" max="180" step="0.5" value="0"></div>
+        </div>
+        <div class="camera-control">
+          <h3>Align and place</h3>
+          <div class="camera-button-grid">
+            <button type="button" id="camera-snap-mount">Snap view to vehicle camera</button>
+            <button type="button" id="camera-level-mount">Level mount (pitch/roll 0°)</button>
+            <button type="button" id="camera-level-view">Level free view</button>
+            <button type="button" id="camera-reset-mount">Reset mount defaults</button>
+            <button type="button" class="primary" id="camera-use-view">Use current world view as mount</button>
+          </div>
+          <p class="note" style="margin-top:9px">Use “Snap view” to start from the car, make fine adjustments, then use “Use current world view” to transfer that pose onto the vehicle.</p>
+        </div>
+        <div class="camera-control">
+          <h3>Movement speed</h3>
+          <div class="field"><label for="camera-move-speed">Fly camera speed</label><select id="camera-move-speed"><option value="0.08">Fine · 0.08 m/tick</option><option value="0.18" selected>Normal · 0.18 m/tick</option><option value="0.45">Fast · 0.45 m/tick</option><option value="1.0">Very fast · 1.0 m/tick</option></select></div>
+        </div>
+      </aside>
+    </div>
+    <footer class="camera-editor-footer">
+      <div id="camera-editor-status" class="msg">Opening live camera feed…</div>
+      <button type="button" id="camera-discard">Discard preview</button>
+      <button type="button" class="save-camera" id="camera-save-mount">Save mount</button>
+    </footer>
+  </section>
+</div>
+{% endif %}
+
 </main>
 <script>
 (function(){
@@ -210,6 +276,7 @@ async function loadSettings(){
   if(!response.ok||!data.success) throw new Error(data.message||"Could not load simulator settings");
   populate(data.settings||{});
   $("save-settings").disabled=!data.controls_enabled;
+  if($("open-camera-editor"))$("open-camera-editor").disabled=!data.controls_enabled;
   $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
   $("editor-description").textContent=mode+" · "+caps.vision_profile+" vision · settings isolated from physical mode JSON";
   if(data.option_groups){
@@ -224,17 +291,27 @@ async function loadSettings(){
 }
 function drawLidar(points){
   const canvas=$("lidar-view"); if(!canvas) return;
-  const ctx=canvas.getContext("2d"), w=canvas.width, h=canvas.height;
-  ctx.clearRect(0,0,w,h); ctx.fillStyle="#0c1219"; ctx.fillRect(0,0,w,h);
-  ctx.strokeStyle="#253444"; ctx.lineWidth=1;
-  for(let i=1;i<5;i++){const x=w*i/5;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
-  for(let i=1;i<5;i++){const y=h*i/5;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
-  const maxRange=Number(($("lidar-range")||{}).value)||50;
-  const scale=Math.min((w-30)/(2*maxRange),(h-20)/maxRange);
-  ctx.strokeStyle="#526477";ctx.beginPath();ctx.moveTo(w/2,h-10);ctx.lineTo(w/2,10);ctx.stroke();
-  ctx.fillStyle="#a3b5c8";ctx.font="11px system-ui";ctx.fillText("VEHICLE",w/2+7,h-12);ctx.fillText("FORWARD ↑",w/2+7,17);
-  ctx.fillStyle="#75d6ff";
-  (points||[]).forEach(function(p){ if(!Array.isArray(p)||p.length<2)return; const x=w/2+Number(p[1])*scale;const y=h-10-Number(p[0])*scale;if(x<0||x>w||y<0||y>h)return;ctx.fillRect(x,y,2,2);});
+  const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
+  ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
+  const maxRange=Math.max(1,Number(($("lidar-range")||{}).value)||50);
+  const scale=Math.min((w-42)/(2*maxRange),(h-42)/maxRange);
+  const cx=w/2,oy=h-26;
+  ctx.lineWidth=1;ctx.strokeStyle="#26394a";
+  for(let x=0;x<=w;x+=Math.max(36,Math.round(w/12))){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let y=18;y<h;y+=Math.max(28,Math.round(h/6))){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  for(let r=5;r<=maxRange;r+=5){ctx.beginPath();ctx.arc(cx,oy,r*scale,Math.PI,Math.PI*2);ctx.strokeStyle="#334858";ctx.stroke();ctx.fillStyle="#7d93a7";ctx.font="10px ui-monospace,monospace";ctx.fillText(r+" m",cx+5,oy-r*scale+11);}
+  ctx.strokeStyle="#546d80";ctx.beginPath();ctx.moveTo(cx,oy);ctx.lineTo(cx,12);ctx.stroke();
+  ctx.fillStyle="#b4c6d7";ctx.font="11px system-ui";ctx.fillText("FRONT ↑",cx+8,15);
+  let visible=0;
+  (points||[]).forEach(function(p){
+    if(!Array.isArray(p)||p.length<2)return;
+    const fx=Number(p[0]),lat=Number(p[1]);if(!Number.isFinite(fx)||!Number.isFinite(lat))return;
+    const x=cx+lat*scale,y=oy-fx*scale;if(x<3||x>w-3||y<3||y>oy+2||fx<0)return;
+    const distance=Math.hypot(fx,lat);ctx.fillStyle=distance<8?"#ff8178":distance<20?"#ffd079":"#75d6ff";ctx.fillRect(x,y,2.5,2.5);visible++;
+  });
+  ctx.save();ctx.translate(cx,oy-4);ctx.fillStyle="#e7f4ff";ctx.strokeStyle="#79cbff";ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(10,8);ctx.lineTo(0,4);ctx.lineTo(-10,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+  setText("lidar-note","Top-down preview · "+visible+" displayed points · near obstacles red, medium range amber, farther points cyan. Car nose points upward.");
 }
 function renderRanges(ranges){
   ["left","front","right"].forEach(function(key){
