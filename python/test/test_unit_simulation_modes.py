@@ -91,6 +91,21 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"CITY_LANE_DETECTOR": "not-a-detector"})
         with self.assertRaises(ValueError):
             _validate_settings({"RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 0.3})
+        self.assertEqual(
+            _validate_settings({
+                "SIMULATOR_CAMERA_X": 1.45,
+                "SIMULATOR_CAMERA_Y": 0.0,
+                "SIMULATOR_CAMERA_Z": 1.8,
+                "SIMULATOR_CAMERA_PITCH": -8.0,
+                "SIMULATOR_CAMERA_YAW": 0.0,
+                "SIMULATOR_CAMERA_ROLL": 0.0,
+            })["SIMULATOR_CAMERA_Z"],
+            1.8,
+        )
+        with self.assertRaisesRegex(ValueError, "CAMERA_X"):
+            _validate_settings({"SIMULATOR_CAMERA_X": 20.1})
+        with self.assertRaisesRegex(ValueError, "PITCH"):
+            _validate_settings({"SIMULATOR_CAMERA_PITCH": 91})
 
 
 class SimulatorEditorTests(unittest.TestCase):
@@ -134,9 +149,16 @@ class SimulatorEditorTests(unittest.TestCase):
                     client = WebStreamer(config).app.test_client()
                     page = client.get("/")
                     self.assertEqual(page.status_code, 200, page.data[:300])
-                    self.assertIn("Simulator camera", page.get_data(as_text=True))
-                    self.assertIn(mode.upper(), page.get_data(as_text=True))
+                    page_text = page.get_data(as_text=True)
+                    self.assertIn("Simulator camera", page_text)
+                    self.assertIn(mode.upper(), page_text)
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
+                    if backend == "carla":
+                        self.assertIn("Open camera placement studio", page_text)
+                        self.assertIn("camera-editor-modal", page_text)
+                        self.assertIn("lidar-expand", page_text)
+                    else:
+                        self.assertNotIn("camera-editor-modal", page_text)
 
                     state = client.get("/api/simulation/settings")
                     self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
@@ -150,6 +172,12 @@ class SimulatorEditorTests(unittest.TestCase):
                         json={"SIMULATOR_TARGET_SPEED": 5.0},
                     )
                     self.assertEqual(denied.status_code, 403)
+                    if backend == "carla":
+                        camera_denied = client.post(
+                            "/api/simulation/carla-camera",
+                            json={"action": "open"},
+                        )
+                        self.assertEqual(camera_denied.status_code, 403)
 
 
 class VirtualControllerTests(unittest.TestCase):
