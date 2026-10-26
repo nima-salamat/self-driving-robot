@@ -56,8 +56,8 @@ def _sensor_angle(value):
     try:
         number = int(value)
     except (TypeError, ValueError):
-        raise argparse.ArgumentTypeError("must be an integer between -90 and 90")
-    if not -90 <= number <= 90:
+        raise argparse.ArgumentTypeError("must be an integer between 0 and 90")
+    if not 0 <= number <= 90:
         raise argparse.ArgumentTypeError("must be an integer between -90 and 90")
     return number
 

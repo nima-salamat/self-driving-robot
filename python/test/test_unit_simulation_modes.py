@@ -82,6 +82,10 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 501})
         self.assertEqual(_validate_settings({"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 0})["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"], 0)
         with self.assertRaises(ValueError):
+            _validate_settings({"SIMULATOR_AVIS_SENSOR_ANGLE": -1})
+        with self.assertRaises(ValueError):
+            _validate_settings({"SIMULATOR_AVIS_SENSOR_ANGLE": 91})
+        with self.assertRaises(ValueError):
             _validate_settings({"CITY_LANE_DETECTOR": "not-a-detector"})
         with self.assertRaises(ValueError):
             _validate_settings({"RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 0.3})

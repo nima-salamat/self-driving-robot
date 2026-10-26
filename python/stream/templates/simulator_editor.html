@@ -103,7 +103,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="setting-block {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="avis-settings">
             <h3 class="section-title">AVIS sensor setup</h3>
             <div class="grid-two">
-              <div class="field"><label for="avis-angle">Distance sensor angle (degrees)</label><input id="avis-angle" type="number" min="-90" max="90" step="1" name="SIMULATOR_AVIS_SENSOR_ANGLE"></div>
+              <div class="field"><label for="avis-angle">Distance sensor angle (degrees)</label><input id="avis-angle" type="number" min="0" max="90" step="1" name="SIMULATOR_AVIS_SENSOR_ANGLE"></div>
             </div>
           </div>
           <div class="setting-block">

@@ -47,7 +47,7 @@ class AvisAdapter(SimulatorAdapter):
             return False
         method = getattr(self.car, "setSensorAngle", None)
         if callable(method):
-            method(max(-90, min(90, int(angle))))
+            method(max(0, min(90, int(angle))))
             return True
         return False
 

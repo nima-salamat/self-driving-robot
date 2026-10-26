@@ -67,7 +67,7 @@ def _defaults(mode, backend):
         "USE_ML_LANE_DETECTOR": False,
         "ML_LANE_MODEL": "unet_depthwise_nano",
         "SIMULATOR_STEERING_INVERTED": False,
-        "SIMULATOR_AVIS_SENSOR_ANGLE": 0,
+        "SIMULATOR_AVIS_SENSOR_ANGLE": 30,
         "ENCODER_PULSE_DISTANCE_CM": 0.5,
     }
 
@@ -100,8 +100,8 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_LIDAR_CHANNELS must be at most 256")
             if key == "SIMULATOR_LIDAR_POINTS_PER_SECOND" and value > 2000000:
                 raise ValueError("SIMULATOR_LIDAR_POINTS_PER_SECOND must be at most 2000000")
-            if key == "SIMULATOR_AVIS_SENSOR_ANGLE" and not -90 <= value <= 90:
-                raise ValueError("SIMULATOR_AVIS_SENSOR_ANGLE must be between -90 and 90")
+            if key == "SIMULATOR_AVIS_SENSOR_ANGLE" and not 0 <= value <= 90:
+                raise ValueError("SIMULATOR_AVIS_SENSOR_ANGLE must be between 0 and 90")
         elif key in NUMERIC_KEYS:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be a finite number")
