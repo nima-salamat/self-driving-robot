@@ -8,7 +8,8 @@ from pathlib import Path
 
 SIMULATOR_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S",
-    "SIMULATOR_VEHICLE_FILTER", "CITY_LANE_DETECTOR", "SIMULATOR_LIDAR_ENABLED",
+    "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
+    "SIMULATOR_SPAWN_POINT_INDEX", "CITY_LANE_DETECTOR", "SIMULATOR_LIDAR_ENABLED",
     "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_CHANNELS",
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
     "SIMULATOR_CAMERA_FOV", "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
@@ -28,8 +29,12 @@ BOOL_KEYS = {
     "USE_ML_LANE_DETECTOR", "DEBUG",
 }
 INT_KEYS = {"SIMULATOR_PORT", "SIMULATOR_LIDAR_CHANNELS",
-            "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_AVIS_SENSOR_ANGLE"}
-STRING_KEYS = {"SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "CITY_LANE_DETECTOR", "ML_LANE_MODEL"}
+            "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_AVIS_SENSOR_ANGLE",
+            "SIMULATOR_SPAWN_POINT_INDEX"}
+STRING_KEYS = {
+    "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
+    "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL",
+}
 POSITIVE_KEYS = {"SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
                  "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
                  "ENCODER_PULSE_DISTANCE_CM"}
@@ -56,6 +61,9 @@ def _defaults(mode, backend):
         "SIMULATOR_PORT": 25001 if avis else 2000,
         "SIMULATOR_TIMEOUT_S": 1.0 if avis else 5.0,
         "SIMULATOR_VEHICLE_FILTER": "vehicle.*",
+        "SIMULATOR_VEHICLE_BLUEPRINT": "auto",
+        "SIMULATOR_MAP": "current",
+        "SIMULATOR_SPAWN_POINT_INDEX": -1,
         "SIMULATOR_LIDAR_ENABLED": backend == "carla",
         "SIMULATOR_LIDAR_RANGE_M": 50.0,
         "SIMULATOR_LIDAR_CHANNELS": 32,
@@ -96,6 +104,8 @@ def _validate_settings(data):
         elif key in STRING_KEYS:
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{key} must be a non-empty string")
+            if key == "SIMULATOR_VEHICLE_BLUEPRINT" and value.lower() != "auto" and not value.startswith("vehicle."):
+                raise ValueError("SIMULATOR_VEHICLE_BLUEPRINT must be 'auto' or a vehicle.* blueprint id")
             if key == "CITY_LANE_DETECTOR" and value not in {"default", "blsf-beta"}:
                 raise ValueError("CITY_LANE_DETECTOR must be default or blsf-beta")
             if key == "ML_LANE_MODEL" and value not in {"unet_depthwise_nano", "unet_depthwise_small"}:
@@ -113,6 +123,8 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_LIDAR_POINTS_PER_SECOND must be at most 2000000")
             if key == "SIMULATOR_AVIS_SENSOR_ANGLE" and not 0 <= value <= 90:
                 raise ValueError("SIMULATOR_AVIS_SENSOR_ANGLE must be between 0 and 90")
+            if key == "SIMULATOR_SPAWN_POINT_INDEX" and not -1 <= value <= 100000:
+                raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
         elif key in NUMERIC_KEYS:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be a finite number")

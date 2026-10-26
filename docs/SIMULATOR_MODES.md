@@ -40,6 +40,18 @@ Useful command-line settings include `--simulator-target-speed`, `--simulator-th
 
 Simulator modes render `simulator_editor.html` and use `/api/simulation/state` and `/api/simulation/settings` rather than the generic hardware editor. The page groups shared vision, active vision profile, backend-specific sensors and virtual I/O. Use `--stream-control` to enable settings writes; without it the dashboard is intentionally read-only. Host/port, model selection, encoder geometry and sensor-creation changes require a restart; supported controller and vision settings are saved immediately.
 
+### CARLA world, vehicle and spawn studio
+
+The CARLA dashboard includes a live **World & Spawn Studio** (requires stream control and a connected CARLA server):
+
+- **World/map selection:** the map list comes from CARLA's Client.get_available_maps(). Loading a map replaces the active world and recreates the selected vehicle and sensors. The selected spawn index is retained only when it exists on the new map.
+- **Vehicle catalog:** vehicles are discovered from the active world's vehicle.* blueprint library. Search by make/model, category or blueprint id; selecting a card recreates the vehicle and attached RGB/LiDAR sensors at the selected spawn.
+- **Spawn selection:** a clickable XY projection and a coordinate list show the map's actual CARLA spawn transforms (index, X/Y/Z and heading). Selecting a location teleports the vehicle there and makes it the saved reset target.
+- **Reset to spawn:** stops the vehicle, restores the selected spawn transform, zeros target velocity where supported and holds brake while the camera/LiDAR publish a fresh frame. Scene selections persist to the current mode's simulator JSON file.
+- **Safety:** world, vehicle and spawn actions are write-protected unless stream control is enabled. During a scene change, autonomous throttle is suspended; the adapter also applies a short brake-only hold so a stale frame cannot move a newly spawned actor.
+
+The spawn-map canvas is a top-down coordinate projection of CARLA's spawn transforms, not a rendered road map. Map changes can remove other actors because CARLA loads a new world.
+
 ### CARLA camera placement studio
 
 In CARLA mode, open **Open camera placement studio** from the CARLA sensor settings. The full-screenable modal creates a second, independent RGB camera in world space so it can fly around the map without changing the active vehicle camera. Use `W/A/S/D` to fly, `Q/E` to move vertically, arrow keys to rotate, hold Shift to move faster, or drag the viewport to look around. The world coordinates and angles are displayed over the preview.

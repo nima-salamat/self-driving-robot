@@ -8,7 +8,8 @@ from stream.capabilities import mode_capabilities
 
 RESTART_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S",
-    "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_LIDAR_ENABLED",
+    "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
+    "SIMULATOR_SPAWN_POINT_INDEX", "SIMULATOR_LIDAR_ENABLED",
     "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_CHANNELS",
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
     "SIMULATOR_CAMERA_FOV", "CITY_LANE_DETECTOR",
@@ -74,7 +75,10 @@ def register_simulator_routes(app, streamer):
         backend = str(getattr(streamer.config, "SIMULATOR_BACKEND", ""))
         caps = mode_capabilities(streamer.config)
         profile = caps.get("vision_profile", "city")
-        carla_only = {"SIMULATOR_VEHICLE_FILTER", "SIMULATOR_CAMERA_FOV"} | CAMERA_MOUNT_KEYS | {
+        carla_only = {
+            "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
+            "SIMULATOR_SPAWN_POINT_INDEX", "SIMULATOR_CAMERA_FOV",
+        } | CAMERA_MOUNT_KEYS | {
             key for key in patch if key.startswith("SIMULATOR_LIDAR_")
         }
         if backend != "carla" and (set(patch) & carla_only):
@@ -181,6 +185,109 @@ def register_simulator_routes(app, streamer):
 
 
     
+    @app.get("/api/simulation/carla/scene")
+    def carla_scene_state():
+        if str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower() != "carla":
+            return jsonify(success=False, message="Scene selection is available only in CARLA mode"), 409
+        runtime = getattr(streamer.config, "simulation_runtime", None)
+        if runtime is None:
+            return jsonify(success=False, message="CARLA simulation runtime is not connected"), 503
+        getter = getattr(runtime.adapter, "scene_state", None)
+        if not callable(getter):
+            return jsonify(success=False, message="The active adapter does not support CARLA scene selection"), 409
+        try:
+            return jsonify(success=True, state=getter())
+        except RuntimeError as exc:
+            return jsonify(success=False, message=str(exc)), 503
+        except Exception as exc:
+            return jsonify(success=False, message="Could not read CARLA scene: " + str(exc)), 500
+
+    @app.post("/api/simulation/carla/scene")
+    def carla_scene_action():
+        if not streamer._control_allowed():
+            return streamer._control_denied()
+        if str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower() != "carla":
+            return jsonify(success=False, message="Scene selection is available only in CARLA mode"), 409
+        runtime = getattr(streamer.config, "simulation_runtime", None)
+        if runtime is None:
+            return jsonify(success=False, message="CARLA simulation runtime is not connected"), 503
+        adapter = runtime.adapter
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="JSON object required"), 400
+        action = str(body.get("action", "")).strip().lower()
+        if action not in {"reset_to_spawn", "select_spawn_point", "select_vehicle", "select_map"}:
+            return jsonify(success=False, message="Unknown CARLA scene action"), 400
+
+        scene_hold = getattr(runtime, "set_scene_edit_active", None)
+        camera_editor_was_active = bool(getattr(runtime, "_camera_editor_active", False))
+        if callable(scene_hold):
+            scene_hold(True)
+        try:
+            if camera_editor_was_active:
+                adapter.close_camera_editor(restore_mount=True)
+                runtime.set_camera_editor_active(False)
+
+            if action == "reset_to_spawn":
+                state = adapter.reset_to_spawn()
+                runtime._record_event("info", "CARLA vehicle returned to spawn point " + str(state.get("selected_spawn_index", "—")) + ".")
+                message = "Vehicle reset to the selected spawn point."
+            elif action == "select_spawn_point":
+                index = body.get("index")
+                if isinstance(index, bool) or not isinstance(index, int):
+                    return jsonify(success=False, message="Spawn point index must be an integer"), 400
+                state = adapter.select_spawn_point(index)
+                try:
+                    save_simulator_settings(
+                        streamer.config, getattr(streamer.config, "MODE", "carla"),
+                        {"SIMULATOR_SPAWN_POINT_INDEX": index},
+                    )
+                except (TypeError, ValueError, OSError) as exc:
+                    return jsonify(success=False, message="Spawn selected live, but saving the selection failed: " + str(exc)), 500
+                runtime._record_event("info", "CARLA spawn point selected: " + str(index) + ".")
+                message = "Spawn point selected. Reset will return to this location."
+            elif action == "select_vehicle":
+                blueprint_id = body.get("blueprint_id")
+                if not isinstance(blueprint_id, str) or not blueprint_id.strip():
+                    return jsonify(success=False, message="Vehicle blueprint id is required"), 400
+                state = adapter.select_vehicle(blueprint_id)
+                try:
+                    save_simulator_settings(
+                        streamer.config, getattr(streamer.config, "MODE", "carla"),
+                        {"SIMULATOR_VEHICLE_BLUEPRINT": blueprint_id.strip()},
+                    )
+                except (TypeError, ValueError, OSError) as exc:
+                    return jsonify(success=False, message="Vehicle changed live, but saving the selection failed: " + str(exc)), 500
+                runtime._record_event("info", "CARLA vehicle blueprint selected: " + blueprint_id.strip() + ".")
+                message = "Vehicle changed and saved for this CARLA mode."
+            else:
+                map_id = body.get("map_id")
+                if not isinstance(map_id, str) or not map_id.strip():
+                    return jsonify(success=False, message="Map id is required"), 400
+                state = adapter.select_map(map_id)
+                try:
+                    save_simulator_settings(
+                        streamer.config, getattr(streamer.config, "MODE", "carla"),
+                        {
+                            "SIMULATOR_MAP": state.get("current_map_id", map_id),
+                            "SIMULATOR_SPAWN_POINT_INDEX": int(state.get("selected_spawn_index", -1)),
+                        },
+                    )
+                except (TypeError, ValueError, OSError) as exc:
+                    return jsonify(success=False, message="World changed live, but saving the selection failed: " + str(exc)), 500
+                runtime._record_event("info", "CARLA world changed to " + str(state.get("current_map", map_id)) + ".")
+                message = "World loaded and vehicle respawned."
+            return jsonify(success=True, state=state, message=message)
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except RuntimeError as exc:
+            return jsonify(success=False, message=str(exc)), 409
+        except Exception as exc:
+            return jsonify(success=False, message="CARLA scene operation failed: " + str(exc)), 500
+        finally:
+            if callable(scene_hold):
+                scene_hold(False)
+
     @app.get("/api/simulation/carla-camera")
     def carla_camera_editor_state():
         if str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower() != "carla":

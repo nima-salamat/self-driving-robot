@@ -26,6 +26,10 @@ class CarlaAdapter(SimulatorAdapter):
         self._sequence = self._read_sequence = 0
         self._points = np.empty((0, 3), dtype=np.float32)
         self._previous_location = None
+        self._world_lock = threading.RLock()
+        self._spawn_transform = None
+        self._spawn_point_index = -1
+        self._hold_control_until = 0.0
 
     def connect(self):
         try:
@@ -42,6 +46,12 @@ class CarlaAdapter(SimulatorAdapter):
         self.client.set_timeout(float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 5.0)))
         self.world = self.client.get_world()
         self._camera_mount_preview = self._mount_values_from_config()
+        requested_map = str(getattr(self.config, "SIMULATOR_MAP", "current"))
+        if requested_map.strip().lower() not in {"", "current"}:
+            resolved_map = self._resolve_map_name(requested_map)
+            if self._map_leaf(self.world.get_map().name).casefold() != self._map_leaf(resolved_map).casefold():
+                self.world = self.client.load_world(resolved_map)
+            self.config.SIMULATOR_MAP = resolved_map
         try:
             self._spawn_vehicle_and_sensors()
         except Exception:
@@ -50,22 +60,185 @@ class CarlaAdapter(SimulatorAdapter):
         self.connected = True
         logger.info("Connected to CARLA at %s:%s", host, port)
 
+    @staticmethod
+    def _map_leaf(value):
+        return str(value or "").rstrip("/").split("/")[-1]
+
+    def _available_map_ids(self):
+        if self.client is None:
+            raise RuntimeError("CARLA client is not connected")
+        try:
+            values = self.client.get_available_maps()
+        except Exception as exc:
+            raise RuntimeError("Could not list CARLA maps: " + str(exc)) from exc
+        return sorted({str(value) for value in values if str(value).strip()}, key=lambda value: self._map_leaf(value).casefold())
+
+    def _resolve_map_name(self, requested):
+        requested = str(requested or "").strip()
+        if not requested or requested.casefold() == "current":
+            return str(self.world.get_map().name)
+        maps = self._available_map_ids()
+        exact = next((value for value in maps if value.casefold() == requested.casefold()), None)
+        if exact:
+            return exact
+        leaf = next((value for value in maps if self._map_leaf(value).casefold() == self._map_leaf(requested).casefold()), None)
+        if leaf:
+            return leaf
+        raise ValueError("Unknown CARLA map. Choose a map from the server's available map list.")
+
+    @staticmethod
+    def _friendly_vehicle_name(blueprint_id):
+        known = {
+            "vehicle.tesla.model3": "Tesla Model 3",
+            "vehicle.tesla.cybertruck": "Tesla Cybertruck",
+            "vehicle.audi.tt": "Audi TT",
+            "vehicle.audi.etron": "Audi e-tron",
+            "vehicle.lincoln.mkz_2017": "Lincoln MKZ 2017",
+            "vehicle.mercedes.coupe": "Mercedes-Benz Coupe",
+            "vehicle.mini.cooper_s": "Mini Cooper S",
+            "vehicle.nissan.micra": "Nissan Micra",
+            "vehicle.nissan.patrol": "Nissan Patrol",
+            "vehicle.toyota.prius": "Toyota Prius",
+            "vehicle.jeep.wrangler_rubicon": "Jeep Wrangler Rubicon",
+            "vehicle.dodge.charger_2020": "Dodge Charger 2020",
+            "vehicle.harley-davidson.low_rider": "Harley-Davidson Low Rider",
+        }
+        if blueprint_id in known:
+            return known[blueprint_id]
+        words = str(blueprint_id).removeprefix("vehicle.").replace(".", " ").replace("_", " ").split()
+        special = {"bmw": "BMW", "mkz": "MKZ", "tt": "TT", "suv": "SUV", "ev": "EV"}
+        return " ".join(special.get(word.lower(), word[:1].upper() + word[1:]) for word in words)
+
+    @staticmethod
+    def _blueprint_attribute(blueprint, key):
+        try:
+            if blueprint.has_attribute(key):
+                value = blueprint.get_attribute(key)
+                try:
+                    return value.as_int()
+                except Exception:
+                    return str(value)
+        except Exception:
+            pass
+        return None
+
+    def _vehicle_blueprint_details(self, blueprint):
+        blueprint_id = str(blueprint.id)
+        wheels = self._blueprint_attribute(blueprint, "number_of_wheels")
+        lower = blueprint_id.lower()
+        if wheels == 2 or "motorcycle" in lower or "harley" in lower:
+            category = "Motorcycle"
+        elif any(token in lower for token in ("truck", "bus", "van", "ambulance", "firetruck")):
+            category = "Commercial"
+        elif any(token in lower for token in ("jeep", "wrangler", "suv", "range_rover", "bronco")):
+            category = "SUV / Off-road"
+        else:
+            category = "Passenger car"
+        generation = self._blueprint_attribute(blueprint, "generation")
+        return {
+            "id": blueprint_id,
+            "name": self._friendly_vehicle_name(blueprint_id),
+            "category": category,
+            "wheels": wheels if isinstance(wheels, int) else None,
+            "generation": str(generation) if generation is not None else None,
+        }
+
+    def _clear_sensor_frames(self):
+        with self._condition:
+            self._image = self._image_at = None
+            self._points = np.empty((0, 3), dtype=np.float32)
+            self._read_sequence = self._sequence
+            self._condition.notify_all()
+        self._previous_location = None
+
+    def _brake_vehicle(self):
+        if self.vehicle is None or self.carla is None:
+            return
+        try:
+            self.vehicle.apply_control(self.carla.VehicleControl(
+                throttle=0.0, brake=1.0, steer=0.0,
+                hand_brake=False, reverse=False, manual_gear_shift=False,
+            ))
+        except Exception:
+            logger.debug("Could not brake CARLA actor before scene operation", exc_info=True)
+
+    def _zero_vehicle_motion(self):
+        if self.vehicle is None or self.carla is None:
+            return
+        for method_name in ("set_target_velocity", "set_target_angular_velocity"):
+            try:
+                getattr(self.vehicle, method_name)(self.carla.Vector3D(0.0, 0.0, 0.0))
+            except Exception:
+                pass
+
+    def _mark_scene_changed(self):
+        self._hold_control_until = time.monotonic() + 1.0
+        self._clear_sensor_frames()
+
+    def _destroy_actors(self):
+        self.close_camera_editor(restore_mount=False)
+        for sensor in (self.lidar, self.camera):
+            if sensor is not None:
+                try:
+                    sensor.stop()
+                except Exception:
+                    pass
+                try:
+                    sensor.destroy()
+                except Exception:
+                    logger.debug("Failed to destroy a CARLA sensor", exc_info=True)
+        self.lidar = self.camera = None
+        if self.vehicle is not None:
+            self._brake_vehicle()
+            try:
+                self.vehicle.destroy()
+            except Exception:
+                logger.debug("Failed to destroy CARLA vehicle", exc_info=True)
+        self.vehicle = None
+        self._clear_sensor_frames()
+
     def _spawn_vehicle_and_sensors(self):
         library = self.world.get_blueprint_library()
-        vehicle_filter = str(getattr(self.config, "SIMULATOR_VEHICLE_FILTER", "vehicle.*"))
-        candidates = list(library.filter(vehicle_filter))
-        candidates.sort(key=lambda bp: bp.id != "vehicle.tesla.model3")
+        selected_blueprint = str(getattr(self.config, "SIMULATOR_VEHICLE_BLUEPRINT", "auto") or "auto")
+        if selected_blueprint.lower() != "auto":
+            if not selected_blueprint.startswith("vehicle."):
+                raise ValueError("CARLA vehicle blueprint must be 'auto' or a vehicle.* blueprint id")
+            try:
+                candidates = [library.find(selected_blueprint)]
+            except Exception as exc:
+                raise RuntimeError("CARLA vehicle blueprint is not available: " + selected_blueprint) from exc
+        else:
+            vehicle_filter = str(getattr(self.config, "SIMULATOR_VEHICLE_FILTER", "vehicle.*"))
+            candidates = list(library.filter(vehicle_filter))
+            candidates.sort(key=lambda bp: bp.id != "vehicle.tesla.model3")
         spawn_points = list(self.world.get_map().get_spawn_points())
         if not candidates:
-            raise RuntimeError("CARLA has no vehicle blueprint matching " + vehicle_filter)
+            raise RuntimeError("CARLA has no vehicle blueprint matching " + str(getattr(self.config, "SIMULATOR_VEHICLE_FILTER", "vehicle.*")))
         if not spawn_points:
             raise RuntimeError("CARLA map has no vehicle spawn points")
-        for transform in spawn_points:
-            self.vehicle = self.world.try_spawn_actor(candidates[0], transform)
-            if self.vehicle is not None:
+
+        configured_index = int(getattr(self.config, "SIMULATOR_SPAWN_POINT_INDEX", -1))
+        if configured_index >= len(spawn_points):
+            raise ValueError("Selected spawn point does not exist on this CARLA map")
+        indices = [configured_index] if configured_index >= 0 else list(range(len(spawn_points)))
+        self.vehicle = None
+        selected_transform = None
+        selected_index = None
+        for index in indices:
+            actor = self.world.try_spawn_actor(candidates[0], spawn_points[index])
+            if actor is not None:
+                self.vehicle = actor
+                selected_transform = spawn_points[index]
+                selected_index = index
                 break
         if self.vehicle is None:
+            if configured_index >= 0:
+                raise RuntimeError("Selected CARLA spawn point is occupied. Pick another location or Reset to spawn.")
             raise RuntimeError("Could not spawn a CARLA vehicle at an available spawn point")
+
+        self._spawn_transform = selected_transform
+        self._spawn_point_index = int(selected_index)
+        self.config.SIMULATOR_SPAWN_POINT_INDEX = self._spawn_point_index
 
         camera_bp = library.find("sensor.camera.rgb")
         camera_bp.set_attribute("image_size_x", str(int(getattr(self.config, "CAM_WIDTH", 640))))
@@ -87,6 +260,133 @@ class CarlaAdapter(SimulatorAdapter):
             transform = self.carla.Transform(self.carla.Location(x=0.0, z=2.0))
             self.lidar = self.world.spawn_actor(lidar_bp, transform, attach_to=self.vehicle)
             self.lidar.listen(self._on_lidar)
+
+    def scene_state(self):
+        with self._world_lock:
+            if self.client is None or self.world is None or not self.connected:
+                raise RuntimeError("CARLA is not connected yet")
+            current_map_id = str(self.world.get_map().name)
+            maps = [{"id": value, "name": self._map_leaf(value)} for value in self._available_map_ids()]
+            library = self.world.get_blueprint_library()
+            vehicles = [self._vehicle_blueprint_details(bp) for bp in library.filter("vehicle.*")]
+            vehicles.sort(key=lambda item: (item["category"], item["name"].casefold(), item["id"]))
+            spawn_points = []
+            for index, transform in enumerate(self.world.get_map().get_spawn_points()):
+                location, rotation = transform.location, transform.rotation
+                spawn_points.append({
+                    "index": index,
+                    "x": round(float(location.x), 2),
+                    "y": round(float(location.y), 2),
+                    "z": round(float(location.z), 2),
+                    "yaw": round(float(rotation.yaw), 1),
+                    "selected": index == self._spawn_point_index,
+                })
+            vehicle_id = str(getattr(self.vehicle, "type_id", "")) if self.vehicle is not None else ""
+            vehicle = next((item for item in vehicles if item["id"] == vehicle_id), None)
+            return {
+                "available": True,
+                "maps": maps,
+                "vehicles": vehicles,
+                "spawn_points": spawn_points,
+                "current_map": self._map_leaf(current_map_id),
+                "current_map_id": current_map_id,
+                "current_vehicle_id": vehicle_id,
+                "current_vehicle_name": vehicle["name"] if vehicle else self._friendly_vehicle_name(vehicle_id) if vehicle_id else "No vehicle",
+                "selected_spawn_index": self._spawn_point_index,
+                "vehicle_location": self._location_tuple(self.vehicle) if self.vehicle is not None else None,
+            }
+
+    def reset_to_spawn(self):
+        with self._world_lock:
+            if self.vehicle is None or self._spawn_transform is None:
+                raise RuntimeError("CARLA vehicle or its spawn transform is not available")
+            self._brake_vehicle()
+            self.vehicle.set_transform(self._spawn_transform)
+            self._zero_vehicle_motion()
+            self._brake_vehicle()
+            self._mark_scene_changed()
+            logger.info("CARLA vehicle reset to spawn point %s", self._spawn_point_index)
+            return self.scene_state()
+
+    def select_spawn_point(self, index):
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise ValueError("Spawn point index must be an integer")
+        with self._world_lock:
+            if self.vehicle is None or self.world is None:
+                raise RuntimeError("CARLA vehicle is not connected")
+            spawn_points = list(self.world.get_map().get_spawn_points())
+            if index < 0 or index >= len(spawn_points):
+                raise ValueError("Spawn point index is outside this map's available locations")
+            self._brake_vehicle()
+            self.vehicle.set_transform(spawn_points[index])
+            self._zero_vehicle_motion()
+            self._brake_vehicle()
+            self._spawn_transform = spawn_points[index]
+            self._spawn_point_index = index
+            self.config.SIMULATOR_SPAWN_POINT_INDEX = index
+            self._mark_scene_changed()
+            logger.info("CARLA spawn point changed to %s", index)
+            return self.scene_state()
+
+    def select_vehicle(self, blueprint_id):
+        blueprint_id = str(blueprint_id or "").strip()
+        if not blueprint_id.startswith("vehicle."):
+            raise ValueError("Choose a valid vehicle.* blueprint from the CARLA vehicle list")
+        with self._world_lock:
+            if self.vehicle is None or self.world is None:
+                raise RuntimeError("CARLA vehicle is not connected")
+            try:
+                self.world.get_blueprint_library().find(blueprint_id)
+            except Exception as exc:
+                raise ValueError("Vehicle blueprint is not available on this CARLA server") from exc
+            if str(getattr(self.vehicle, "type_id", "")) == blueprint_id:
+                self.config.SIMULATOR_VEHICLE_BLUEPRINT = blueprint_id
+                return self.scene_state()
+            previous_blueprint = str(getattr(self.config, "SIMULATOR_VEHICLE_BLUEPRINT", "auto"))
+            previous_spawn = int(self._spawn_point_index)
+            self._brake_vehicle()
+            self._destroy_actors()
+            self.config.SIMULATOR_VEHICLE_BLUEPRINT = blueprint_id
+            self.config.SIMULATOR_SPAWN_POINT_INDEX = previous_spawn
+            try:
+                self._spawn_vehicle_and_sensors()
+            except Exception as exc:
+                self._destroy_actors()
+                self.config.SIMULATOR_VEHICLE_BLUEPRINT = previous_blueprint
+                self.config.SIMULATOR_SPAWN_POINT_INDEX = previous_spawn
+                try:
+                    self._spawn_vehicle_and_sensors()
+                except Exception as restore_exc:
+                    raise RuntimeError("Vehicle change failed and the previous vehicle could not be restored: " + str(restore_exc)) from exc
+                raise RuntimeError("Could not switch to " + blueprint_id + ": " + str(exc)) from exc
+            self._mark_scene_changed()
+            logger.info("CARLA vehicle changed to %s", blueprint_id)
+            return self.scene_state()
+
+    def select_map(self, map_id):
+        with self._world_lock:
+            if self.client is None or self.world is None or not self.connected:
+                raise RuntimeError("CARLA is not connected yet")
+            resolved = self._resolve_map_name(map_id)
+            current = str(self.world.get_map().name)
+            if self._map_leaf(current).casefold() == self._map_leaf(resolved).casefold():
+                self.config.SIMULATOR_MAP = resolved
+                return self.scene_state()
+            previous_spawn = int(self._spawn_point_index)
+            self._brake_vehicle()
+            self._destroy_actors()
+            try:
+                self.world = self.client.load_world(resolved)
+                self.config.SIMULATOR_MAP = resolved
+                point_count = len(self.world.get_map().get_spawn_points())
+                self.config.SIMULATOR_SPAWN_POINT_INDEX = previous_spawn if previous_spawn < point_count else -1
+                self._spawn_vehicle_and_sensors()
+            except Exception as exc:
+                logger.exception("CARLA world switch failed")
+                raise RuntimeError("Could not load/initialize CARLA map " + self._map_leaf(resolved) + ": " + str(exc)) from exc
+            self._mark_scene_changed()
+            logger.info("CARLA world changed to %s", self._map_leaf(resolved))
+            return self.scene_state()
 
     def _on_camera(self, image):
         try:
@@ -356,6 +656,10 @@ class CarlaAdapter(SimulatorAdapter):
         return float(p.x), float(p.y), float(p.z)
 
     def read(self, timeout=0.25):
+        with self._world_lock:
+            return self._read_locked(timeout)
+
+    def _read_locked(self, timeout=0.25):
         deadline = time.monotonic() + max(0.0, float(timeout))
         with self._condition:
             while self._sequence <= self._read_sequence and self.connected:
@@ -393,40 +697,23 @@ class CarlaAdapter(SimulatorAdapter):
         )
 
     def apply_control(self, command):
-        if self.vehicle is None:
-            return False
-        self.vehicle.apply_control(self.carla.VehicleControl(
-            steer=max(-1.0, min(1.0, float(command.steering))),
-            throttle=max(0.0, min(1.0, float(command.throttle))),
-            brake=max(0.0, min(1.0, float(command.brake))),
-            hand_brake=False, reverse=False, manual_gear_shift=False,
-        ))
-        return True
+        with self._world_lock:
+            if self.vehicle is None:
+                return False
+            throttle = max(0.0, min(1.0, float(command.throttle)))
+            brake = max(0.0, min(1.0, float(command.brake)))
+            if time.monotonic() < self._hold_control_until:
+                throttle, brake = 0.0, 1.0
+            self.vehicle.apply_control(self.carla.VehicleControl(
+                steer=max(-1.0, min(1.0, float(command.steering))),
+                throttle=throttle, brake=brake,
+                hand_brake=False, reverse=False, manual_gear_shift=False,
+            ))
+            return True
 
     def close(self):
-        self.close_camera_editor(restore_mount=False)
-        for sensor in (self.lidar, self.camera):
-            if sensor is not None:
-                try:
-                    sensor.stop()
-                except Exception:
-                    pass
-                try:
-                    sensor.destroy()
-                except Exception:
-                    logger.debug("Failed to destroy a CARLA sensor", exc_info=True)
-        self.lidar = self.camera = None
-        if self.vehicle is not None:
-            try:
-                if self.carla is not None:
-                    self.vehicle.apply_control(self.carla.VehicleControl(throttle=0.0, brake=1.0))
-            except Exception:
-                pass
-            try:
-                self.vehicle.destroy()
-            except Exception:
-                logger.debug("Failed to destroy CARLA vehicle", exc_info=True)
-        self.vehicle = None
-        self.connected = False
-        with self._condition:
-            self._condition.notify_all()
+        with self._world_lock:
+            self._destroy_actors()
+            self.connected = False
+            with self._condition:
+                self._condition.notify_all()

@@ -107,6 +107,14 @@ class SimulatorSettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "PITCH"):
             _validate_settings({"SIMULATOR_CAMERA_PITCH": 91})
 
+        self.assertEqual(_validate_settings({"SIMULATOR_MAP": "current"})["SIMULATOR_MAP"], "current")
+        self.assertEqual(_validate_settings({"SIMULATOR_VEHICLE_BLUEPRINT": "vehicle.tesla.model3"})["SIMULATOR_VEHICLE_BLUEPRINT"], "vehicle.tesla.model3")
+        self.assertEqual(_validate_settings({"SIMULATOR_SPAWN_POINT_INDEX": -1})["SIMULATOR_SPAWN_POINT_INDEX"], -1)
+        with self.assertRaisesRegex(ValueError, "SPAWN_POINT_INDEX"):
+            _validate_settings({"SIMULATOR_SPAWN_POINT_INDEX": -2})
+        with self.assertRaisesRegex(ValueError, "blueprint"):
+            _validate_settings({"SIMULATOR_VEHICLE_BLUEPRINT": "walker.pedestrian.*"})
+
 
 class SimulatorEditorTests(unittest.TestCase):
     def test_simulator_editor_renders_with_mode_specific_capabilities(self):
@@ -157,6 +165,11 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("Open camera placement studio", page_text)
                         self.assertIn("camera-editor-modal", page_text)
                         self.assertIn("lidar-expand", page_text)
+                        self.assertIn("CARLA · World & Spawn Studio", page_text)
+                        self.assertIn('id="carla-map-select"', page_text)
+                        self.assertIn('id="carla-vehicle-grid"', page_text)
+                        self.assertIn('id="carla-spawn-map"', page_text)
+                        self.assertIn('id="carla-reset-spawn"', page_text)
                     else:
                         self.assertNotIn('id="camera-editor-modal"', page_text)
                         self.assertIn("AVIS Engine · Top-down range sensors", page_text)
@@ -182,6 +195,11 @@ class SimulatorEditorTests(unittest.TestCase):
                             json={"action": "open"},
                         )
                         self.assertEqual(camera_denied.status_code, 403)
+                        scene_denied = client.post(
+                            "/api/simulation/carla/scene",
+                            json={"action": "reset_to_spawn"},
+                        )
+                        self.assertEqual(scene_denied.status_code, 403)
 
 
 class VirtualControllerTests(unittest.TestCase):

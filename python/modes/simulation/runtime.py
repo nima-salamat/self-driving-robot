@@ -58,6 +58,7 @@ class SimulationRuntime:
         self._last_cycle_at = None
         self._stop_event_active = False
         self._camera_editor_active = False
+        self._scene_edit_active = False
         self._distance_accumulator_cm = 0.0
         self._encoder_pulses = 0
         self._encoder_delta = 0
@@ -148,6 +149,18 @@ class SimulationRuntime:
             self._record_event("warning", "Camera placement studio active; autonomous throttle is suspended.")
         else:
             self._record_event("info", "Camera placement studio closed; autonomous control may resume.")
+
+    def set_scene_edit_active(self, active):
+        """Temporarily hold autonomous control while the CARLA scene is reconfigured."""
+        active = bool(active)
+        if active == self._scene_edit_active:
+            return
+        self._scene_edit_active = active
+        if active:
+            self._safe_stop("CARLA scene editor is changing the world, vehicle, or spawn point.")
+            self._record_event("warning", "CARLA scene change started; autonomous throttle is suspended.")
+        else:
+            self._record_event("info", "CARLA scene change finished; autonomous control may resume.")
 
     def _safe_stop(self, reason):
         self._last_error = str(reason)
@@ -262,11 +275,14 @@ class SimulationRuntime:
                         servo_angle=command.servo_angle, target_speed=0.0,
                         reason="crosswalk detected; simulator braking",
                     )
-                if self.backend == "carla" and self._camera_editor_active:
+                if self.backend == "carla" and (self._camera_editor_active or self._scene_edit_active):
+                    hold_reason = ("CARLA scene is being reconfigured; vehicle held stationary"
+                                   if self._scene_edit_active else
+                                   "CARLA camera placement studio active; vehicle held stationary")
                     command = VehicleCommand(
                         steering=command.steering, throttle=0.0, brake=1.0,
                         servo_angle=command.servo_angle, target_speed=0.0,
-                        reason="CARLA camera placement studio active; vehicle held stationary",
+                        reason=hold_reason,
                     )
                 if not self.adapter.apply_control(command):
                     raise RuntimeError("simulator adapter did not accept the virtual actuator command")
