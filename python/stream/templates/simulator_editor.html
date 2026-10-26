@@ -411,7 +411,7 @@ function drawAvisSensors(ranges,stale){
 }
 function renderRanges(ranges,frameAgeMs){
   const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
-  const age=Number(frameAgeMs),hasAnyValue=["left","front","right"].some(function(key){const v=ranges&&ranges[key];return v!==null&&v!==undefined&&Number.isFinite(Number(v))&&Number(v)>=0;}),stale=Number.isFinite(age)?age>1500:hasAnyValue;
+  const age=Number(frameAgeMs),ageKnown=frameAgeMs!==null&&frameAgeMs!==undefined&&Number.isFinite(age),hasAnyValue=["left","front","right"].some(function(key){const v=ranges&&ranges[key];return v!==null&&v!==undefined&&Number.isFinite(Number(v))&&Number(v)>=0;}),stale=ageKnown?age>1500:hasAnyValue;
   let valid=0,nearest=null,stopCount=0;
   ["left","front","right"].forEach(function(key){
     const raw=ranges&&ranges[key]!==undefined?ranges[key]:null;
