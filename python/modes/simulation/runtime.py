@@ -57,6 +57,7 @@ class SimulationRuntime:
         self._last_event_key = None
         self._last_cycle_at = None
         self._stop_event_active = False
+        self._camera_editor_active = False
         self._distance_accumulator_cm = 0.0
         self._encoder_pulses = 0
         self._encoder_delta = 0
@@ -136,6 +137,18 @@ class SimulationRuntime:
             self._record_event(level, "virtual actuator: steering={:+.2f}, throttle={:.2f}, brake={:.2f}; {}".format(
                 command.steering, command.throttle, command.brake, command.reason))
 
+    def set_camera_editor_active(self, active):
+        """Hold the CARLA vehicle while the user is positioning the camera."""
+        active = bool(active)
+        if active == self._camera_editor_active:
+            return
+        self._camera_editor_active = active
+        if active:
+            self._safe_stop("CARLA camera editor is open; holding vehicle stationary.")
+            self._record_event("warning", "Camera placement studio active; autonomous throttle is suspended.")
+        else:
+            self._record_event("info", "Camera placement studio closed; autonomous control may resume.")
+
     def _safe_stop(self, reason):
         self._last_error = str(reason)
         if not self._stop_event_active:
@@ -187,6 +200,7 @@ class SimulationRuntime:
             return {
                 "mode": self.mode, "backend": self.backend, "vision_profile": self.vision_profile,
                 "editor_profile": "simulator", "connected": bool(self.adapter.connected),
+                "camera_editor_active": bool(self._camera_editor_active),
                 "running": self._started_at is not None and not self.shutdown_event.is_set(),
                 "frame_sequence": int(getattr(frame, "sequence", 0)) if frame is not None else 0,
                 "frame_age_ms": round(age_ms, 1) if age_ms is not None else None,
@@ -247,6 +261,12 @@ class SimulationRuntime:
                         steering=command.steering, throttle=0.0, brake=1.0,
                         servo_angle=command.servo_angle, target_speed=0.0,
                         reason="crosswalk detected; simulator braking",
+                    )
+                if self.backend == "carla" and self._camera_editor_active:
+                    command = VehicleCommand(
+                        steering=command.steering, throttle=0.0, brake=1.0,
+                        servo_angle=command.servo_angle, target_speed=0.0,
+                        reason="CARLA camera placement studio active; vehicle held stationary",
                     )
                 if not self.adapter.apply_control(command):
                     raise RuntimeError("simulator adapter did not accept the virtual actuator command")
