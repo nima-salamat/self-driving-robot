@@ -126,12 +126,12 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           </div>
           <div class="setting-block">
             <h3 class="section-title">Shared vision processing <span class="pill">{{ caps.vision_profile|upper }} profile</span></h3>
-            <label class="check-field"><input id="use-bev" type="checkbox" name="USE_BEV"> Bird's-eye perspective transform (BEV)</label>
+            <label class="check-field {% if not caps.supports_bev %}section-hide{% endif %}"><input id="use-bev" type="checkbox" name="USE_BEV"> Bird's-eye perspective transform (BEV)</label>
             <label class="check-field"><input id="debug-overlay" type="checkbox" name="DEBUG"> Debug overlays</label>
             <div class="field {% if caps.vision_profile != 'city' %}section-hide{% endif %}"><label for="city-lane-detector">City lane detector</label><select id="city-lane-detector" name="CITY_LANE_DETECTOR"><option value="default">Default City processor</option><option value="blsf-beta">BLSF beta</option></select></div>
             <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
           </div>
-          <div class="setting-block">
+          <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
             <div class="grid-two">
               <div class="field"><label for="rl-top">Right-lane ROI top</label><input id="rl-top" type="number" min="0" max=".99" step=".01" name="RL_TOP_ROI"></div>

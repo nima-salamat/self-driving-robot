@@ -75,7 +75,8 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         "supports_lidar": bool(simulation and spec.supports_lidar),
         "supports_range_sensors": bool(simulation and spec.supports_range_sensors),
         "lane_detector": lane_detector, "ml_lane_detector": ml_active,
-        "supports_lane_roi": bool(base.get("supports_lane_roi", False) and not ml_active),
+        "supports_lane_roi": bool(base.get("supports_lane_roi", False) and not ml_active
+                                  and not (simulation and lane_detector == "blsf-beta")),
         "supports_bev": bool(base.get("supports_bev", False) and not ml_active),
         "supports_crosswalk": bool(base.get("supports_crosswalk", False) and
                                    not (simulation and lane_detector == "blsf-beta")),
