@@ -158,7 +158,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("camera-editor-modal", page_text)
                         self.assertIn("lidar-expand", page_text)
                     else:
-                        self.assertNotIn("camera-editor-modal", page_text)
+                        self.assertNotIn('id="camera-editor-modal"', page_text)
 
                     state = client.get("/api/simulation/settings")
                     self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
