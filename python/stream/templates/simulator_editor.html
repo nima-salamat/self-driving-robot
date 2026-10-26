@@ -359,7 +359,7 @@ function drawAvisSensors(ranges){
   const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
   ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
   const maxRange=300,scale=Math.min((w-80)/(maxRange*2),(h-100)/maxRange);
-  const cx=w/2,carY=h-78,frontY=carY-44,sideAngle=Math.max(0,Math.min(90,Number(($("avis-angle")||{}).value)||30));
+  const configuredAngle=Number(($("avis-angle")||{}).value),cx=w/2,carY=h-78,frontY=carY-44,sideAngle=Number.isFinite(configuredAngle)?Math.max(0,Math.min(90,configuredAngle)):30;
   const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
   ctx.strokeStyle="#1d2b39";ctx.lineWidth=1;
   for(let x=20;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
