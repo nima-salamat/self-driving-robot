@@ -13,6 +13,17 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 .sim-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(330px,.9fr);gap:12px;padding:12px;align-items:start}.stack{display:grid;gap:12px;min-width:0}.panel{background:var(--sim-panel);border:1px solid var(--sim-border);border-radius:11px;overflow:hidden;min-width:0}.panel-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--sim-border)}.panel-head h2,.panel-head h3{margin:0;font-size:14px;font-weight:700}.panel-head p{margin:2px 0 0;color:var(--sim-muted);font-size:12px}.panel-content{padding:13px 14px}.muted{color:var(--sim-muted)}.eyebrow{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--sim-muted);font-weight:700}.camera-wrap{position:relative;background:#080b10;min-height:230px;display:flex;align-items:center;justify-content:center}.camera-wrap img{display:block;width:100%;height:auto;max-height:68vh;object-fit:contain}.camera-chip{position:absolute;top:10px;left:10px;background:#080b10dd;border:1px solid #ffffff24;padding:4px 7px;border-radius:5px;font-size:11px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{background:var(--sim-panel2);border:1px solid var(--sim-border);border-radius:8px;padding:10px;min-width:0}.metric .value{font-size:20px;font-weight:730;margin-top:3px;overflow-wrap:anywhere}.metric .unit{font-size:11px;color:var(--sim-muted);font-weight:500}.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;font-size:13px}.pill{display:inline-flex;align-items:center;border:1px solid var(--sim-border);border-radius:999px;padding:3px 8px;font-size:11px;color:var(--sim-muted)}.pill.live{color:var(--sim-green);border-color:#366e58}.sensor-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.range-item{background:var(--sim-panel2);padding:9px;border-radius:8px;min-width:0}.range-number{font-weight:700;font-size:16px}.range-track{height:5px;margin-top:9px;border-radius:5px;background:#2c3745;overflow:hidden}.range-fill{height:100%;width:0;background:var(--sim-accent);border-radius:5px}.lidar-canvas{display:block;width:100%;height:290px;background:#0c1219;border:1px solid var(--sim-border);border-radius:8px}.grid-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.field{display:grid;gap:5px;min-width:0}.field label{font-size:12px;color:var(--sim-muted)}.field input,.field select{width:100%;min-width:0;background:#0d141c;border:1px solid var(--sim-border);border-radius:7px;padding:8px}.field input[type=checkbox]{width:auto;accent-color:var(--sim-accent)}.check-field{display:flex;align-items:center;gap:8px;padding:7px 0;color:var(--sim-text);font-size:12px}.check-field input{accent-color:var(--sim-accent)}.setting-block{padding:12px 0;border-bottom:1px solid var(--sim-border)}.setting-block:first-child{padding-top:0}.setting-block:last-child{border-bottom:0;padding-bottom:0}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.primary{background:#234965;border-color:#3c7297}.msg{font-size:12px;color:var(--sim-muted);margin-top:9px;min-height:17px}.msg.bad{color:var(--sim-red)}.msg.good{color:var(--sim-green)}.options{display:grid;gap:8px}.option-group{border:1px solid var(--sim-border);border-radius:8px;padding:10px;background:var(--sim-panel2)}.option-group h4{margin:0 0 4px;font-size:12px}.option-group p{margin:0;color:var(--sim-muted);font-size:12px}.console{max-height:240px;overflow:auto;background:#0b1016;padding:8px;border-radius:7px;font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.event{display:grid;grid-template-columns:72px 1fr;gap:8px;padding:4px 0;border-bottom:1px solid #1d2732;overflow-wrap:anywhere}.event:last-child{border-bottom:0}.event time{color:#6f8397}.event.INFO .event-msg{color:#c2d4e5}.event.WARNING .event-msg{color:var(--sim-warn)}.event.ERROR .event-msg{color:var(--sim-red)}.note{font-size:12px;color:var(--sim-muted);line-height:1.5}.note strong{color:var(--sim-text)}.section-hide{display:none!important}.status-message{padding:9px 12px;border-radius:8px;border:1px solid var(--sim-border);color:var(--sim-muted);font-size:12px}.status-message.error{border-color:#84464a;color:#ffb0b0}
 @media(max-width:1020px){.sim-layout{grid-template-columns:1fr}.camera-wrap img{max-height:none}}@media(max-width:520px){.sim-layout{padding:7px;gap:8px}.sim-top{padding:10px;flex-wrap:wrap}.grid-two{grid-template-columns:1fr}.sensor-columns{gap:5px}.panel-content{padding:10px}.metrics{gap:6px}}
 
+
+.avis-sensor-canvas{display:block;width:100%;height:390px;background:#081018;border:1px solid var(--sim-border);border-radius:9px}
+.avis-sensor-panel .sensor-columns{margin-top:12px}
+.avis-distance-card{border:1px solid var(--sim-border);background:var(--sim-panel2);border-radius:8px;padding:10px;min-width:0}
+.avis-distance-card .range-number{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}.avis-distance-card .range-number .unit{font-size:11px;color:var(--sim-muted);font-weight:500}
+.avis-distance-card .range-fill{transition:width .16s ease,background .16s ease}
+.avis-legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--sim-muted)}
+.avis-legend span{display:inline-flex;align-items:center;gap:5px}.avis-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}.avis-legend .safe{background:#75d6ff}.avis-legend .near{background:#ffd079}.avis-legend .danger{background:#ff8178}.avis-legend .unknown{background:#7d8b9b}
+.sensor-panel-expanded{position:fixed!important;inset:12px!important;z-index:90!important;display:flex!important;flex-direction:column;box-shadow:0 20px 80px #000c}.sensor-panel-expanded .panel-content{flex:1;display:flex;flex-direction:column;min-height:0}.sensor-panel-expanded .avis-sensor-canvas{height:auto;flex:1;min-height:320px}
+@media(max-width:650px){.avis-sensor-canvas{height:310px}.avis-distance-card{padding:7px}.avis-legend{gap:6px}}
+
 /* CARLA camera placement studio */
 .camera-studio-launch{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px;border:1px solid #314659;background:#111d29;border-radius:9px}.camera-studio-launch .note{margin:0;flex:1;min-width:190px}
 .camera-editor-modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:2vh 2vw;background:#03070cd9;backdrop-filter:blur(9px)}.camera-editor-modal[aria-hidden="false"]{display:flex}
@@ -59,13 +70,18 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       <div class="panel-content"><canvas id="lidar-view" class="lidar-canvas" width="720" height="290"></canvas><div class="note" id="lidar-note">LiDAR uses CARLA's ray-cast point cloud. It is separate from camera-based lane processing.</div></div>
     </section>
 
-    <section class="panel {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="range-panel">
-      <div class="panel-head"><div><h2>AVIS Engine · Distance sensors</h2><p>Native range readings, in centimeters—not a LiDAR point cloud</p></div></div>
-      <div class="panel-content"><div class="sensor-columns">
-        <div class="range-item"><div class="eyebrow">Left</div><div id="range-left" class="range-number">—</div><div class="range-track"><div id="bar-left" class="range-fill"></div></div></div>
-        <div class="range-item"><div class="eyebrow">Front / middle</div><div id="range-front" class="range-number">—</div><div class="range-track"><div id="bar-front" class="range-fill"></div></div></div>
-        <div class="range-item"><div class="eyebrow">Right</div><div id="range-right" class="range-number">—</div><div class="range-track"><div id="bar-right" class="range-fill"></div></div></div>
-      </div></div>
+    <section class="panel avis-sensor-panel {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="range-panel">
+      <div class="panel-head"><div><h2>AVIS Engine · Top-down range sensors</h2><p>Live distance rays and numeric readings · schematic layout, not a fabricated point cloud</p></div><span class="sim-spacer"></span><span id="avis-sensor-state" class="pill">Waiting for sensors</span><button type="button" id="avis-sensor-expand">Expand view</button></div>
+      <div class="panel-content">
+        <canvas id="avis-sensor-view" class="avis-sensor-canvas" width="900" height="420" aria-label="Top-down diagram of AVIS left, front and right distance sensors"></canvas>
+        <div class="avis-legend"><span><i class="safe"></i>Clear range</span><span><i class="near"></i>Approaching stop threshold</span><span><i class="danger"></i>At/below stop threshold</span><span><i class="unknown"></i>No valid reading</span><span id="avis-angle-hint">Side sensor angle: —</span></div>
+        <div class="sensor-columns">
+          <div class="avis-distance-card"><div class="eyebrow">Left</div><div id="range-left" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-left" class="range-fill"></div></div><div id="range-left-state" class="unit">Waiting</div></div>
+          <div class="avis-distance-card"><div class="eyebrow">Front / middle</div><div id="range-front" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-front" class="range-fill"></div></div><div id="range-front-state" class="unit">Waiting</div></div>
+          <div class="avis-distance-card"><div class="eyebrow">Right</div><div id="range-right" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-right" class="range-fill"></div></div><div id="range-right-state" class="unit">Waiting</div></div>
+        </div>
+        <p class="note" id="avis-sensor-note">The diagram shows only AVIS's actual left, middle/front and right distance values. A missing/invalid value is shown as unknown, never as zero or as a detected object.</p>
+      </div>
     </section>
 
     <section class="panel">
@@ -323,12 +339,92 @@ function drawLidar(points){
   ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(10,8);ctx.lineTo(0,4);ctx.lineTo(-10,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
   setText("lidar-note","360° top-down cloud · "+visible+" displayed points · near points red, medium range amber, farther points cyan. Rings are 5 m apart.");
 }
-function renderRanges(ranges){
-  ["left","front","right"].forEach(function(key){
-    const value=ranges&&ranges[key]!==undefined?ranges[key]:null;
-    setText("range-"+key,value===null||!Number.isFinite(Number(value))?"—":numeric(value,0)+" cm");
-    const bar=$("bar-"+key);if(bar)bar.style.width=value===null?"0%":Math.max(0,Math.min(100,Number(value)/300*100))+"%";
+function avisRangeStatus(value,threshold){
+  if(value===null||value===undefined||!Number.isFinite(Number(value))||Number(value)<0)return "No valid reading";
+  const distance=Number(value);
+  if(threshold>0&&distance<=threshold)return "STOP threshold reached";
+  if(threshold>0&&distance<=Math.max(threshold*1.5,threshold+10))return "Near stop threshold";
+  return "Range available";
+}
+function avisRangeColor(value,threshold){
+  if(value===null||value===undefined||!Number.isFinite(Number(value))||Number(value)<0)return "#7d8b9b";
+  const distance=Number(value);
+  if(threshold>0&&distance<=threshold)return "#ff8178";
+  if(threshold>0&&distance<=Math.max(threshold*1.5,threshold+10))return "#ffd079";
+  return "#75d6ff";
+}
+function drawAvisSensors(ranges){
+  const canvas=$("avis-sensor-view");if(!canvas)return;
+  const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
+  ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
+  const maxRange=300,scale=Math.min((w-80)/(maxRange*2),(h-100)/maxRange);
+  const cx=w/2,carY=h-78,frontY=carY-44,sideAngle=Math.max(0,Math.min(90,Number(($("avis-angle")||{}).value)||30));
+  const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
+  ctx.strokeStyle="#1d2b39";ctx.lineWidth=1;
+  for(let x=20;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let y=20;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  for(let distance=50;distance<=maxRange;distance+=50){
+    ctx.beginPath();ctx.arc(cx,frontY,distance*scale,Math.PI,Math.PI*2);
+    ctx.strokeStyle="#314457";ctx.stroke();
+    ctx.fillStyle="#8298ac";ctx.font="10px ui-monospace,monospace";
+    ctx.fillText(distance+" cm",cx+5,frontY-distance*scale+12);
+  }
+  ctx.fillStyle="#a9c2d7";ctx.font="11px system-ui";ctx.fillText("FRONT ↑",cx+8,13);
+  const sensorDefs=[
+    {key:"left",label:"LEFT",x:cx-18,y:frontY+14,angle:-sideAngle},
+    {key:"front",label:"FRONT",x:cx,y:frontY,angle:0},
+    {key:"right",label:"RIGHT",x:cx+18,y:frontY+14,angle:sideAngle}
+  ];
+  sensorDefs.forEach(function(sensor){
+    const raw=ranges&&ranges[sensor.key]!==undefined?ranges[sensor.key]:null;
+    const valid=raw!==null&&raw!==undefined&&Number.isFinite(Number(raw))&&Number(raw)>=0;
+    const distance=valid?Math.min(maxRange,Number(raw)):58;
+    const theta=sensor.angle*Math.PI/180;
+    const dx=Math.sin(theta)*distance*scale;
+    const dy=-Math.cos(theta)*distance*scale;
+    const color=avisRangeColor(raw,threshold);
+    ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=valid?3:2;ctx.setLineDash(valid?[]:[5,5]);
+    ctx.beginPath();ctx.moveTo(sensor.x,sensor.y);ctx.lineTo(sensor.x+dx,sensor.y+dy);ctx.stroke();ctx.setLineDash([]);
+    ctx.beginPath();ctx.arc(sensor.x,sensor.y,5,0,Math.PI*2);ctx.fill();
+    if(valid){ctx.beginPath();ctx.arc(sensor.x+dx,sensor.y+dy,4,0,Math.PI*2);ctx.fill();}
+    const label=valid?(Number(raw)>maxRange?">300":numeric(raw,0))+" cm":"NO ECHO";
+    ctx.font="bold 12px system-ui";ctx.textAlign=sensor.key==="left"?"left":sensor.key==="right"?"right":"center";
+    let labelX=sensor.x+dx+(sensor.key==="left"?8:sensor.key==="right"?-8:0);
+    let labelY=sensor.y+dy-8;
+    if(sensor.key==="front"){labelX=sensor.x+dx+12;labelY=sensor.y+dy+18;ctx.textAlign="left";}
+    labelX=Math.max(8,Math.min(w-8,labelX));labelY=Math.max(16,Math.min(h-10,labelY));
+    ctx.fillStyle=color;ctx.fillText((sensor.label+" · "+label),labelX,labelY);
+    ctx.restore();
   });
+  // A simple top-down vehicle silhouette anchors the three sensor directions.
+  ctx.save();ctx.translate(cx,carY);
+  ctx.fillStyle="#152a3b";ctx.strokeStyle="#73c5ff";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-25,38);ctx.lineTo(-27,8);ctx.lineTo(-20,-24);ctx.lineTo(-12,-38);
+  ctx.lineTo(12,-38);ctx.lineTo(20,-24);ctx.lineTo(27,8);ctx.lineTo(25,38);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.fillStyle="#294b63";ctx.strokeStyle="#45657d";ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(-15,-22);ctx.lineTo(-10,-33);ctx.lineTo(10,-33);ctx.lineTo(15,-22);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.roundRect(-22,9,8,18,3);ctx.roundRect(14,9,8,18,3);ctx.fillStyle="#05090e";ctx.fill();
+  ctx.fillStyle="#d9efff";ctx.font="10px system-ui";ctx.textAlign="center";ctx.fillText("AVIS",0,3);
+  ctx.restore();
+  setText("avis-angle-hint","Side angle: ±"+numeric(sideAngle,0)+"°");
+}
+function renderRanges(ranges){
+  const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
+  let valid=0,nearest=null,stopCount=0;
+  ["left","front","right"].forEach(function(key){
+    const raw=ranges&&ranges[key]!==undefined?ranges[key]:null;
+    const good=raw!==null&&raw!==undefined&&Number.isFinite(Number(raw))&&Number(raw)>=0;
+    const value=good?Number(raw):null;
+    if(good){valid++;nearest=nearest===null?value:Math.min(nearest,value);if(threshold>0&&value<=threshold)stopCount++;}
+    const valueEl=$("range-"+key);
+    if(valueEl)valueEl.innerHTML=good?numeric(value,0)+' <span class="unit">cm</span>':'— <span class="unit">cm</span>';
+    const bar=$("bar-"+key);if(bar){bar.style.width=good?Math.max(0,Math.min(100,value/300*100))+"%":"0%";bar.style.background=avisRangeColor(value,threshold);}
+    setText("range-"+key+"-state",avisRangeStatus(value,threshold));
+  });
+  drawAvisSensors(ranges);
+  if(valid===0){setText("avis-sensor-state","No valid readings");$("avis-sensor-state").className="pill";setText("avis-sensor-note","AVIS returned no usable distance values in this sample. Unknown readings are not interpreted as obstacles.");}
+  else if(stopCount){setText("avis-sensor-state",stopCount+" at threshold");$("avis-sensor-state").className="pill";setText("avis-sensor-note","At least one range value is at/below the configured front-range stop threshold. Only the FRONT sensor participates in the existing autonomous stop rule.");}
+  else{setText("avis-sensor-state",valid+"/3 sensors live");$("avis-sensor-state").className="pill live";setText("avis-sensor-note","Nearest valid reading: "+numeric(nearest,0)+" cm. The drawing is schematic: sensor rays communicate measured range, not the position or shape of an object.");}
 }
 function renderEvents(events){
   const consoleEl=$("event-console"); if(!consoleEl)return;
@@ -558,8 +654,22 @@ function initCameraEditor(){
 initCameraEditor();
 loadSettings().catch(function(e){status(e.message,false);});
 poll();setInterval(poll,650);
-if($("lidar-expand"))$("lidar-expand").addEventListener("click",function(){const panel=$("lidar-panel");const expanded=panel.classList.toggle("lidar-panel-expanded");$("lidar-expand").textContent=expanded?"Exit expanded view":"Expand view";if(expanded&&document.documentElement.requestFullscreen){document.documentElement.requestFullscreen().catch(function(){});}else if(!expanded&&document.fullscreenElement&&document.exitFullscreen){document.exitFullscreen().catch(function(){});}});
-document.addEventListener("fullscreenchange",function(){const panel=$("lidar-panel");if(panel&&document.fullscreenElement===null&&panel.classList.contains("lidar-panel-expanded")){panel.classList.remove("lidar-panel-expanded");if($("lidar-expand"))$("lidar-expand").textContent="Expand view";}});
+function toggleSensorPanel(panelId,buttonId,expandedClass){
+  const panel=$(panelId),button=$(buttonId);if(!panel||!button)return;
+  const expanded=panel.classList.toggle(expandedClass);
+  button.textContent=expanded?"Exit expanded view":"Expand view";
+  if(expanded&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(function(){});
+  else if(!expanded&&document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(function(){});
+}
+if($("lidar-expand"))$("lidar-expand").addEventListener("click",function(){toggleSensorPanel("lidar-panel","lidar-expand","lidar-panel-expanded");});
+if($("avis-sensor-expand"))$("avis-sensor-expand").addEventListener("click",function(){toggleSensorPanel("range-panel","avis-sensor-expand","sensor-panel-expanded");});
+document.addEventListener("fullscreenchange",function(){
+  if(document.fullscreenElement!==null)return;
+  [["lidar-panel","lidar-expand","lidar-panel-expanded"],["range-panel","avis-sensor-expand","sensor-panel-expanded"]].forEach(function(item){
+    const panel=$(item[0]),button=$(item[1]);if(panel&&panel.classList.contains(item[2]))panel.classList.remove(item[2]);
+    if(button)button.textContent="Expand view";
+  });
+});
 })();
 </script>
 </body>
