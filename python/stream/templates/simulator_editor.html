@@ -74,7 +74,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       <div class="panel-head"><div><h2>AVIS Engine · Top-down range sensors</h2><p>Live distance rays and numeric readings · schematic layout, not a fabricated point cloud</p></div><span class="sim-spacer"></span><span id="avis-sensor-state" class="pill">Waiting for sensors</span><button type="button" id="avis-sensor-expand">Expand view</button></div>
       <div class="panel-content">
         <canvas id="avis-sensor-view" class="avis-sensor-canvas" width="900" height="420" aria-label="Top-down diagram of AVIS left, front and right distance sensors"></canvas>
-        <div class="avis-legend"><span><i class="safe"></i>Clear range</span><span><i class="near"></i>Approaching stop threshold</span><span><i class="danger"></i>At/below stop threshold</span><span><i class="unknown"></i>No valid reading</span><span id="avis-angle-hint">Side sensor angle: —</span></div>
+        <div class="avis-legend"><span><i class="safe"></i>Clear range</span><span><i class="near"></i>Approaching stop threshold</span><span><i class="danger"></i>Front brake threshold reached</span><span><i class="unknown"></i>No valid reading</span><span id="avis-angle-hint">Side sensor angle: —</span></div>
         <div class="sensor-columns">
           <div class="avis-distance-card"><div class="eyebrow">Left</div><div id="range-left" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-left" class="range-fill"></div></div><div id="range-left-state" class="unit">Waiting</div></div>
           <div class="avis-distance-card"><div class="eyebrow">Front / middle</div><div id="range-front" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-front" class="range-fill"></div></div><div id="range-front-state" class="unit">Waiting</div></div>
@@ -339,11 +339,11 @@ function drawLidar(points){
   ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(10,8);ctx.lineTo(0,4);ctx.lineTo(-10,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
   setText("lidar-note","360° top-down cloud · "+visible+" displayed points · near points red, medium range amber, farther points cyan. Rings are 5 m apart.");
 }
-function avisRangeStatus(value,threshold){
+function avisRangeStatus(value,threshold,key){
   if(value===null||value===undefined||!Number.isFinite(Number(value))||Number(value)<0)return "No valid reading";
   const distance=Number(value);
-  if(threshold>0&&distance<=threshold)return "STOP threshold reached";
-  if(threshold>0&&distance<=Math.max(threshold*1.5,threshold+10))return "Near stop threshold";
+  if(threshold>0&&distance<=threshold)return key==="front"?"Front brake threshold reached":"Within threshold · monitor only";
+  if(threshold>0&&distance<=Math.max(threshold*1.5,threshold+10))return "Near configured threshold";
   return "Range available";
 }
 function avisRangeColor(value,threshold){
@@ -415,11 +415,11 @@ function renderRanges(ranges){
     const raw=ranges&&ranges[key]!==undefined?ranges[key]:null;
     const good=raw!==null&&raw!==undefined&&Number.isFinite(Number(raw))&&Number(raw)>=0;
     const value=good?Number(raw):null;
-    if(good){valid++;nearest=nearest===null?value:Math.min(nearest,value);if(threshold>0&&value<=threshold)stopCount++;}
+    if(good){valid++;nearest=nearest===null?value:Math.min(nearest,value);if(key==="front"&&threshold>0&&value<=threshold)stopCount++;}
     const valueEl=$("range-"+key);
     if(valueEl)valueEl.innerHTML=good?numeric(value,0)+' <span class="unit">cm</span>':'— <span class="unit">cm</span>';
     const bar=$("bar-"+key);if(bar){bar.style.width=good?Math.max(0,Math.min(100,value/300*100))+"%":"0%";bar.style.background=avisRangeColor(value,threshold);}
-    setText("range-"+key+"-state",avisRangeStatus(value,threshold));
+    setText("range-"+key+"-state",avisRangeStatus(value,threshold,key));
   });
   drawAvisSensors(ranges);
   if(valid===0){setText("avis-sensor-state","No valid readings");$("avis-sensor-state").className="pill";setText("avis-sensor-note","AVIS returned no usable distance values in this sample. Unknown readings are not interpreted as obstacles.");}
