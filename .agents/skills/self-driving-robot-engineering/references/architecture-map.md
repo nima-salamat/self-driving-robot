@@ -85,6 +85,6 @@ Review API mutation paths for full-payload validation before applying changes. I
 
 Use the test fixtures and workflow as the current contract. Do not treat the older `python -m pytest test/` suggestion in the root README as the canonical CI command without checking whether pytest is configured and whether that path is correct.
 
-## Historical audit use
+## Current documentation
 
-The report `docs/MAIN_BRANCH_AUDIT_2026-10-12.md` inspected commit `4f088eab470fddce6df8a866158efc728c13ccf3`. It highlighted areas including serial reconnect behavior, sign-worker counters, dashboard configuration atomicity/input bounds, network exposure, and preflight coverage. Subsequent commits may have fixed or changed these paths. Use each finding only as a hypothesis, then inspect current HEAD and add a focused regression test.
+The maintained engineering guides live under `docs/`; start at `docs/README.md`. Historical review findings are not a statement of current behavior unless verified against the checked-out branch and covered by a focused regression test.
