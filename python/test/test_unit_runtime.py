@@ -17,7 +17,7 @@ from utils.health import FaultSeverity, HealthMonitor, HealthState
 from utils.json_config import _validate
 from utils.runtime_metrics import RuntimeMetrics
 from utils.fps import FPS
-from utils.preflight import PreflightReport, _check_arduino
+from utils.preflight import PreflightReport, _check_arduino, _check_stream_security
 
 
 class ArduinoContractCliPolicyTests(unittest.TestCase):
@@ -653,5 +653,29 @@ class ArduinoPreflightTests(unittest.TestCase):
             self.assertFalse(report.ok)
 
 
+
+
+class StreamPreflightSecurityTests(unittest.TestCase):
+    def test_preflight_fails_for_remote_bind_without_credentials(self):
+        config = types.SimpleNamespace(STREAM=True, STREAM_HOST="0.0.0.0")
+        with patch("stream.auth_api.load_stream_credentials", return_value=(None, None)):
+            report = PreflightReport()
+            _check_stream_security(report, config)
+
+        check = next(item for item in report.checks if item.name == "Stream authentication")
+        self.assertFalse(check.ok)
+        self.assertTrue(check.critical)
+        self.assertIn("requires both STREAM_USERNAME and STREAM_PASSWORD", check.detail)
+
+    def test_preflight_allows_local_bind_without_credentials(self):
+        config = types.SimpleNamespace(STREAM=True, STREAM_HOST="127.0.0.1")
+        with patch("stream.auth_api.load_stream_credentials", return_value=(None, None)):
+            report = PreflightReport()
+            _check_stream_security(report, config)
+
+        check = next(item for item in report.checks if item.name == "Stream authentication")
+        self.assertTrue(check.ok)
+        self.assertIn("loopback-only", check.detail)
+        self.assertTrue(report.ok)
 if __name__ == "__main__":
     unittest.main()
