@@ -45,6 +45,42 @@ class StreamApiTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def test_remote_stream_bind_is_rejected_without_credentials(self):
+        config = self.make_config()
+        config.STREAM_HOST = "0.0.0.0"
+
+        with self.assertRaisesRegex(RuntimeError, "STREAM_USERNAME and STREAM_PASSWORD"):
+            WebStreamer(config)
+
+    def test_remote_stream_bind_requires_login_and_allows_valid_session(self):
+        config = self.make_config()
+        config.STREAM_HOST = "0.0.0.0"
+        with patch.dict(os.environ, {
+            "STREAM_USERNAME": "robot-operator",
+            "STREAM_PASSWORD": "a-long-test-only-password",
+        }):
+            streamer = WebStreamer(config)
+            client = streamer.app.test_client()
+
+            unauthenticated = client.get("/api/config/full")
+            self.assertEqual(unauthenticated.status_code, 401)
+
+            login = client.get("/login")
+            self.assertEqual(login.status_code, 200)
+            response = client.post(
+                "/login",
+                data={
+                    "username": "robot-operator",
+                    "password": "a-long-test-only-password",
+                },
+                headers={"Origin": "http://localhost"},
+            )
+            self.assertEqual(response.status_code, 302)
+
+            authenticated = client.get("/api/config/full")
+            self.assertEqual(authenticated.status_code, 200)
+            self.assertTrue(authenticated.get_json()["controls_enabled"] is False)
+
     def test_stream_api_handlers_are_split_into_modules_without_changing_routes(self):
         streamer = WebStreamer(self.make_config())
 
