@@ -158,7 +158,9 @@ STREAM_USERNAME=your-dashboard-username
 STREAM_PASSWORD=use-a-long-unique-password
 ~~~
 
-If both variables are absent or empty, Stream keeps its existing no-login behavior.
+With both variables absent or empty, no-login access is allowed only when Stream
+is bound to a loopback address (the default). A non-loopback bind fails closed
+until both credentials are configured.
 If only one is set, Stream startup reports a configuration error rather than silently
 disabling authentication. Credentials are not committed: `.env` files are ignored by
 Git, while `.env.example` is only a template. The login is rate-limited, uses a
