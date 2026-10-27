@@ -95,7 +95,7 @@ Use `--stream-control` to save simulator settings from the editor; without it th
 
 The simulator dashboard has a dedicated editor and persists to `python/carla.sim.json`, `python/avis.sim.json`, and `python/avis-race.sim.json`; those files do not overwrite the physical `city.json` or `race.json`. Simulator steering/throttle/brake commands and virtual encoder pulses are simulation telemetry, not physical Arduino or encoder measurements. Start at a low target speed and verify steering direction in the simulator.
 
-See [Simulator mode architecture and setup](docs/SIMULATOR_MODES.md) for adapter contracts and feature boundaries.
+See [Simulator mode guide](docs/SIMULATORS.md) for adapter contracts, configuration isolation and feature boundaries.
 
 The BLSF detector and supported ML lane models are documented in [`python/README.md`](python/README.md). BLSF is experimental; validate detector changes on representative footage and at low speed before physical use.
 
@@ -115,7 +115,7 @@ An explicit CLI value takes precedence. The dashboard stream is intentionally op
 
 With `--performance`, the runtime reports stage percentiles for lane detection, confidence evaluation, sign submission/inference/input age, camera handoff and frame age, control, serial I/O, processing-rate wait, synchronous AprilTag inference and optional debug/object/traffic-light work. This is experimental: compare against a same-settings baseline and use `--without-arduino` before any physical test. A target FPS is a requested processing rate, not a guarantee.
 
-See [the full multiprocessing experiment notes](docs/MULTIPROCESSING_EXPERIMENT.md).
+See [Performance and frame freshness](docs/PERFORMANCE.md) for the process layout, measurement workflow and limitations.
 
 ### Processing FPS vs camera FPS
 
@@ -145,8 +145,20 @@ Tests do not replace hardware validation. Before a real run, check steering dire
 
 ## Documentation map
 
-- [Python runtime, CLI, camera, configuration, stream, and test guide](python/README.md)
-- [Arduino firmware overview and protocol](arduino/README.md)
+- [Complete documentation index](docs/README.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Module reference](docs/MODULES.md)
+- [Perception pipeline](docs/PERCEPTION.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Arduino integration](docs/ARDUINO_INTEGRATION.md)
+- [Stream dashboard](docs/STREAM_DASHBOARD.md)
+- [Simulator modes](docs/SIMULATORS.md)
+- [Performance and frame freshness](docs/PERFORMANCE.md)
+- [Dataset collection and camera calibration](docs/DATASET_AND_CALIBRATION.md)
+- [Testing and development](docs/TESTING.md)
+- [Safety and troubleshooting](docs/SAFETY_AND_TROUBLESHOOTING.md)
+- [Python runtime reference](python/README.md)
+- [Arduino firmware reference](arduino/README.md)
 - [Selected adaptive-PWM firmware notes](arduino/README-adaptive-features.md)
 
 ## License
