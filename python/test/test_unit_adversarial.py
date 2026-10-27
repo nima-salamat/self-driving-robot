@@ -620,7 +620,10 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
             SHUTDOWN_EVENT=shutdown_event,
         )
         output = io.StringIO()
-        with patch(
+        with patch.dict(os.environ, {
+            "STREAM_USERNAME": "test-operator",
+            "STREAM_PASSWORD": "test-only-long-password",
+        }), patch(
             "stream.make_server",
             side_effect=OSError("simulated address-in-use"),
         ), redirect_stdout(output):
@@ -664,7 +667,10 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
         )
         server = FakeServer()
         output = io.StringIO()
-        with self.assertLogs("stream", level="WARNING") as warning_logs, patch(
+        with patch.dict(os.environ, {
+            "STREAM_USERNAME": "test-operator",
+            "STREAM_PASSWORD": "test-only-long-password",
+        }), self.assertLogs("stream", level="WARNING") as warning_logs, patch(
             "stream.make_server", return_value=server
         ), patch(
             "stream._stream_access_urls",
@@ -687,7 +693,7 @@ class StreamLifecycleAdversarialTests(unittest.TestCase):
         self.assertIn("[Stream] Dashboard (local): http://127.0.0.1:5000", output.getvalue())
         self.assertIn("[Stream] Dashboard (LAN): http://192.168.1.42:5000", output.getvalue())
         self.assertTrue(
-            any("without authentication" in message for message in warning_logs.output)
+            any("plain HTTP" in message for message in warning_logs.output)
         )
 
 
