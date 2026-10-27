@@ -207,7 +207,7 @@ class WebStreamer(StreamAuthMixin, StreamControlsMixin, StreamConfigurationMixin
 
 def _stream_access_urls(bind_host, port):
     """Return browser URLs for the configured bind address."""
-    bind_host = str(bind_host or "0.0.0.0")
+    bind_host = str(bind_host or "127.0.0.1")
     port = int(port)
 
     def format_host(host):
@@ -282,7 +282,7 @@ def start_stream(config):
         logger.exception("Failed to initialize Stream dashboard")
         return
 
-    bind_host = str(getattr(config, "STREAM_HOST", "0.0.0.0"))
+    bind_host = str(getattr(config, "STREAM_HOST", None) or "127.0.0.1")
     requested_port = int(getattr(config, "STREAM_PORT", 5000))
     try:
         server = make_server(
