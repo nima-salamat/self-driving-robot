@@ -101,7 +101,7 @@ python main.py --mode race --without-arduino --performance --target-fps 40 --mul
 
 Compare against the same command without `--multiprocess`. The multiprocessing YOLO worker defaults to two ONNX intra-op CPU threads to limit contention with capture and lane processing; test `--sign-intra-op-threads 1`, `2` and `3` on the Pi to find the best trade-off. This setting does not affect the legacy threaded detector. Performance output includes the loop/camera/perception/control/serial timings, lane and confidence time, sign submission/inference/input age, camera handoff and frame age, skipped camera frames, rate wait, synchronous AprilTag detection, and applicable stream/object/traffic-light stages. FPS is not guaranteed to reach `--target-fps`; use measured stage p95 and input-frame age to determine the current bottleneck.
 
-See [Multiprocessing Camera and Sign Inference Experiment](../docs/MULTIPROCESSING_EXPERIMENT.md) for design details and the current limitations.
+See [Performance and frame freshness](../docs/PERFORMANCE.md) for the process layout, measurement workflow and current limitations.
 
 ## Stream request logging
 
