@@ -72,7 +72,7 @@ python python/main.py --mode race --without-arduino --performance
 
 ## Network security
 
-The main Stream server defaults to binding all interfaces unless configured otherwise. Do not expose a control-enabled dashboard or calibration service directly to the public internet. Use a trusted LAN, appropriate firewall rules and the optional Stream login documented in the Python README. The calibration web service has no built-in authentication and can capture/clear images, adjust camera settings and start calibration.
+The main Stream server binds to loopback by default. Any non-loopback bind requires both `STREAM_USERNAME` and `STREAM_PASSWORD`; plain HTTP still does not encrypt credentials in transit, so use a trusted LAN or an HTTPS reverse proxy. Do not expose a control-enabled dashboard or calibration service directly to the public internet. The separate calibration web service has no built-in authentication and can capture/clear images, adjust camera settings and start calibration; keep it on loopback or a trusted isolated network.
 
 Use `--stream-read-only` for monitoring that does not require mutations. Keep credentials, private images, raw datasets and calibration artifacts out of public commits unless they are intentionally meant to be shared.
 
