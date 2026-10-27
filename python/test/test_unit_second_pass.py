@@ -140,6 +140,41 @@ class SecondPassStreamTests(unittest.TestCase):
             409,
         )
 
+    def test_advanced_endpoint_rejects_out_of_range_pid_values_atomically(self):
+        config = self.config("race", ml=False)
+        client = WebStreamer(config).app.test_client()
+
+        response = client.post(
+            "/set_advanced",
+            json={"KP": 0.8, "PID_MAX_DT": -1},
+        )
+
+        self.assertEqual(response.status_code, 400, response.get_json())
+        current = client.get("/get_advanced").get_json()["advanced"]
+        self.assertEqual(current["KP"], 0.35)
+        self.assertEqual(current["PID_MAX_DT"], 0.2)
+        self.assertFalse(hasattr(config, "KP"))
+
+    def test_advanced_endpoint_rejects_malformed_motion_sequence(self):
+        client = WebStreamer(self.config("city", ml=False)).app.test_client()
+
+        response = client.post(
+            "/set_advanced",
+            json={"OBSTACLE_LANE_LEFT_SEQUENCE": "f 200 20 90 f nope 10 90"},
+        )
+
+        self.assertEqual(response.status_code, 400, response.get_json())
+
+    def test_advanced_endpoint_rejects_unknown_keys_instead_of_ignoring_them(self):
+        client = WebStreamer(self.config("city", ml=False)).app.test_client()
+
+        response = client.post(
+            "/set_advanced",
+            json={"UNRECOGNIZED_CONTROL": 123},
+        )
+
+        self.assertEqual(response.status_code, 400, response.get_json())
+
     def test_boolean_payload_is_strict(self):
         config = self.config()
         response = WebStreamer(config).app.test_client().post(
