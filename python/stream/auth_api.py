@@ -5,6 +5,7 @@ environment, with python/.env as a local fallback. The .env file is deliberately
 parsed here so Stream does not require an additional runtime dependency.
 """
 import hmac
+import ipaddress
 import os
 import re
 import secrets
@@ -75,6 +76,28 @@ class StreamAuthMixin:
     def _initialize_stream_auth(self, env_file):
         self._auth_username, self._auth_password = load_stream_credentials(env_file)
         self.auth_enabled = self._auth_username is not None
+
+        # The dashboard exposes live telemetry and (unless configured read-only)
+        # robot controls. Never publish it on a non-loopback interface without
+        # an explicit login configuration.
+        bind_host = str(getattr(self.config, "STREAM_HOST", None) or "127.0.0.1").strip()
+        normalized_host = bind_host[1:-1] if bind_host.startswith("[") and bind_host.endswith("]") else bind_host
+        if normalized_host.lower() != "localhost":
+            try:
+                loopback_only = ipaddress.ip_address(normalized_host).is_loopback
+            except ValueError:
+                # DNS names and wildcard/interface names cannot be assumed local.
+                loopback_only = False
+        else:
+            loopback_only = True
+        if not self.auth_enabled and not loopback_only:
+            raise RuntimeError(
+                "Stream dashboard is bound to a non-loopback interface "
+                f"({bind_host!r}) but authentication is not configured. "
+                "Set both STREAM_USERNAME and STREAM_PASSWORD, or bind locally "
+                "with --stream-host 127.0.0.1."
+            )
+
         self._auth_login_attempts = {}
         self._auth_login_lock = threading.Lock()
 
