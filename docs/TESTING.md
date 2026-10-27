@@ -24,6 +24,13 @@ Start preflight diagnostics without entering the runtime control loop:
 python python/main.py --mode race --preflight
 ```
 
+Preflight enumerates the configured serial device without opening it, because
+opening some Arduino boards resets the MCU. When `--arduino-config` is supplied,
+it also validates the hardware profile locally. It deliberately does not run the
+`hello/cfg` handshake or configure the board; the runtime performs that
+contract check before normal control. A serial-port enumeration pass is not
+proof that the device is writable or that the attached firmware matches.
+
 For an initial vision/runtime test without serial actuation:
 
 ```bash
