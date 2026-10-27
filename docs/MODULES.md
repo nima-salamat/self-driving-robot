@@ -11,7 +11,7 @@ This is a navigation guide to the implementation. It groups files by responsibil
 | `python/utils/parser.py` | CLI flags and argument-value validation. Run `python python/main.py --help` for the live interface. |
 | `python/utils/config_mode.py` | Selects the active City or Race configuration module for shared code. |
 | `python/utils/json_config.py` | Loads and validates JSON settings, including constrained values and pulse-sequence fields. |
-| `python/utils/preflight.py` | Checks startup prerequisites such as dependencies, storage, model files, camera, Arduino or simulator endpoint. |
+| `python/utils/preflight.py` | Checks startup prerequisites such as dependencies, storage, model files, camera, serial-port enumeration, Stream network security and simulator endpoint; validates an optional Arduino profile without opening the port. |
 | `python/modes/registry.py` | Declarative mode metadata: configuration profile, vision profile, runtime kind, backend and editor capabilities. |
 | `python/modes/city/` | City defaults and the City control/perception orchestration. |
 | `python/modes/race/` | Race defaults and Race control/perception orchestration. |
