@@ -1,4 +1,5 @@
 import importlib
+import ipaddress
 import os
 import shutil
 import socket
@@ -112,6 +113,50 @@ def _check_models(report, config):
         existing if existing is not None else "required model file not found",
     )
 
+
+
+def _check_stream_security(report, config):
+    if not bool(getattr(config, "STREAM", False)):
+        report.add("Stream authentication", True, "Stream disabled", critical=False)
+        return
+
+    host = str(getattr(config, "STREAM_HOST", None) or "127.0.0.1").strip()
+    normalized_host = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    if normalized_host.lower() == "localhost":
+        loopback_only = True
+    else:
+        try:
+            loopback_only = ipaddress.ip_address(normalized_host).is_loopback
+        except ValueError:
+            # Hostnames and wildcard/interface names must be treated as remote.
+            loopback_only = False
+
+    try:
+        from base_config import BASE_DIR
+        from stream.auth_api import load_stream_credentials
+
+        username, password = load_stream_credentials(os.path.join(str(BASE_DIR), ".env"))
+    except Exception as exc:
+        report.add("Stream authentication", False, f"{type(exc).__name__}: {exc}")
+        return
+
+    credentials_configured = bool(username and password)
+    if not loopback_only and not credentials_configured:
+        report.add(
+            "Stream authentication",
+            False,
+            f"non-loopback bind {host!r} requires both STREAM_USERNAME and STREAM_PASSWORD",
+        )
+        return
+
+    detail = (
+        "credentials configured for non-loopback access"
+        if credentials_configured and not loopback_only
+        else "loopback-only access; no login is required"
+        if loopback_only and not credentials_configured
+        else "credentials configured"
+    )
+    report.add("Stream authentication", True, detail)
 
 def _check_stream_port(report, config):
     if not bool(getattr(config, "STREAM", False)):
@@ -306,5 +351,6 @@ def run_preflight(config):
         _check_models(report, config)
         _check_camera(report, config)
         _check_arduino(report, config)
+    _check_stream_security(report, config)
     _check_stream_port(report, config)
     return report
