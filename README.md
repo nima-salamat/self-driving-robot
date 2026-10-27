@@ -61,6 +61,11 @@ python python/main.py --mode city --city-lane-detector blsf-beta
 # Web dashboard / video stream (opt-in; local-only by default)
 python python/main.py --mode race --stream
 
+# For LAN access, configure both credentials and bind explicitly:
+# export STREAM_USERNAME=robot-operator
+# export STREAM_PASSWORD='replace-with-a-long-unique-password'
+# python python/main.py --mode race --stream --stream-host 0.0.0.0
+
 # Show stream HTTP request logs while debugging
 python python/main.py --mode race --stream --stream-request-logs
 
