@@ -2,6 +2,8 @@
 
 This directory contains the runtime, configuration system, Arduino transport, vision pipeline, and operational tools for the self-driving robot.
 
+See the [project documentation index](../docs/README.md) for architecture, module responsibilities, configuration, simulator, Stream, performance, testing, and safety guides.
+
 ## Quick start
 
 From the repository root:
@@ -21,71 +23,25 @@ The default mode is \`city\`.
 
 ## Command-line help
 
-Run:
+The exact command-line interface is generated from the checked-out code. Run:
 
-~~~bash
-cd python
-python main.py --help
-~~~
+```bash
+python python/main.py --help
+```
 
-The exact line wrapping can vary by Python/terminal width. The command exposes the following interface:
+The current mode registry includes physical modes `city` and `race`, plus simulator modes `carla`, `avis`, and `avis-race`. Each mode selects a configuration profile and a runtime path; simulator capabilities are not identical to physical hardware capabilities.
 
-~~~text
-usage: main.py [-h] [--mode {city,race}] [--debug]
-               [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--stream]
-               [--stream-request-logs]
-               [--stream-host STREAM_HOST] [--stream-control | --stream-read-only]
-               [--without-arduino] [--fps] [--performance] [--preflight]
-               [--read-arduino-output] [--arduino-config PATH]
-               [--arduino-contract-timeout SECONDS]
-               [--camera-mode {picam,webcam,opencv}]
-               [--camera-index INDEX] [--target-fps N]
-               [--multiprocess | --multiprocess-camera]
-               [--sign-intra-op-threads N]
-               [--ml-lane-model {unet_depthwise_nano,unet_depthwise_small}]
+CLI options are grouped around:
 
-Self-driving robot runtime.
+- mode selection, logging, FPS display and performance diagnostics;
+- camera backend/index and the desired processing-cycle rate;
+- optional Stream hosting and read-only/control behavior;
+- Arduino enablement, telemetry output and the opt-in strict hardware contract;
+- experimental multiprocessing camera/sign inference and optional lane models;
+- simulator endpoint, vehicle, sensor and control settings;
+- optional diagnostics and mode-specific safety/behavior features.
 
-options:
-  -h, --help
-                        show this help message and exit
-  --mode {city,race}   Run mode. Default: city
-  --debug              Enable diagnostic visualizations; independent of --log-level
-  --log-level LEVEL     Minimum log severity: DEBUG, INFO, WARNING, ERROR,
-                        or CRITICAL (default: INFO)
-  --stream             Enable the web stream
-  --stream-request-logs Show HTTP request/access logs (disabled by default)
-  --stream-host STREAM_HOST
-                        Stream bind address (default: 0.0.0.0; all interfaces)
-  --stream-control     Enable dashboard controls (enabled by default)
-  --stream-read-only   Disable dashboard mutation endpoints
-  --without-arduino    Run without opening the Arduino serial connection
-  --fps                Show the runtime FPS counter
-  --performance        Enable runtime performance diagnostics
-  --preflight          Run startup diagnostics and exit without entering
-                        the control loop
-  --read-arduino-output
-                        Print telemetry lines received from Arduino
-  --arduino-config PATH
-                        Enable the strict Arduino hardware contract using PATH
-  --arduino-contract-timeout SECONDS
-                        Timeout for each Arduino hardware-contract exchange
-  --camera-mode {picam,webcam,opencv}
-                        Select the camera backend. 'webcam' and 'opencv' use
-                        OpenCV VideoCapture
-  --camera-index INDEX
-                        OpenCV camera index when using webcam/opencv
-  --target-fps N        Maximum desired rate of complete vision-processing
-                        cycles per second; does not set camera sensor FPS
-  --multiprocess, --multiprocess-camera
-                        Run camera capture and traffic-sign inference in
-                        separate processes using latest-frame handoff
-  --sign-intra-op-threads N
-                        CPU thread budget for ONNX sign inference in
-                        multiprocessing mode (default: 2)
-  --ml-lane-model {unet_depthwise_nano,unet_depthwise_small}
-                        Enable ML lane detection with the selected model
-~~~
+Do not copy an old help transcript as the authoritative interface: flags and accepted values evolve with the mode registry. The [Configuration guide](../docs/CONFIGURATION.md) explains configuration precedence and opt-in behavior, while [Simulator Modes](../docs/SIMULATORS.md) describes the simulator-specific switches.
 
 ## Multiprocess camera and traffic-sign inference
 
