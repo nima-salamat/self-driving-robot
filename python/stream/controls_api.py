@@ -202,7 +202,7 @@ class StreamControlsMixin:
                 success=False,
                 message="request body must be a JSON object",
             ), 400
-        before = self._full_config_snapshot()
+
         capabilities = mode_capabilities(self.config)
         unsupported = []
         if "USE_BEV" in data and not capabilities.get("supports_bev", False):
@@ -213,14 +213,17 @@ class StreamControlsMixin:
             "CROSSWALK_THRESH_SPEND",
             "CW_TRAPEZOID_MODE",
             "CW_TOP_WIDTH_FACTOR",
+            "CROSSWALK_VERTICAL_MIN_LINES",
+            "CROSSWALK_HORIZONTAL_MIN_LINES",
+            "CITY_CROSSWALK_TURN_RIGHT_SEQUENCE",
+            "CITY_CROSSWALK_TURN_LEFT_SEQUENCE",
+            "CITY_CROSSWALK_STRAIGHT_SEQUENCE",
         }
         if (
             any(key in data for key in crosswalk_keys)
             and not capabilities.get("supports_crosswalk", False)
         ):
-            unsupported.extend(
-                sorted(key for key in crosswalk_keys if key in data)
-            )
+            unsupported.extend(sorted(key for key in crosswalk_keys if key in data))
         lane_shape_keys = {
             "LANE_ROI_MODE",
             "RL_TOP_WIDTH_FACTOR",
@@ -230,14 +233,28 @@ class StreamControlsMixin:
             any(key in data for key in lane_shape_keys)
             and not capabilities.get("supports_lane_roi", False)
         ):
-            unsupported.extend(
-                sorted(key for key in lane_shape_keys if key in data)
-            )
+            unsupported.extend(sorted(key for key in lane_shape_keys if key in data))
         if unsupported:
             return jsonify(
                 success=False,
                 message="unsupported controls for active mode",
                 unsupported=unsupported,
+            ), 409
+
+        # These changes have dedicated, guarded workflows. Keep them out of
+        # the generic settings endpoint so they cannot bypass the safety gates.
+        if any(key in data for key in ("CAMERA_CALIBRATION_FILE", "APPLY_CAMERA_CALIBRATION")):
+            return jsonify(
+                success=False,
+                message="Use the Camera Calibration Profile controls to validate and apply calibration files.",
+            ), 409
+        if (
+            str(getattr(self.config, "RUN_LVL", "MOVE")).upper() == "STOP"
+            and data.get("RUN_LVL", "STOP") != "STOP"
+        ):
+            return jsonify(
+                success=False,
+                message="motion is software-stopped; use the explicit /api/safety resume action",
             ), 409
         if "SERVO_CENTER" in data:
             raw_center = data["SERVO_CENTER"]
@@ -252,78 +269,41 @@ class StreamControlsMixin:
             minimum = float(getattr(self.config, "MIN_SERVO_ANGLE", 55))
             maximum = float(getattr(self.config, "MAX_SERVO_ANGLE", 125))
             if not minimum < center < maximum:
-                return jsonify(success=False, message=f"SERVO_CENTER must be strictly between {minimum:g} and {maximum:g}"), 400
-            if center != int(getattr(self.config, "SERVO_CENTER", 95)) and str(getattr(self.config, "RUN_LVL", "MOVE")).upper() != "STOP":
-                return jsonify(success=False, message="Set RUN_LVL=STOP before changing SERVO_CENTER."), 409
-        if any(key in data for key in ("CAMERA_CALIBRATION_FILE", "APPLY_CAMERA_CALIBRATION")):
-            return jsonify(success=False, message="Use the Camera Calibration Profile controls to validate and apply calibration files."), 409
-        if (str(getattr(self.config, "RUN_LVL", "MOVE")) == "STOP"
-                and "RUN_LVL" in data and data.get("RUN_LVL") != "STOP"):
+                return jsonify(
+                    success=False,
+                    message=f"SERVO_CENTER must be strictly between {minimum:g} and {maximum:g}",
+                ), 400
+            if (
+                center != int(getattr(self.config, "SERVO_CENTER", 95))
+                and str(getattr(self.config, "RUN_LVL", "MOVE")).upper() != "STOP"
+            ):
+                return jsonify(
+                    success=False,
+                    message="Set RUN_LVL=STOP before changing SERVO_CENTER.",
+                ), 409
+
+        # Validate through the same schema used by full-config imports before
+        # mutating runtime state or writing a file. This also rejects unknown
+        # keys, non-finite numbers, invalid pulse sequences and cross-field
+        # constraints such as PID_MIN_DT > PID_MAX_DT.
+        payload = {
+            "schema_version": 1,
+            "mode": self._mode_slug(),
+            "values": {},
+            "advanced": data,
+            "ui": {},
+            "runtime": {},
+        }
+        try:
+            self._apply_full_config(payload, "advanced settings update")
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
+        except Exception:
+            logger.exception("Failed to apply advanced settings")
             return jsonify(
                 success=False,
-                message="motion is software-stopped; use the explicit /api/safety resume action",
-            ), 409
-        try:
-            for k, default_v in ADVANCED_VARS.items():
-                if k in data:
-                    val = data[k]
-                    if k in ("LANE_THRESHOLD", "CROSSWALK_THRESHOLD"):
-                        val = max(0, min(255, int(val)))
-                    elif k.startswith("BEV_SRC_"):
-                        val = max(-5.0, min(5.0, float(val)))
-
-                    expected_type = type(default_v)
-                    if expected_type == bool:
-                        if not isinstance(val, bool):
-                            raise ValueError(f"{k} must be boolean")
-                    elif expected_type == int: val = int(val)
-                    elif expected_type == float: val = float(val)
-                    else: val = str(val)
-
-                    setattr(self.config, k, val)
-                    if k == "SEND_AUTOMATIC_ARDUINO_COMMANDS":
-                        connection = getattr(self.config, "arduino_connection", None)
-                        policy_setter = getattr(connection, "set_automatic_commands_enabled", None)
-                        if callable(policy_setter):
-                            policy_setter(val)
-
-            if "RUN_LVL" in data:
-                setattr(self.config, "RUN_LVL", data["RUN_LVL"] if data["RUN_LVL"] in ("MOVE","STOP") else "MOVE")
-
-            if "WITH_SIGN" in data or "WITH_APRILTAG" in data:
-                sign = data.get(
-                    "WITH_SIGN",
-                    getattr(self.config, "WITH_SIGN", False),
-                )
-                tag = data.get(
-                    "WITH_APRILTAG",
-                    getattr(self.config, "WITH_APRILTAG", False),
-                )
-                if not isinstance(sign, bool) or not isinstance(tag, bool):
-                    raise ValueError(
-                        "WITH_SIGN and WITH_APRILTAG must be boolean"
-                    )
-                if sign and tag:
-                    raise ValueError(
-                        "WITH_SIGN and WITH_APRILTAG cannot both be true"
-                    )
-                set_marker_mode(
-                    self.config,
-                    "sign" if sign else "apriltag" if tag else "none",
-                )
-
-        except Exception as e:
-            logger.exception("Invalid advanced payload")
-            self._restore_advanced_values(before.get("advanced", {}))
-            return jsonify(success=False, message=str(e)), 400
-
-        if not self.save_conf_to_json():
-            self._restore_advanced_values(before.get("advanced", {}))
-            return jsonify(success=False, message="could not persist advanced settings; previous values restored"), 500
-        if "SERVO_CENTER" in data:
-            self._sync_live_servo_center()
-        self._record_config_history("before advanced settings update", before)
-        self._record_config_history("advanced settings updated")
+                message="Failed to apply advanced settings; previous settings were restored where possible.",
+            ), 500
         return jsonify(success=True, advanced=self.get_all_advanced())
 
     def get_ui(self):
