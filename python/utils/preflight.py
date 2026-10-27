@@ -118,7 +118,7 @@ def _check_stream_port(report, config):
         report.add("stream port", True, "stream disabled", critical=False)
         return
 
-    host = str(getattr(config, "STREAM_HOST", "0.0.0.0"))
+    host = str(getattr(config, "STREAM_HOST", None) or "127.0.0.1")
     port = int(getattr(config, "STREAM_PORT", 5000))
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -179,19 +179,78 @@ def _check_arduino(report, config):
         )
         return
 
+    # Validate the selected profile locally without sending hello/cfg commands.
+    # A preflight should not configure actuators or claim that the connected
+    # board matches the profile; the runtime owns the strict handshake.
+    profile_path = getattr(config, "ARDUINO_CONFIG", None)
+    if profile_path:
+        try:
+            from arduino.hardware_contract import load_hardware_config
+
+            profile = load_hardware_config(profile_path)
+            expected_firmware = profile["firmware"]["id"]
+            report.add(
+                "Arduino hardware profile",
+                True,
+                f"configuration is valid for firmware {expected_firmware}; device identity is not checked by preflight",
+            )
+        except Exception as exc:
+            report.add(
+                "Arduino hardware profile",
+                False,
+                f"{type(exc).__name__}: {exc}",
+            )
+    else:
+        report.add(
+            "Arduino firmware contract",
+            True,
+            "no strict profile selected; firmware identity and protocol compatibility are not verified by preflight",
+            critical=False,
+        )
+
     port = str(getattr(config, "SERIAL_PORT", "/dev/ttyUSB0"))
     try:
-        import serial
+        from serial.tools import list_ports
 
-        connection = serial.Serial(
-            port,
-            int(getattr(config, "BAUD_RATE", 115200)),
-            timeout=min(float(getattr(config, "SERIAL_TIMEOUT", 0.1)), 0.5),
+        def normalized_device(value):
+            text = os.path.expanduser(str(value).strip())
+            return {
+                os.path.normcase(text),
+                os.path.normcase(os.path.realpath(text)),
+            }
+
+        expected_names = normalized_device(port)
+        available = list(list_ports.comports())
+        match = next(
+            (
+                entry for entry in available
+                if expected_names & normalized_device(getattr(entry, "device", ""))
+            ),
+            None,
         )
-        connection.close()
-        report.add("Arduino", True, f"serial port {port} opened successfully")
+        if match is None:
+            found = ", ".join(
+                str(getattr(entry, "device", ""))
+                for entry in available
+                if getattr(entry, "device", None)
+            ) or "none"
+            report.add(
+                "Arduino serial port",
+                False,
+                f"{port} was not found in OS serial-port enumeration (available: {found}); the port was not opened",
+            )
+        else:
+            report.add(
+                "Arduino serial port",
+                True,
+                f"{port} is enumerated by the OS; the port was not opened to avoid resetting the board",
+            )
     except Exception as exc:
-        report.add("Arduino", False, f"{type(exc).__name__}: {exc}")
+        report.add(
+            "Arduino serial port enumeration",
+            False,
+            f"{type(exc).__name__}: {exc}",
+        )
 
 
 def _check_simulator_endpoint(report, config):
