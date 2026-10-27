@@ -899,13 +899,13 @@ class StreamApiTests(unittest.TestCase):
             with self.subTest(mode=config.MODE):
                 self.assertFalse(config.STREAM)
 
-    def test_city_and_race_defaults_allow_lan_dashboard_controls(self):
+    def test_city_and_race_defaults_bind_locally_with_controls_enabled(self):
         from modes.city import config_city
         from modes.race import config_race
 
         for config in (config_city, config_race):
             with self.subTest(mode=config.MODE):
-                self.assertEqual(config.STREAM_HOST, "0.0.0.0")
+                self.assertEqual(config.STREAM_HOST, "127.0.0.1")
                 self.assertTrue(config.STREAM_ALLOW_CONTROL)
 
     def test_mode_endpoint_reports_active_city_detector(self):
