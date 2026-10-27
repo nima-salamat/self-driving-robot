@@ -148,8 +148,10 @@ cd python
 cp .env.example .env
 # Edit .env and replace both placeholder values with unique credentials.
 chmod 600 .env
-python main.py --mode race --stream
+python main.py --mode race --stream --stream-host 0.0.0.0
 ~~~
+
+The example explicitly enables LAN access; authentication is required for this non-loopback bind.
 
 Set both variables in `python/.env` (or in the process environment):
 
