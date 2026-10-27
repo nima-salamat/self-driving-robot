@@ -483,6 +483,11 @@ class StreamConfigurationMixin:
             for key, value in normalized["advanced"].items():
                 if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
                     setattr(self.config, key, value)
+            if "SEND_AUTOMATIC_ARDUINO_COMMANDS" in normalized["advanced"]:
+                connection = getattr(self.config, "arduino_connection", None)
+                policy_setter = getattr(connection, "set_automatic_commands_enabled", None)
+                if callable(policy_setter):
+                    policy_setter(bool(normalized["advanced"]["SEND_AUTOMATIC_ARDUINO_COMMANDS"]))
             if "WITH_SIGN" in normalized["advanced"] or "WITH_APRILTAG" in normalized["advanced"]:
                 sign = normalized["advanced"].get("WITH_SIGN", getattr(self.config, "WITH_SIGN", False))
                 tag = normalized["advanced"].get("WITH_APRILTAG", getattr(self.config, "WITH_APRILTAG", False))
@@ -524,6 +529,16 @@ class StreamConfigurationMixin:
             for key, value in before.get("advanced", {}).items():
                 if key not in {"WITH_SIGN", "WITH_APRILTAG"}:
                     setattr(self.config, key, value)
+            connection = getattr(self.config, "arduino_connection", None)
+            policy_setter = getattr(connection, "set_automatic_commands_enabled", None)
+            if callable(policy_setter):
+                try:
+                    policy_setter(bool(before.get("advanced", {}).get(
+                        "SEND_AUTOMATIC_ARDUINO_COMMANDS",
+                        getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True),
+                    )))
+                except Exception:
+                    logger.exception("Could not roll back automatic Arduino command policy")
             self.ui_settings = before.get("ui", self.ui_settings)
             setattr(self.config, "stream_ui_settings", self.ui_settings)
             try:
