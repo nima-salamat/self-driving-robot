@@ -431,6 +431,8 @@ python main.py --mode race --without-arduino
 python main.py --mode race --preflight
 ~~~
 
+Preflight enumerates the configured serial port without opening it, because opening some Arduino boards resets the MCU. If `--arduino-config` is selected, it validates that profile locally, but it does not verify the attached firmware identity or execute the live `hello/cfg` handshake. A successful preflight therefore does not certify hardware-contract compatibility. When Stream is enabled, preflight also checks that non-loopback binding has both login credentials configured.
+
 ### Performance diagnostics
 
 ~~~bash
