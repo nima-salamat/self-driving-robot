@@ -248,9 +248,10 @@ SIGN_DETECTOR_METHOD = "yolo"  # "yolo" or "svm"
 USE_SIGN = False
 OUTPUT_DIR = "output"
 MIN_FREE_DISK_MB = 256
-# Bind to all interfaces so trusted devices on the LAN can open the dashboard.
-# Use --stream-host 127.0.0.1 for loopback-only access.
-STREAM_HOST = "0.0.0.0"
+# Safe by default: expose the dashboard on the local machine only.
+# For LAN access, explicitly set --stream-host 0.0.0.0 and configure
+# STREAM_USERNAME and STREAM_PASSWORD before starting the dashboard.
+STREAM_HOST = "127.0.0.1"
 STREAM_PORT = 5000
 # Controls are enabled for the interactive dashboard; use --stream-read-only
 # on networks where other devices must not change runtime settings.
