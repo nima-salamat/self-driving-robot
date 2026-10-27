@@ -17,6 +17,7 @@ from utils.health import FaultSeverity, HealthMonitor, HealthState
 from utils.json_config import _validate
 from utils.runtime_metrics import RuntimeMetrics
 from utils.fps import FPS
+from utils.preflight import PreflightReport, _check_arduino
 
 
 class ArduinoContractCliPolicyTests(unittest.TestCase):
@@ -605,6 +606,51 @@ class CityRaceStreamIntegrationTests(unittest.TestCase):
 
     def test_race_mode_publishes_new_debug_frame_to_http_stream(self):
         self._assert_mode_publishes_jpeg("race")
+
+
+
+
+class ArduinoPreflightTests(unittest.TestCase):
+    def test_preflight_enumerates_port_without_opening_or_resetting_board(self):
+        config = types.SimpleNamespace(
+            WITHOUT_ARDUINO=False,
+            SERIAL_PORT="/dev/ttyUSB0",
+            ARDUINO_CONFIG=None,
+        )
+        fake_port = types.SimpleNamespace(device="/dev/ttyUSB0")
+        with patch("serial.tools.list_ports.comports", return_value=[fake_port]), patch(
+            "serial.Serial"
+        ) as serial_open:
+            report = PreflightReport()
+            _check_arduino(report, config)
+
+        serial_open.assert_not_called()
+        port_check = next(check for check in report.checks if check.name == "Arduino serial port")
+        self.assertTrue(port_check.ok)
+        self.assertIn("was not opened", port_check.detail)
+        contract_check = next(check for check in report.checks if check.name == "Arduino firmware contract")
+        self.assertFalse(contract_check.critical)
+        self.assertIn("not verified by preflight", contract_check.detail)
+        self.assertTrue(report.ok)
+
+    def test_preflight_rejects_invalid_strict_hardware_profile_without_opening_port(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = types.SimpleNamespace(
+                WITHOUT_ARDUINO=False,
+                SERIAL_PORT="/dev/ttyUSB0",
+                ARDUINO_CONFIG=os.path.join(tmp, "missing-profile.json"),
+            )
+            with patch(
+                "serial.tools.list_ports.comports",
+                return_value=[types.SimpleNamespace(device="/dev/ttyUSB0")],
+            ), patch("serial.Serial") as serial_open:
+                report = PreflightReport()
+                _check_arduino(report, config)
+
+            serial_open.assert_not_called()
+            profile_check = next(check for check in report.checks if check.name == "Arduino hardware profile")
+            self.assertFalse(profile_check.ok)
+            self.assertFalse(report.ok)
 
 
 if __name__ == "__main__":
