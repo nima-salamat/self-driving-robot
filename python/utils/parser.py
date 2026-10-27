@@ -166,8 +166,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "--stream-host",
         default=None,
-        help=("Address to bind the dashboard to (default: 0.0.0.0, all interfaces). "
-              "Use 127.0.0.1 for local-only access."),
+        help=("Address to bind the dashboard to (default: 127.0.0.1, local-only). "
+              "Non-loopback addresses require STREAM_USERNAME and STREAM_PASSWORD."),
     )
 
     stream_control_group = parser.add_mutually_exclusive_group()
