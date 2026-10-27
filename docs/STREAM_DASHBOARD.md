@@ -45,7 +45,7 @@ Always use the appropriate robot/firmware stop path for a physical safety condit
 
 ## Access control and network exposure
 
-The default bind address can expose the dashboard to other devices on the reachable network. Use a trusted network, a restrictive firewall and the optional login support documented in the [Python runtime guide](../python/README.md). Do not expose a control-enabled dashboard directly to the public internet.
+Unauthenticated access is supported only on loopback. A non-loopback bind requires both login credentials; this protects the HTTP endpoints as well as the workspace page. Because the built-in server uses plain HTTP, use a trusted LAN or place it behind an HTTPS reverse proxy, and do not expose a control-enabled dashboard directly to the public internet. See the [Python runtime guide](../python/README.md) for setup details.
 
 If you need monitoring without mutation endpoints, start the runtime with:
 
