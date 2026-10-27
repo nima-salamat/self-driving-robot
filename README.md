@@ -58,7 +58,7 @@ Other useful options:
 # Experimental classical lane detector in City mode
 python python/main.py --mode city --city-lane-detector blsf-beta
 
-# Web dashboard / video stream (opt-in)
+# Web dashboard / video stream (opt-in; local-only by default)
 python python/main.py --mode race --stream
 
 # Show stream HTTP request logs while debugging
