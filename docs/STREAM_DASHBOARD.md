@@ -9,7 +9,7 @@ python python/main.py --mode city --stream
 # Open the URL printed by the runtime, normally http://<robot-ip>:5000
 ```
 
-The Stream server is opt-in. The bind host and port are configurable; the default bind address is `0.0.0.0`, which listens on all network interfaces. Use the printed local/LAN address from another device, not `0.0.0.0` as a browser destination.
+The Stream server is opt-in. Its default bind address is `127.0.0.1`, so the dashboard is local-only by default. For LAN access, configure both `STREAM_USERNAME` and `STREAM_PASSWORD` in `python/.env` or the process environment, then explicitly pass `--stream-host 0.0.0.0`. A non-loopback bind without credentials is rejected. Use the printed address from another device, not `0.0.0.0` as a browser destination.
 
 The Stream server does not own the camera or replace the mode's control loop. It displays the latest published frame and exposes selected runtime state and controls through its API.
 
