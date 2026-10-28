@@ -279,6 +279,101 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.connected = True
         self.assertIsNone(adapter.read())
 
+    def test_carla_adapter_marks_old_lidar_packets_stale(self):
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        class FakeVehicle:
+            def get_transform(self):
+                return SimpleNamespace(
+                    location=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+                    rotation=SimpleNamespace(yaw=0.0),
+                )
+            def get_velocity(self):
+                return SimpleNamespace(x=0.0, y=0.0, z=0.0)
+
+        config = SimpleNamespace(
+            SIMULATOR_LIDAR_ENABLED=True,
+            SIMULATOR_LIDAR_ROTATION_FREQUENCY=10.0,
+        )
+        adapter = CarlaAdapter(config)
+        adapter.connected = True
+        adapter.vehicle = FakeVehicle()
+        adapter._image = np.zeros((8, 12, 3), dtype=np.uint8)
+        adapter._image_at = __import__("time").monotonic()
+        adapter._sequence = 1
+        adapter._points = np.asarray([[1.0, 0.0, 0.0]], dtype=np.float32)
+        adapter._points_at = __import__("time").monotonic() - 5.0
+
+        stale = adapter.read(timeout=0)
+        self.assertIsNotNone(stale)
+        self.assertFalse(stale.sensor_status["lidar_fresh"])
+        self.assertIsNone(stale.lidar_points)
+        self.assertNotIn("front", stale.ranges_cm)
+
+        adapter._image_at = __import__("time").monotonic()
+        adapter._points_at = __import__("time").monotonic()
+        adapter._sequence = 2
+        fresh = adapter.read(timeout=0)
+        self.assertTrue(fresh.sensor_status["lidar_fresh"])
+        self.assertIsNotNone(fresh.lidar_points)
+        self.assertAlmostEqual(fresh.ranges_cm["front"], 100.0, places=3)
+
+    def test_carla_runtime_brakes_when_enabled_lidar_is_stale(self):
+        import threading
+        from modes.simulation.base_adapter import SensorFrame
+        from modes.simulation.runtime import SimulationRuntime
+        from vision.city_vision_processing import VisionProcessor
+
+        shutdown = threading.Event()
+        frame = SensorFrame(
+            image=np.zeros((8, 12, 3), dtype=np.uint8),
+            captured_at=__import__("time").monotonic(),
+            sequence=1,
+            ranges_cm={},
+            lidar_points=None,
+            sensor_status={"lidar_enabled": True, "lidar_fresh": False, "lidar_age_s": 3.0},
+        )
+
+        class FakeAdapter:
+            connected = True
+            def __init__(self):
+                self.commands = []
+            def connect(self):
+                return None
+            def read(self, timeout=0.25):
+                shutdown.set()
+                return frame
+            def apply_control(self, command):
+                self.commands.append(command)
+                return True
+            def close(self):
+                self.connected = False
+
+        class FakeVision:
+            def detect(self, image):
+                return {"perception_valid": True, "lane_type": "both", "steering_angle": 95.0}
+
+        config = SimpleNamespace(
+            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+            SIMULATOR_TARGET_SPEED=20.0, SIMULATOR_THROTTLE_LIMIT=0.3,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            SIMULATOR_OBSTACLE_STOP_DISTANCE_CM=35.0, SIMULATOR_LIDAR_ENABLED=True,
+            SIMULATOR_STOP_ON_CROSSWALK=False, TARGET_PROCESSING_FPS=30.0,
+            ENCODER_MAP_ENABLED=False, STREAM=False, debug_frames_list=[None, None],
+            SHUTDOWN_EVENT=shutdown,
+        )
+        adapter = FakeAdapter()
+        with patch("modes.simulation.runtime.create_adapter", return_value=adapter), patch(
+            "vision.city_vision_processing.VisionProcessor", return_value=FakeVision()
+        ):
+            runtime = SimulationRuntime(config)
+            runtime.run()
+
+        self.assertTrue(adapter.commands)
+        self.assertTrue(all(command.throttle == 0.0 and command.brake == 1.0 for command in adapter.commands))
+        self.assertTrue(any("LiDAR is missing or stale" in command.reason for command in adapter.commands))
+
     def test_cli_accepts_simulation_modes_and_options(self):
         args = parse_args(["--mode", "carla", "--simulator-host", "10.0.0.2",
                            "--simulator-port", "2100", "--simulator-lidar",
