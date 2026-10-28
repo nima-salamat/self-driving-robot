@@ -802,8 +802,30 @@ class StreamRuntimeMixin:
             )
         return jsonify(status)
 
+    def _manual_arduino_motion_block_reason(self):
+        """Return why raw serial commands are restricted by an active software stop."""
+        if str(getattr(self.config, "RUN_LVL", "MOVE")).upper() == "STOP":
+            return "The robot is software-stopped."
+
+        controller = getattr(self.config, "robot_controller", None)
+        if bool(getattr(controller, "motion_inhibited", False)):
+            reason = getattr(controller, "motion_inhibit_reason", None)
+            suffix = f" ({reason})" if reason else ""
+            return "The controller motion-inhibit gate is active" + suffix + "."
+
+        robot = getattr(self.config, "runtime_robot", None)
+        if bool(getattr(robot, "_mcu_stop_latched", False)):
+            return "The mode STOP latch is active."
+        hold = getattr(robot, "stop_hold", None)
+        if bool(getattr(hold, "active", False)):
+            return "A STOP-sign hold is active."
+        gate = getattr(robot, "race_start_gate", None)
+        if gate is not None and not bool(getattr(robot, "_race_start_gate_motion_released", False)):
+            return "The Race start gate has not released motion."
+        return None
+
     def arduino_command_api(self):
-        """Send one operator-entered command, bypassing the automatic-send gate."""
+        """Send an operator-entered command unless a software safety gate is active."""
         if not self._control_allowed():
             return self._control_denied()
         if bool(getattr(self.config, "WITHOUT_ARDUINO", False)):
@@ -845,6 +867,18 @@ class StreamRuntimeMixin:
             return jsonify(success=False, message="Arduino serial connection is unavailable"), 409
         if not bool(getattr(connection, "connected", False)):
             return jsonify(success=False, message="Arduino is not connected; command was not sent"), 409
+
+        # The terminal is intentionally a lower-level interface than automatic
+        # control. While any software stop/inhibit is active, only idempotent
+        # stop/diagnostic commands may pass; a raw "motor", pulse, "resume", or
+        # "motion enable" command must not bypass the mode-owned safety gate.
+        stop_reason = self._manual_arduino_motion_block_reason()
+        if stop_reason and command.lower() not in {"stop", "status", "heartbeat"}:
+            return jsonify(
+                success=False,
+                message=stop_reason + " Only stop, status, and heartbeat are allowed until the explicit safety Resume action succeeds.",
+                delivery_status="not_sent",
+            ), 409
 
         if wait_for_ack:
             ack_sender = getattr(connection, "send_custom_command_with_ack", None)
