@@ -95,12 +95,12 @@ class StreamApiTests(unittest.TestCase):
         config.arduino_connection = connection
         client = WebStreamer(config).app.test_client()
 
-        motion = client.post("/api/arduino/command", json={"command": "motor 180"})
+        motion = client.post("/api/arduino-command", json={"command": "motor 180"})
         self.assertEqual(motion.status_code, 409)
         self.assertEqual(connection.commands, [])
 
         # Explicit stop remains usable while stopped; raw resume/motion commands do not.
-        stop = client.post("/api/arduino/command", json={"command": "stop"})
+        stop = client.post("/api/arduino-command", json={"command": "stop"})
         self.assertEqual(stop.status_code, 200)
         self.assertEqual(connection.commands, ["stop\n"])
 
@@ -108,7 +108,7 @@ class StreamApiTests(unittest.TestCase):
         config.robot_controller = types.SimpleNamespace(
             motion_inhibited=True, motion_inhibit_reason="traffic_stop"
         )
-        resume = client.post("/api/arduino/command", json={"command": "motion enable"})
+        resume = client.post("/api/arduino-command", json={"command": "motion enable"})
         self.assertEqual(resume.status_code, 409)
         self.assertEqual(connection.commands, ["stop\n"])
 
