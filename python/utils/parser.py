@@ -77,12 +77,13 @@ def parse_args(argv=None):
     parser.add_argument(
         "--target-fps",
         type=_positive_finite_fps,
-        default=DEFAULT_TARGET_FPS,
+        default=None,
         metavar="N",
         help=(
             "Maximum desired rate of complete vision-processing cycles per "
             f"second, including frame acquisition, perception, and applicable "
-            f"inference (default: {DEFAULT_TARGET_FPS:g}); does not set camera FPS."
+            f"inference (default: {DEFAULT_TARGET_FPS:g} when no value is saved "
+            "in the active mode JSON); does not set camera FPS."
         ),
     )
 
