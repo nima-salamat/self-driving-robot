@@ -272,6 +272,40 @@ class ConfigValidationTests(unittest.TestCase):
             _load_into(config, filename)
             self.assertEqual(config.TARGET_PROCESSING_FPS, 22.0)
 
+    def test_mode_json_rejects_inverted_roi_without_partial_mutation(self):
+        from utils.json_config import _load_into
+
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.join(directory, "city.json")
+            with open(filename, "w", encoding="utf-8") as handle:
+                json.dump({"KP": 12.0, "RL_TOP_ROI": 0.9, "RL_BOTTOM_ROI": 0.1}, handle)
+            config = types.SimpleNamespace(
+                KP=0.35, PID_MIN_DT=0.001, PID_MAX_DT=0.2,
+                RL_TOP_ROI=0.2, RL_BOTTOM_ROI=0.8,
+                RL_LEFT_ROI=0.2, RL_RIGHT_ROI=0.8,
+            )
+            with self.assertRaisesRegex(ValueError, "RL ROI requires TOP_ROI < BOTTOM_ROI"):
+                _load_into(config, filename)
+            self.assertEqual(config.KP, 0.35)
+            self.assertEqual(config.RL_TOP_ROI, 0.2)
+            self.assertEqual(config.RL_BOTTOM_ROI, 0.8)
+
+    def test_mode_json_rejects_roi_coordinate_outside_normalized_range(self):
+        from utils.json_config import _load_into
+
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.join(directory, "race.json")
+            with open(filename, "w", encoding="utf-8") as handle:
+                json.dump({"RL_TOP_ROI": 1.5}, handle)
+            config = types.SimpleNamespace(
+                PID_MIN_DT=0.001, PID_MAX_DT=0.2,
+                RL_TOP_ROI=0.2, RL_BOTTOM_ROI=0.8,
+                RL_LEFT_ROI=0.2, RL_RIGHT_ROI=0.8,
+            )
+            with self.assertRaisesRegex(ValueError, "RL_TOP_ROI must be a finite number"):
+                _load_into(config, filename)
+            self.assertEqual(config.RL_TOP_ROI, 0.2)
+
     def test_boolean_and_numeric_validation(self):
         self.assertIs(_validate("CAMERA_FALLBACK_TO_OPENCV", True), True)
         with self.assertRaises(ValueError):
