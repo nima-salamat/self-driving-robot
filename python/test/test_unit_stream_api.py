@@ -61,6 +61,19 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(config.RL_TOP_ROI, 0.15)
         self.assertEqual(config.RL_BOTTOM_ROI, 0.85)
 
+    def test_full_config_rejects_inverted_roi_geometry(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        client = WebStreamer(config).app.test_client()
+        payload = client.get("/api/config/full").get_json()
+        payload["values"]["RL_TOP_ROI"] = 0.9
+        payload["values"]["RL_BOTTOM_ROI"] = 0.8
+
+        response = client.post("/api/config/full", json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("TOP_ROI < BOTTOM_ROI", response.get_json()["message"])
+        self.assertNotEqual(getattr(config, "RL_TOP_ROI", None), 0.9)
+
     def test_roi_updates_reject_inverted_horizontal_edges(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
