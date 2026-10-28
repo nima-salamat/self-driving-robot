@@ -5,7 +5,7 @@
 The runtime has several different rates and latencies:
 
 - **Camera FPS:** measured frame delivery from the configured camera backend.
-- **Target processing FPS:** desired rate of complete perception/control cycles; default is 30 FPS and is set with `--target-fps`.
+- **Target processing FPS:** desired rate of complete perception/control cycles; default is 30 FPS when no value is saved, and an explicit `--target-fps` overrides the active mode JSON.
 - **Measured loop FPS:** what the full runtime actually achieves after perception, control, I/O and waiting.
 - **Stream display/update rate:** browser/network presentation, separate from the camera sensor and control loop.
 - **Frame/result age:** how old a camera frame or detector result is when consumed.
