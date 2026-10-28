@@ -686,10 +686,22 @@ class CarlaAdapter(SimulatorAdapter):
         if not math.isfinite(rotation_hz) or rotation_hz <= 0:
             rotation_hz = 10.0
         freshness_limit_s = max(0.5, min(2.0, 3.0 / rotation_hz))
-        lidar_fresh = (
-            not lidar_enabled
-            or (lidar_age_s is not None and lidar_age_s <= freshness_limit_s)
+        usable_points = bool(
+            points.size
+            and np.isfinite(points).all(axis=1).any()
         )
+        packet_recent = lidar_age_s is not None and lidar_age_s <= freshness_limit_s
+        lidar_fresh = not lidar_enabled or (packet_recent and usable_points)
+        if not lidar_enabled:
+            lidar_reason = "disabled"
+        elif points_at is None:
+            lidar_reason = "no packet received"
+        elif not packet_recent:
+            lidar_reason = "stale packet"
+        elif not usable_points:
+            lidar_reason = "empty or invalid point cloud"
+        else:
+            lidar_reason = "ok"
         location = self._location_tuple(self.vehicle)
         transform = self.vehicle.get_transform()
         delta_cm = None
@@ -718,6 +730,7 @@ class CarlaAdapter(SimulatorAdapter):
                 "lidar_fresh": lidar_fresh,
                 "lidar_age_s": lidar_age_s,
                 "lidar_freshness_limit_s": freshness_limit_s,
+                "lidar_reason": lidar_reason,
             },
         )
 
