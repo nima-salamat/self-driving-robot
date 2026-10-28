@@ -55,8 +55,17 @@ class CliConfigPrecedenceTests(unittest.TestCase):
         _validate_opt_in_features(
             config, parse_args(["--mode", "race", "--race-start-on-stop-sign"])
         )
+        config.WITH_SIGN = True
+        config.WITH_APRILTAG = False
+        config.SIGN_DETECTOR_METHOD = "svm"
+        with self.assertRaisesRegex(SystemExit, "requires the YOLO detector"):
+            _validate_opt_in_features(
+                config, parse_args(["--mode", "race", "--race-start-on-stop-sign"])
+            )
+
         config.WITH_SIGN = False
         config.WITH_APRILTAG = True
+        # AprilTag STOP IDs do not depend on YOLO's confidence field.
         _validate_opt_in_features(
             config, parse_args(["--mode", "race", "--race-start-on-stop-sign"])
         )
