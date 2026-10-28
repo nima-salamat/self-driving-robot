@@ -212,9 +212,13 @@ def _validate_opt_in_features(config, args):
                 "Race STOP start/finish requires an enabled STOP marker detector "
                 "(WITH_SIGN or WITH_APRILTAG) in the active mode configuration"
             )
-    if (args.mode == "race" and
-            (args.race_start_on_stop_sign or args.race_finish_after_seconds is not None) and
-            getattr(config, "SIGN_DETECTOR_METHOD", "yolo") == "svm"):
+    if (
+        args.mode == "race"
+        and (args.race_start_on_stop_sign or args.race_finish_after_seconds is not None)
+        and bool(getattr(config, "WITH_SIGN", False))
+        and not bool(getattr(config, "WITH_APRILTAG", False))
+        and getattr(config, "SIGN_DETECTOR_METHOD", "yolo") == "svm"
+    ):
         raise SystemExit(
             "Race STOP start/finish requires the YOLO detector, which exposes "
             "model confidence; the SVM detector does not expose confidence"
