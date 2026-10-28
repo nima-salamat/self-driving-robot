@@ -246,6 +246,17 @@ class PIDTests(unittest.TestCase):
 
 
 class ConfigValidationTests(unittest.TestCase):
+    def test_persisted_processing_rate_is_loaded_from_mode_json(self):
+        from utils.json_config import _load_into
+
+        with tempfile.TemporaryDirectory() as directory:
+            filename = os.path.join(directory, "city.json")
+            with open(filename, "w", encoding="utf-8") as handle:
+                json.dump({"TARGET_PROCESSING_FPS": 22.0}, handle)
+            config = types.SimpleNamespace()
+            _load_into(config, filename)
+            self.assertEqual(config.TARGET_PROCESSING_FPS, 22.0)
+
     def test_boolean_and_numeric_validation(self):
         self.assertIs(_validate("CAMERA_FALLBACK_TO_OPENCV", True), True)
         with self.assertRaises(ValueError):
