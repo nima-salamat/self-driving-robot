@@ -8,7 +8,7 @@ The general resolution order is:
 2. The matching JSON file: `python/city.json` or `python/race.json`.
 3. Explicit CLI overrides.
 
-A concrete CLI value takes priority over the corresponding JSON value. Not every CLI flag behaves like a normal nullable override: several features are deliberate command-line opt-ins and remain disabled unless the documented flag is supplied.
+An explicitly supplied CLI value takes priority over the corresponding JSON value. For `--target-fps`, omitting the flag preserves `TARGET_PROCESSING_FPS` saved in the active mode JSON; the default of 30 FPS is used only when no saved value exists. Not every CLI flag behaves like a normal nullable override: several features are deliberate command-line opt-ins and remain disabled unless the documented flag is supplied.
 
 Run `python python/main.py --help` on the current checkout for the authoritative list of flags and accepted values.
 
@@ -38,7 +38,7 @@ The simulator profiles are intentionally separate from physical City/Race files.
 These settings describe different parts of the pipeline:
 
 - `CAMERA_FPS` is a requested camera capture rate. The actual rate depends on the camera backend and the selected sensor mode.
-- `--target-fps N` sets the desired rate of complete processing/control cycles. The default is 30 FPS.
+- `--target-fps N` sets the desired rate of complete processing/control cycles. If neither the CLI nor mode JSON supplies a value, the default is 30 FPS. A value changed in Stream is persisted and reused on the next run unless an explicit `--target-fps` overrides it.
 - The Stream JPEG/display rate is separate from both and affects dashboard presentation/network use, not the camera sensor's delivery rate.
 
 Use measured values from the performance output to reason about the effective rate. A requested target is not a guarantee.
