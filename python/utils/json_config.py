@@ -72,6 +72,13 @@ PULSE_SEQUENCE_KEYS = frozenset({
     "CITY_CROSSWALK_STRAIGHT_SEQUENCE",
 })
 
+ROI_PREFIXES = ("RL", "LL", "CW", "ST", "OBJ", "AT", "TL")
+ROI_COORDINATE_KEYS = frozenset(
+    f"{prefix}_{edge}_ROI"
+    for prefix in ROI_PREFIXES
+    for edge in ("TOP", "BOTTOM", "LEFT", "RIGHT")
+)
+
 
 def validate_pulse_sequence(name, value):
     """Validate direction/PWM/pulses/servo command groups sent to Arduino."""
@@ -150,8 +157,11 @@ def _validate(name, value):
         if not low <= value <= high:
             raise ValueError(f"{name} must be between {low} and {high}")
 
-    if name in {"TL_TOP_ROI","TL_BOTTOM_ROI","TL_LEFT_ROI","TL_RIGHT_ROI"}:
-        if not isinstance(value,(int,float)) or isinstance(value,bool) or not 0<=value<=1: raise ValueError(f"{name} must be between 0 and 1")
+    if name in ROI_COORDINATE_KEYS:
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or not 0.0 <= value <= 1.0):
+            raise ValueError(f"{name} must be a finite number between 0 and 1")
+        return float(value)
     if name in {"TL_CONFIRMATION_WINDOW","TL_CONFIRMATION_GREEN_REQUIRED"} and (not isinstance(value,int) or isinstance(value,bool)): raise ValueError(f"{name} must be an integer")
     if name in {"TL_RED_HSV_RANGES","TL_GREEN_HSV_RANGES"}:
         if not isinstance(value,(list,tuple)) or not value: raise ValueError(f"{name} must contain HSV ranges")
@@ -199,23 +209,21 @@ OPTIONAL_JSON_KEYS = {
     "SIGN_AREA_FILTER_ENABLED",
     "SIGN_AREA_FILTER_TARGETS",
     "SIGN_AREA_MIN_PX2",
-}
+    "USE_SIGN",
+} | ROI_COORDINATE_KEYS
 
 
 def _load_into(config_module, filename):
+    """Validate a complete mode JSON overlay before mutating live config state."""
     if not os.path.exists(filename):
         return
 
-    with open(filename, "r", encoding="utf-8") as f:
-        configs = json.load(f)
-
+    with open(filename, "r", encoding="utf-8") as handle:
+        configs = json.load(handle)
     if not isinstance(configs, dict):
         raise ValueError(f"{filename} must contain a JSON object")
 
-    # Mode JSON is a user-editable file. Do not attach typoed/deprecated
-    # names to a module dynamically: they look accepted but are never consumed
-    # by the runtime. TARGET_PROCESSING_FPS and STREAM_JPEG_QUALITY are valid
-    # persisted keys that may not exist as module defaults before initialization.
+    validated = {}
     for name, value in configs.items():
         if not hasattr(config_module, name) and name not in OPTIONAL_JSON_KEYS:
             logger.warning(
@@ -224,26 +232,46 @@ def _load_into(config_module, filename):
                 filename,
             )
             continue
-        validated = _validate(name, value)
-        setattr(config_module, name, validated)
+        validated[name] = _validate(name, value)
 
+    def effective(name, default=None):
+        return validated[name] if name in validated else getattr(config_module, name, default)
 
-    if any(
-        key in configs
-        for key in ("WITH_SIGN", "WITH_APRILTAG", "USE_SIGN")
-    ):
-        sign = bool(getattr(config_module, "WITH_SIGN", False))
-        tag = bool(getattr(config_module, "WITH_APRILTAG", False))
-        legacy = bool(getattr(config_module, "USE_SIGN", False))
-        if sign and tag:
-            raise ValueError(
-                "WITH_SIGN and WITH_APRILTAG cannot both be true"
-            )
-        if (
-            "WITH_SIGN" not in configs
-            and "WITH_APRILTAG" not in configs
-            and "USE_SIGN" in configs
+    # Check every ROI as a rectangle after applying the overlay in memory.
+    # This means a bad file cannot leave the module partially modified.
+    for prefix in ROI_PREFIXES:
+        names = {
+            edge: f"{prefix}_{edge}_ROI"
+            for edge in ("TOP", "BOTTOM", "LEFT", "RIGHT")
+        }
+        if not any(
+            name in validated or hasattr(config_module, name)
+            for name in names.values()
         ):
+            continue
+
+        coordinates = {}
+        for edge, name in names.items():
+            default = 0.0 if edge in {"TOP", "LEFT"} else 1.0
+            raw = effective(name, default)
+            if (not isinstance(raw, (int, float)) or isinstance(raw, bool)
+                    or not math.isfinite(raw) or not 0.0 <= raw <= 1.0):
+                raise ValueError(f"{name} must be a finite number between 0 and 1")
+            coordinates[edge] = float(raw)
+        if not coordinates["TOP"] < coordinates["BOTTOM"]:
+            raise ValueError(f"{prefix} ROI requires TOP_ROI < BOTTOM_ROI")
+        if not coordinates["LEFT"] < coordinates["RIGHT"]:
+            raise ValueError(f"{prefix} ROI requires LEFT_ROI < RIGHT_ROI")
+
+    marker_keys = {"WITH_SIGN", "WITH_APRILTAG", "USE_SIGN"} & set(validated)
+    marker_name = None
+    if marker_keys:
+        sign = bool(effective("WITH_SIGN", False))
+        tag = bool(effective("WITH_APRILTAG", False))
+        legacy = bool(effective("USE_SIGN", False))
+        if sign and tag:
+            raise ValueError("WITH_SIGN and WITH_APRILTAG cannot both be true")
+        if "WITH_SIGN" not in validated and "WITH_APRILTAG" not in validated and "USE_SIGN" in validated:
             marker_name = "sign" if legacy else "none"
         elif sign:
             marker_name = "sign"
@@ -251,15 +279,22 @@ def _load_into(config_module, filename):
             marker_name = "apriltag"
         else:
             marker_name = "none"
+
+    if effective("TL_CONFIRMATION_GREEN_REQUIRED", 8) > effective("TL_CONFIRMATION_WINDOW", 10):
+        raise ValueError("TL_CONFIRMATION_GREEN_REQUIRED cannot exceed TL_CONFIRMATION_WINDOW")
+
+    pid_min_dt = effective("PID_MIN_DT", 0.001)
+    pid_max_dt = effective("PID_MAX_DT", 0.2)
+    if pid_max_dt < pid_min_dt:
+        raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
+
+    # Apply only after type/range/cross-field checks succeed.
+    for name, value in validated.items():
+        setattr(config_module, name, value)
+
+    if marker_name is not None:
         from stream.capabilities import set_marker_mode
         set_marker_mode(config_module, marker_name)
-
-    roi=tuple(getattr(config_module,n,d) for n,d in (("TL_TOP_ROI",0.),("TL_BOTTOM_ROI",1.),("TL_LEFT_ROI",0.),("TL_RIGHT_ROI",1.)))
-    if not (0<=roi[0]<roi[1]<=1 and 0<=roi[2]<roi[3]<=1): raise ValueError("Invalid traffic-light ROI ordering/bounds")
-    if getattr(config_module,"TL_CONFIRMATION_GREEN_REQUIRED",8)>getattr(config_module,"TL_CONFIRMATION_WINDOW",10): raise ValueError("TL_CONFIRMATION_GREEN_REQUIRED cannot exceed TL_CONFIRMATION_WINDOW")
-
-    if getattr(config_module, "PID_MAX_DT", 0.0) < getattr(config_module, "PID_MIN_DT", 0.0):
-        raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
 
 
 def load():
