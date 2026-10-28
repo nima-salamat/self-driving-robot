@@ -81,6 +81,41 @@ def _draw_process_sign_overlay(debug_frame, source_frame, coordinate, label, con
 
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_failed_runtime_construction(config):
+    """Release resources already created if Robot.__init__ aborts partway through."""
+    resources = (
+        ("sign_detector", "close"),
+        ("output_manager", "close"),
+        ("camera", "release"),
+        ("arduino_connection", "close"),
+    )
+    seen = set()
+    for attribute, method_name in resources:
+        resource = getattr(config, attribute, None)
+        if resource is None or id(resource) in seen:
+            continue
+        seen.add(id(resource))
+        method = getattr(resource, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            method()
+        except Exception:
+            logger.exception(
+                "Failed to release partial runtime resource %s during startup rollback",
+                attribute,
+            )
+    for attribute in (
+        "sign_detector", "output_manager", "camera", "robot_controller",
+        "arduino_connection", "encoder_odometry", "runtime_robot",
+    ):
+        if hasattr(config, attribute):
+            try:
+                delattr(config, attribute)
+            except Exception:
+                logger.debug("Could not clear partial runtime reference %s", attribute, exc_info=True)
 STOP_SIGN_CLASS_ID = next(
     class_id for class_id, name in SIGN_LABELS.items() if name == "STOP"
 )
@@ -1728,7 +1763,12 @@ class Robot:
 
 
 def start():
-    robot = Robot()
+    try:
+        robot = Robot()
+    except BaseException:
+        logger.exception("Robot runtime initialization failed; releasing partially initialized resources")
+        _cleanup_failed_runtime_construction(config_race)
+        raise
     robot.flask_thread = None
 
     if config_race.STREAM:
