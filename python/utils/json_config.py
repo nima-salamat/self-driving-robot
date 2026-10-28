@@ -190,6 +190,18 @@ def _validate(name, value):
     return value
 
 
+# Recognized settings that can be valid without having a default attribute
+# on every mode/config object. Keep this list explicit so arbitrary JSON names
+# are not injected into module state, while shared optional settings remain loadable.
+OPTIONAL_JSON_KEYS = {
+    "TARGET_PROCESSING_FPS",
+    "STREAM_JPEG_QUALITY",
+    "SIGN_AREA_FILTER_ENABLED",
+    "SIGN_AREA_FILTER_TARGETS",
+    "SIGN_AREA_MIN_PX2",
+}
+
+
 def _load_into(config_module, filename):
     if not os.path.exists(filename):
         return
@@ -204,9 +216,8 @@ def _load_into(config_module, filename):
     # names to a module dynamically: they look accepted but are never consumed
     # by the runtime. TARGET_PROCESSING_FPS and STREAM_JPEG_QUALITY are valid
     # persisted keys that may not exist as module defaults before initialization.
-    dynamic_keys = {"TARGET_PROCESSING_FPS", "STREAM_JPEG_QUALITY"}
     for name, value in configs.items():
-        if not hasattr(config_module, name) and name not in dynamic_keys:
+        if not hasattr(config_module, name) and name not in OPTIONAL_JSON_KEYS:
             logger.warning(
                 "Ignoring unknown configuration key %r in %s",
                 name,
