@@ -167,6 +167,11 @@ class StreamControlsMixin:
                 updated[var] = val
 
             if updated:
+                try:
+                    self._validate_roi_geometry(updated)
+                except ValueError as exc:
+                    return jsonify(success=False, message=str(exc)), 400
+
                 before = self._full_config_snapshot()
                 for var, val in updated.items():
                     setattr(self.config, var, val)
