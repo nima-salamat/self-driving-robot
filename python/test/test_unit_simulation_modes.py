@@ -315,8 +315,19 @@ class VirtualControllerTests(unittest.TestCase):
         adapter._sequence = 2
         fresh = adapter.read(timeout=0)
         self.assertTrue(fresh.sensor_status["lidar_fresh"])
+        self.assertEqual(fresh.sensor_status["lidar_reason"], "ok")
         self.assertIsNotNone(fresh.lidar_points)
         self.assertAlmostEqual(fresh.ranges_cm["front"], 100.0, places=3)
+
+        # A recent but empty packet is not evidence that the path ahead is clear.
+        adapter._image_at = __import__("time").monotonic()
+        adapter._points_at = __import__("time").monotonic()
+        adapter._points = np.empty((0, 3), dtype=np.float32)
+        adapter._sequence = 3
+        empty = adapter.read(timeout=0)
+        self.assertFalse(empty.sensor_status["lidar_fresh"])
+        self.assertEqual(empty.sensor_status["lidar_reason"], "empty or invalid point cloud")
+        self.assertIsNone(empty.lidar_points)
 
     def test_carla_runtime_brakes_when_enabled_lidar_is_stale(self):
         import threading
