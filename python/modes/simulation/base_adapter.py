@@ -14,6 +14,7 @@ class SensorFrame:
     distance_delta_cm: Optional[float] = None
     location: Optional[tuple] = None
     yaw_degrees: Optional[float] = None
+    sensor_status: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
