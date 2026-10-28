@@ -45,6 +45,73 @@ class StreamApiTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def test_roi_updates_reject_inverted_rectangles_before_mutation(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.RL_TOP_ROI = 0.15
+        config.RL_BOTTOM_ROI = 0.85
+        client = WebStreamer(config).app.test_client()
+
+        response = client.post(
+            "/update_conf",
+            json={"RL_TOP_ROI": 0.90, "RL_BOTTOM_ROI": 0.80},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("TOP_ROI < BOTTOM_ROI", response.get_json()["message"])
+        self.assertEqual(config.RL_TOP_ROI, 0.15)
+        self.assertEqual(config.RL_BOTTOM_ROI, 0.85)
+
+    def test_roi_updates_reject_inverted_horizontal_edges(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.LL_LEFT_ROI = 0.2
+        config.LL_RIGHT_ROI = 0.5
+        client = WebStreamer(config).app.test_client()
+
+        response = client.post(
+            "/update_conf",
+            json={"LL_LEFT_ROI": 0.75, "LL_RIGHT_ROI": 0.60},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("LEFT_ROI < RIGHT_ROI", response.get_json()["message"])
+        self.assertEqual(config.LL_LEFT_ROI, 0.2)
+        self.assertEqual(config.LL_RIGHT_ROI, 0.5)
+
+    def test_raw_arduino_terminal_cannot_bypass_active_software_stop(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        config.WITHOUT_ARDUINO = False
+        config.RUN_LVL = "STOP"
+
+        class Connection:
+            connected = True
+            def __init__(self):
+                self.commands = []
+            def send_custom_command(self, command):
+                self.commands.append(command)
+                return True
+
+        connection = Connection()
+        config.arduino_connection = connection
+        client = WebStreamer(config).app.test_client()
+
+        motion = client.post("/api/arduino/command", json={"command": "motor 180"})
+        self.assertEqual(motion.status_code, 409)
+        self.assertEqual(connection.commands, [])
+
+        # Explicit stop remains usable while stopped; raw resume/motion commands do not.
+        stop = client.post("/api/arduino/command", json={"command": "stop"})
+        self.assertEqual(stop.status_code, 200)
+        self.assertEqual(connection.commands, ["stop\n"])
+
+        config.RUN_LVL = "MOVE"
+        config.robot_controller = types.SimpleNamespace(
+            motion_inhibited=True, motion_inhibit_reason="traffic_stop"
+        )
+        resume = client.post("/api/arduino/command", json={"command": "motion enable"})
+        self.assertEqual(resume.status_code, 409)
+        self.assertEqual(connection.commands, ["stop\n"])
+
     def test_remote_stream_bind_is_rejected_without_credentials(self):
         config = self.make_config()
         config.STREAM_HOST = "0.0.0.0"
