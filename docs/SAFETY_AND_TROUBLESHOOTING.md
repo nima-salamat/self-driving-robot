@@ -6,6 +6,8 @@ This is a prototype robotics stack. Unit tests, camera previews and simulator ru
 
 Use a physical emergency stop or power isolation method appropriate to the robot. The Stream dashboard's STOP action is a software run-level request, not a hardware emergency stop. A serial ACK, successful write or virtual simulator command is not proof that an actuator reached its target.
 
+While a software STOP, STOP-sign hold or Race start gate is active, the Stream raw Arduino terminal rejects motion/resume commands and permits only `stop`, `status` and `heartbeat`. This is a software guard, not a substitute for physical motor-power isolation or a firmware-level emergency interlock.
+
 ## Before a physical run
 
 1. Verify the uploaded Arduino sketch and its protocol compatibility with the selected Python command path.
@@ -36,10 +38,17 @@ python python/main.py --mode race --without-arduino --performance
 ### Arduino unavailable or reconnect loop
 
 - Check board, cable, serial device path, baud rate and operating-system port permissions.
+- A partially failed City/Race startup attempts to close resources it already created; inspect the first initialization error, not only later disconnect messages.
 - Confirm the firmware generation before enabling `--arduino-config`; the strict hardware contract only applies to matching configurable firmware.
 - Enable `--read-arduino-output` or DEBUG logs to inspect telemetry/connection state.
 - Use `--without-arduino` only for diagnostics; it does not validate physical actuation.
 - Do not assume a reconnect or a successful serial write means the robot is safely stopped. Test reconnection behavior on the actual firmware with motion constrained.
+
+### CARLA LiDAR unavailable or stale
+
+- If LiDAR is enabled, CARLA now brakes until a fresh sensor packet arrives and continues braking when the last packet exceeds the freshness limit.
+- Confirm the LiDAR actor spawned successfully and that the configured rotation frequency is supported by the simulator.
+- A stale/empty range display is not proof that the road is clear; test sensor loss with the virtual vehicle and verify that the brake command remains active.
 
 ### Steering appears reversed or unstable
 
