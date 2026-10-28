@@ -26,7 +26,7 @@ The simulator profiles are intentionally separate from physical City/Race files.
 
 ## Important opt-in behavior
 
-- **Stream dashboard:** `--stream` is required. The server remains off when the flag is omitted, even if a stale JSON value says otherwise.
+- **Stream dashboard:** `--stream` enables the dashboard; `--stream-read-only` and `--stream-control` also imply Stream. The server remains off when all these flags are omitted, even if a stale JSON value says otherwise.
 - **Multiprocessing:** `--multiprocess` (alias `--multiprocess-camera`) opts into process-isolated camera capture and sign inference. Do not enable it by putting a default in JSON.
 - **City traffic-light gate:** `--traffic-lights` is required; the gate is City-only. The optional `--traffic-light-wait-before-check` flag delays the first observation but does not reduce the GREEN-confirmation requirement.
 - **Stream HTTP access logs:** `--stream-request-logs` opts into per-request log output; access logging is quiet by default.
