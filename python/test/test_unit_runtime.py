@@ -254,6 +254,51 @@ class ConfigValidationTests(unittest.TestCase):
             _validate("CONTROL_PERIOD", 0)
 
 
+class PartialRuntimeConstructionCleanupTests(unittest.TestCase):
+    def test_city_and_race_close_resources_when_robot_constructor_fails(self):
+        import importlib
+
+        class Resource:
+            def __init__(self, label, method_name, events):
+                self.label = label
+                self.method_name = method_name
+                self.events = events
+            def close(self):
+                self.events.append((self.label, "close"))
+            def release(self):
+                self.events.append((self.label, "release"))
+
+        for module_name, config_name in (
+            ("modes.city.city", "config_city"),
+            ("modes.race.race", "config_race"),
+        ):
+            with self.subTest(mode=module_name):
+                module = importlib.import_module(module_name)
+                events = []
+                config = types.SimpleNamespace(
+                    sign_detector=Resource("signs", "close", events),
+                    output_manager=Resource("output", "close", events),
+                    camera=Resource("camera", "release", events),
+                    arduino_connection=Resource("serial", "close", events),
+                    robot_controller=types.SimpleNamespace(),
+                )
+                with patch.object(module, config_name, config), patch.object(
+                    module, "Robot", side_effect=RuntimeError("constructor failure")
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "constructor failure"):
+                        module.start()
+
+                self.assertEqual(events, [
+                    ("signs", "close"), ("output", "close"),
+                    ("camera", "release"), ("serial", "close"),
+                ])
+                for attr in (
+                    "sign_detector", "output_manager", "camera", "robot_controller",
+                    "arduino_connection", "encoder_odometry", "runtime_robot",
+                ):
+                    self.assertFalse(hasattr(config, attr), attr)
+
+
 class ArduinoConnectionTests(unittest.TestCase):
     def test_disabled_transport_is_safe(self):
         original_config = base_config.CONFIG_MODULE
