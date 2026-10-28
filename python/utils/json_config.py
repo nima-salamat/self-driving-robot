@@ -100,6 +100,15 @@ def validate_pulse_sequence(name, value):
 
 
 def _validate(name, value):
+    if name == "TARGET_PROCESSING_FPS":
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or value <= 0):
+            raise ValueError("TARGET_PROCESSING_FPS must be a positive finite number")
+        return float(value)
+    if name == "STREAM_JPEG_QUALITY":
+        if isinstance(value, bool) or not isinstance(value, int) or not 30 <= value <= 100:
+            raise ValueError("STREAM_JPEG_QUALITY must be an integer between 30 and 100")
+        return value
     if name == "CAMERA_CALIBRATION_FILE":
         from calibration.asset_store import calibration_path_from_reference
         calibration_path_from_reference(value, require_exists=False)
@@ -191,9 +200,21 @@ def _load_into(config_module, filename):
     if not isinstance(configs, dict):
         raise ValueError(f"{filename} must contain a JSON object")
 
+    # Mode JSON is a user-editable file. Do not attach typoed/deprecated
+    # names to a module dynamically: they look accepted but are never consumed
+    # by the runtime. TARGET_PROCESSING_FPS and STREAM_JPEG_QUALITY are valid
+    # persisted keys that may not exist as module defaults before initialization.
+    dynamic_keys = {"TARGET_PROCESSING_FPS", "STREAM_JPEG_QUALITY"}
     for name, value in configs.items():
-        _validate(name, value)
-        setattr(config_module, name, value)
+        if not hasattr(config_module, name) and name not in dynamic_keys:
+            logger.warning(
+                "Ignoring unknown configuration key %r in %s",
+                name,
+                filename,
+            )
+            continue
+        validated = _validate(name, value)
+        setattr(config_module, name, validated)
 
 
     if any(
