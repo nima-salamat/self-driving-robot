@@ -250,6 +250,19 @@ class SimulationRuntime:
                 self._last_sequence = frame.sequence
                 self._last_frame_at = frame.captured_at
                 self._last_sensor_frame = frame
+                sensor_status = dict(getattr(frame, "sensor_status", {}) or {})
+                if (
+                    self.backend == "carla"
+                    and bool(getattr(self.config, "SIMULATOR_LIDAR_ENABLED", False))
+                    and sensor_status.get("lidar_fresh") is not True
+                ):
+                    age = sensor_status.get("lidar_age_s")
+                    age_text = "no packet received" if age is None else f"last packet {float(age):.2f}s ago"
+                    self._safe_stop(
+                        "CARLA LiDAR is missing or stale (" + age_text + "); braking until fresh sensor data returns."
+                    )
+                    self.shutdown_event.wait(0.05)
+                    continue
                 result = self.vision.detect(frame.image)
                 if not isinstance(result, dict):
                     result = {}
