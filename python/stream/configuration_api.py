@@ -12,6 +12,35 @@ for _global_name, _global_value in vars(_stream_module).items():
         globals()[_global_name] = _global_value
 
 class StreamConfigurationMixin:
+    def _validate_roi_geometry(self, patch=None):
+        """Validate normalized ROI rectangles after merging a partial update."""
+        patch = patch or {}
+        effective = {}
+        for key in VARIABLES:
+            try:
+                effective[key] = float(self.get_base_var(key))
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError(f"{key} must be a finite normalized ROI coordinate") from None
+
+        for key, value in patch.items():
+            if key not in VARIABLES:
+                continue
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError(f"{key} must be a finite normalized ROI coordinate") from None
+            if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+                raise ValueError(f"{key} must be between 0 and 1")
+            effective[key] = number
+
+        for prefix in ("RL", "LL", "CW", "ST", "OBJ"):
+            top, bottom = effective[prefix + "_TOP_ROI"], effective[prefix + "_BOTTOM_ROI"]
+            left, right = effective[prefix + "_LEFT_ROI"], effective[prefix + "_RIGHT_ROI"]
+            if not top < bottom:
+                raise ValueError(f"{prefix} ROI requires TOP_ROI < BOTTOM_ROI")
+            if not left < right:
+                raise ValueError(f"{prefix} ROI requires LEFT_ROI < RIGHT_ROI")
+
     def _mode_slug(self):
         raw = str(getattr(self.config, "MODE", "mode")).lower()
         slug = "".join(ch for ch in raw if ch.isalnum() or ch in "-_")
@@ -182,6 +211,10 @@ class StreamConfigurationMixin:
             if not math.isfinite(number) or not 0.0 <= number <= 1.0:
                 raise ValueError(f"{key} must be finite and between 0 and 1")
             values[key] = number
+
+        # Validate complete rectangles, not just each coordinate's 0..1 range.
+        # This applies to full-config imports, undo/redo and profile loading too.
+        self._validate_roi_geometry(values)
 
         capabilities = mode_capabilities(self.config)
         if ("USE_BEV" in raw_advanced
