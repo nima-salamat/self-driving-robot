@@ -52,6 +52,11 @@ class RobotController:
                 getattr(self.config, "SEND_AUTOMATIC_ARDUINO_COMMANDS", True)
             ),
         )
+        # Publish ownership immediately so the mode's construction-failure
+        # cleanup can close the serial worker even if a later handshake/PID
+        # initialization raises before this constructor finishes.
+        setattr(self.config, "robot_controller", self)
+        setattr(self.config, "arduino_connection", self.connection)
         self.connection.set_print_telemetry(
             bool(getattr(self.config, "READ_ARDUINO_OUTPUT", False))
         )
