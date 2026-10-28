@@ -204,6 +204,14 @@ def _validate_opt_in_features(config, args):
         threshold = float(getattr(config, "RACE_STOP_CONFIDENCE_THRESHOLD", 0.2))
         if not math.isfinite(threshold) or not 0 <= threshold <= 1:
             raise SystemExit("Race STOP confidence threshold must be between 0 and 1")
+        if not (
+            bool(getattr(config, "WITH_SIGN", False))
+            or bool(getattr(config, "WITH_APRILTAG", False))
+        ):
+            raise SystemExit(
+                "Race STOP start/finish requires an enabled STOP marker detector "
+                "(WITH_SIGN or WITH_APRILTAG) in the active mode configuration"
+            )
     if (args.mode == "race" and
             (args.race_start_on_stop_sign or args.race_finish_after_seconds is not None) and
             getattr(config, "SIGN_DETECTOR_METHOD", "yolo") == "svm"):
