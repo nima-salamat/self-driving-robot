@@ -25,6 +25,7 @@ class CarlaAdapter(SimulatorAdapter):
         self._image = self._image_at = None
         self._sequence = self._read_sequence = 0
         self._points = np.empty((0, 3), dtype=np.float32)
+        self._points_at = None
         self._previous_location = None
         self._world_lock = threading.RLock()
         self._spawn_transform = None
@@ -406,6 +407,7 @@ class CarlaAdapter(SimulatorAdapter):
             points = raw.reshape((-1, 4))[:, :3].copy() if raw.size else np.empty((0, 3), dtype=np.float32)
             with self._condition:
                 self._points = points
+                self._points_at = time.monotonic()
                 self._condition.notify_all()
         except Exception:
             logger.exception("Could not decode CARLA LiDAR packet")
@@ -672,6 +674,22 @@ class CarlaAdapter(SimulatorAdapter):
             frame, captured_at, sequence = self._image.copy(), self._image_at, self._sequence
             self._read_sequence = sequence
             points = self._points.copy()
+            points_at = self._points_at
+        lidar_enabled = bool(getattr(self.config, "SIMULATOR_LIDAR_ENABLED", False))
+        lidar_age_s = (
+            max(0.0, time.monotonic() - points_at) if points_at is not None else None
+        )
+        try:
+            rotation_hz = float(getattr(self.config, "SIMULATOR_LIDAR_ROTATION_FREQUENCY", 10.0))
+        except (TypeError, ValueError, OverflowError):
+            rotation_hz = 10.0
+        if not math.isfinite(rotation_hz) or rotation_hz <= 0:
+            rotation_hz = 10.0
+        freshness_limit_s = max(0.5, min(2.0, 3.0 / rotation_hz))
+        lidar_fresh = (
+            not lidar_enabled
+            or (lidar_age_s is not None and lidar_age_s <= freshness_limit_s)
+        )
         location = self._location_tuple(self.vehicle)
         transform = self.vehicle.get_transform()
         delta_cm = None
@@ -679,7 +697,7 @@ class CarlaAdapter(SimulatorAdapter):
             delta_cm = math.dist(location, self._previous_location) * 100.0
         self._previous_location = location
         ranges = {}
-        if len(points):
+        if len(points) and lidar_fresh:
             distances = np.linalg.norm(points[:, :2], axis=1)
             finite = np.isfinite(distances)
             if finite.any():
@@ -692,8 +710,15 @@ class CarlaAdapter(SimulatorAdapter):
         return SensorFrame(
             image=frame, captured_at=captured_at, sequence=sequence,
             speed_kmh=self._speed_kmh(self.vehicle), ranges_cm=ranges,
-            lidar_points=points, distance_delta_cm=delta_cm, location=location,
+            lidar_points=points if lidar_fresh else None,
+            distance_delta_cm=delta_cm, location=location,
             yaw_degrees=float(transform.rotation.yaw),
+            sensor_status={
+                "lidar_enabled": lidar_enabled,
+                "lidar_fresh": lidar_fresh,
+                "lidar_age_s": lidar_age_s,
+                "lidar_freshness_limit_s": freshness_limit_s,
+            },
         )
 
     def apply_control(self, command):
