@@ -64,6 +64,19 @@ class SimulationRuntime:
         # its historical auto-run behavior until it gains a separate run UI.
         self._run_enabled = self.backend != "carla"
         self._last_image_diagnostics = {}
+        self._cycle_times = deque(maxlen=120)
+        self._detection_times_ms = deque(maxlen=120)
+        self._debug_render_times_ms = deque(maxlen=120)
+        self._last_detection_ms = 0.0
+        self._last_control_ms = 0.0
+        self._last_debug_render_ms = 0.0
+        self._camera_frames_skipped = 0
+        # Debug rendering has its own latest-frame worker. It must never hold
+        # the camera -> detection -> control loop hostage.
+        self._visual_condition = threading.Condition()
+        self._visual_pending = None
+        self._visual_stopping = False
+        self._visual_thread = None
         self._distance_accumulator_cm = 0.0
         self._encoder_pulses = 0
         self._encoder_delta = 0
@@ -146,6 +159,63 @@ class SimulationRuntime:
         with self.frame_lock:
             self.config.debug_frames_list = [None, display]
             self.config.stream_frame_seq = int(getattr(self.config, "stream_frame_seq", 0)) + 1
+        elapsed_ms = (time.perf_counter() - render_started) * 1000.0
+        with self._state_lock:
+            self._last_debug_render_ms = elapsed_ms
+            self._debug_render_times_ms.append(elapsed_ms)
+
+    def _queue_frame_for_stream(self, sensor_frame, perception, command):
+        """Queue the newest annotated frame without blocking vehicle control."""
+        with self._visual_condition:
+            # The Stream is a live view, not a recording. If drawing falls behind,
+            # replace the pending item with the newest perception result.
+            self._visual_pending = (sensor_frame, perception, command)
+            self._visual_condition.notify()
+
+    def _visualization_loop(self):
+        while True:
+            with self._visual_condition:
+                while self._visual_pending is None and not self._visual_stopping:
+                    self._visual_condition.wait()
+                if self._visual_pending is None and self._visual_stopping:
+                    return
+                item = self._visual_pending
+                self._visual_pending = None
+            try:
+                self._publish_frame(*item)
+            except Exception:
+                logger.exception("Could not render/publish simulator lane-debug frame")
+
+    def _start_visualization_worker(self):
+        with self._visual_condition:
+            if self._visual_thread is not None and self._visual_thread.is_alive():
+                return
+            self._visual_stopping = False
+            self._visual_thread = threading.Thread(
+                target=self._visualization_loop,
+                name="simulator-debug-render",
+                daemon=True,
+            )
+            self._visual_thread.start()
+
+    def _stop_visualization_worker(self):
+        with self._visual_condition:
+            self._visual_stopping = True
+            self._visual_condition.notify_all()
+            thread = self._visual_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+        with self._visual_condition:
+            self._visual_thread = None
+            self._visual_pending = None
+
+    @staticmethod
+    def _recent_rate(samples, now, window_seconds=2.0):
+        recent = [value for value in samples if now - value <= window_seconds]
+        if len(recent) < 2:
+            return 0.0
+        elapsed = recent[-1] - recent[0]
+        return (len(recent) - 1) / elapsed if elapsed > 0 else 0.0
 
     def _update_virtual_encoder(self, frame, command, now):
         dt = max(0.0, now - self._last_cycle_at) if self._last_cycle_at is not None else 0.0
@@ -287,6 +357,19 @@ class SimulationRuntime:
                 except Exception:
                     logger.debug("Could not read simulator camera diagnostics", exc_info=True)
             image_diagnostics = dict(self._last_image_diagnostics)
+            cycle_times = list(self._cycle_times)
+            detection_times = list(self._detection_times_ms)
+            debug_render_times = list(self._debug_render_times_ms)
+            processing_data = {
+                "target_fps": float(self.target_fps),
+                "lane_fps": round(self._recent_rate(cycle_times, now), 1),
+                "detection_ms": round(float(self._last_detection_ms), 1),
+                "detection_ms_avg": round(sum(detection_times) / len(detection_times), 1) if detection_times else 0.0,
+                "control_ms": round(float(self._last_control_ms), 1),
+                "debug_render_ms": round(float(self._last_debug_render_ms), 1),
+                "debug_render_ms_avg": round(sum(debug_render_times) / len(debug_render_times), 1) if debug_render_times else 0.0,
+                "camera_frames_skipped": int(self._camera_frames_skipped),
+            }
             if not image_diagnostics and camera_sensor.get("width"):
                 image_diagnostics = {
                     "width": camera_sensor.get("width"),
@@ -316,6 +399,7 @@ class SimulationRuntime:
                 "run_mode": "running" if self._run_enabled else "stopped",
                 "image": image_diagnostics,
                 "camera_sensor": camera_sensor,
+                "processing": processing_data,
                 "running": self._started_at is not None and not self.shutdown_event.is_set(),
                 "frame_sequence": int(getattr(frame, "sequence", 0)) if frame is not None else 0,
                 "frame_age_ms": round(age_ms, 1) if age_ms is not None else None,
@@ -337,6 +421,7 @@ class SimulationRuntime:
     def run(self):
         try:
             self.adapter.connect()
+            self._start_visualization_worker()
             self._started_at = time.monotonic()
             self._stop_event_active = False
             self._record_event("info", f"Connected {self.backend}; {self.vision_profile} vision processor loaded.")
@@ -352,6 +437,8 @@ class SimulationRuntime:
                     continue
                 if frame.sequence and frame.sequence == self._last_sequence:
                     continue
+                if frame.sequence and self._last_sequence and frame.sequence > self._last_sequence + 1:
+                    self._camera_frames_skipped += frame.sequence - self._last_sequence - 1
                 self._last_sequence = frame.sequence
                 self._last_frame_at = frame.captured_at
                 self._last_sensor_frame = frame
@@ -375,10 +462,12 @@ class SimulationRuntime:
                         "perception_valid": False,
                         "crosswalk": False,
                     }
-                    self._publish_frame(frame, self._last_result, self._last_command)
+                    self._queue_frame_for_stream(frame, self._last_result, self._last_command)
                     self.shutdown_event.wait(0.05)
                     continue
+                detection_started = time.perf_counter()
                 result = self.vision.detect(frame.image)
+                detection_ms = (time.perf_counter() - detection_started) * 1000.0
                 if not isinstance(result, dict):
                     result = {}
                 command = self.controller.command_for(result, frame.speed_kmh)
@@ -429,7 +518,10 @@ class SimulationRuntime:
                     self._stop_event_active = True
                     self.shutdown_event.wait(0.05)
                     continue
-                if not self.adapter.apply_control(command):
+                control_started = time.perf_counter()
+                control_accepted = self.adapter.apply_control(command)
+                control_ms = (time.perf_counter() - control_started) * 1000.0
+                if not control_accepted:
                     # A stale camera frame can be processed just as CARLA destroys the old actor.
                     if self.backend == "carla" and not self._carla_vehicle_ready():
                         self._last_command = VehicleCommand(
@@ -446,7 +538,11 @@ class SimulationRuntime:
                 self._stop_event_active = False
                 self._update_virtual_encoder(frame, command, now)
                 self._record_command_if_changed(result, command)
-                self._publish_frame(frame, result, command)
+                self._last_detection_ms = detection_ms
+                self._last_control_ms = control_ms
+                self._detection_times_ms.append(detection_ms)
+                self._cycle_times.append(time.monotonic())
+                self._queue_frame_for_stream(frame, result, command)
                 self._last_cycle_at = now
                 self._next_cycle_at = max(self._next_cycle_at + self._frame_period, now)
                 self.shutdown_event.wait(max(0.0, self._next_cycle_at - time.monotonic()))
@@ -459,6 +555,7 @@ class SimulationRuntime:
             raise
         finally:
             self._started_at = None
+            self._stop_visualization_worker()
             self._safe_stop("Simulation runtime stopped; virtual vehicle commanded to brake.")
             try:
                 self.adapter.close()
