@@ -280,8 +280,8 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="1" name="SERVO_CENTER"></div>
               <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="1" name="MAX_SERVO_ANGLE"></div>
               <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
-              <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step=".01" name="RL_TOP_WIDTH_FACTOR"></div>
-              <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step=".01" name="LL_TOP_WIDTH_FACTOR"></div>
+              <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step="any" name="RL_TOP_WIDTH_FACTOR"></div>
+              <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step="any" name="LL_TOP_WIDTH_FACTOR"></div>
             </div>
             <label class="check-field"><input id="hough-morph-close" type="checkbox" name="HOUGH_MORPH_CLOSE"> Close small gaps in lane edges (morphological close)</label>
             <label class="check-field"><input id="old-method" type="checkbox" name="OLD_METHOD"> Use legacy Hough/Canny lane detector</label>
@@ -291,7 +291,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="crosswalk-threshold">Crosswalk pixel threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
               <div class="field"><label for="crosswalk-min-vertical">Minimum vertical crosswalk lines</label><input id="crosswalk-min-vertical" type="number" min="1" max="1000" step="1" name="CROSSWALK_VERTICAL_MIN_LINES"></div>
               <div class="field"><label for="crosswalk-min-horizontal">Minimum horizontal crosswalk lines</label><input id="crosswalk-min-horizontal" type="number" min="1" max="1000" step="1" name="CROSSWALK_HORIZONTAL_MIN_LINES"></div>
-              <div class="field"><label for="cw-top-factor">Crosswalk trapezoid top width (0–1)</label><input id="cw-top-factor" type="number" min="0" max="1" step=".01" name="CW_TOP_WIDTH_FACTOR"></div>
+              <div class="field"><label for="cw-top-factor">Crosswalk trapezoid top width (0–1)</label><input id="cw-top-factor" type="number" min="0" max="1" step="any" name="CW_TOP_WIDTH_FACTOR"></div>
             </div>
             <label class="check-field"><input id="cw-trapezoid" type="checkbox" name="CW_TRAPEZOID_MODE"> Use trapezoid crosswalk ROI mask</label>
             <label class="check-field"><input id="cw-old-method" type="checkbox" name="CW_OLD_METHOD"> Use legacy LSD crosswalk detector</label>
@@ -300,14 +300,14 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <details style="margin-top:10px">
               <summary class="section-title">BEV source corners · normalized 0–1</summary>
               <div class="grid-two">
-                <div class="field"><label for="bev-tl-x">Top-left X</label><input id="bev-tl-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_TL_X"></div>
-                <div class="field"><label for="bev-tl-y">Top-left Y</label><input id="bev-tl-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_TL_Y"></div>
-                <div class="field"><label for="bev-tr-x">Top-right X</label><input id="bev-tr-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_TR_X"></div>
-                <div class="field"><label for="bev-tr-y">Top-right Y</label><input id="bev-tr-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_TR_Y"></div>
-                <div class="field"><label for="bev-br-x">Bottom-right X</label><input id="bev-br-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_BR_X"></div>
-                <div class="field"><label for="bev-br-y">Bottom-right Y</label><input id="bev-br-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_BR_Y"></div>
-                <div class="field"><label for="bev-bl-x">Bottom-left X</label><input id="bev-bl-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_BL_X"></div>
-                <div class="field"><label for="bev-bl-y">Bottom-left Y</label><input id="bev-bl-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_BL_Y"></div>
+                <div class="field"><label for="bev-tl-x">Top-left X</label><input id="bev-tl-x" type="number" min="0" max="1" step="any" name="BEV_SRC_TL_X"></div>
+                <div class="field"><label for="bev-tl-y">Top-left Y</label><input id="bev-tl-y" type="number" min="0" max="1" step="any" name="BEV_SRC_TL_Y"></div>
+                <div class="field"><label for="bev-tr-x">Top-right X</label><input id="bev-tr-x" type="number" min="0" max="1" step="any" name="BEV_SRC_TR_X"></div>
+                <div class="field"><label for="bev-tr-y">Top-right Y</label><input id="bev-tr-y" type="number" min="0" max="1" step="any" name="BEV_SRC_TR_Y"></div>
+                <div class="field"><label for="bev-br-x">Bottom-right X</label><input id="bev-br-x" type="number" min="0" max="1" step="any" name="BEV_SRC_BR_X"></div>
+                <div class="field"><label for="bev-br-y">Bottom-right Y</label><input id="bev-br-y" type="number" min="0" max="1" step="any" name="BEV_SRC_BR_Y"></div>
+                <div class="field"><label for="bev-bl-x">Bottom-left X</label><input id="bev-bl-x" type="number" min="0" max="1" step="any" name="BEV_SRC_BL_X"></div>
+                <div class="field"><label for="bev-bl-y">Bottom-left Y</label><input id="bev-bl-y" type="number" min="0" max="1" step="any" name="BEV_SRC_BL_Y"></div>
               </div>
             </details>
             {% endif %}
