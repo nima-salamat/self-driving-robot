@@ -704,6 +704,7 @@ async function loadSettings(){
   if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
   const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
   const roiMirrorInput=$("sim-roi-mirror-selected");if(roiMirrorInput)roiMirrorInput.disabled=!simRoiControlsEnabled;
+  simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){const input=$(id);if(input)input.disabled=!simRoiControlsEnabled;});});
   $("save-settings").disabled=!data.controls_enabled;
   if($("open-camera-editor"))$("open-camera-editor").disabled=!data.controls_enabled;
   $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
