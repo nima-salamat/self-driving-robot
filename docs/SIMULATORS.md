@@ -39,6 +39,10 @@ Every adapter normalizes its backend into a `SensorFrame` containing an image, c
 
 The virtual controller maps the configured servo minimum/center/maximum into a normalized steering range. It applies the configured inversion and speed/throttle policy. By default, an unavailable lane estimate can trigger simulator braking; verify `SIMULATOR_STOP_ON_LOST_LANE` and the selected profile before a run.
 
+CARLA is **disarmed on every launch**. The vehicle is commanded to brake after connection and does not receive autonomous throttle until the user presses **Start Run** in the simulator Stream. **Stop / Brake** disarms it immediately. Opening the camera placement studio or changing the CARLA scene also disarms the run; closing an editor does not re-enable motion. Press Start Run again when the scene and camera are ready. This explicit run gate applies to CARLA; AVIS retains its existing run behavior.
+
+For CARLA the default target is 50 km/h and the virtual throttle cap is 0.70. These are conservative starting points, not guaranteed achieved speeds; the active saved `carla.sim.json` values take precedence. Adjust **Target speed** and **Throttle limit** in the simulator editor to tune them. The maximum configured CARLA target is 200 km/h and throttle is limited to 0–1.
+
 Simulator commands and virtual encoder pulses are simulation state/telemetry, not physical Arduino commands or physical encoder measurements.
 
 ## CARLA-specific behavior
@@ -51,7 +55,13 @@ The editor's vehicle/map/spawn/camera values are simulator settings. Saving them
 
 Map changes use a dedicated 120-second CARLA RPC timeout, then restore the normal simulator request timeout. While the world is being replaced, the adapter destroys and respawns its vehicle/sensors under a scene-transition lock. The runtime commands braking and waits while the CARLA vehicle actor is temporarily unavailable instead of treating that expected transition as a fatal actuator error. If a map request times out after the server has already switched worlds, the adapter re-queries the active world and attempts to respawn there before reporting the failed selection.
 
-For the City vision profile, the simulator Stream renders the same structured lane/crosswalk diagnostics as the physical City Stream. The camera preview includes RL (right lane), LL (left lane), and CW (crosswalk) ROI overlays, including the active rectangle/trapezoid masks and BEV processing frame. With Stream control enabled, select an ROI, drag inside it to move it, drag a corner to resize it, then save; these values are written only to `carla.sim.json`. The numeric ROI fields remain available alongside the visual editor.
+For the City vision profile, the simulator Stream renders the same structured lane/crosswalk diagnostics as the physical City Stream. The camera preview includes RL (right lane), LL (left lane), and CW (crosswalk) ROI overlays, including the active rectangle/trapezoid masks and BEV processing frame. With Stream control enabled, select an ROI, drag inside it to move it, drag a corner to resize it, then save; these values are written only to the active simulator's `.sim.json`. The numeric ROI fields remain available alongside the visual editor.
+
+The simulator City editor includes lane and crosswalk pixel thresholds, Hough segment/vote parameters, blur/morphological preprocessing, minimum crosswalk line counts, rectangle/trapezoid modes, top-width factors, optional resizable lane ROIs, servo center/limits/direction, camera pitch/height and expected lane width, and all eight BEV source-corner coordinates. They are isolated from the physical `city.json`; simulator defaults begin with BEV disabled and raw RGB camera processing. Turn BEV on after the camera image and camera mount are verified. Existing saved simulator settings override defaults, so older `carla.sim.json` files may still have an earlier target speed or BEV selection until edited.
+
+The normal camera preview always prefers the raw CARLA RGB camera image. The BEV processing image is used only when BEV is enabled and its frame contains image content; a blank warp cannot replace a valid raw camera frame. When enabled LiDAR is stale, the vehicle still brakes, but the RGB frame continues to be published. The camera status badge reports dimensions, average intensity, and whether the displayed image is from the camera or BEV, helping distinguish a missing callback from a black image.
+
+Per-frame virtual steering changes are kept in the Stream event console/state rather than written to the terminal. Only changes in actuator motion/safety state are retained as events, avoiding a terminal INFO line on every camera frame.
 
 ## AVIS Engine-specific behavior
 
