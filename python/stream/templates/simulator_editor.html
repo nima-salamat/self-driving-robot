@@ -912,6 +912,12 @@ async function poll(){
       else if(Number(sensorInfo.callback_count||0)===0&&sensorInfo.sensor_spawned)detail="Camera actor exists, but its RGB callback has not fired. Check CARLA rendering/server logs and whether the world is advancing.";
       else if(Number(sensorInfo.callback_count||0)>0&&imageInfo.looks_black)detail="RGB callbacks are arriving, but the pixels are black. Check the CARLA renderer/GPU and camera mount; no_rendering_mode="+String(sensorInfo.no_rendering_mode)+".";
       else if(Number(sensorInfo.callback_count||0)>0)detail="RGB sensor callbacks: "+sensorInfo.callback_count+" · last frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago · sequence "+String(sensorInfo.frame_number??"—")+".";
+      const processing=d.processing||{};
+      if(Number(sensorInfo.callback_count||0)>0)detail+=" Camera "+numeric(sensorInfo.callback_fps,1)+" FPS.";
+      if(Number.isFinite(Number(processing.lane_fps)))detail+=" Lane loop "+numeric(processing.lane_fps,1)+" FPS (target "+numeric(processing.target_fps,0)+").";
+      if(Number.isFinite(Number(processing.detection_ms)))detail+=" Detection "+numeric(processing.detection_ms,1)+" ms.";
+      if(Number.isFinite(Number(processing.debug_render_ms)))detail+=" Debug render "+numeric(processing.debug_render_ms,1)+" ms.";
+      if(Number(processing.camera_frames_skipped||0)>0)detail+=" Skipped camera frames "+String(processing.camera_frames_skipped)+".";
       cameraDiagnostic.textContent=detail;
       cameraDiagnostic.className="status-message"+((sensorInfo.rendering_error||sensorInfo.no_rendering_mode===true||sensorInfo.decode_error||Number(sensorInfo.callback_count||0)===0||imageInfo.looks_black)?" error":"");
     }
