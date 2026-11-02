@@ -45,9 +45,14 @@ class VisionProcessor:
     def _expected_lane_angle(self, side):
         if getattr(conf, "USE_BEV", False):
             return 90
-        camera_pitch = math.radians(CAMERA_PITCH_DEG)
-        y_projection = CAMERA_HEIGHT / math.tan(-camera_pitch)
-        alpha = math.degrees(math.atan((LANE_WIDTH / 2) / y_projection))
+        # Simulator settings live on the same City config module but may be
+        # changed from the simulator editor at runtime. Read geometry dynamically
+        # instead of freezing imported physical-City values at module import.
+        camera_pitch = math.radians(float(getattr(conf, "CAMERA_PITCH_DEG", CAMERA_PITCH_DEG)))
+        camera_height = max(0.1, float(getattr(conf, "CAMERA_HEIGHT", CAMERA_HEIGHT)))
+        lane_width = max(0.1, float(getattr(conf, "LANE_WIDTH", LANE_WIDTH)))
+        y_projection = camera_height / max(1e-6, math.tan(max(1e-4, -camera_pitch)))
+        alpha = math.degrees(math.atan((lane_width / 2) / y_projection))
         return 90 + alpha if side == "right" else 90 - alpha
 
     def _best_mid_x(self, lines, roi_w, roi_h, side=""):
@@ -283,7 +288,7 @@ class VisionProcessor:
         cw_lines = []
 
         if cw_frame is not None:
-            if CW_OLD_METHOD:
+            if bool(getattr(conf, "CW_OLD_METHOD", CW_OLD_METHOD)):
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
                 edges = cv2.Canny(gray, 100, 150)
