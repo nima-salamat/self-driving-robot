@@ -739,7 +739,7 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.connected = True
         self.assertIsNone(adapter.read())
 
-    def test_carla_camera_callback_publishes_preview_without_runtime_loop(self):
+    def test_carla_camera_callback_keeps_raw_frames_out_of_lane_debug_stream(self):
         import threading
         from modes.simulation.carla_adapter import CarlaAdapter
 
@@ -748,8 +748,9 @@ class VirtualControllerTests(unittest.TestCase):
         pixels[:, :, 1] = 90
         pixels[:, :, 2] = 180
         pixels[:, :, 3] = 255
+        previous_debug_frame = np.full((6, 8, 3), 70, dtype=np.uint8)
         config = SimpleNamespace(
-            STREAM=True, debug_frames_list=[None, None], stream_frame_seq=0,
+            STREAM=True, debug_frames_list=[None, previous_debug_frame], stream_frame_seq=0,
             stream_frame_lock=threading.RLock(),
         )
         adapter = CarlaAdapter(config)
@@ -760,8 +761,9 @@ class VirtualControllerTests(unittest.TestCase):
 
         adapter._on_camera(image)
 
-        self.assertEqual(config.stream_frame_seq, 1)
-        np.testing.assert_array_equal(config.debug_frames_list[-1], pixels[:, :, :3])
+        self.assertEqual(config.stream_frame_seq, 0)
+        self.assertIs(config.debug_frames_list[-1], previous_debug_frame)
+        np.testing.assert_array_equal(adapter._image, pixels[:, :, :3])
         diagnostics = adapter.camera_diagnostics()
         self.assertEqual(diagnostics["callback_count"], 1)
         self.assertEqual(diagnostics["frame_number"], 17)
