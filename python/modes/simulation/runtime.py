@@ -217,6 +217,7 @@ class SimulationRuntime:
         if active:
             self.set_run_enabled(False)
             self._safe_stop("CARLA camera editor is open; holding vehicle stationary.")
+            self._last_error = None
             self._record_event("warning", "Camera placement studio active; CARLA run is disarmed.")
         else:
             self._record_event("info", "Camera placement studio closed; CARLA remains STOPPED until Start Run is pressed.")
@@ -231,6 +232,7 @@ class SimulationRuntime:
             if self.backend == "carla":
                 self.set_run_enabled(False)
             self._safe_stop("CARLA scene editor is changing the world, vehicle, or spawn point.")
+            self._last_error = None
             self._record_event("warning", "CARLA scene change started; autonomous throttle is suspended.")
         else:
             self._record_event("info", "CARLA scene change finished; CARLA remains STOPPED until Start Run is pressed.")
