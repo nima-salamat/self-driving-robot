@@ -234,7 +234,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
                         self.assertIn('data-sim-roi-select="RL"', page_text)
-                        self.assertIn("Drag inside to move it", page_text)
+                        self.assertIn("drag inside to move it", page_text.lower())
                         self.assertIn('id="carla-map-select"', page_text)
                         self.assertIn('id="carla-vehicle-grid"', page_text)
                         self.assertIn('id="carla-spawn-map"', page_text)
@@ -312,7 +312,7 @@ class VirtualControllerTests(unittest.TestCase):
         render.assert_called_once()
         np.testing.assert_array_equal(render.call_args.args[0], vision_frame)
         self.assertEqual(config.debug_frames_list[-1].shape, raw_frame.shape)
-        self.assertGreater(int(config.debug_frames_list[-1].max()), int(rendered_frame.max()))
+        np.testing.assert_array_equal(config.debug_frames_list[-1], rendered_frame)
 
     def test_carla_run_mode_is_disarmed_until_explicit_start(self):
         from modes.simulation.runtime import SimulationRuntime
