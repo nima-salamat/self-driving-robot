@@ -156,7 +156,7 @@ class VisionProcessor:
         ll_top, ll_bottom = int(conf.LL_TOP_ROI * height), int(conf.LL_BOTTOM_ROI * height)
         ll_left, ll_right = int(conf.LL_LEFT_ROI * width), int(conf.LL_RIGHT_ROI * width)
         
-        if ROI_RESIZABLE:
+        if bool(getattr(conf, "ROI_RESIZABLE", ROI_RESIZABLE)):
             rl_right_ = rl_right + int((1 - conf.RL_RIGHT_ROI) * width * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
             ll_left_ = ll_left + int((0 - conf.LL_LEFT_ROI) * width * 1 / self.max_unseen_counter * self.lroi_unseen_counter)
         else:
