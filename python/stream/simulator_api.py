@@ -30,7 +30,7 @@ LIVE_KEYS = {
     "SIMULATOR_CAMERA_PITCH", "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL",
     "SIMULATOR_AVIS_SENSOR_ANGLE", "USE_BEV", "DEBUG",
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
-    "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
+    "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "RL_MIRRORED", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
     "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
     "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE", "ROI_RESIZABLE",
@@ -149,6 +149,7 @@ def register_simulator_routes(app, streamer):
             "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
             "CROSSWALK_HORIZONTAL_MIN_LINES", "LANE_ROI_MODE", "CW_TRAPEZOID_MODE", "ROI_RESIZABLE",
             "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
+            "RL_MIRRORED", "LL_MIRRORED",
             "OLD_METHOD", "CW_OLD_METHOD", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
             "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
         }
@@ -161,7 +162,7 @@ def register_simulator_routes(app, streamer):
                 target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
             except (TypeError, ValueError, OverflowError):
                 return jsonify(success=False, message="SIMULATOR_TARGET_SPEED must be numeric"), 400
-            maximum_speed = 100 if backend == "avis" else 8
+            maximum_speed = 100 if backend == "avis" else 200
             if not math.isfinite(target_speed) or target_speed < 0 or target_speed > maximum_speed:
                 return jsonify(success=False, message=f"Target speed must be between 0 and {maximum_speed} for {backend.upper()}"), 400
             patch["SIMULATOR_TARGET_SPEED"] = target_speed
@@ -195,7 +196,7 @@ def register_simulator_routes(app, streamer):
                 value = float(patch["SIMULATOR_THROTTLE_LIMIT"])
             except (TypeError, ValueError, OverflowError):
                 return jsonify(success=False, message="SIMULATOR_THROTTLE_LIMIT must be numeric"), 400
-            maximum_throttle = 1.0 if backend == "avis" else 0.18
+            maximum_throttle = 1.0
             if not math.isfinite(value) or not 0 <= value <= maximum_throttle:
                 return jsonify(success=False, message=f"SIMULATOR_THROTTLE_LIMIT must be between 0 and {maximum_throttle} for {backend.upper()}"), 400
             patch["SIMULATOR_THROTTLE_LIMIT"] = value
