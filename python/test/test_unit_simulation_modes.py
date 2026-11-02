@@ -262,7 +262,7 @@ class VirtualControllerTests(unittest.TestCase):
         sensor = SensorFrame(image=raw_frame, captured_at=time.monotonic(), sequence=1)
         debug = {"combined": vision_frame, "draw_data": {"kind": "classical", "frame_width": 12, "frame_height": 8}}
         command = VehicleCommand(0.0, 0.1, 0.0, 95.0, 20.0, "test")
-        with patch("modes.simulation.runtime.render_lane_debug_overlay", return_value=rendered_frame) as render:
+        with patch("modes.simulation.runtime.render_lane_debug_overlay", side_effect=lambda *args: rendered_frame.copy()) as render:
             runtime._publish_frame(sensor, {"debug": debug, "lane_type": "both", "perception_valid": True}, command)
         render.assert_called_once()
         np.testing.assert_array_equal(render.call_args.args[0], vision_frame)
