@@ -40,7 +40,7 @@ class VirtualVehicleController:
         steering = max(-1.0, min(1.0, steering))
         if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
             steering = -steering
-        target = max(0.0, float(getattr(self.config, "SIMULATOR_TARGET_SPEED", 20.0)))
+        target = min(200.0, max(0.0, float(getattr(self.config, "SIMULATOR_TARGET_SPEED", 20.0))))
         limit = max(0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35))))
         now = time.monotonic()
         dt = max(0.0, min(0.25, now - self._last_control_at))
@@ -48,15 +48,14 @@ class VirtualVehicleController:
         if self.backend == "carla":
             # A vision servo angle is not a CARLA road-wheel angle. Full [-1, 1]
             # is maximum steering authority, so cap and slew the normalized input.
-            steering_limit = min(0.50, max(0.05, float(getattr(self.config, "SIMULATOR_STEERING_LIMIT", 0.28))))
-            steering_rate = min(1.50, max(0.10, float(getattr(self.config, "SIMULATOR_STEERING_RATE", 0.80))))
+            steering_limit = min(1.0, max(0.05, float(getattr(self.config, "SIMULATOR_STEERING_LIMIT", 0.28))))
+            steering_rate = min(10.0, max(0.10, float(getattr(self.config, "SIMULATOR_STEERING_RATE", 0.80))))
             target_steering = max(-steering_limit, min(steering_limit, steering))
             steering_step = steering_rate * dt
             steering = self._last_steering + max(-steering_step, min(steering_step, target_steering - self._last_steering))
             self._last_steering = steering
-            # Hard safety caps also protect legacy profiles and CLI overrides.
-            target = min(target, 8.0)
-            limit = min(limit, 0.18)
+            # Settings validation provides physical normalized bounds (0..1);
+            # the conservative defaults remain low but are user-adjustable.
         brake = 0.0
         reason = "lane estimate accepted" if valid else "lane estimate unavailable"
         if not valid and bool(getattr(self.config, "SIMULATOR_STOP_ON_LOST_LANE", True)):
@@ -80,7 +79,7 @@ class VirtualVehicleController:
             else:
                 speed_error = max(0.0, target - current_speed)
                 desired_throttle = min(limit, 0.02 + speed_error * 0.02)
-                rise_rate = min(0.50, max(0.01, float(getattr(self.config, "SIMULATOR_THROTTLE_RISE_RATE", 0.12))))
+                rise_rate = min(1.0, max(0.01, float(getattr(self.config, "SIMULATOR_THROTTLE_RISE_RATE", 0.12))))
                 if desired_throttle > self._last_throttle:
                     throttle = min(desired_throttle, self._last_throttle + rise_rate * dt)
                 else:
