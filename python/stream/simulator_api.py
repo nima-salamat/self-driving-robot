@@ -38,6 +38,26 @@ def _get_config_values(config):
     return {key: getattr(config, key) for key in SIMULATOR_KEYS if hasattr(config, key)}
 
 
+def _roi_geometry(config):
+    """Expose the active City ROI mask geometry for an accurate simulator preview."""
+    def factor(name, default):
+        try:
+            value = float(getattr(config, name, default))
+        except (TypeError, ValueError, OverflowError):
+            value = float(default)
+        return max(0.0, min(1.0, value)) if math.isfinite(value) else float(default)
+
+    lane_mode = str(getattr(config, "LANE_ROI_MODE", "rectangle")).lower()
+    return {
+        "lane_roi_mode": lane_mode if lane_mode in {"rectangle", "trapezoid"} else "rectangle",
+        "cw_trapezoid_mode": bool(getattr(config, "CW_TRAPEZOID_MODE", False)),
+        "rl_top_width_factor": factor("RL_TOP_WIDTH_FACTOR", 0.85),
+        "ll_top_width_factor": factor("LL_TOP_WIDTH_FACTOR", 0.85),
+        "cw_top_width_factor": factor("CW_TOP_WIDTH_FACTOR", 0.90),
+        "use_bev": bool(getattr(config, "USE_BEV", False)),
+    }
+
+
 def register_simulator_routes(app, streamer):
     @app.get("/api/simulation/state")
     def simulator_state():
@@ -56,6 +76,7 @@ def register_simulator_routes(app, streamer):
             vision_profile=caps.get("vision_profile"),
             controls_enabled=bool(getattr(streamer.config, "STREAM_ALLOW_CONTROL", False)),
             settings=_get_config_values(streamer.config),
+            roi_geometry=_roi_geometry(streamer.config) if caps.get("supports_lane_roi") else {},
             option_groups=caps.get("option_groups", []),
         )
 
