@@ -19,6 +19,9 @@
 .sim-roi-hint{color:var(--sim-muted);font-size:11px;margin:8px 0 0}
 .sim-roi-status{font-size:11px;color:var(--sim-muted)}
 .sim-roi-save{padding:6px 10px;font-size:12px}
+.sim-roi-mirror-control{display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;border:1px solid var(--sim-border);border-radius:8px;background:var(--sim-panel2);font-size:12px}
+.sim-roi-mirror-control label{display:flex;align-items:center;gap:7px}
+.sim-roi-mirror-control input{accent-color:var(--sim-accent)}
 .carla-run-panel{border-color:#3d5971}
 .carla-run-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .carla-run-state{font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.04em}
@@ -93,13 +96,17 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
         </div>
         <div class="sim-roi-editor {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-roi-editor">
           <div class="sim-roi-editor-head">
-            <div><strong>Vision ROI overlay</strong><div class="sim-roi-hint">Select a region, drag inside to move it, or drag a corner handle to resize. Coordinates are normalized to the live camera frame.</div></div>
-            <div class="sim-roi-actions"><span class="sim-roi-status" id="sim-roi-status">Saved ROI settings</span><button type="button" class="primary sim-roi-save" id="sim-roi-save">Save ROI</button></div>
+            <div><strong>Vision ROI overlay</strong><div class="sim-roi-hint">Select a region, drag inside to move it, or drag a corner handle to resize. Coordinates are normalized to the live camera frame. Changes are saved automatically.</div></div>
+            <div class="sim-roi-actions"><span class="sim-roi-status" id="sim-roi-status">Saved ROI settings</span><button type="button" class="primary sim-roi-save" id="sim-roi-save">Save now</button></div>
           </div>
           <div class="sim-roi-selectors">
             <button type="button" data-sim-roi-select="RL" class="active">RL · Right lane</button>
             <button type="button" data-sim-roi-select="LL">LL · Left lane</button>
             {% if caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
+          </div>
+          <div class="sim-roi-mirror-control" id="sim-roi-mirror-control">
+            <label id="sim-roi-mirror-label" for="sim-roi-mirror-selected"><input type="checkbox" id="sim-roi-mirror-selected"> Mirror selected lane ROI before detection</label>
+            <span class="note">Mirrors only the selected RL or LL crop; the camera image and ROI position stay unchanged.</span>
           </div>
           <div class="sim-roi-visibility" style="margin-top:8px">
             <label><input type="checkbox" id="sim-roi-overlay-toggle" checked> Show ROI overlays</label>
@@ -230,12 +237,12 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="setting-block">
             <h3 class="section-title">Virtual vehicle safety</h3>
             <div class="grid-two">
-              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}8{% else %}100{% endif %}" step="{% if caps.simulator_backend == 'carla' %}.5{% else %}1{% endif %}" name="SIMULATOR_TARGET_SPEED" required></div>
-              <div class="field"><label for="throttle-limit">Throttle limit (0–{% if caps.simulator_backend == 'carla' %}0.18{% else %}1{% endif %})</label><input id="throttle-limit" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}0.18{% else %}1{% endif %}" step="{% if caps.simulator_backend == 'carla' %}.01{% else %}.05{% endif %}" name="SIMULATOR_THROTTLE_LIMIT" required></div>
+              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="any" name="SIMULATOR_TARGET_SPEED" required></div>
+              <div class="field"><label for="throttle-limit">Throttle limit (0–1)</label><input id="throttle-limit" type="number" min="0" max="1" step="any" name="SIMULATOR_THROTTLE_LIMIT" required></div>
               {% if caps.simulator_backend == 'carla' %}
-              <div class="field"><label for="steering-authority">Maximum steering input (normalized)</label><input id="steering-authority" type="number" min=".05" max=".5" step=".01" name="SIMULATOR_STEERING_LIMIT"></div>
-              <div class="field"><label for="steering-rate">Steering change rate (normalized / s)</label><input id="steering-rate" type="number" min=".1" max="1.5" step=".05" name="SIMULATOR_STEERING_RATE"></div>
-              <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max=".5" step=".01" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
+              <div class="field"><label for="steering-authority">Maximum steering input (normalized)</label><input id="steering-authority" type="number" min=".05" max="1" step="any" name="SIMULATOR_STEERING_LIMIT"></div>
+              <div class="field"><label for="steering-rate">Steering change rate (normalized / s)</label><input id="steering-rate" type="number" min=".1" max="10" step="any" name="SIMULATOR_STEERING_RATE"></div>
+              <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max="1" step="any" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
               {% endif %}
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
@@ -304,23 +311,23 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               </div>
             </details>
             {% endif %}
-            <p class="note">CARLA starts at 5 km/h, throttle capped at 0.12 and steering input capped at 0.28. These conservative limits apply while tuning the camera, lane direction and vehicle response. Settings are stored only in this simulator's .sim.json profile and do not modify city.json.</p>
+            <p class="note">CARLA starts conservatively at 5 km/h, throttle 0.12 and steering input 0.28. These are editable starting values, not fixed UI caps: speed 0–200 km/h, throttle 0–1, steering 0.05–1. Increase motion values gradually while tuning. Settings stay in this simulator's .sim.json profile and do not modify city.json.</p>
           </div>
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
             <div class="grid-two">
-              <div class="field"><label for="rl-top">Right-lane ROI top</label><input id="rl-top" type="number" min="0" max=".99" step=".01" name="RL_TOP_ROI"></div>
-              <div class="field"><label for="rl-bottom">Right-lane ROI bottom</label><input id="rl-bottom" type="number" min=".01" max="1" step=".01" name="RL_BOTTOM_ROI"></div>
-              <div class="field"><label for="rl-left">Right-lane ROI left</label><input id="rl-left" type="number" min="0" max=".99" step=".01" name="RL_LEFT_ROI"></div>
-              <div class="field"><label for="rl-right">Right-lane ROI right</label><input id="rl-right" type="number" min=".01" max="1" step=".01" name="RL_RIGHT_ROI"></div>
-              <div class="field"><label for="ll-top">Left-lane ROI top</label><input id="ll-top" type="number" min="0" max=".99" step=".01" name="LL_TOP_ROI"></div>
-              <div class="field"><label for="ll-bottom">Left-lane ROI bottom</label><input id="ll-bottom" type="number" min=".01" max="1" step=".01" name="LL_BOTTOM_ROI"></div>
-              <div class="field"><label for="ll-left">Left-lane ROI left</label><input id="ll-left" type="number" min="0" max=".99" step=".01" name="LL_LEFT_ROI"></div>
-              <div class="field"><label for="ll-right">Left-lane ROI right</label><input id="ll-right" type="number" min=".01" max="1" step=".01" name="LL_RIGHT_ROI"></div>
-              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-top">Crosswalk ROI top</label><input id="cw-top" type="number" min="0" max=".99" step=".01" name="CW_TOP_ROI"></div>
-              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-bottom">Crosswalk ROI bottom</label><input id="cw-bottom" type="number" min=".01" max="1" step=".01" name="CW_BOTTOM_ROI"></div>
-              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-left">Crosswalk ROI left</label><input id="cw-left" type="number" min="0" max=".99" step=".01" name="CW_LEFT_ROI"></div>
-              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min=".01" max="1" step=".01" name="CW_RIGHT_ROI"></div>
+              <div class="field"><label for="rl-top">Right-lane ROI top</label><input id="rl-top" type="number" min="0" max="1" step="any" name="RL_TOP_ROI"></div>
+              <div class="field"><label for="rl-bottom">Right-lane ROI bottom</label><input id="rl-bottom" type="number" min="0" max="1" step="any" name="RL_BOTTOM_ROI"></div>
+              <div class="field"><label for="rl-left">Right-lane ROI left</label><input id="rl-left" type="number" min="0" max="1" step="any" name="RL_LEFT_ROI"></div>
+              <div class="field"><label for="rl-right">Right-lane ROI right</label><input id="rl-right" type="number" min="0" max="1" step="any" name="RL_RIGHT_ROI"></div>
+              <div class="field"><label for="ll-top">Left-lane ROI top</label><input id="ll-top" type="number" min="0" max="1" step="any" name="LL_TOP_ROI"></div>
+              <div class="field"><label for="ll-bottom">Left-lane ROI bottom</label><input id="ll-bottom" type="number" min="0" max="1" step="any" name="LL_BOTTOM_ROI"></div>
+              <div class="field"><label for="ll-left">Left-lane ROI left</label><input id="ll-left" type="number" min="0" max="1" step="any" name="LL_LEFT_ROI"></div>
+              <div class="field"><label for="ll-right">Left-lane ROI right</label><input id="ll-right" type="number" min="0" max="1" step="any" name="LL_RIGHT_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-top">Crosswalk ROI top</label><input id="cw-top" type="number" min="0" max="1" step="any" name="CW_TOP_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-bottom">Crosswalk ROI bottom</label><input id="cw-bottom" type="number" min="0" max="1" step="any" name="CW_BOTTOM_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-left">Crosswalk ROI left</label><input id="cw-left" type="number" min="0" max="1" step="any" name="CW_LEFT_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min="0" max="1" step="any" name="CW_RIGHT_ROI"></div>
             </div>
           </div>
           <div class="actions"><button type="button" id="reload-settings">Reload saved</button><button class="primary" type="submit" id="save-settings">Save settings</button></div>
