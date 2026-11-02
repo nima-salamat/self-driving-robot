@@ -8,7 +8,8 @@ on:
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
+    # Keep Playwright's browser image supported and deterministic.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
