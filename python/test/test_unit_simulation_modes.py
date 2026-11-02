@@ -134,6 +134,29 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(config.SIMULATOR_STEERING_RATE, 0.80)
             self.assertEqual(config.SIMULATOR_THROTTLE_RISE_RATE, 0.12)
 
+    def test_carla_user_tuning_exceeds_old_caps_and_survives_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(config, "carla", "carla")
+            path = save_simulator_settings(config, "carla", {
+                "SIMULATOR_TARGET_SPEED": 12.5,
+                "SIMULATOR_THROTTLE_LIMIT": 0.42,
+                "SIMULATOR_STEERING_LIMIT": 0.75,
+                "SIMULATOR_STEERING_RATE": 3.5,
+                "SIMULATOR_THROTTLE_RISE_RATE": 0.65,
+            })
+            self.assertEqual(path["SIMULATOR_TARGET_SPEED"], 12.5)
+            self.assertEqual(path["SIMULATOR_THROTTLE_LIMIT"], 0.42)
+            profile = json.loads((Path(directory) / "carla.sim.json").read_text(encoding="utf-8"))
+            self.assertEqual(profile["SIMULATOR_TUNING_PROFILE_VERSION"], 2)
+            restarted = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(restarted, "carla", "carla")
+            self.assertEqual(restarted.SIMULATOR_TARGET_SPEED, 12.5)
+            self.assertEqual(restarted.SIMULATOR_THROTTLE_LIMIT, 0.42)
+            self.assertEqual(restarted.SIMULATOR_STEERING_LIMIT, 0.75)
+            self.assertEqual(restarted.SIMULATOR_STEERING_RATE, 3.5)
+            self.assertEqual(restarted.SIMULATOR_THROTTLE_RISE_RATE, 0.65)
+
     def test_avis_target_speed_remains_percentage_limited(self):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
@@ -191,6 +214,22 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"SIMULATOR_SPAWN_POINT_INDEX": -2})
         with self.assertRaisesRegex(ValueError, "blueprint"):
             _validate_settings({"SIMULATOR_VEHICLE_BLUEPRINT": "walker.pedestrian.*"})
+
+
+class CityRoiMirroringTests(unittest.TestCase):
+    def test_lane_roi_mirror_flips_crop_mask_and_restores_detection_coordinates(self):
+        from vision.city_vision_processing import VisionProcessor
+
+        roi = np.arange(18, dtype=np.uint8).reshape(2, 3, 3)
+        mask = np.asarray([[0, 64, 255], [255, 64, 0]], dtype=np.uint8)
+        mirrored_roi, mirrored_mask = VisionProcessor._prepare_lane_roi(roi, mask, True)
+        np.testing.assert_array_equal(mirrored_roi, roi[:, ::-1])
+        np.testing.assert_array_equal(mirrored_mask, mask[:, ::-1])
+
+        lines = np.asarray([[[0, 1, 2, 1]], [[1, 0, 2, 0]]], dtype=np.int32)
+        restored = VisionProcessor._restore_lane_roi_lines(lines, roi_width=3, mirrored=True)
+        expected = np.asarray([[[2, 1, 0, 1]], [[1, 0, 0, 0]]], dtype=np.int32)
+        np.testing.assert_array_equal(restored, expected)
 
 
 class SimulatorEditorTests(unittest.TestCase):
@@ -266,6 +305,11 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
+                        self.assertIn('id="sim-roi-mirror-selected"', page_text)
+                        self.assertIn("Changes are saved automatically", page_text)
+                        self.assertIn('id="target-speed" type="number" min="0" max="200" step="any"', page_text)
+                        self.assertIn('id="throttle-limit" type="number" min="0" max="1" step="any"', page_text)
+                        self.assertIn('id="rl-top" type="number" min="0" max="1" step="any"', page_text)
                         self.assertIn("background:transparent!important", page_text)
                         self.assertIn('data-sim-roi-select="RL"', page_text)
                         self.assertIn("drag inside to move it", page_text.lower())
