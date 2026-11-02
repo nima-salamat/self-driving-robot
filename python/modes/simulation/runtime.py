@@ -122,7 +122,8 @@ class SimulationRuntime:
             "looks_black": bool(not sample.size or float(np.mean(sample)) < 1.0 or int(np.max(sample)) < 4),
         }
         draw_data = debug.get("draw_data") if isinstance(debug, dict) else None
-        if isinstance(draw_data, dict):
+        can_draw_processing_geometry = frame_source == "bev" or not bool(getattr(self.config, "USE_BEV", False))
+        if isinstance(draw_data, dict) and can_draw_processing_geometry:
             try:
                 # The City/Race processors return the actual post-BEV ROI geometry.
                 # Render it here so the simulator Stream shows the same diagnostics
@@ -203,6 +204,7 @@ class SimulationRuntime:
         else:
             self._run_enabled = False
             self._safe_stop("CARLA run mode stopped; waiting for an explicit Start Run command.")
+            self._last_error = None
             self._record_event("warning", "CARLA autonomous run disabled; vehicle is held by the brake.")
         return self._run_enabled
 
@@ -213,10 +215,11 @@ class SimulationRuntime:
             return
         self._camera_editor_active = active
         if active:
+            self.set_run_enabled(False)
             self._safe_stop("CARLA camera editor is open; holding vehicle stationary.")
-            self._record_event("warning", "Camera placement studio active; autonomous throttle is suspended.")
+            self._record_event("warning", "Camera placement studio active; CARLA run is disarmed.")
         else:
-            self._record_event("info", "Camera placement studio closed; autonomous control may resume.")
+            self._record_event("info", "Camera placement studio closed; CARLA remains STOPPED until Start Run is pressed.")
 
     def set_scene_edit_active(self, active):
         """Temporarily hold autonomous control while the CARLA scene is reconfigured."""
@@ -230,7 +233,7 @@ class SimulationRuntime:
             self._safe_stop("CARLA scene editor is changing the world, vehicle, or spawn point.")
             self._record_event("warning", "CARLA scene change started; autonomous throttle is suspended.")
         else:
-            self._record_event("info", "CARLA scene change finished; autonomous control may resume.")
+            self._record_event("info", "CARLA scene change finished; CARLA remains STOPPED until Start Run is pressed.")
 
     def _carla_vehicle_ready(self):
         if self.backend != "carla":
