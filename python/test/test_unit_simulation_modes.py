@@ -128,11 +128,11 @@ class SimulatorSettingsTests(unittest.TestCase):
             }), encoding="utf-8")
             config = SimpleNamespace(BASE_DIR=directory)
             load_simulator_settings(config, "carla", "carla")
-            self.assertEqual(config.SIMULATOR_TARGET_SPEED, 8.0)
-            self.assertEqual(config.SIMULATOR_THROTTLE_LIMIT, 0.18)
-            self.assertEqual(config.SIMULATOR_STEERING_LIMIT, 0.50)
-            self.assertEqual(config.SIMULATOR_STEERING_RATE, 1.50)
-            self.assertEqual(config.SIMULATOR_THROTTLE_RISE_RATE, 0.50)
+            self.assertEqual(config.SIMULATOR_TARGET_SPEED, 5.0)
+            self.assertEqual(config.SIMULATOR_THROTTLE_LIMIT, 0.12)
+            self.assertEqual(config.SIMULATOR_STEERING_LIMIT, 0.28)
+            self.assertEqual(config.SIMULATOR_STEERING_RATE, 0.80)
+            self.assertEqual(config.SIMULATOR_THROTTLE_RISE_RATE, 0.12)
 
     def test_avis_target_speed_remains_percentage_limited(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -266,7 +266,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
-                    self.assertIn("background:transparent!important", page_text)
+                        self.assertIn("background:transparent!important", page_text)
                         self.assertIn('data-sim-roi-select="RL"', page_text)
                         self.assertIn("drag inside to move it", page_text.lower())
                         self.assertIn('id="carla-map-select"', page_text)

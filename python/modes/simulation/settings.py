@@ -281,11 +281,11 @@ def load_simulator_settings(config, mode, backend):
     if backend == "carla":
         # Clamp legacy .sim.json profiles in memory; former 50 km/h / 0.70
         # values must not silently restore the old aggressive control response.
-        config.SIMULATOR_TARGET_SPEED = min(target, 8.0)
-        config.SIMULATOR_THROTTLE_LIMIT = min(float(config.SIMULATOR_THROTTLE_LIMIT), 0.18)
-        config.SIMULATOR_STEERING_LIMIT = min(float(config.SIMULATOR_STEERING_LIMIT), 0.50)
-        config.SIMULATOR_STEERING_RATE = min(float(config.SIMULATOR_STEERING_RATE), 1.50)
-        config.SIMULATOR_THROTTLE_RISE_RATE = min(float(config.SIMULATOR_THROTTLE_RISE_RATE), 0.50)
+        config.SIMULATOR_TARGET_SPEED = min(target, 5.0)
+        config.SIMULATOR_THROTTLE_LIMIT = min(float(config.SIMULATOR_THROTTLE_LIMIT), 0.12)
+        config.SIMULATOR_STEERING_LIMIT = min(float(config.SIMULATOR_STEERING_LIMIT), 0.28)
+        config.SIMULATOR_STEERING_RATE = min(float(config.SIMULATOR_STEERING_RATE), 0.80)
+        config.SIMULATOR_THROTTLE_RISE_RATE = min(float(config.SIMULATOR_THROTTLE_RISE_RATE), 0.12)
     if backend == "avis" and float(getattr(config, "SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
         raise ValueError("AVIS Engine request timeout must be at most 1 second")
     return path
