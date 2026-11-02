@@ -19,6 +19,14 @@ SIMULATOR_KEYS = {
     "SIMULATOR_STEERING_INVERTED", "SIMULATOR_AVIS_SENSOR_ANGLE",
     "ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM",
     "USE_BEV", "USE_ML_LANE_DETECTOR", "ML_LANE_MODEL", "DEBUG",
+    "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
+    "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE",
+    "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "LANE_ROI_MODE", "CW_TRAPEZOID_MODE",
+    "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
+    "OLD_METHOD", "CW_OLD_METHOD", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
+    "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y",
+    "BEV_SRC_BR_X", "BEV_SRC_BR_Y", "BEV_SRC_BL_X", "BEV_SRC_BL_Y",
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
@@ -26,26 +34,39 @@ SIMULATOR_KEYS = {
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
-    "USE_ML_LANE_DETECTOR", "DEBUG",
+    "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
+    "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD",
 }
-INT_KEYS = {"SIMULATOR_PORT", "SIMULATOR_LIDAR_CHANNELS",
-            "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_AVIS_SENSOR_ANGLE",
-            "SIMULATOR_SPAWN_POINT_INDEX"}
+INT_KEYS = {
+    "SIMULATOR_PORT", "SIMULATOR_LIDAR_CHANNELS",
+    "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_AVIS_SENSOR_ANGLE",
+    "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
+    "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
+    "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
+    "CROSSWALK_HORIZONTAL_MIN_LINES",
+}
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
-    "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL",
+    "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL", "LANE_ROI_MODE",
 }
-POSITIVE_KEYS = {"SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
-                 "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
-                 "ENCODER_PULSE_DISTANCE_CM"}
+POSITIVE_KEYS = {
+    "SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
+    "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
+    "ENCODER_PULSE_DISTANCE_CM", "CAMERA_HEIGHT", "LANE_WIDTH",
+}
 NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"}
 ROI_KEYS = {"RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
             "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
             "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"}
-NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | {
+BEV_KEYS = {
+    "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y",
+    "BEV_SRC_BR_X", "BEV_SRC_BR_Y", "BEV_SRC_BL_X", "BEV_SRC_BL_Y",
+}
+ROI_FACTOR_KEYS = {"RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR"}
+NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS | {
     "SIMULATOR_THROTTLE_LIMIT", "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
-    "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL",
+    "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "CAMERA_PITCH_DEG",
 }
 
 
@@ -77,8 +98,35 @@ def _defaults(mode, backend):
         "SIMULATOR_CAMERA_YAW": 0.0,
         "SIMULATOR_CAMERA_ROLL": 0.0,
         # CARLA target speed is km/h; AVIS target speed is API percentage.
-        "SIMULATOR_TARGET_SPEED": 25.0 if avis else 20.0,
-        "SIMULATOR_THROTTLE_LIMIT": 0.35,
+        "SIMULATOR_TARGET_SPEED": 25.0 if avis else 50.0,
+        "SIMULATOR_THROTTLE_LIMIT": 0.35 if avis else 0.70,
+        # Simulator City vision starts in the raw camera frame. BEV can be
+        # enabled and tuned explicitly after checking the camera perspective.
+        "USE_BEV": False,
+        "DEBUG": False,
+        "LANE_THRESHOLD": 180,
+        "HOUGH_THRESHOLD": 15,
+        "HOUGH_MIN_LINE_LENGTH": 5,
+        "HOUGH_MAX_LINE_GAP": 20,
+        "HOUGH_BLUR_KERNEL": 3,
+        "HOUGH_MORPH_CLOSE": True,
+        "CROSSWALK_THRESHOLD": 180,
+        "CROSSWALK_VERTICAL_MIN_LINES": 6,
+        "CROSSWALK_HORIZONTAL_MIN_LINES": 3,
+        "LANE_ROI_MODE": "rectangle",
+        "CW_TRAPEZOID_MODE": False,
+        "RL_TOP_WIDTH_FACTOR": 0.85,
+        "LL_TOP_WIDTH_FACTOR": 0.85,
+        "CW_TOP_WIDTH_FACTOR": 0.90,
+        "OLD_METHOD": False,
+        "CW_OLD_METHOD": True,
+        "CAMERA_PITCH_DEG": -8.0,
+        "CAMERA_HEIGHT": 180.0,
+        "LANE_WIDTH": 350.0,
+        "BEV_SRC_TL_X": 0.35, "BEV_SRC_TL_Y": 0.60,
+        "BEV_SRC_TR_X": 0.65, "BEV_SRC_TR_Y": 0.60,
+        "BEV_SRC_BR_X": 1.00, "BEV_SRC_BR_Y": 1.00,
+        "BEV_SRC_BL_X": 0.00, "BEV_SRC_BL_Y": 1.00,
         "SIMULATOR_STOP_ON_LOST_LANE": True,
         "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race",
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
@@ -110,6 +158,8 @@ def _validate_settings(data):
                 raise ValueError("CITY_LANE_DETECTOR must be default or blsf-beta")
             if key == "ML_LANE_MODEL" and value not in {"unet_depthwise_nano", "unet_depthwise_small"}:
                 raise ValueError("ML_LANE_MODEL must be a supported Race lane model")
+            if key == "LANE_ROI_MODE" and value not in {"rectangle", "trapezoid"}:
+                raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
         elif key in INT_KEYS:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError(f"{key} must be an integer")
@@ -123,6 +173,20 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_LIDAR_POINTS_PER_SECOND must be at most 2000000")
             if key == "SIMULATOR_AVIS_SENSOR_ANGLE" and not 0 <= value <= 90:
                 raise ValueError("SIMULATOR_AVIS_SENSOR_ANGLE must be between 0 and 90")
+            if key == "LANE_THRESHOLD" and not 0 <= value <= 255:
+                raise ValueError("LANE_THRESHOLD must be between 0 and 255")
+            if key == "HOUGH_THRESHOLD" and not 1 <= value <= 255:
+                raise ValueError("HOUGH_THRESHOLD must be between 1 and 255")
+            if key == "HOUGH_MIN_LINE_LENGTH" and not 1 <= value <= 500:
+                raise ValueError("HOUGH_MIN_LINE_LENGTH must be between 1 and 500")
+            if key == "HOUGH_MAX_LINE_GAP" and not 0 <= value <= 100:
+                raise ValueError("HOUGH_MAX_LINE_GAP must be between 0 and 100")
+            if key == "HOUGH_BLUR_KERNEL" and (not 1 <= value <= 15 or (value != 1 and value % 2 == 0)):
+                raise ValueError("HOUGH_BLUR_KERNEL must be 1 or an odd integer from 3 to 15")
+            if key == "CROSSWALK_THRESHOLD" and not 0 <= value <= 255:
+                raise ValueError("CROSSWALK_THRESHOLD must be between 0 and 255")
+            if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 1 <= value <= 1000:
+                raise ValueError(f"{key} must be between 1 and 1000")
             if key == "SIMULATOR_SPAWN_POINT_INDEX" and not -1 <= value <= 100000:
                 raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
         elif key in NUMERIC_KEYS:
@@ -146,8 +210,10 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_OBSTACLE_STOP_DISTANCE_CM must be at most 500 cm")
             if key == "SIMULATOR_THROTTLE_LIMIT" and not 0 <= value <= 1:
                 raise ValueError("SIMULATOR_THROTTLE_LIMIT must be between 0 and 1")
-            if key in ROI_KEYS and not 0 <= value <= 1:
+            if key in ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS and not 0 <= value <= 1:
                 raise ValueError(f"{key} must be between 0 and 1")
+            if key == "CAMERA_PITCH_DEG" and not -90 <= value <= 90:
+                raise ValueError("CAMERA_PITCH_DEG must be between -90 and 90 degrees")
             camera_axis = key.removeprefix("SIMULATOR_CAMERA_")
             if camera_axis in {"X", "Y"} and not -20 <= value <= 20:
                 raise ValueError(f"{key} must be between -20 and 20 meters")
