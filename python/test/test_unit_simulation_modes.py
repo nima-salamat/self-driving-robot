@@ -164,6 +164,11 @@ class SimulatorEditorTests(unittest.TestCase):
                         USE_BEV=False,
                         USE_ML_LANE_DETECTOR=False,
                         CITY_LANE_DETECTOR="default",
+                        LANE_ROI_MODE="trapezoid",
+                        CW_TRAPEZOID_MODE=True,
+                        RL_TOP_WIDTH_FACTOR=0.72,
+                        LL_TOP_WIDTH_FACTOR=0.68,
+                        CW_TOP_WIDTH_FACTOR=0.8,
                         WITHOUT_ARDUINO=True,
                         READ_ARDUINO_OUTPUT=False,
                         SEND_AUTOMATIC_ARDUINO_COMMANDS=False,
@@ -205,6 +210,10 @@ class SimulatorEditorTests(unittest.TestCase):
                     payload = state.get_json()
                     self.assertEqual(payload["backend"], backend)
                     self.assertEqual(payload["vision_profile"], profile)
+                    if backend == "carla":
+                        self.assertEqual(payload["roi_geometry"]["lane_roi_mode"], "trapezoid")
+                        self.assertTrue(payload["roi_geometry"]["cw_trapezoid_mode"])
+                        self.assertEqual(payload["roi_geometry"]["rl_top_width_factor"], 0.72)
                     self.assertFalse(payload["controls_enabled"])
 
                     denied = client.post(
@@ -232,6 +241,33 @@ class VirtualControllerTests(unittest.TestCase):
             SIMULATOR_TARGET_SPEED=20.0, SIMULATOR_THROTTLE_LIMIT=0.3,
             SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
         )
+
+    def test_simulator_stream_renders_shared_vision_roi_debug_frame(self):
+        import time
+        from modes.simulation.base_adapter import SensorFrame, VehicleCommand
+        from modes.simulation.runtime import SimulationRuntime
+
+        config = SimpleNamespace(
+            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+            SIMULATOR_TARGET_SPEED=20.0, SIMULATOR_THROTTLE_LIMIT=0.3,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            ENCODER_MAP_ENABLED=False, STREAM=True, debug_frames_list=[None, None],
+            stream_frame_seq=0,
+        )
+        runtime = SimulationRuntime(config)
+        raw_frame = np.zeros((8, 12, 3), dtype=np.uint8)
+        vision_frame = np.full((8, 12, 3), 20, dtype=np.uint8)
+        rendered_frame = np.full((8, 12, 3), 90, dtype=np.uint8)
+        sensor = SensorFrame(image=raw_frame, captured_at=time.monotonic(), sequence=1)
+        debug = {"combined": vision_frame, "draw_data": {"kind": "classical", "frame_width": 12, "frame_height": 8}}
+        command = VehicleCommand(0.0, 0.1, 0.0, 95.0, 20.0, "test")
+        with patch("modes.simulation.runtime.render_lane_debug_overlay", return_value=rendered_frame) as render:
+            runtime._publish_frame(sensor, {"debug": debug, "lane_type": "both", "perception_valid": True}, command)
+        render.assert_called_once()
+        self.assertIs(render.call_args.args[0], vision_frame)
+        self.assertEqual(config.debug_frames_list[-1].shape, raw_frame.shape)
+        self.assertGreater(int(config.debug_frames_list[-1].max()), int(rendered_frame.max()))
 
     def test_invalid_perception_brakes_and_retains_steering(self):
         controller = VirtualVehicleController(self.config, "carla")
