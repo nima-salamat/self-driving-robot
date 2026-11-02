@@ -606,7 +606,7 @@ function simRoiPointerDown(event){
 }
 function simRoiPointerMove(event){
   if(!simRoiDrag)return;
-  const p=simRoiPoint(event),drag=simRoiDrag,b=Object.assign({},drag.initial),dx=p.x-drag.start.x,dy=p.y-drag.start.y,minSize=.008;
+  const p=simRoiPoint(event),drag=simRoiDrag,b=Object.assign({},drag.initial),dx=p.x-drag.start.x,dy=p.y-drag.start.y,minSize=.001;
   if(drag.mode==="move"){const width=b.right-b.left,height=b.bottom-b.top;b.left=simRoiClamp(b.left+dx,0,1-width);b.right=b.left+width;b.top=simRoiClamp(b.top+dy,0,1-height);b.bottom=b.top+height;}
   else{
     if(drag.corner==="nw"||drag.corner==="sw")b.left=simRoiClamp(b.left+dx,0,b.right-minSize);
@@ -703,6 +703,7 @@ async function loadSettings(){
   if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
   const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
+  const roiMirrorInput=$("sim-roi-mirror-selected");if(roiMirrorInput)roiMirrorInput.disabled=!simRoiControlsEnabled;
   $("save-settings").disabled=!data.controls_enabled;
   if($("open-camera-editor"))$("open-camera-editor").disabled=!data.controls_enabled;
   $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
