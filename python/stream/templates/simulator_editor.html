@@ -374,7 +374,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       <aside class="camera-editor-controls">
         <div class="camera-control">
           <h3>Vehicle-mounted camera transform</h3>
-          <p class="note">X/Y/Z are offsets from the vehicle origin (vehicle-local coordinates). The overlay separately shows the actual Stream sensor's absolute CARLA world coordinates and the independent free-preview camera. Those world values normally differ from these offsets because the vehicle itself is not at world origin. Changes preview live but are not saved until Save mount.</p>
+          <p class="note">X/Y/Z are offsets from the vehicle origin (vehicle-local coordinates). The editor shows the free-preview camera and the actual Stream sensor's absolute CARLA world coordinates separately. Slider changes affect this preview only. Save mount recreates the Stream RGB sensor attached to the vehicle with the selected relative transform; no server restart is needed.</p>
           <div class="camera-axis"><label for="cam-x">X · forward/back (m)</label><output id="cam-x-value">1.45</output><input type="range" id="cam-x" min="-20" max="20" step="0.05" value="1.45"></div>
           <div class="camera-axis"><label for="cam-y">Y · lateral (m)</label><output id="cam-y-value">0.00</output><input type="range" id="cam-y" min="-20" max="20" step="0.05" value="0"></div>
           <div class="camera-axis"><label for="cam-z">Z · height (m)</label><output id="cam-z-value">1.80</output><input type="range" id="cam-z" min="-5" max="15" step="0.05" value="1.8"></div>
@@ -1287,7 +1287,7 @@ function queueCameraMountPreview(){
         const state=await cameraAction("preview_mount",{transform:transform,follow_mount:true},false);
         if(cameraEditorOpen&&version===cameraPreviewVersion){
           renderCameraWorld(state);
-          setCameraStatus("Live vehicle-camera preview applied · not saved yet.",false);
+          setCameraStatus("Free-fly preview updated. Save mount to reattach the main Stream camera at this position.",false);
         }
       }catch(error){if(cameraEditorOpen&&version===cameraPreviewVersion)setCameraStatus(error.message,true);}
     });
@@ -1351,7 +1351,7 @@ function initCameraEditor(){
   $("camera-discard").addEventListener("click",function(){closeCameraEditor(true);});
   $("camera-editor-modal").addEventListener("click",function(event){if(event.target===$("camera-editor-modal"))closeCameraEditor(true);});
   $("camera-save-mount").addEventListener("click",async function(){
-    try{await settleCameraMountPreviews();const state=await cameraAction("save_mount",{transform:readCameraMount()});if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("Saved to this CARLA mode's .sim.json file and applied live.",false);}
+    try{await settleCameraMountPreviews();const state=await cameraAction("save_mount",{transform:readCameraMount()});if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("Saved. Main Stream RGB sensor has been recreated and reattached using the selected vehicle-relative transform.",false);}
     catch(error){setCameraStatus(error.message,true);}
   });
   mountFields.forEach(function(item){$(item[1]).addEventListener("input",queueCameraMountPreview);});
