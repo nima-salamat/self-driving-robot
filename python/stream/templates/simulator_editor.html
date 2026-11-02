@@ -6,6 +6,20 @@
 <title>Simulator Workbench · Self-Driving Robot</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='stream.css') }}">
 <style>
+.sim-camera-frame{position:relative;width:100%;line-height:0;overflow:hidden}
+.sim-camera-frame img{display:block;width:100%;height:auto;max-height:68vh;object-fit:contain}
+.sim-roi-canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.sim-roi-editor{margin-top:13px;padding-top:12px;border-top:1px solid var(--sim-border)}
+.sim-roi-editor-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.sim-roi-actions,.sim-roi-selectors,.sim-roi-visibility{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.sim-roi-selectors button{padding:6px 9px;font-size:12px}
+.sim-roi-selectors button.active{border-color:var(--sim-accent);background:#234965;color:#fff}
+.sim-roi-visibility label{display:inline-flex;align-items:center;gap:5px;color:var(--sim-muted);font-size:11px}
+.sim-roi-visibility input{accent-color:var(--sim-accent)}
+.sim-roi-hint{color:var(--sim-muted);font-size:11px;margin:8px 0 0}
+.sim-roi-status{font-size:11px;color:var(--sim-muted)}
+.sim-roi-save{padding:6px 10px;font-size:12px}
+@media(max-width:680px){.sim-roi-editor-head{align-items:flex-start}.sim-roi-actions{width:100%;justify-content:space-between}}
 :root{color-scheme:dark;--sim-bg:#10151d;--sim-panel:#171e28;--sim-panel2:#1c2633;--sim-border:#2b3747;--sim-text:#e5edf5;--sim-muted:#93a4b8;--sim-accent:#73c5ff;--sim-green:#71d9a0;--sim-warn:#ffc56d;--sim-red:#ff8282}
 *{box-sizing:border-box}body{margin:0;background:var(--sim-bg);color:var(--sim-text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overflow:auto}
 a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{border:1px solid var(--sim-border);background:var(--sim-panel2);border-radius:8px;padding:8px 11px;cursor:pointer}button:hover{border-color:var(--sim-accent)}button:disabled{opacity:.45;cursor:not-allowed}
@@ -55,7 +69,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="frame-age" class="pill">No frame</span></div>
-      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><img id="camera" src="/video_feed" alt="Simulator camera frame"></div>
+      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" src="/video_feed" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
       <div class="panel-content">
         <div id="runtime-error" class="status-message section-hide"></div>
         <div class="metrics">
@@ -63,6 +77,23 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
           <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">Virtual servo scale and normalized steering</div></div>
           <div class="metric"><div class="eyebrow">Throttle / brake</div><div id="motion-value" class="value">—</div><div id="motion-reason" class="unit">Safe stop until perception is valid</div></div>
+        </div>
+        <div class="sim-roi-editor {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-roi-editor">
+          <div class="sim-roi-editor-head">
+            <div><strong>Vision ROI overlay</strong><div class="sim-roi-hint">Select a region, drag inside to move it, or drag a corner handle to resize. Coordinates are normalized to the live camera frame.</div></div>
+            <div class="sim-roi-actions"><span class="sim-roi-status" id="sim-roi-status">Saved ROI settings</span><button type="button" class="primary sim-roi-save" id="sim-roi-save">Save ROI</button></div>
+          </div>
+          <div class="sim-roi-selectors">
+            <button type="button" data-sim-roi-select="RL" class="active">RL · Right lane</button>
+            <button type="button" data-sim-roi-select="LL">LL · Left lane</button>
+            {% if caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
+          </div>
+          <div class="sim-roi-visibility" style="margin-top:8px">
+            <label><input type="checkbox" id="sim-roi-overlay-toggle" checked> Show ROI overlays</label>
+            <label><input type="checkbox" data-sim-roi-visible="RL" checked> RL</label>
+            <label><input type="checkbox" data-sim-roi-visible="LL" checked> LL</label>
+            {% if caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
+          </div>
         </div>
       </div>
     </section>
@@ -324,12 +355,119 @@ function populate(s){
     if(s[key]!==undefined) $(id).checked=!!s[key];
   });
   setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, up to 200)");
+  drawSimRoiOverlay();
 }
+const simRoiDefs = [
+  {id:"RL",label:"Right lane",color:"#48d7a4",fields:{top:"rl-top",bottom:"rl-bottom",left:"rl-left",right:"rl-right"}},
+  {id:"LL",label:"Left lane",color:"#65a8ff",fields:{top:"ll-top",bottom:"ll-bottom",left:"ll-left",right:"ll-right"}},
+  {id:"CW",label:"Crosswalk",color:"#f4bd63",fields:{top:"cw-top",bottom:"cw-bottom",left:"cw-left",right:"cw-right"}}
+].filter(function(item){return item.id!=="CW"||caps.supports_crosswalk;});
+let simRoiSelected="RL", simRoiDrag=null, simRoiControlsEnabled=false;
+const simRoiCanvas=$("sim-roi-canvas");
+function simRoiBounds(id){
+  const def=simRoiDefs.find(function(item){return item.id===id;});if(!def)return null;
+  const b={};Object.keys(def.fields).forEach(function(key){const el=$(def.fields[key]);b[key]=el&&el.value!==""?Number(el.value):NaN;});
+  if(!Object.values(b).every(Number.isFinite)||b.left<0||b.top<0||b.right>1||b.bottom>1||b.left>=b.right||b.top>=b.bottom)return null;
+  return b;
+}
+function simRoiWriteBounds(id,b){
+  const def=simRoiDefs.find(function(item){return item.id===id;});if(!def)return;
+  Object.keys(def.fields).forEach(function(key){const el=$(def.fields[key]);if(el)el.value=Number(b[key]).toFixed(3);});
+}
+function simRoiUpdateSelection(){
+  document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.classList.toggle("active",button.dataset.simRoiSelect===simRoiSelected);});
+  if(simRoiCanvas)simRoiCanvas.style.pointerEvents=$("sim-roi-overlay-toggle")&&$("sim-roi-overlay-toggle").checked?"auto":"none";
+}
+function drawSimRoiOverlay(){
+  if(!simRoiCanvas||!caps.supports_lane_roi)return;
+  const frame=$("sim-camera-frame"),rect=frame&&frame.getBoundingClientRect();
+  if(!rect||rect.width<2||rect.height<2)return;
+  const dpr=Math.max(1,window.devicePixelRatio||1),w=rect.width,h=rect.height;
+  const pixelW=Math.max(1,Math.round(w*dpr)),pixelH=Math.max(1,Math.round(h*dpr));
+  if(simRoiCanvas.width!==pixelW||simRoiCanvas.height!==pixelH){simRoiCanvas.width=pixelW;simRoiCanvas.height=pixelH;}
+  const ctx=simRoiCanvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const master=$("sim-roi-overlay-toggle");if(master&&!master.checked)return;
+  simRoiDefs.forEach(function(def){
+    const visible=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(visible&&!visible.checked)return;
+    const b=simRoiBounds(def.id);if(!b)return;
+    const x=b.left*w,y=b.top*h,r=b.right*w,bt=b.bottom*h,selected=def.id===simRoiSelected;
+    ctx.save();ctx.fillStyle=def.color+"20";ctx.strokeStyle=def.color;ctx.lineWidth=selected?3:2;ctx.setLineDash(selected?[]:[7,4]);
+    ctx.fillRect(x,y,r-x,bt-y);ctx.strokeRect(x,y,r-x,bt-y);ctx.setLineDash([]);
+    ctx.font="700 12px system-ui";const label=def.id+" · "+def.label;const labelW=ctx.measureText(label).width+12;
+    ctx.fillStyle=def.color;ctx.fillRect(x,Math.max(0,y-22),labelW,20);ctx.fillStyle="#07111a";ctx.fillText(label,x+6,Math.max(14,y-8));
+    if(selected){
+      [[x,y],[r,y],[x,bt],[r,bt]].forEach(function(p){ctx.fillStyle="#f4f8fc";ctx.fillRect(p[0]-5,p[1]-5,10,10);ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(p[0]-5,p[1]-5,10,10);});
+    }
+    ctx.restore();
+  });
+}
+function simRoiPoint(event){const r=simRoiCanvas.getBoundingClientRect();return{x:(event.clientX-r.left)/r.width,y:(event.clientY-r.top)/r.height,px:event.clientX-r.left,py:event.clientY-r.top,width:r.width,height:r.height};}
+function simRoiClamp(value,min,max){return Math.max(min,Math.min(max,value));}
+function simRoiPointerDown(event){
+  if(!simRoiControlsEnabled||!$("sim-roi-overlay-toggle").checked)return;
+  const p=simRoiPoint(event);let hit=null,corner=null,bounds=null;
+  for(let i=simRoiDefs.length-1;i>=0;i--){
+    const def=simRoiDefs[i],show=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(show&&!show.checked)continue;
+    const b=simRoiBounds(def.id);if(!b)continue;
+    const handles={nw:[b.left*p.width,b.top*p.height],ne:[b.right*p.width,b.top*p.height],sw:[b.left*p.width,b.bottom*p.height],se:[b.right*p.width,b.bottom*p.height]};
+    const key=Object.keys(handles).find(function(name){const point=handles[name];return Math.hypot(point[0]-p.px,point[1]-p.py)<=12;});
+    const inside=p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom;
+    if(key||inside){hit=def.id;corner=key||null;bounds=b;break;}
+  }
+  if(!hit)return;
+  simRoiSelected=hit;simRoiDrag={id:hit,mode:corner?"resize":"move",corner:corner,start:p,initial:Object.assign({},bounds)};
+  simRoiCanvas.setPointerCapture(event.pointerId);simRoiUpdateSelection();drawSimRoiOverlay();event.preventDefault();
+}
+function simRoiPointerMove(event){
+  if(!simRoiDrag)return;
+  const p=simRoiPoint(event),drag=simRoiDrag,b=Object.assign({},drag.initial),dx=p.x-drag.start.x,dy=p.y-drag.start.y,minSize=.008;
+  if(drag.mode==="move"){const width=b.right-b.left,height=b.bottom-b.top;b.left=simRoiClamp(b.left+dx,0,1-width);b.right=b.left+width;b.top=simRoiClamp(b.top+dy,0,1-height);b.bottom=b.top+height;}
+  else{
+    if(drag.corner==="nw"||drag.corner==="sw")b.left=simRoiClamp(b.left+dx,0,b.right-minSize);
+    if(drag.corner==="ne"||drag.corner==="se")b.right=simRoiClamp(b.right+dx,b.left+minSize,1);
+    if(drag.corner==="nw"||drag.corner==="ne")b.top=simRoiClamp(b.top+dy,0,b.bottom-minSize);
+    if(drag.corner==="sw"||drag.corner==="se")b.bottom=simRoiClamp(b.bottom+dy,b.top+minSize,1);
+  }
+  simRoiWriteBounds(drag.id,b);drawSimRoiOverlay();setText("sim-roi-status","Unsaved ROI changes");
+}
+function simRoiPointerUp(){if(simRoiDrag){simRoiDrag=null;drawSimRoiOverlay();}}
+function bindSimRoiEditor(){
+  if(!simRoiCanvas||!caps.supports_lane_roi)return;
+  document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.addEventListener("click",function(){simRoiSelected=button.dataset.simRoiSelect;simRoiUpdateSelection();drawSimRoiOverlay();});});
+  document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",drawSimRoiOverlay);});
+  $("sim-roi-overlay-toggle").addEventListener("change",function(){simRoiUpdateSelection();drawSimRoiOverlay();});
+  simRoiCanvas.addEventListener("pointerdown",simRoiPointerDown);simRoiCanvas.addEventListener("pointermove",simRoiPointerMove);
+  simRoiCanvas.addEventListener("pointerup",simRoiPointerUp);simRoiCanvas.addEventListener("pointercancel",simRoiPointerUp);
+  simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){const el=$(id);if(el)el.addEventListener("input",drawSimRoiOverlay);});});
+  window.addEventListener("resize",drawSimRoiOverlay);camera.addEventListener("load",drawSimRoiOverlay);
+  $("sim-roi-save").addEventListener("click",async function(){
+    if(!simRoiControlsEnabled)return;
+    const settings={};
+    for(const def of simRoiDefs){
+      const b=simRoiBounds(def.id);
+      if(!b){setText("sim-roi-status","Invalid "+def.label+" bounds; check the numeric fields.");return;}
+      const prefix=def.id+"_";
+      Object.keys(def.fields).forEach(function(key){settings[prefix+({top:"TOP_ROI",bottom:"BOTTOM_ROI",left:"LEFT_ROI",right:"RIGHT_ROI"})[key]]=b[key];});
+    }
+    const button=$("sim-roi-save");button.disabled=true;setText("sim-roi-status","Saving ROI settings…");
+    try{
+      const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:settings})});
+      const data=await response.json();
+      if(!response.ok||!data.success)throw new Error(data.message||"ROI save failed");
+      setText("sim-roi-status","Saved to "+mode+".sim.json");await loadSettings();
+    }catch(error){setText("sim-roi-status","Could not save: "+(error.message||error));}
+    finally{button.disabled=!simRoiControlsEnabled;}
+  });
+  simRoiUpdateSelection();drawSimRoiOverlay();
+}
+bindSimRoiEditor();
 async function loadSettings(){
   const response=await fetch("/api/simulation/settings",{cache:"no-store"});
   const data=await response.json();
   if(!response.ok||!data.success) throw new Error(data.message||"Could not load simulator settings");
+  simRoiControlsEnabled=!!data.controls_enabled;
   populate(data.settings||{});
+  const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
   $("save-settings").disabled=!data.controls_enabled;
   if($("open-camera-editor"))$("open-camera-editor").disabled=!data.controls_enabled;
   $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
