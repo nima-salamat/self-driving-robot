@@ -60,6 +60,10 @@ class SimulationRuntime:
         self._stop_event_active = False
         self._camera_editor_active = False
         self._scene_edit_active = False
+        # CARLA is deliberately disarmed on every process start. AVIS keeps
+        # its historical auto-run behavior until it gains a separate run UI.
+        self._run_enabled = self.backend != "carla"
+        self._last_image_diagnostics = {}
         self._distance_accumulator_cm = 0.0
         self._encoder_pulses = 0
         self._encoder_delta = 0
@@ -88,20 +92,35 @@ class SimulationRuntime:
         config.simulator_backend = self.backend
         self._record_event("info", "Virtual actuator/encoder initialized; no physical Arduino is attached.")
 
-    def _record_event(self, level, message):
+    def _record_event(self, level, message, *, log=True):
         event = {"timestamp": time.time(), "level": str(level).upper(), "message": str(message)[:500]}
         with self._state_lock:
             self._events.append(event)
-        getattr(logger, str(level).lower(), logger.info)("SIM/%s: %s", self.backend, message)
+        if log:
+            getattr(logger, str(level).lower(), logger.info)("SIM/%s: %s", self.backend, message)
 
     def _publish_frame(self, sensor_frame, perception, command):
         debug = perception.get("debug") if isinstance(perception, dict) else None
         debug_frame = debug.get("combined") if isinstance(debug, dict) else None
-        display = (
-            debug_frame.copy()
-            if isinstance(debug_frame, np.ndarray) and debug_frame.size
-            else sensor_frame.image.copy()
-        )
+        # Use the adapter's raw camera image by default. When BEV is enabled,
+        # show its processing frame only when it contains real image content;
+        # a blank warp must never replace an otherwise valid camera image.
+        display = sensor_frame.image.copy()
+        frame_source = "camera"
+        if bool(getattr(self.config, "USE_BEV", False)) and isinstance(debug_frame, np.ndarray) and debug_frame.size:
+            sample = debug_frame[::16, ::16]
+            if sample.size and float(np.mean(sample)) > 1.0:
+                display = debug_frame.copy()
+                frame_source = "bev"
+        sample = display[::16, ::16]
+        self._last_image_diagnostics = {
+            "width": int(display.shape[1]),
+            "height": int(display.shape[0]),
+            "mean_intensity": round(float(np.mean(sample)), 2) if sample.size else 0.0,
+            "max_intensity": int(np.max(sample)) if sample.size else 0,
+            "source": frame_source,
+            "looks_black": bool(not sample.size or float(np.mean(sample)) < 1.0 or int(np.max(sample)) < 4),
+        }
         draw_data = debug.get("draw_data") if isinstance(debug, dict) else None
         if isinstance(draw_data, dict):
             try:
@@ -147,14 +166,43 @@ class SimulationRuntime:
             }, received_at=now)
 
     def _record_command_if_changed(self, perception, command):
-        key = (str(perception.get("lane_type", "none")),
-               bool(perception.get("perception_valid", False)),
-               round(command.steering, 2), round(command.throttle, 2), round(command.brake, 2))
+        # Steering changes almost every frame. They belong in the live state
+        # panel, not in the terminal: emitting an INFO line per frame adds
+        # avoidable console I/O and can materially reduce processing FPS.
+        key = (
+            str(perception.get("lane_type", "none")),
+            bool(perception.get("perception_valid", False)),
+            bool(command.throttle > 0.001),
+            bool(command.brake >= 0.5),
+            str(command.reason),
+        )
         if key != self._last_event_key:
             self._last_event_key = key
             level = "info" if perception.get("perception_valid") else "warning"
-            self._record_event(level, "virtual actuator: steering={:+.2f}, throttle={:.2f}, brake={:.2f}; {}".format(
-                command.steering, command.throttle, command.brake, command.reason))
+            message = "virtual actuator state changed: throttle={:.2f}, brake={:.2f}; {}".format(
+                command.throttle, command.brake, command.reason
+            )
+            self._record_event(level, message, log=False)
+
+    def set_run_enabled(self, enabled):
+        """Arm/disarm CARLA autonomous motion; disarming applies the brake immediately."""
+        if self.backend != "carla":
+            raise RuntimeError("Explicit run mode is currently available only for CARLA.")
+        enabled = bool(enabled)
+        if enabled == self._run_enabled:
+            return self._run_enabled
+        if enabled:
+            if not self.adapter.connected or not self._carla_vehicle_ready():
+                raise RuntimeError("CARLA vehicle is not ready; autonomous run cannot be started.")
+            self._run_enabled = True
+            self._last_error = None
+            self._stop_event_active = False
+            self._record_event("info", "CARLA autonomous run enabled by an explicit Stream command.")
+        else:
+            self._run_enabled = False
+            self._safe_stop("CARLA run mode stopped; waiting for an explicit Start Run command.")
+            self._record_event("warning", "CARLA autonomous run disabled; vehicle is held by the brake.")
+        return self._run_enabled
 
     def set_camera_editor_active(self, active):
         """Hold the CARLA vehicle while the user is positioning the camera."""
@@ -175,6 +223,8 @@ class SimulationRuntime:
             return
         self._scene_edit_active = active
         if active:
+            if self.backend == "carla":
+                self.set_run_enabled(False)
             self._safe_stop("CARLA scene editor is changing the world, vehicle, or spawn point.")
             self._record_event("warning", "CARLA scene change started; autonomous throttle is suspended.")
         else:
@@ -238,6 +288,9 @@ class SimulationRuntime:
                 "mode": self.mode, "backend": self.backend, "vision_profile": self.vision_profile,
                 "editor_profile": "simulator", "connected": bool(self.adapter.connected),
                 "camera_editor_active": bool(self._camera_editor_active),
+                "run_enabled": bool(self._run_enabled),
+                "run_mode": "running" if self._run_enabled else "stopped",
+                "image": dict(self._last_image_diagnostics),
                 "running": self._started_at is not None and not self.shutdown_event.is_set(),
                 "frame_sequence": int(getattr(frame, "sequence", 0)) if frame is not None else 0,
                 "frame_age_ms": round(age_ms, 1) if age_ms is not None else None,
@@ -262,6 +315,9 @@ class SimulationRuntime:
             self._started_at = time.monotonic()
             self._stop_event_active = False
             self._record_event("info", f"Connected {self.backend}; {self.vision_profile} vision processor loaded.")
+            if self.backend == "carla":
+                # Apply a physical CARLA brake before the first sensor/control cycle.
+                self._safe_stop("CARLA connected in STOPPED mode; press Start Run to enable autonomy.")
             while not self.shutdown_event.is_set():
                 frame = self.adapter.read(timeout=0.25)
                 now = time.monotonic()
@@ -313,6 +369,12 @@ class SimulationRuntime:
                         steering=command.steering, throttle=0.0, brake=1.0,
                         servo_angle=command.servo_angle, target_speed=0.0,
                         reason="crosswalk detected; simulator braking",
+                    )
+                if self.backend == "carla" and not self._run_enabled:
+                    command = VehicleCommand(
+                        steering=command.steering, throttle=0.0, brake=1.0,
+                        servo_angle=command.servo_angle, target_speed=0.0,
+                        reason="run mode stopped; waiting for explicit Start Run command",
                     )
                 if self.backend == "carla" and (self._camera_editor_active or self._scene_edit_active):
                     hold_reason = ("CARLA scene is being reconfigured; vehicle held stationary"
