@@ -326,6 +326,8 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
                         self.assertIn('id="sim-roi-mirror-selected"', page_text)
+                        self.assertIn("Lane loop ", page_text)
+                        self.assertIn("Debug render ", page_text)
                         self.assertIn("Changes are saved automatically", page_text)
                         self.assertIn('id="target-speed" type="number" min="0" max="200" step="any"', page_text)
                         self.assertIn('id="throttle-limit" type="number" min="0" max="1" step="any"', page_text)
@@ -418,6 +420,75 @@ class SimulatorEditorTests(unittest.TestCase):
                 self.assertEqual(saved["RL_TOP_ROI"], 0.1)
                 self.assertTrue(saved["RL_MIRRORED"])
                 self.assertTrue(saved["LL_MIRRORED"])
+
+
+class SimulatorFramePipelineTests(unittest.TestCase):
+    def test_carla_camera_callback_never_overwrites_lane_debug_stream_frame(self):
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        annotated_frame = np.full((3, 4, 3), 90, dtype=np.uint8)
+        config = SimpleNamespace(
+            STREAM=True,
+            debug_frames_list=[None, annotated_frame],
+            stream_frame_seq=41,
+        )
+        adapter = CarlaAdapter(config)
+        bgra = np.zeros((3, 4, 4), dtype=np.uint8)
+        bgra[:, :, 2] = 180
+        bgra[:, :, 3] = 255
+        camera_image = SimpleNamespace(
+            raw_data=bgra.tobytes(), width=4, height=3, frame=101, timestamp=12.0
+        )
+
+        adapter._on_camera(camera_image)
+
+        self.assertIs(config.debug_frames_list[-1], annotated_frame)
+        self.assertEqual(config.stream_frame_seq, 41)
+        self.assertEqual(adapter.camera_diagnostics()["callback_count"], 1)
+        self.assertEqual(adapter.camera_diagnostics()["callback_fps"], 0.0)
+        self.assertEqual(adapter._image.shape, (3, 4, 3))
+
+    def test_simulator_debug_renderer_coalesces_to_latest_pending_frame(self):
+        import threading
+        from modes.simulation.runtime import SimulationRuntime
+
+        config = SimpleNamespace(
+            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95,
+            MAX_SERVO_ANGLE=130, SIMULATOR_TARGET_SPEED=5.0,
+            SIMULATOR_THROTTLE_LIMIT=0.12, SIMULATOR_STEERING_LIMIT=0.28,
+            SIMULATOR_STEERING_RATE=0.8, SIMULATOR_THROTTLE_RISE_RATE=0.12,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            STREAM=False, debug_frames_list=[None, None],
+        )
+        runtime = SimulationRuntime(config)
+        first_render_started = threading.Event()
+        release_first_render = threading.Event()
+        latest_render_finished = threading.Event()
+        rendered_sequences = []
+
+        def fake_render(sensor_frame, perception, command):
+            rendered_sequences.append(sensor_frame.sequence)
+            if sensor_frame.sequence == 1:
+                first_render_started.set()
+                release_first_render.wait(2.0)
+            elif sensor_frame.sequence == 3:
+                latest_render_finished.set()
+
+        runtime._publish_frame = fake_render
+        runtime._start_visualization_worker()
+        try:
+            runtime._queue_frame_for_stream(SimpleNamespace(sequence=1), {}, None)
+            self.assertTrue(first_render_started.wait(1.0))
+            runtime._queue_frame_for_stream(SimpleNamespace(sequence=2), {}, None)
+            runtime._queue_frame_for_stream(SimpleNamespace(sequence=3), {}, None)
+            release_first_render.set()
+            self.assertTrue(latest_render_finished.wait(1.0))
+        finally:
+            release_first_render.set()
+            runtime._stop_visualization_worker()
+
+        self.assertEqual(rendered_sequences, [1, 3])
 
 
 class VirtualControllerTests(unittest.TestCase):
