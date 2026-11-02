@@ -259,6 +259,10 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="camera-pitch-deg">Vision camera pitch (degrees)</label><input id="camera-pitch-deg" type="number" min="-90" max="90" step=".5" name="CAMERA_PITCH_DEG"></div>
               <div class="field"><label for="camera-height">Vision camera height (cm)</label><input id="camera-height" type="number" min=".1" max="1000" step="1" name="CAMERA_HEIGHT"></div>
               <div class="field"><label for="lane-width">Expected lane width (cm)</label><input id="lane-width" type="number" min=".1" max="1000" step="1" name="LANE_WIDTH"></div>
+              <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="1" name="MIN_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="1" name="SERVO_CENTER"></div>
+              <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="1" name="MAX_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
               <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step=".01" name="RL_TOP_WIDTH_FACTOR"></div>
               <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step=".01" name="LL_TOP_WIDTH_FACTOR"></div>
             </div>
@@ -415,6 +419,8 @@ function populate(s){
     "lane-roi-mode":"LANE_ROI_MODE","rl-top-factor":"RL_TOP_WIDTH_FACTOR",
     "ll-top-factor":"LL_TOP_WIDTH_FACTOR","cw-top-factor":"CW_TOP_WIDTH_FACTOR",
     "camera-pitch-deg":"CAMERA_PITCH_DEG","camera-height":"CAMERA_HEIGHT","lane-width":"LANE_WIDTH",
+    "min-servo":"MIN_SERVO_ANGLE","servo-center":"SERVO_CENTER","max-servo":"MAX_SERVO_ANGLE",
+    "servo-direction":"SERVO_DIRECTION",
     "bev-tl-x":"BEV_SRC_TL_X","bev-tl-y":"BEV_SRC_TL_Y",
     "bev-tr-x":"BEV_SRC_TR_X","bev-tr-y":"BEV_SRC_TR_Y",
     "bev-br-x":"BEV_SRC_BR_X","bev-br-y":"BEV_SRC_BR_Y",
@@ -839,6 +845,10 @@ $("settings-form").addEventListener("submit",async function(event){
     if($("camera-pitch-deg"))s.CAMERA_PITCH_DEG=Number($("camera-pitch-deg").value);
     if($("camera-height"))s.CAMERA_HEIGHT=Number($("camera-height").value);
     if($("lane-width"))s.LANE_WIDTH=Number($("lane-width").value);
+    if($("min-servo"))s.MIN_SERVO_ANGLE=Number($("min-servo").value);
+    if($("servo-center"))s.SERVO_CENTER=Number($("servo-center").value);
+    if($("max-servo"))s.MAX_SERVO_ANGLE=Number($("max-servo").value);
+    if($("servo-direction"))s.SERVO_DIRECTION=$("servo-direction").value;
     if($("hough-morph-close"))s.HOUGH_MORPH_CLOSE=$("hough-morph-close").checked;
     if($("old-method"))s.OLD_METHOD=$("old-method").checked;
     if($("rl-top-factor"))s.RL_TOP_WIDTH_FACTOR=Number($("rl-top-factor").value);
