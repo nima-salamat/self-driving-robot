@@ -49,6 +49,10 @@ The CARLA adapter manages the client connection, vehicle actor and sensor lifecy
 
 The editor's vehicle/map/spawn/camera values are simulator settings. Saving them requires Stream control to be enabled; use `--stream-read-only` when you want a read-only dashboard.
 
+Map changes use a dedicated 120-second CARLA RPC timeout, then restore the normal simulator request timeout. While the world is being replaced, the adapter destroys and respawns its vehicle/sensors under a scene-transition lock. The runtime commands braking and waits while the CARLA vehicle actor is temporarily unavailable instead of treating that expected transition as a fatal actuator error. If a map request times out after the server has already switched worlds, the adapter re-queries the active world and attempts to respawn there before reporting the failed selection.
+
+For the City vision profile, the simulator Stream renders the same structured lane/crosswalk diagnostics as the physical City Stream. The camera preview includes RL (right lane), LL (left lane), and CW (crosswalk) ROI overlays, including the active rectangle/trapezoid masks and BEV processing frame. With Stream control enabled, select an ROI, drag inside it to move it, drag a corner to resize it, then save; these values are written only to `carla.sim.json`. The numeric ROI fields remain available alongside the visual editor.
+
 ## AVIS Engine-specific behavior
 
 Implementation: `python/modes/simulation/avis_adapter.py`, using the bundled AVIS client.
