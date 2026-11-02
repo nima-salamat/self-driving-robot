@@ -23,6 +23,7 @@ class CarlaAdapter(SimulatorAdapter):
         self._editor_transform = None
         self._camera_mount_preview = None
         self._camera_mount_applied = None
+        self._camera_mount_wait_sequence = None
         self._condition = threading.Condition()
         self._image = self._image_at = None
         self._sequence = self._read_sequence = 0
@@ -668,6 +669,8 @@ class CarlaAdapter(SimulatorAdapter):
         if self.world is None or self.vehicle is None or not self.connected:
             raise RuntimeError("CARLA vehicle is not connected")
         if self._camera_mount_applied == values and self.camera is not None:
+            with self._condition:
+                self._camera_mount_wait_sequence = None
             return dict(values)
 
         # Create the replacement before stopping the current sensor. It remains
@@ -681,6 +684,10 @@ class CarlaAdapter(SimulatorAdapter):
                     previous.stop()
                 except Exception:
                     logger.debug("Could not stop previous CARLA RGB sensor cleanly", exc_info=True)
+            # Set the barrier immediately before listening so an in-flight frame
+            # from the old sensor cannot satisfy the post-apply readiness wait.
+            with self._condition:
+                self._camera_mount_wait_sequence = self._sequence
             replacement.listen(self._on_camera)
         except Exception:
             try:
@@ -709,6 +716,24 @@ class CarlaAdapter(SimulatorAdapter):
             self._read_sequence = self._sequence
             self._condition.notify_all()
         return dict(values)
+
+    def wait_for_camera_frame(self, timeout=2.0):
+        """Wait until the newly attached RGB sensor has delivered a fresh frame."""
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        with self._condition:
+            baseline = self._camera_mount_wait_sequence
+            if baseline is None:
+                return self._sequence if self._image is not None else None
+            while self._sequence <= baseline and self.connected:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self._condition.wait(remaining)
+            if self._sequence <= baseline or self._image is None:
+                return None
+            sequence = int(self._sequence)
+            self._camera_mount_wait_sequence = None
+            return sequence
 
     def _on_editor_camera(self, image):
         try:
