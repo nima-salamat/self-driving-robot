@@ -726,11 +726,35 @@ class CarlaAdapter(SimulatorAdapter):
             self.snap_camera_editor_to_mount()
         return self.camera_editor_state()
 
+    @staticmethod
+    def _transform_state(transform):
+        if transform is None:
+            return None
+        location = transform.location
+        rotation = transform.rotation
+        return {
+            "x": round(float(location.x), 3),
+            "y": round(float(location.y), 3),
+            "z": round(float(location.z), 3),
+            "pitch": round(float(rotation.pitch), 2),
+            "yaw": round(float(rotation.yaw), 2),
+            "roll": round(float(rotation.roll), 2),
+        }
+
     def camera_editor_state(self):
         with self._condition:
             image_at = self._editor_image_at
         age_ms = None if image_at is None else max(0.0, (time.monotonic() - image_at) * 1000.0)
         world = self._editor_transform
+        stream_transform = None
+        if self.camera is not None:
+            try:
+                # This is the actual world pose of the attached RGB sensor whose
+                # callback supplies the main Stream/debug frame. It is deliberately
+                # reported separately from the independent free-fly preview camera.
+                stream_transform = self._transform_state(self.camera.get_transform())
+            except Exception:
+                logger.debug("Could not read live CARLA Stream camera transform", exc_info=True)
         return {
             "available": bool(self.connected and self.vehicle is not None),
             "active": self.editor_camera is not None,
@@ -738,14 +762,8 @@ class CarlaAdapter(SimulatorAdapter):
             "preview_age_ms": round(age_ms, 1) if age_ms is not None else None,
             "mount": dict(self._camera_mount_preview or self._mount_values_from_config()),
             "saved_mount": self._mount_values_from_config(),
-            "world_transform": None if world is None else {
-                "x": round(float(world.location.x), 3),
-                "y": round(float(world.location.y), 3),
-                "z": round(float(world.location.z), 3),
-                "pitch": round(float(world.rotation.pitch), 2),
-                "yaw": round(float(world.rotation.yaw), 2),
-                "roll": round(float(world.rotation.roll), 2),
-            },
+            "stream_camera_transform": stream_transform,
+            "world_transform": self._transform_state(world),
         }
 
     def camera_editor_jpeg(self):
