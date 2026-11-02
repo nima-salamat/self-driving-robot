@@ -162,6 +162,12 @@ class SimulationRuntime:
         else:
             self._record_event("info", "CARLA scene change finished; autonomous control may resume.")
 
+    def _carla_vehicle_ready(self):
+        if self.backend != "carla":
+            return True
+        readiness = getattr(self.adapter, "control_ready", None)
+        return bool(readiness()) if callable(readiness) else True
+
     def _safe_stop(self, reason):
         self._last_error = str(reason)
         if not self._stop_event_active:
@@ -299,7 +305,27 @@ class SimulationRuntime:
                         servo_angle=command.servo_angle, target_speed=0.0,
                         reason=hold_reason,
                     )
+                if self.backend == "carla" and not self._carla_vehicle_ready():
+                    hold_reason = "CARLA vehicle actor is temporarily unavailable; waiting for the scene to become ready."
+                    self._last_command = VehicleCommand(
+                        steering=command.steering, throttle=0.0, brake=1.0,
+                        servo_angle=command.servo_angle, target_speed=0.0, reason=hold_reason,
+                    )
+                    if not self._stop_event_active:
+                        self._record_event("warning", hold_reason)
+                    self._stop_event_active = True
+                    self.shutdown_event.wait(0.05)
+                    continue
                 if not self.adapter.apply_control(command):
+                    # A stale camera frame can be processed just as CARLA destroys the old actor.
+                    if self.backend == "carla" and not self._carla_vehicle_ready():
+                        self._last_command = VehicleCommand(
+                            steering=command.steering, throttle=0.0, brake=1.0,
+                            servo_angle=command.servo_angle, target_speed=0.0,
+                            reason="CARLA vehicle actor is temporarily unavailable; waiting for scene recovery.",
+                        )
+                        self.shutdown_event.wait(0.05)
+                        continue
                     raise RuntimeError("simulator adapter did not accept the virtual actuator command")
                 self._last_command = command
                 self._last_result = result
