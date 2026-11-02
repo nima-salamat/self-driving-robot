@@ -31,6 +31,7 @@ class CarlaAdapter(SimulatorAdapter):
         self._spawn_transform = None
         self._spawn_point_index = -1
         self._hold_control_until = 0.0
+        self._scene_transition_active = False
 
     def connect(self):
         try:
@@ -51,7 +52,7 @@ class CarlaAdapter(SimulatorAdapter):
         if requested_map.strip().lower() not in {"", "current"}:
             resolved_map = self._resolve_map_name(requested_map)
             if self._map_leaf(self.world.get_map().name).casefold() != self._map_leaf(resolved_map).casefold():
-                self.world = self.client.load_world(resolved_map)
+                self.world = self._load_world_with_timeout(resolved_map)
             self.config.SIMULATOR_MAP = resolved_map
         try:
             self._spawn_vehicle_and_sensors()
@@ -73,6 +74,23 @@ class CarlaAdapter(SimulatorAdapter):
         except Exception as exc:
             raise RuntimeError("Could not list CARLA maps: " + str(exc)) from exc
         return sorted({str(value) for value in values if str(value).strip()}, key=lambda value: self._map_leaf(value).casefold())
+
+    def _load_world_with_timeout(self, map_name):
+        """Load a world with a map-transition timeout, then restore the normal RPC timeout."""
+        if self.client is None:
+            raise RuntimeError("CARLA client is not connected")
+        normal_timeout = float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 5.0))
+        load_timeout = max(60.0, normal_timeout)
+        logger.info("Loading CARLA map %s with a %.0f-second RPC timeout", map_name, load_timeout)
+        self.client.set_timeout(load_timeout)
+        try:
+            return self.client.load_world(map_name)
+        finally:
+            self.client.set_timeout(normal_timeout)
+
+    def control_ready(self):
+        """Whether a live vehicle actor currently exists for virtual actuator commands."""
+        return bool(self.connected and self.vehicle is not None and not self._scene_transition_active)
 
     def _resolve_map_name(self, requested):
         requested = str(requested or "").strip()
@@ -373,21 +391,46 @@ class CarlaAdapter(SimulatorAdapter):
             if self._map_leaf(current).casefold() == self._map_leaf(resolved).casefold():
                 self.config.SIMULATOR_MAP = resolved
                 return self.scene_state()
+
             previous_spawn = int(self._spawn_point_index)
+            self._scene_transition_active = True
             self._brake_vehicle()
             self._destroy_actors()
             try:
-                self.world = self.client.load_world(resolved)
+                self.world = self._load_world_with_timeout(resolved)
                 self.config.SIMULATOR_MAP = resolved
                 point_count = len(self.world.get_map().get_spawn_points())
-                self.config.SIMULATOR_SPAWN_POINT_INDEX = previous_spawn if previous_spawn < point_count else -1
+                self.config.SIMULATOR_SPAWN_POINT_INDEX = previous_spawn if 0 <= previous_spawn < point_count else -1
                 self._spawn_vehicle_and_sensors()
             except Exception as exc:
                 logger.exception("CARLA world switch failed")
-                raise RuntimeError("Could not load/initialize CARLA map " + self._map_leaf(resolved) + ": " + str(exc)) from exc
-            self._mark_scene_changed()
-            logger.info("CARLA world changed to %s", self._map_leaf(resolved))
-            return self.scene_state()
+                recovery_error = None
+                try:
+                    # A timed-out/failed load may nevertheless have changed the server world.
+                    # Re-query it and respawn there so the adapter is not left with no actors.
+                    self.world = self.client.get_world()
+                    active_map = str(self.world.get_map().name)
+                    point_count = len(self.world.get_map().get_spawn_points())
+                    self.config.SIMULATOR_MAP = active_map
+                    self.config.SIMULATOR_SPAWN_POINT_INDEX = previous_spawn if 0 <= previous_spawn < point_count else -1
+                    self._spawn_vehicle_and_sensors()
+                    self._mark_scene_changed()
+                    logger.warning("CARLA adapter recovered on active map %s after map switch failure", self._map_leaf(active_map))
+                except Exception as recovery_exc:
+                    recovery_error = recovery_exc
+                    logger.exception("CARLA adapter recovery after map switch failure also failed")
+                detail = "Could not load/initialize CARLA map " + self._map_leaf(resolved) + ": " + str(exc)
+                if recovery_error is not None:
+                    detail += "; automatic recovery also failed: " + str(recovery_error)
+                else:
+                    detail += "; the adapter was recovered on " + self._map_leaf(self.world.get_map().name)
+                raise RuntimeError(detail) from exc
+            else:
+                self._mark_scene_changed()
+                logger.info("CARLA world changed to %s", self._map_leaf(resolved))
+                return self.scene_state()
+            finally:
+                self._scene_transition_active = False
 
     def _on_camera(self, image):
         try:
