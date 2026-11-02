@@ -391,14 +391,17 @@ class VisionProcessor:
         else:
             kp = 0
 
-        if SERVO_DIRECTION == "ltr":
+        servo_direction = str(getattr(conf, "SERVO_DIRECTION", SERVO_DIRECTION)).lower()
+        if servo_direction == "ltr":
             steering_angle = servo_center - kp * error
-        elif SERVO_DIRECTION == "rtl":
+        elif servo_direction == "rtl":
             steering_angle = servo_center + kp * error
         else:
             steering_angle = servo_center - kp * error
-        
-        steering_angle = int(max(MIN_SERVO_ANGLE, min(MAX_SERVO_ANGLE, steering_angle)))
+
+        servo_min = float(getattr(conf, "MIN_SERVO_ANGLE", MIN_SERVO_ANGLE))
+        servo_max = float(getattr(conf, "MAX_SERVO_ANGLE", MAX_SERVO_ANGLE))
+        steering_angle = int(max(servo_min, min(servo_max, steering_angle)))
         
         if lane_type == "none":
             # A valid frame with temporarily missing lane markings is not a
