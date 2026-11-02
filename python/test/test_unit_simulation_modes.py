@@ -64,6 +64,26 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertTrue(config.SIMULATOR_LIDAR_ENABLED is False)
             self.assertNotEqual(carla_path, avis_path)
 
+    def test_carla_map_load_uses_long_timeout_and_restores_client_timeout(self):
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        class FakeClient:
+            def __init__(self):
+                self.timeouts = []
+                self.world = object()
+            def set_timeout(self, value):
+                self.timeouts.append(float(value))
+            def load_world(self, map_name):
+                self.map_name = map_name
+                return self.world
+
+        adapter = CarlaAdapter(SimpleNamespace(SIMULATOR_TIMEOUT_S=5.0))
+        client = FakeClient()
+        adapter.client = client
+        self.assertIs(adapter._load_world_with_timeout("Town05"), client.world)
+        self.assertEqual(client.map_name, "Town05")
+        self.assertEqual(client.timeouts, [60.0, 5.0])
+
     def test_avis_target_speed_remains_percentage_limited(self):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
@@ -166,6 +186,9 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("camera-editor-modal", page_text)
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
+                        self.assertIn('id="sim-roi-canvas"', page_text)
+                        self.assertIn('data-sim-roi-select="RL"', page_text)
+                        self.assertIn("Drag inside to move it", page_text)
                         self.assertIn('id="carla-map-select"', page_text)
                         self.assertIn('id="carla-vehicle-grid"', page_text)
                         self.assertIn('id="carla-spawn-map"', page_text)
@@ -384,6 +407,63 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertTrue(adapter.commands)
         self.assertTrue(all(command.throttle == 0.0 and command.brake == 1.0 for command in adapter.commands))
         self.assertTrue(any("LiDAR is missing or stale" in command.reason for command in adapter.commands))
+
+    def test_carla_runtime_waits_when_vehicle_actor_is_temporarily_unavailable(self):
+        import threading
+        import time
+        from modes.simulation.base_adapter import SensorFrame
+        from modes.simulation.runtime import SimulationRuntime
+
+        shutdown = threading.Event()
+        frame = SensorFrame(
+            image=np.zeros((8, 12, 3), dtype=np.uint8),
+            captured_at=time.monotonic(),
+            sequence=1,
+        )
+
+        class FakeAdapter:
+            connected = True
+            def __init__(self):
+                self.commands = []
+                self.closed = False
+            def connect(self):
+                pass
+            def control_ready(self):
+                return False
+            def read(self, timeout=0.25):
+                shutdown.set()
+                return frame
+            def apply_control(self, command):
+                self.commands.append(command)
+                return False
+            def close(self):
+                self.closed = True
+                self.connected = False
+
+        class FakeVision:
+            def detect(self, image):
+                return {"perception_valid": True, "lane_type": "both", "steering_angle": 95.0}
+
+        config = SimpleNamespace(
+            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+            SIMULATOR_TARGET_SPEED=20.0, SIMULATOR_THROTTLE_LIMIT=0.3,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            SIMULATOR_OBSTACLE_STOP_DISTANCE_CM=35.0, SIMULATOR_LIDAR_ENABLED=False,
+            SIMULATOR_STOP_ON_CROSSWALK=False, TARGET_PROCESSING_FPS=30.0,
+            ENCODER_MAP_ENABLED=False, STREAM=False, debug_frames_list=[None, None],
+            SHUTDOWN_EVENT=shutdown,
+        )
+        adapter = FakeAdapter()
+        with patch("modes.simulation.runtime.create_adapter", return_value=adapter), patch(
+            "vision.city_vision_processing.VisionProcessor", return_value=FakeVision()
+        ):
+            runtime = SimulationRuntime(config)
+            runtime.run()
+
+        self.assertTrue(adapter.closed)
+        self.assertIsNotNone(runtime._last_command)
+        self.assertEqual(runtime._last_command.brake, 1.0)
 
     def test_cli_accepts_simulation_modes_and_options(self):
         args = parse_args(["--mode", "carla", "--simulator-host", "10.0.0.2",
