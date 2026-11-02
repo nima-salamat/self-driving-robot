@@ -538,7 +538,8 @@ async function refreshSimulatorCameraFrame(){
   if(cameraFramePollActive)return;
   cameraFramePollActive=true;
   try{
-    const response=await fetch("/video_feed_frame?t="+Date.now(),{cache:"no-store",headers:{"Accept":"image/jpeg"}});
+    const since=lastCameraFrameSequence===null?"":"&since="+encodeURIComponent(lastCameraFrameSequence);
+    const response=await fetch("/video_feed_frame?t="+Date.now()+since,{cache:"no-store",headers:{"Accept":"image/jpeg"}});
     if(response.status===204){
       if(!camera.naturalWidth)setCameraFeedStatus("Waiting for the CARLA RGB sensor to publish its first frame (HTTP 204).");
       return;
@@ -1357,7 +1358,7 @@ loadSettings().then(function(){
   if(caps.simulator_backend==="carla")return loadCarlaScene();
 }).catch(function(e){status(e.message,false);});
 poll();setInterval(poll,650);
-refreshSimulatorCameraFrame();setInterval(refreshSimulatorCameraFrame,120);
+refreshSimulatorCameraFrame();setInterval(refreshSimulatorCameraFrame,40);
 function toggleSensorPanel(panelId,buttonId,expandedClass){
   const panel=$(panelId),button=$(buttonId);if(!panel||!button)return;
   const expanded=panel.classList.toggle(expandedClass);
