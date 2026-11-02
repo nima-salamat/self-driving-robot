@@ -326,6 +326,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="camera-stream-readout"', page_text)
                         self.assertIn("CARLA WORLD", page_text)
                         self.assertIn("cameraPreviewChain", page_text)
+                        self.assertIn("Save mount recreates the Stream RGB sensor", page_text)
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
@@ -446,8 +447,10 @@ class SimulatorEditorTests(unittest.TestCase):
         class FakeCamera:
             def __init__(self):
                 self.transform = None
+                self.set_transform_calls = []
 
             def set_transform(self, transform):
+                self.set_transform_calls.append(transform)
                 self.transform = transform
 
             def get_transform(self):
@@ -491,10 +494,113 @@ class SimulatorEditorTests(unittest.TestCase):
         np.testing.assert_allclose(
             reconstructed.get_matrix(), desired_world_camera.get_matrix(), atol=1e-6,
         )
-        np.testing.assert_allclose(
-            adapter.camera.get_transform().get_matrix(),
-            desired_world_camera.get_matrix(), atol=1e-6,
+        # The live Stream sensor is attached to the vehicle and is deliberately
+        # not moved with a world-space Actor.set_transform call during preview.
+        self.assertEqual(adapter.camera.set_transform_calls, [])
+        self.assertIsNone(adapter.camera.get_transform())
+
+    def test_apply_camera_mount_respawns_rgb_sensor_with_vehicle_relative_transform(self):
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        class FakeLocation:
+            def __init__(self, x=0.0, y=0.0, z=0.0):
+                self.x, self.y, self.z = float(x), float(y), float(z)
+
+        class FakeRotation:
+            def __init__(self, pitch=0.0, yaw=0.0, roll=0.0):
+                self.pitch, self.yaw, self.roll = float(pitch), float(yaw), float(roll)
+
+        class FakeTransform:
+            def __init__(self, location=None, rotation=None):
+                self.location = location or FakeLocation()
+                self.rotation = rotation or FakeRotation()
+
+        class FakeBlueprint:
+            def __init__(self):
+                self.attributes = {}
+            def set_attribute(self, key, value):
+                self.attributes[key] = value
+
+        class FakeLibrary:
+            def __init__(self):
+                self.blueprint = FakeBlueprint()
+            def find(self, blueprint_id):
+                if blueprint_id != "sensor.camera.rgb":
+                    raise AssertionError(blueprint_id)
+                return self.blueprint
+
+        class FakeSensor:
+            def __init__(self, transform, parent):
+                self.transform = transform
+                self.parent = parent
+                self.callback = None
+                self.stopped = False
+                self.destroyed = False
+                self.set_transform_calls = []
+            def listen(self, callback):
+                self.callback = callback
+            def stop(self):
+                self.stopped = True
+            def destroy(self):
+                self.destroyed = True
+            def set_transform(self, transform):
+                self.set_transform_calls.append(transform)
+
+        class FakeWorld:
+            def __init__(self):
+                self.library = FakeLibrary()
+                self.spawned = []
+            def get_blueprint_library(self):
+                return self.library
+            def spawn_actor(self, blueprint, transform, attach_to=None):
+                sensor = FakeSensor(transform, attach_to)
+                self.spawned.append(sensor)
+                return sensor
+
+        config = SimpleNamespace(
+            SIMULATOR_CAMERA_X=1.45, SIMULATOR_CAMERA_Y=0.0, SIMULATOR_CAMERA_Z=1.8,
+            SIMULATOR_CAMERA_PITCH=-8.0, SIMULATOR_CAMERA_YAW=0.0,
+            SIMULATOR_CAMERA_ROLL=0.0, CAM_WIDTH=640, CAM_HEIGHT=480,
+            SIMULATOR_CAMERA_FOV=90.0,
         )
+        adapter = CarlaAdapter(config)
+        adapter.carla = SimpleNamespace(
+            Location=FakeLocation, Rotation=FakeRotation, Transform=FakeTransform,
+        )
+        adapter.world = FakeWorld()
+        adapter.vehicle = object()
+        adapter.connected = True
+        original = FakeSensor(FakeTransform(), adapter.vehicle)
+        adapter.camera = original
+        adapter._camera_mount_preview = adapter._mount_values_from_config()
+        adapter._camera_mount_applied = adapter._mount_values_from_config()
+
+        selected_mount = {
+            "SIMULATOR_CAMERA_X": 2.4,
+            "SIMULATOR_CAMERA_Y": -0.35,
+            "SIMULATOR_CAMERA_Z": 2.15,
+            "SIMULATOR_CAMERA_PITCH": -14.5,
+            "SIMULATOR_CAMERA_YAW": 27.0,
+            "SIMULATOR_CAMERA_ROLL": 8.0,
+        }
+        adapter.apply_camera_mount(selected_mount)
+
+        self.assertEqual(len(adapter.world.spawned), 1)
+        replacement = adapter.world.spawned[0]
+        self.assertIsNot(replacement, original)
+        self.assertIs(replacement.parent, adapter.vehicle)
+        self.assertEqual(replacement.transform.location.x, 2.4)
+        self.assertEqual(replacement.transform.location.y, -0.35)
+        self.assertEqual(replacement.transform.location.z, 2.15)
+        self.assertEqual(replacement.transform.rotation.pitch, -14.5)
+        self.assertEqual(replacement.transform.rotation.yaw, 27.0)
+        self.assertEqual(replacement.transform.rotation.roll, 8.0)
+        self.assertIsNotNone(replacement.callback)
+        self.assertTrue(original.stopped)
+        self.assertTrue(original.destroyed)
+        self.assertEqual(original.set_transform_calls, [])
+        self.assertIs(adapter.camera, replacement)
+        self.assertEqual(adapter._camera_mount_applied, selected_mount)
 
     def test_carla_settings_api_accepts_user_tuning_and_mirror_flags(self):
         import os
