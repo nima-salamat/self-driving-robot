@@ -113,6 +113,7 @@ class SimulationRuntime:
             getattr(logger, str(level).lower(), logger.info)("SIM/%s: %s", self.backend, message)
 
     def _publish_frame(self, sensor_frame, perception, command):
+        render_started = time.perf_counter()
         debug = perception.get("debug") if isinstance(perception, dict) else None
         debug_frame = debug.get("combined") if isinstance(debug, dict) else None
         # Use the adapter's raw camera image by default. When BEV is enabled,
@@ -126,7 +127,7 @@ class SimulationRuntime:
                 display = debug_frame.copy()
                 frame_source = "bev"
         sample = display[::16, ::16]
-        self._last_image_diagnostics = {
+        image_diagnostics = {
             "width": int(display.shape[1]),
             "height": int(display.shape[0]),
             "mean_intensity": round(float(np.mean(sample)), 2) if sample.size else 0.0,
@@ -134,6 +135,8 @@ class SimulationRuntime:
             "source": frame_source,
             "looks_black": bool(not sample.size or float(np.mean(sample)) < 1.0 or int(np.max(sample)) < 4),
         }
+        with self._state_lock:
+            self._last_image_diagnostics = image_diagnostics
         draw_data = debug.get("draw_data") if isinstance(debug, dict) else None
         can_draw_processing_geometry = frame_source == "bev" or not bool(getattr(self.config, "USE_BEV", False))
         if isinstance(draw_data, dict) and can_draw_processing_geometry:
