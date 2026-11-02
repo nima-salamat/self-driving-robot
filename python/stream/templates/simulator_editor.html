@@ -362,6 +362,7 @@ const simRoiDefs = [
   {id:"LL",label:"Left lane",color:"#65a8ff",fields:{top:"ll-top",bottom:"ll-bottom",left:"ll-left",right:"ll-right"}},
   {id:"CW",label:"Crosswalk",color:"#f4bd63",fields:{top:"cw-top",bottom:"cw-bottom",left:"cw-left",right:"cw-right"}}
 ].filter(function(item){return item.id!=="CW"||caps.supports_crosswalk;});
+let simRoiGeometry={lane_roi_mode:"rectangle",cw_trapezoid_mode:false,rl_top_width_factor:.85,ll_top_width_factor:.85,cw_top_width_factor:.9,use_bev:false};
 let simRoiSelected="RL", simRoiDrag=null, simRoiControlsEnabled=false;
 const simRoiCanvas=$("sim-roi-canvas");
 function simRoiBounds(id){
@@ -373,6 +374,29 @@ function simRoiBounds(id){
 function simRoiWriteBounds(id,b){
   const def=simRoiDefs.find(function(item){return item.id===id;});if(!def)return;
   Object.keys(def.fields).forEach(function(key){const el=$(def.fields[key]);if(el)el.value=Number(b[key]).toFixed(3);});
+}
+function simRoiPolygon(id,b){
+  const width=b.right-b.left;
+  if(id==="RL"&&simRoiGeometry.lane_roi_mode==="trapezoid"){
+    return [[b.left,b.top],[b.left+width*simRoiGeometry.rl_top_width_factor,b.top],[b.right,b.bottom],[b.left,b.bottom]];
+  }
+  if(id==="LL"&&simRoiGeometry.lane_roi_mode==="trapezoid"){
+    return [[b.right-width*simRoiGeometry.ll_top_width_factor,b.top],[b.right,b.top],[b.right,b.bottom],[b.left,b.bottom]];
+  }
+  if(id==="CW"&&simRoiGeometry.cw_trapezoid_mode){
+    const inset=width*(1-simRoiGeometry.cw_top_width_factor)/2;
+    return [[b.left+inset,b.top],[b.right-inset,b.top],[b.right,b.bottom],[b.left,b.bottom]];
+  }
+  return [[b.left,b.top],[b.right,b.top],[b.right,b.bottom],[b.left,b.bottom]];
+}
+function simRoiContains(x,y,polygon){
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    const xi=polygon[i][0],yi=polygon[i][1],xj=polygon[j][0],yj=polygon[j][1];
+    const intersects=((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi+1e-12)+xi);
+    if(intersects)inside=!inside;
+  }
+  return inside;
 }
 function simRoiUpdateSelection(){
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.classList.toggle("active",button.dataset.simRoiSelect===simRoiSelected);});
@@ -390,13 +414,15 @@ function drawSimRoiOverlay(){
   simRoiDefs.forEach(function(def){
     const visible=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(visible&&!visible.checked)return;
     const b=simRoiBounds(def.id);if(!b)return;
-    const x=b.left*w,y=b.top*h,r=b.right*w,bt=b.bottom*h,selected=def.id===simRoiSelected;
+    const polygon=simRoiPolygon(def.id,b),selected=def.id===simRoiSelected;
+    const points=polygon.map(function(point){return [point[0]*w,point[1]*h];});
     ctx.save();ctx.fillStyle=def.color+"20";ctx.strokeStyle=def.color;ctx.lineWidth=selected?3:2;ctx.setLineDash(selected?[]:[7,4]);
-    ctx.fillRect(x,y,r-x,bt-y);ctx.strokeRect(x,y,r-x,bt-y);ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);points.slice(1).forEach(function(point){ctx.lineTo(point[0],point[1]);});ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
     ctx.font="700 12px system-ui";const label=def.id+" · "+def.label;const labelW=ctx.measureText(label).width+12;
-    ctx.fillStyle=def.color;ctx.fillRect(x,Math.max(0,y-22),labelW,20);ctx.fillStyle="#07111a";ctx.fillText(label,x+6,Math.max(14,y-8));
+    const labelX=Math.min(w-labelW,Math.max(0,points[0][0]));
+    ctx.fillStyle=def.color;ctx.fillRect(labelX,Math.max(0,points[0][1]-22),labelW,20);ctx.fillStyle="#07111a";ctx.fillText(label,labelX+6,Math.max(14,points[0][1]-8));
     if(selected){
-      [[x,y],[r,y],[x,bt],[r,bt]].forEach(function(p){ctx.fillStyle="#f4f8fc";ctx.fillRect(p[0]-5,p[1]-5,10,10);ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(p[0]-5,p[1]-5,10,10);});
+      points.forEach(function(point){ctx.fillStyle="#f4f8fc";ctx.fillRect(point[0]-5,point[1]-5,10,10);ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(point[0]-5,point[1]-5,10,10);});
     }
     ctx.restore();
   });
@@ -409,9 +435,10 @@ function simRoiPointerDown(event){
   for(let i=simRoiDefs.length-1;i>=0;i--){
     const def=simRoiDefs[i],show=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(show&&!show.checked)continue;
     const b=simRoiBounds(def.id);if(!b)continue;
-    const handles={nw:[b.left*p.width,b.top*p.height],ne:[b.right*p.width,b.top*p.height],sw:[b.left*p.width,b.bottom*p.height],se:[b.right*p.width,b.bottom*p.height]};
-    const key=Object.keys(handles).find(function(name){const point=handles[name];return Math.hypot(point[0]-p.px,point[1]-p.py)<=12;});
-    const inside=p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom;
+    const polygon=simRoiPolygon(def.id,b);
+    const handles={nw:polygon[0],ne:polygon[1],se:polygon[2],sw:polygon[3]};
+    const key=Object.keys(handles).find(function(name){const point=handles[name];return Math.hypot(point[0]*p.width-p.px,point[1]*p.height-p.py)<=12;});
+    const inside=simRoiContains(p.x,p.y,polygon);
     if(key||inside){hit=def.id;corner=key||null;bounds=b;break;}
   }
   if(!hit)return;
@@ -466,6 +493,9 @@ async function loadSettings(){
   const data=await response.json();
   if(!response.ok||!data.success) throw new Error(data.message||"Could not load simulator settings");
   simRoiControlsEnabled=!!data.controls_enabled;
+  simRoiGeometry=Object.assign(simRoiGeometry,data.roi_geometry||{});
+  const roiHint=document.querySelector("#sim-roi-editor .sim-roi-hint");
+  if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+ "Coordinates are normalized to the vision frame; City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
   populate(data.settings||{});
   const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
   $("save-settings").disabled=!data.controls_enabled;
