@@ -192,6 +192,8 @@ class SimulationRuntime:
         if enabled == self._run_enabled:
             return self._run_enabled
         if enabled:
+            if self._camera_editor_active or self._scene_edit_active:
+                raise RuntimeError("Close the CARLA camera/scene editor before starting autonomous run.")
             if not self.adapter.connected or not self._carla_vehicle_ready():
                 raise RuntimeError("CARLA vehicle is not ready; autonomous run cannot be started.")
             self._run_enabled = True
@@ -343,6 +345,14 @@ class SimulationRuntime:
                     self._safe_stop(
                         "CARLA LiDAR is missing or stale (" + age_text + "); braking until fresh sensor data returns."
                     )
+                    # LiDAR health must stop motion, not blank the camera dashboard.
+                    # Keep publishing the fresh RGB frame while waiting for LiDAR.
+                    self._last_result = {
+                        "lane_type": "not evaluated",
+                        "perception_valid": False,
+                        "crosswalk": False,
+                    }
+                    self._publish_frame(frame, self._last_result, self._last_command)
                     self.shutdown_event.wait(0.05)
                     continue
                 result = self.vision.detect(frame.image)
