@@ -457,7 +457,10 @@ function populate(s){
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
   });
-  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, safety-limited to 8)");
+  simRoiMirrors.RL=!!s.RL_MIRRORED;
+  simRoiMirrors.LL=!!s.LL_MIRRORED;
+  simRoiUpdateSelection();
+  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, editable up to 200)");
   if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
@@ -469,6 +472,8 @@ const simRoiDefs = [
 ].filter(function(item){return item.id!=="CW"||caps.supports_crosswalk;});
 let simRoiGeometry={lane_roi_mode:"rectangle",cw_trapezoid_mode:false,rl_top_width_factor:.85,ll_top_width_factor:.85,cw_top_width_factor:.9,use_bev:false};
 let simRoiSelected="RL", simRoiDrag=null, simRoiControlsEnabled=false;
+let simRoiMirrors={RL:false,LL:false};
+let simRoiSaveTimer=null,simRoiSaveInFlight=false,simRoiSaveQueued=false;
 const simRoiCanvas=$("sim-roi-canvas");
 function simRoiBounds(id){
   const def=simRoiDefs.find(function(item){return item.id===id;});if(!def)return null;
@@ -506,6 +511,11 @@ function simRoiContains(x,y,polygon){
 function simRoiUpdateSelection(){
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.classList.toggle("active",button.dataset.simRoiSelect===simRoiSelected);});
   if(simRoiCanvas)simRoiCanvas.style.pointerEvents=$("sim-roi-overlay-toggle")&&$("sim-roi-overlay-toggle").checked?"auto":"none";
+  const mirrorControl=$("sim-roi-mirror-control"),mirrorInput=$("sim-roi-mirror-selected"),mirrorLabel=$("sim-roi-mirror-label");
+  const laneSelected=simRoiSelected==="RL"||simRoiSelected==="LL";
+  if(mirrorControl)mirrorControl.classList.toggle("section-hide",!laneSelected);
+  if(mirrorInput&&laneSelected)mirrorInput.checked=!!simRoiMirrors[simRoiSelected];
+  if(mirrorLabel&&laneSelected)mirrorLabel.lastChild.textContent=" Mirror "+(simRoiSelected==="RL"?"right":"left")+" lane ROI before detection";
 }
 function fitSimulatorCameraFrame(){
   const frame=$("sim-camera-frame"),wrap=frame&&frame.parentElement;
@@ -606,33 +616,77 @@ function simRoiPointerMove(event){
   }
   simRoiWriteBounds(drag.id,b);drawSimRoiOverlay();setText("sim-roi-status","Unsaved ROI changes");
 }
-function simRoiPointerUp(){if(simRoiDrag){simRoiDrag=null;drawSimRoiOverlay();}}
+function simRoiPointerUp(){
+  if(simRoiDrag){simRoiDrag=null;drawSimRoiOverlay();scheduleSimRoiSave(180);}
+}
+function simRoiCollectSettings(){
+  const settings={};
+  for(const def of simRoiDefs){
+    const b=simRoiBounds(def.id);
+    if(!b){
+      const values={};
+      Object.keys(def.fields).forEach(function(key){const el=$(def.fields[key]);values[key]=el&&el.value!==""?Number(el.value):NaN;});
+      if(!Object.values(values).every(Number.isFinite)||Object.values(values).some(function(value){return value<0||value>1;})){
+        return {error:def.label+" ROI coordinates must be finite numbers from 0 to 1 (for example, 0.1 means 10% of the image)."};
+      }
+      if(values.top>=values.bottom)return {error:def.label+" ROI top must be smaller than bottom."};
+      if(values.left>=values.right)return {error:def.label+" ROI left must be smaller than right."};
+      return {error:"Invalid "+def.label+" ROI bounds."};
+    }
+    const prefix=def.id+"_";
+    Object.keys(def.fields).forEach(function(key){settings[prefix+({top:"TOP_ROI",bottom:"BOTTOM_ROI",left:"LEFT_ROI",right:"RIGHT_ROI"})[key]]=b[key];});
+  }
+  settings.RL_MIRRORED=!!simRoiMirrors.RL;
+  settings.LL_MIRRORED=!!simRoiMirrors.LL;
+  return {settings:settings};
+}
+function scheduleSimRoiSave(delay){
+  if(!simRoiControlsEnabled)return;
+  if(simRoiSaveTimer!==null)clearTimeout(simRoiSaveTimer);
+  setText("sim-roi-status","ROI changes pending · auto-save");
+  simRoiSaveTimer=setTimeout(function(){simRoiSaveTimer=null;saveSimRoiSettings();},Math.max(0,Number(delay)||0));
+}
+async function saveSimRoiSettings(){
+  if(!simRoiControlsEnabled)return false;
+  if(simRoiSaveInFlight){simRoiSaveQueued=true;return false;}
+  const collected=simRoiCollectSettings();
+  if(collected.error){setText("sim-roi-status",collected.error);return false;}
+  const button=$("sim-roi-save");
+  simRoiSaveInFlight=true;if(button)button.disabled=true;
+  setText("sim-roi-status","Saving ROI changes…");
+  try{
+    const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:collected.settings})});
+    const data=await response.json();
+    if(!response.ok||!data.success)throw new Error(data.message||"ROI save failed");
+    setText("sim-roi-status","Auto-saved to "+mode+".sim.json");
+    return true;
+  }catch(error){
+    setText("sim-roi-status","Could not auto-save: "+(error.message||error));
+    return false;
+  }finally{
+    simRoiSaveInFlight=false;if(button)button.disabled=!simRoiControlsEnabled;
+    if(simRoiSaveQueued){simRoiSaveQueued=false;scheduleSimRoiSave(0);}
+  }
+}
 function bindSimRoiEditor(){
   if(!simRoiCanvas||!caps.supports_lane_roi)return;
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.addEventListener("click",function(){simRoiSelected=button.dataset.simRoiSelect;simRoiUpdateSelection();drawSimRoiOverlay();});});
   document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",drawSimRoiOverlay);});
   $("sim-roi-overlay-toggle").addEventListener("change",function(){simRoiUpdateSelection();drawSimRoiOverlay();});
+  $("sim-roi-mirror-selected").addEventListener("change",function(){
+    if(simRoiSelected!=="RL"&&simRoiSelected!=="LL")return;
+    simRoiMirrors[simRoiSelected]=this.checked;scheduleSimRoiSave(100);
+  });
   simRoiCanvas.addEventListener("pointerdown",simRoiPointerDown);simRoiCanvas.addEventListener("pointermove",simRoiPointerMove);
   simRoiCanvas.addEventListener("pointerup",simRoiPointerUp);simRoiCanvas.addEventListener("pointercancel",simRoiPointerUp);
-  simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){const el=$(id);if(el)el.addEventListener("input",drawSimRoiOverlay);});});
+  simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){
+    const el=$(id);if(!el)return;
+    el.addEventListener("input",function(){drawSimRoiOverlay();scheduleSimRoiSave(700);});
+  });});
   window.addEventListener("resize",drawSimRoiOverlay);camera.addEventListener("load",drawSimRoiOverlay);
-  $("sim-roi-save").addEventListener("click",async function(){
-    if(!simRoiControlsEnabled)return;
-    const settings={};
-    for(const def of simRoiDefs){
-      const b=simRoiBounds(def.id);
-      if(!b){setText("sim-roi-status","Invalid "+def.label+" bounds; check the numeric fields.");return;}
-      const prefix=def.id+"_";
-      Object.keys(def.fields).forEach(function(key){settings[prefix+({top:"TOP_ROI",bottom:"BOTTOM_ROI",left:"LEFT_ROI",right:"RIGHT_ROI"})[key]]=b[key];});
-    }
-    const button=$("sim-roi-save");button.disabled=true;setText("sim-roi-status","Saving ROI settings…");
-    try{
-      const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:settings})});
-      const data=await response.json();
-      if(!response.ok||!data.success)throw new Error(data.message||"ROI save failed");
-      setText("sim-roi-status","Saved to "+mode+".sim.json");await loadSettings();
-    }catch(error){setText("sim-roi-status","Could not save: "+(error.message||error));}
-    finally{button.disabled=!simRoiControlsEnabled;}
+  $("sim-roi-save").addEventListener("click",function(){
+    if(simRoiSaveTimer!==null){clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;}
+    saveSimRoiSettings();
   });
   simRoiUpdateSelection();drawSimRoiOverlay();
 }
@@ -644,7 +698,7 @@ async function loadSettings(){
   simRoiControlsEnabled=!!data.controls_enabled;
   simRoiGeometry=Object.assign(simRoiGeometry,data.roi_geometry||{});
   const roiHint=document.querySelector("#sim-roi-editor .sim-roi-hint");
-  if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+ "Coordinates are normalized to the vision frame; City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
+  if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. Changes auto-save after you finish dragging or edit a numeric coordinate. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+ "Coordinates are normalized fractions from 0 to 1 (0.1 = 10% of the frame); City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
   populate(data.settings||{});
   if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
@@ -907,6 +961,7 @@ $("settings-form").addEventListener("submit",async function(event){
     ["rl-top","RL_TOP_ROI"],["rl-bottom","RL_BOTTOM_ROI"],["rl-left","RL_LEFT_ROI"],["rl-right","RL_RIGHT_ROI"],
     ["ll-top","LL_TOP_ROI"],["ll-bottom","LL_BOTTOM_ROI"],["ll-left","LL_LEFT_ROI"],["ll-right","LL_RIGHT_ROI"]
   ];
+  s.RL_MIRRORED=!!simRoiMirrors.RL;s.LL_MIRRORED=!!simRoiMirrors.LL;
   if(caps.supports_crosswalk) roiPairs.push(
     ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
   );
