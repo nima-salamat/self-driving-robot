@@ -268,6 +268,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             </div>
             <label class="check-field"><input id="hough-morph-close" type="checkbox" name="HOUGH_MORPH_CLOSE"> Close small gaps in lane edges (morphological close)</label>
             <label class="check-field"><input id="old-method" type="checkbox" name="OLD_METHOD"> Use legacy Hough/Canny lane detector</label>
+            <label class="check-field"><input id="roi-resizable" type="checkbox" name="ROI_RESIZABLE"> Allow lane ROI to expand temporarily when lane markings are lost</label>
             {% if caps.supports_crosswalk %}
             <div class="grid-two" style="margin-top:10px">
               <div class="field"><label for="crosswalk-threshold">Crosswalk pixel threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
@@ -431,7 +432,7 @@ function populate(s){
   };
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
   ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
-   "hough-morph-close","cw-trapezoid","old-method","cw-old-method"].forEach(function(id){
+   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
@@ -851,6 +852,7 @@ $("settings-form").addEventListener("submit",async function(event){
     if($("servo-direction"))s.SERVO_DIRECTION=$("servo-direction").value;
     if($("hough-morph-close"))s.HOUGH_MORPH_CLOSE=$("hough-morph-close").checked;
     if($("old-method"))s.OLD_METHOD=$("old-method").checked;
+    if($("roi-resizable"))s.ROI_RESIZABLE=$("roi-resizable").checked;
     if($("rl-top-factor"))s.RL_TOP_WIDTH_FACTOR=Number($("rl-top-factor").value);
     if($("ll-top-factor"))s.LL_TOP_WIDTH_FACTOR=Number($("ll-top-factor").value);
     if(caps.supports_crosswalk){
