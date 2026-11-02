@@ -313,6 +313,10 @@ def save_simulator_settings(config, mode, patch):
         with path.open("r", encoding="utf-8") as handle:
             values.update(_validate_settings(json.load(handle)))
     values.update(_validate_settings(patch))
+    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "carla":
+        # Mark all newly written CARLA profiles as migrated. This prevents a
+        # future restart from applying the one-time legacy safety clamp again.
+        values["SIMULATOR_TUNING_PROFILE_VERSION"] = 2
     values = _validate_settings(values)
     if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TARGET_SPEED", 0)) > 100:
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
