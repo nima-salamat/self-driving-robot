@@ -457,23 +457,32 @@ class SimulatorFramePipelineTests(unittest.TestCase):
             with patch.object(stream, "BASE_DIR", directory), patch.dict(
                 os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""}
             ):
+                class CopySpy:
+                    copied = False
+                    def copy(self):
+                        self.copied = True
+                        return np.full((12, 16, 3), 80, dtype=np.uint8)
+
+                frame = CopySpy()
                 config = SimpleNamespace(
                     BASE_DIR=directory, MODE="carla", SIMULATOR_BACKEND="carla",
                     SIMULATION_VISION_PROFILE="city", STREAM=True,
                     STREAM_HOST="127.0.0.1", STREAM_PORT=41992,
                     STREAM_ALLOW_CONTROL=False, RECORD_VIDEO=False,
-                    debug_frames_list=[None, np.full((12, 16, 3), 80, dtype=np.uint8)],
+                    debug_frames_list=[None, frame],
                     stream_frame_seq=77, OUTPUT_DIR=directory,
                 )
                 client = WebStreamer(config).app.test_client()
                 unchanged = client.get("/video_feed_frame?since=77")
                 self.assertEqual(unchanged.status_code, 204)
                 self.assertEqual(unchanged.headers.get("X-Stream-Frame-Sequence"), "77")
+                self.assertFalse(frame.copied, "unchanged frame polling should not copy or JPEG-encode")
 
                 newer = client.get("/video_feed_frame?since=76")
                 self.assertEqual(newer.status_code, 200)
                 self.assertEqual(newer.headers.get("X-Stream-Frame-Sequence"), "77")
-                self.assertTrue(newer.data.startswith(b"\xff\xd8"))
+                self.assertTrue(frame.copied)
+                self.assertTrue(newer.data.startswith(b"\\xff\\xd8"))
 
     def test_simulator_debug_renderer_coalesces_to_latest_pending_frame(self):
         import threading
