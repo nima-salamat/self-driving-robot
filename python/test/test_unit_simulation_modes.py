@@ -376,6 +376,49 @@ class SimulatorEditorTests(unittest.TestCase):
                         )
                         self.assertEqual(scene_denied.status_code, 403)
 
+    def test_carla_settings_api_accepts_user_tuning_and_mirror_flags(self):
+        import os
+        import stream
+        from stream import WebStreamer
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(stream, "BASE_DIR", directory), patch.dict(
+                os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""}
+            ):
+                config = SimpleNamespace(
+                    BASE_DIR=directory, MODE="carla", SIMULATOR_BACKEND="carla",
+                    SIMULATION_VISION_PROFILE="city", STREAM=True,
+                    STREAM_HOST="127.0.0.1", STREAM_PORT=41991,
+                    STREAM_ALLOW_CONTROL=True, RECORD_VIDEO=False,
+                    USE_BEV=False, USE_ML_LANE_DETECTOR=False,
+                    CITY_LANE_DETECTOR="default", ROI_RESIZABLE=False,
+                    LANE_ROI_MODE="rectangle", CW_TRAPEZOID_MODE=False,
+                    RL_TOP_WIDTH_FACTOR=0.85, LL_TOP_WIDTH_FACTOR=0.85,
+                    CW_TOP_WIDTH_FACTOR=0.9, WITHOUT_ARDUINO=True,
+                    READ_ARDUINO_OUTPUT=False, SEND_AUTOMATIC_ARDUINO_COMMANDS=False,
+                    MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+                    debug_frames_list=[None, None], stream_frame_seq=1,
+                    OUTPUT_DIR=directory,
+                )
+                client = WebStreamer(config).app.test_client()
+                response = client.post("/api/simulation/settings", json={"settings": {
+                    "SIMULATOR_TARGET_SPEED": 12.5,
+                    "SIMULATOR_THROTTLE_LIMIT": 0.42,
+                    "SIMULATOR_STEERING_LIMIT": 0.75,
+                    "SIMULATOR_STEERING_RATE": 3.5,
+                    "SIMULATOR_THROTTLE_RISE_RATE": 0.65,
+                    "RL_TOP_ROI": 0.1, "RL_BOTTOM_ROI": 0.9,
+                    "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
+                    "RL_MIRRORED": True, "LL_MIRRORED": True,
+                }})
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                saved = response.get_json()["settings"]
+                self.assertEqual(saved["SIMULATOR_TARGET_SPEED"], 12.5)
+                self.assertEqual(saved["SIMULATOR_THROTTLE_LIMIT"], 0.42)
+                self.assertEqual(saved["RL_TOP_ROI"], 0.1)
+                self.assertTrue(saved["RL_MIRRORED"])
+                self.assertTrue(saved["LL_MIRRORED"])
+
 
 class VirtualControllerTests(unittest.TestCase):
     def setUp(self):
