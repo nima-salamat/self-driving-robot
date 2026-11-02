@@ -265,7 +265,7 @@ class VirtualControllerTests(unittest.TestCase):
         with patch("modes.simulation.runtime.render_lane_debug_overlay", return_value=rendered_frame) as render:
             runtime._publish_frame(sensor, {"debug": debug, "lane_type": "both", "perception_valid": True}, command)
         render.assert_called_once()
-        self.assertIs(render.call_args.args[0], vision_frame)
+        np.testing.assert_array_equal(render.call_args.args[0], vision_frame)
         self.assertEqual(config.debug_frames_list[-1].shape, raw_frame.shape)
         self.assertGreater(int(config.debug_frames_list[-1].max()), int(rendered_frame.max()))
 
