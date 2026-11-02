@@ -31,6 +31,14 @@ LIVE_KEYS = {
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+    "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
+    "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE",
+    "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "LANE_ROI_MODE", "CW_TRAPEZOID_MODE",
+    "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
+    "OLD_METHOD", "CW_OLD_METHOD", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
+    "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y",
+    "BEV_SRC_BR_X", "BEV_SRC_BR_Y", "BEV_SRC_BL_X", "BEV_SRC_BL_Y",
 }
 
 
@@ -65,6 +73,30 @@ def register_simulator_routes(app, streamer):
         if runtime is None:
             return jsonify(success=False, message="simulation runtime is not initialized"), 503
         return jsonify(runtime.snapshot())
+
+    @app.post("/api/simulation/run-mode")
+    def simulator_run_mode():
+        if not streamer._control_allowed():
+            return streamer._control_denied()
+        if str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower() != "carla":
+            return jsonify(success=False, message="Explicit run mode is currently available only for CARLA."), 409
+        runtime = getattr(streamer.config, "simulation_runtime", None)
+        if runtime is None:
+            return jsonify(success=False, message="CARLA simulation runtime is not initialized."), 503
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(success=False, message="JSON object required"), 400
+        action = str(body.get("action", "")).strip().lower()
+        if action not in {"start", "stop"}:
+            return jsonify(success=False, message="action must be start or stop"), 400
+        try:
+            enabled = runtime.set_run_enabled(action == "start")
+        except RuntimeError as exc:
+            return jsonify(success=False, message=str(exc)), 409
+        return jsonify(success=True, run_enabled=enabled,
+                       run_mode="running" if enabled else "stopped",
+                       message="CARLA autonomous run started." if enabled else "CARLA autonomous run stopped; brake applied.")
+
 
     @app.get("/api/simulation/settings")
     def simulator_settings():
@@ -108,6 +140,17 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message="Distance-sensor angle is available only in AVIS Engine modes"), 400
         if profile != "city" and "CITY_LANE_DETECTOR" in patch:
             return jsonify(success=False, message="CITY_LANE_DETECTOR is available only for the City vision profile"), 400
+        city_vision_keys = {
+            "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
+            "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE",
+            "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
+            "CROSSWALK_HORIZONTAL_MIN_LINES", "LANE_ROI_MODE", "CW_TRAPEZOID_MODE",
+            "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
+            "OLD_METHOD", "CW_OLD_METHOD", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
+            "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+        }
+        if profile != "city" and (set(patch) & city_vision_keys):
+            return jsonify(success=False, message="City lane/crosswalk settings are available only for the City vision profile"), 400
         if profile != "race" and ({"USE_ML_LANE_DETECTOR", "ML_LANE_MODEL"} & set(patch)):
             return jsonify(success=False, message="ML lane settings are available only for the Race vision profile"), 400
         if "SIMULATOR_TARGET_SPEED" in patch:
