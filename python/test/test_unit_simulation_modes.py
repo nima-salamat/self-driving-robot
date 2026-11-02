@@ -53,11 +53,18 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertFalse(config.USE_BEV)
             self.assertEqual(config.LANE_THRESHOLD, 180)
             self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 6)
+            self.assertFalse(config.ROI_RESIZABLE)
+            self.assertEqual(config.MIN_SERVO_ANGLE, 50.0)
+            self.assertEqual(config.SERVO_CENTER, 95.0)
+            self.assertEqual(config.MAX_SERVO_ANGLE, 130.0)
             save_simulator_settings(config, "carla", {
                 "SIMULATOR_TARGET_SPEED": 12.0, "SIMULATOR_LIDAR_ENABLED": False,
                 "CITY_LANE_DETECTOR": "blsf-beta", "LANE_THRESHOLD": 145,
                 "HOUGH_THRESHOLD": 24, "CROSSWALK_THRESHOLD": 160,
                 "LANE_ROI_MODE": "trapezoid", "RL_TOP_WIDTH_FACTOR": 0.7,
+                "ROI_RESIZABLE": True, "MIN_SERVO_ANGLE": 45.0,
+                "SERVO_CENTER": 92.0, "MAX_SERVO_ANGLE": 135.0,
+                "SERVO_DIRECTION": "rtl",
             })
             self.assertTrue(carla_path.is_file())
             payload = json.loads(carla_path.read_text(encoding="utf-8"))
@@ -69,6 +76,11 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(config.CROSSWALK_THRESHOLD, 160)
             self.assertEqual(config.LANE_ROI_MODE, "trapezoid")
             self.assertEqual(config.RL_TOP_WIDTH_FACTOR, 0.7)
+            self.assertTrue(config.ROI_RESIZABLE)
+            self.assertEqual(config.MIN_SERVO_ANGLE, 45.0)
+            self.assertEqual(config.SERVO_CENTER, 92.0)
+            self.assertEqual(config.MAX_SERVO_ANGLE, 135.0)
+            self.assertEqual(config.SERVO_DIRECTION, "rtl")
             self.assertFalse((Path(directory) / "city.json").exists())
             self.assertFalse((Path(directory) / "race.json").exists())
             avis_path = load_simulator_settings(config, "avis", "avis")
@@ -183,6 +195,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         USE_BEV=False,
                         USE_ML_LANE_DETECTOR=False,
                         CITY_LANE_DETECTOR="default",
+                        ROI_RESIZABLE=True,
                         LANE_ROI_MODE="trapezoid",
                         CW_TRAPEZOID_MODE=True,
                         RL_TOP_WIDTH_FACTOR=0.72,
@@ -213,6 +226,9 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="lane-threshold"', page_text)
                         self.assertIn('id="crosswalk-threshold"', page_text)
                         self.assertIn('id="bev-tl-x"', page_text)
+                        self.assertIn('id="roi-resizable"', page_text)
+                        self.assertIn('id="min-servo"', page_text)
+                        self.assertIn('id="servo-direction"', page_text)
                         self.assertIn("camera-editor-modal", page_text)
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
@@ -238,6 +254,7 @@ class SimulatorEditorTests(unittest.TestCase):
                     if backend == "carla":
                         self.assertEqual(payload["roi_geometry"]["lane_roi_mode"], "trapezoid")
                         self.assertTrue(payload["roi_geometry"]["cw_trapezoid_mode"])
+                        self.assertTrue(payload["roi_geometry"]["roi_resizable"])
                         self.assertEqual(payload["roi_geometry"]["rl_top_width_factor"], 0.72)
                     self.assertFalse(payload["controls_enabled"])
 
