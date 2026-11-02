@@ -743,6 +743,24 @@ function renderEvents(events){
   if(!eventKeys.length)consoleEl.textContent="No actuator events yet.";
   consoleEl.scrollTop=consoleEl.scrollHeight;
 }
+async function setCarlaRunMode(action){
+  const start=$("carla-run-start"),stop=$("carla-run-stop"),message=$("carla-run-message");
+  if(start)start.disabled=true;if(stop)stop.disabled=true;
+  if(message){message.textContent=action==="start"?"Starting autonomous run…":"Applying brake and stopping…";message.className="msg";}
+  try{
+    const response=await fetch("/api/simulation/run-mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:action})});
+    const data=await response.json();
+    if(!response.ok||!data.success)throw new Error(data.message||"Could not change CARLA run mode");
+    if(message){message.textContent=data.message||"Run mode updated.";message.className="msg good";}
+    await poll();
+  }catch(error){
+    if(message){message.textContent=error.message||String(error);message.className="msg bad";}
+    if(start)start.disabled=!simRoiControlsEnabled;if(stop)stop.disabled=!simRoiControlsEnabled;
+  }
+}
+if($("carla-run-start"))$("carla-run-start").addEventListener("click",function(){setCarlaRunMode("start");});
+if($("carla-run-stop"))$("carla-run-stop").addEventListener("click",function(){setCarlaRunMode("stop");});
+
 async function poll(){
   try{
     const response=await fetch("/api/simulation/state",{cache:"no-store"});
@@ -751,6 +769,19 @@ async function poll(){
     $("connection-led").className="led"+(d.connected?" on":" error");
     setText("connection-label",d.connected?"Connected · "+d.backend.toUpperCase():"Waiting for simulator");
     setText("frame-age",d.frame_age_ms===null?"No frame":numeric(d.frame_age_ms,0)+" ms old");
+    const imageInfo=d.image||{};
+    if($("camera-image-state")){
+      const cameraText=imageInfo.width?((imageInfo.looks_black?"BLACK FRAME · ":"LIVE · ")+imageInfo.width+"×"+imageInfo.height+" · "+numeric(imageInfo.mean_intensity,1)+" avg · "+String(imageInfo.source||"camera").toUpperCase()):"Waiting for camera frame";
+      setText("camera-image-state",cameraText);
+      $("camera-image-state").className="pill"+(imageInfo.looks_black?" error":" live");
+    }
+    if($("carla-run-state")){
+      const enabled=!!d.run_enabled;
+      setText("carla-run-state",enabled?"AUTONOMOUS RUNNING":"STOPPED · MANUAL START REQUIRED");
+      $("carla-run-state").className="pill carla-run-state "+(enabled?"running":"stopped");
+      if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled||!d.connected||enabled;
+      if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled||!enabled;
+    }
     setText("lane-value",d.lane_type||"none");
     setText("lane-valid",d.perception_valid?"Perception valid":"Invalid lane estimate · safety policy applies");
     setText("speed-value",numeric(d.speed_kmh,1)+" km/h");
