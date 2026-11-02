@@ -22,6 +22,7 @@ class CarlaAdapter(SimulatorAdapter):
         self._editor_image = self._editor_image_at = None
         self._editor_transform = None
         self._camera_mount_preview = None
+        self._camera_mount_applied = None
         self._condition = threading.Condition()
         self._image = self._image_at = None
         self._sequence = self._read_sequence = 0
@@ -254,6 +255,32 @@ class CarlaAdapter(SimulatorAdapter):
         self.vehicle = None
         self._clear_sensor_frames()
 
+    def _spawn_attached_camera(self, values=None, listen=True):
+        """Spawn the RGB sensor using the vehicle-local transform required by attach_to."""
+        if self.world is None or self.vehicle is None:
+            raise RuntimeError("CARLA world and vehicle must exist before spawning the RGB camera")
+        library = self.world.get_blueprint_library()
+        blueprint = library.find("sensor.camera.rgb")
+        blueprint.set_attribute("image_size_x", str(int(getattr(self.config, "CAM_WIDTH", 640))))
+        blueprint.set_attribute("image_size_y", str(int(getattr(self.config, "CAM_HEIGHT", 480))))
+        blueprint.set_attribute("fov", str(float(getattr(self.config, "SIMULATOR_CAMERA_FOV", 90.0))))
+        # CARLA requires a parent-relative transform when attach_to is supplied.
+        sensor = self.world.spawn_actor(
+            blueprint,
+            self._vehicle_camera_transform(values),
+            attach_to=self.vehicle,
+        )
+        try:
+            if listen:
+                sensor.listen(self._on_camera)
+        except Exception:
+            try:
+                sensor.destroy()
+            except Exception:
+                logger.debug("Failed to destroy an RGB sensor whose callback could not start", exc_info=True)
+            raise
+        return sensor
+
     def _spawn_vehicle_and_sensors(self):
         library = self.world.get_blueprint_library()
         selected_blueprint = str(getattr(self.config, "SIMULATOR_VEHICLE_BLUEPRINT", "auto") or "auto")
@@ -297,13 +324,10 @@ class CarlaAdapter(SimulatorAdapter):
         self._spawn_point_index = int(selected_index)
         self.config.SIMULATOR_SPAWN_POINT_INDEX = self._spawn_point_index
 
-        camera_bp = library.find("sensor.camera.rgb")
-        camera_bp.set_attribute("image_size_x", str(int(getattr(self.config, "CAM_WIDTH", 640))))
-        camera_bp.set_attribute("image_size_y", str(int(getattr(self.config, "CAM_HEIGHT", 480))))
-        camera_bp.set_attribute("fov", str(float(getattr(self.config, "SIMULATOR_CAMERA_FOV", 90.0))))
-        camera_transform = self._vehicle_camera_transform()
-        self.camera = self.world.spawn_actor(camera_bp, camera_transform, attach_to=self.vehicle)
-        self.camera.listen(self._on_camera)
+        mount = self._mount_values_from_config()
+        self.camera = self._spawn_attached_camera(mount)
+        self._camera_mount_preview = dict(mount)
+        self._camera_mount_applied = dict(mount)
 
         if bool(getattr(self.config, "SIMULATOR_LIDAR_ENABLED", True)):
             lidar_bp = library.find("sensor.lidar.ray_cast")
@@ -631,8 +655,62 @@ class CarlaAdapter(SimulatorAdapter):
         from .settings import _validate_settings
         values = _validate_settings(values)
         self._camera_mount_preview = values
-        if self.camera is not None and self.vehicle is not None:
-            self.camera.set_transform(self._mounted_camera_world_transform(values))
+        # The camera-placement actor is a free world-space camera, so it can be
+        # moved with a world transform. The attached Stream sensor must NOT be
+        # moved with Actor.set_transform(world_pose): CARLA expects a relative
+        # transform at spawn time for attach_to, so the sensor is only replaced
+        # with a fresh attached actor when the mount is committed.
+        if self.editor_camera is not None and self.vehicle is not None:
+            self._editor_transform = self._mounted_camera_world_transform(values)
+            self.editor_camera.set_transform(self._editor_transform)
+        return dict(values)
+
+    def apply_camera_mount(self, patch):
+        """Commit a vehicle-local mount by recreating the attached RGB sensor."""
+        values = self.preview_camera_mount(patch)
+        if self.world is None or self.vehicle is None or not self.connected:
+            raise RuntimeError("CARLA vehicle is not connected")
+        if self._camera_mount_applied == values and self.camera is not None:
+            return dict(values)
+
+        # Create the replacement before stopping the current sensor. It remains
+        # attached with its correct local transform; no world-space set_transform
+        # is ever issued against the attached Stream sensor.
+        replacement = self._spawn_attached_camera(values, listen=False)
+        previous = self.camera
+        try:
+            if previous is not None:
+                try:
+                    previous.stop()
+                except Exception:
+                    logger.debug("Could not stop previous CARLA RGB sensor cleanly", exc_info=True)
+            replacement.listen(self._on_camera)
+        except Exception:
+            try:
+                replacement.destroy()
+            except Exception:
+                logger.debug("Could not destroy failed replacement RGB sensor", exc_info=True)
+            if previous is not None:
+                try:
+                    previous.listen(self._on_camera)
+                except Exception:
+                    logger.exception("Could not restore the previous CARLA RGB sensor listener")
+            raise
+
+        self.camera = replacement
+        self._camera_mount_applied = dict(values)
+        if previous is not None:
+            try:
+                previous.destroy()
+            except Exception:
+                logger.debug("Could not destroy replaced CARLA RGB sensor", exc_info=True)
+
+        # Prevent a frame from the old mount being shown after the commit. Keep
+        # the encoder's vehicle-location baseline intact.
+        with self._condition:
+            self._image = self._image_at = None
+            self._read_sequence = self._sequence
+            self._condition.notify_all()
         return dict(values)
 
     def _on_editor_camera(self, image):
@@ -743,7 +821,7 @@ class CarlaAdapter(SimulatorAdapter):
 
     def restore_camera_mount(self):
         values = self._mount_values_from_config()
-        self.preview_camera_mount(values)
+        self.apply_camera_mount(values)
         if self.editor_camera is not None:
             self.snap_camera_editor_to_mount()
         return self.camera_editor_state()
@@ -783,6 +861,7 @@ class CarlaAdapter(SimulatorAdapter):
             "preview_ready": self._editor_image is not None,
             "preview_age_ms": round(age_ms, 1) if age_ms is not None else None,
             "mount": dict(self._camera_mount_preview or self._mount_values_from_config()),
+            "applied_mount": dict(self._camera_mount_applied or self._mount_values_from_config()),
             "saved_mount": self._mount_values_from_config(),
             "stream_camera_transform": stream_transform,
             "world_transform": self._transform_state(world),
