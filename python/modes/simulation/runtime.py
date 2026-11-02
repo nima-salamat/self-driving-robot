@@ -14,6 +14,7 @@ from stream import start_stream, stop_stream
 from .adapter_registry import create_adapter
 from .base_adapter import VehicleCommand
 from .controller import VirtualVehicleController
+from visualization.lane_debug_overlay import render_lane_debug_overlay
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,24 @@ class SimulationRuntime:
         getattr(logger, str(level).lower(), logger.info)("SIM/%s: %s", self.backend, message)
 
     def _publish_frame(self, sensor_frame, perception, command):
-        display = sensor_frame.image.copy()
+        debug = perception.get("debug") if isinstance(perception, dict) else None
+        debug_frame = debug.get("combined") if isinstance(debug, dict) else None
+        display = (
+            debug_frame.copy()
+            if isinstance(debug_frame, np.ndarray) and debug_frame.size
+            else sensor_frame.image.copy()
+        )
+        draw_data = debug.get("draw_data") if isinstance(debug, dict) else None
+        if isinstance(draw_data, dict):
+            try:
+                # The City/Race processors return the actual post-BEV ROI geometry.
+                # Render it here so the simulator Stream shows the same diagnostics
+                # as the physical City/Race Stream without modifying perception input.
+                display = render_lane_debug_overlay(
+                    display, draw_data, self.config, command.servo_angle
+                )
+            except Exception:
+                logger.debug("Could not render simulator lane debug overlay", exc_info=True)
         cv2.putText(display, f"MODE {self.mode.upper()} | {self.vision_profile.upper()} VISION",
                     (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (40, 220, 255), 2, cv2.LINE_AA)
         cv2.putText(display, "Lane: " + str(perception.get("lane_type", "none")) +
