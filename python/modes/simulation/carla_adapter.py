@@ -660,9 +660,6 @@ class CarlaAdapter(SimulatorAdapter):
         # moved with Actor.set_transform(world_pose): CARLA expects a relative
         # transform at spawn time for attach_to, so the sensor is only replaced
         # with a fresh attached actor when the mount is committed.
-        if self.editor_camera is not None and self.vehicle is not None:
-            self._editor_transform = self._mounted_camera_world_transform(values)
-            self.editor_camera.set_transform(self._editor_transform)
         return dict(values)
 
     def apply_camera_mount(self, patch):
