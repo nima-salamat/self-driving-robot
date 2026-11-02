@@ -279,6 +279,23 @@ class SimulationRuntime:
             ranges = dict(getattr(frame, "ranges_cm", {}) or {}) if frame is not None else {}
             age_ms = None if self._last_frame_at is None else max(0.0, (now - self._last_frame_at) * 1000.0)
             speed = float(getattr(frame, "speed_kmh", 0.0) or 0.0) if frame is not None else 0.0
+            camera_sensor = {}
+            camera_diag = getattr(self.adapter, "camera_diagnostics", None)
+            if callable(camera_diag):
+                try:
+                    camera_sensor = camera_diag() or {}
+                except Exception:
+                    logger.debug("Could not read simulator camera diagnostics", exc_info=True)
+            image_diagnostics = dict(self._last_image_diagnostics)
+            if not image_diagnostics and camera_sensor.get("width"):
+                image_diagnostics = {
+                    "width": camera_sensor.get("width"),
+                    "height": camera_sensor.get("height"),
+                    "mean_intensity": camera_sensor.get("mean_intensity"),
+                    "max_intensity": camera_sensor.get("max_intensity"),
+                    "source": "camera callback",
+                    "looks_black": bool(camera_sensor.get("looks_black", False)),
+                }
             encoder = {"available": True, "pulses": int(self._encoder_pulses),
                        "delta": int(self._encoder_delta), "distance_cm": round(self._last_distance_cm, 2),
                        "source": "simulated travel estimate; not hardware ground truth"}
@@ -297,7 +314,8 @@ class SimulationRuntime:
                 "camera_editor_active": bool(self._camera_editor_active),
                 "run_enabled": bool(self._run_enabled),
                 "run_mode": "running" if self._run_enabled else "stopped",
-                "image": dict(self._last_image_diagnostics),
+                "image": image_diagnostics,
+                "camera_sensor": camera_sensor,
                 "running": self._started_at is not None and not self.shutdown_event.is_set(),
                 "frame_sequence": int(getattr(frame, "sequence", 0)) if frame is not None else 0,
                 "frame_age_ms": round(age_ms, 1) if age_ms is not None else None,

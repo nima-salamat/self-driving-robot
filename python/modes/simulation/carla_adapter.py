@@ -32,6 +32,17 @@ class CarlaAdapter(SimulatorAdapter):
         self._spawn_point_index = -1
         self._hold_control_until = 0.0
         self._scene_transition_active = False
+        self._camera_callback_count = 0
+        self._camera_decode_failures = 0
+        self._camera_decode_error = None
+        self._camera_last_shape = None
+        self._camera_last_mean = None
+        self._camera_last_max = None
+        self._camera_last_frame_number = None
+        self._camera_last_timestamp = None
+        self._world_synchronous_mode = None
+        self._world_no_rendering_mode = None
+        self._world_rendering_error = None
 
     def connect(self):
         try:
@@ -54,6 +65,7 @@ class CarlaAdapter(SimulatorAdapter):
             if self._map_leaf(self.world.get_map().name).casefold() != self._map_leaf(resolved_map).casefold():
                 self.world = self._load_world_with_timeout(resolved_map)
             self.config.SIMULATOR_MAP = resolved_map
+        self._refresh_world_rendering_mode()
         try:
             self._spawn_vehicle_and_sensors()
         except Exception:
@@ -61,6 +73,30 @@ class CarlaAdapter(SimulatorAdapter):
             raise
         self.connected = True
         logger.info("Connected to CARLA at %s:%s", host, port)
+
+    def _refresh_world_rendering_mode(self):
+        """Ensure CARLA rendering is enabled because the RGB sensor feeds the Stream camera."""
+        if self.world is None:
+            return
+        try:
+            settings = self.world.get_settings()
+            self._world_synchronous_mode = bool(getattr(settings, "synchronous_mode", False))
+            self._world_no_rendering_mode = bool(getattr(settings, "no_rendering_mode", False))
+            if self._world_no_rendering_mode:
+                # Preserve all other settings, including synchronous mode.
+                settings.no_rendering_mode = False
+                self.world.apply_settings(settings)
+                refreshed = self.world.get_settings()
+                self._world_no_rendering_mode = bool(getattr(refreshed, "no_rendering_mode", False))
+                if self._world_no_rendering_mode:
+                    self._world_rendering_error = "CARLA refused to disable no_rendering_mode"
+                    logger.error(self._world_rendering_error)
+                else:
+                    logger.warning("Disabled CARLA no_rendering_mode because the RGB camera requires rendering")
+                    self._world_rendering_error = None
+        except Exception as exc:
+            self._world_rendering_error = f"{type(exc).__name__}: {exc}"[:240]
+            logger.warning("Could not inspect/enable CARLA camera rendering: %s", self._world_rendering_error)
 
     @staticmethod
     def _map_leaf(value):
@@ -432,17 +468,69 @@ class CarlaAdapter(SimulatorAdapter):
             finally:
                 self._scene_transition_active = False
 
+    def _publish_camera_preview(self, frame):
+        """Publish the raw RGB sensor frame independently of perception/control processing."""
+        if not bool(getattr(self.config, "STREAM", False)):
+            return
+        lock = getattr(self.config, "stream_frame_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self.config.stream_frame_lock = lock
+        with lock:
+            # A stalled detector, LiDAR gate or control cycle cannot hide a
+            # healthy camera sensor from the dashboard.
+            self.config.debug_frames_list = [None, frame.copy()]
+            self.config.stream_frame_seq = int(getattr(self.config, "stream_frame_seq", 0)) + 1
+
     def _on_camera(self, image):
         try:
             raw = np.frombuffer(image.raw_data, dtype=np.uint8)
-            frame = raw.reshape((int(image.height), int(image.width), 4))[:, :, :3].copy()
+            width, height = int(image.width), int(image.height)
+            frame = raw.reshape((height, width, 4))[:, :, :3].copy()
+            sample = frame[::16, ::16]
             with self._condition:
                 self._image = frame
                 self._image_at = time.monotonic()
                 self._sequence += 1
+                self._camera_callback_count += 1
+                self._camera_last_shape = frame.shape
+                self._camera_last_mean = round(float(np.mean(sample)), 2) if sample.size else 0.0
+                self._camera_last_max = int(np.max(sample)) if sample.size else 0
+                self._camera_last_frame_number = getattr(image, "frame", None)
+                self._camera_last_timestamp = getattr(image, "timestamp", None)
+                self._camera_decode_error = None
                 self._condition.notify_all()
-        except Exception:
-            logger.exception("Could not decode CARLA camera frame")
+            self._publish_camera_preview(frame)
+        except Exception as exc:
+            with self._condition:
+                self._camera_decode_failures += 1
+                self._camera_decode_error = f"{type(exc).__name__}: {exc}"[:240]
+            logger.exception("Could not decode/publish CARLA camera frame")
+
+    def camera_diagnostics(self):
+        """Return camera actor, callback, frame-content and world-rendering diagnostics."""
+        with self._condition:
+            age_ms = max(0.0, (time.monotonic() - self._image_at) * 1000.0) if self._image_at is not None else None
+            shape = self._camera_last_shape
+            mean = self._camera_last_mean
+            maximum = self._camera_last_max
+            return {
+                "sensor_spawned": self.camera is not None,
+                "callback_count": int(self._camera_callback_count),
+                "decode_failures": int(self._camera_decode_failures),
+                "last_frame_age_ms": round(age_ms, 1) if age_ms is not None else None,
+                "width": int(shape[1]) if shape else None,
+                "height": int(shape[0]) if shape else None,
+                "mean_intensity": mean,
+                "max_intensity": maximum,
+                "looks_black": bool(mean is not None and (mean < 1.0 or (maximum is not None and maximum < 4))),
+                "frame_number": self._camera_last_frame_number,
+                "sensor_timestamp": self._camera_last_timestamp,
+                "synchronous_mode": self._world_synchronous_mode,
+                "no_rendering_mode": self._world_no_rendering_mode,
+                "rendering_error": self._world_rendering_error,
+                "decode_error": self._camera_decode_error,
+            }
 
     def _on_lidar(self, measurement):
         try:

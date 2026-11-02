@@ -216,6 +216,9 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertEqual(page.status_code, 200, page.data[:300])
                     page_text = page.get_data(as_text=True)
                     self.assertIn("Simulator camera", page_text)
+                    self.assertIn('id="camera-feed-status"', page_text)
+                    self.assertIn('id="camera-diagnostic"', page_text)
+                    self.assertIn("/video_feed_frame", page_text)
                     self.assertIn(mode.upper(), page_text)
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
                     if backend == "carla":
@@ -432,6 +435,35 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.car = EmptyCar()
         adapter.connected = True
         self.assertIsNone(adapter.read())
+
+    def test_carla_camera_callback_publishes_preview_without_runtime_loop(self):
+        import threading
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        pixels = np.zeros((6, 8, 4), dtype=np.uint8)
+        pixels[:, :, 0] = 25
+        pixels[:, :, 1] = 90
+        pixels[:, :, 2] = 180
+        pixels[:, :, 3] = 255
+        config = SimpleNamespace(
+            STREAM=True, debug_frames_list=[None, None], stream_frame_seq=0,
+            stream_frame_lock=threading.RLock(),
+        )
+        adapter = CarlaAdapter(config)
+        adapter._world_synchronous_mode = True
+        image = SimpleNamespace(
+            raw_data=pixels.tobytes(), width=8, height=6, frame=17, timestamp=1.25,
+        )
+
+        adapter._on_camera(image)
+
+        self.assertEqual(config.stream_frame_seq, 1)
+        np.testing.assert_array_equal(config.debug_frames_list[-1], pixels[:, :, :3])
+        diagnostics = adapter.camera_diagnostics()
+        self.assertEqual(diagnostics["callback_count"], 1)
+        self.assertEqual(diagnostics["frame_number"], 17)
+        self.assertTrue(diagnostics["synchronous_mode"])
+        self.assertFalse(diagnostics["looks_black"])
 
     def test_carla_adapter_marks_old_lidar_packets_stale(self):
         from modes.simulation.carla_adapter import CarlaAdapter

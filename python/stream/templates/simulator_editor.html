@@ -80,9 +80,11 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
-      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" src="/video_feed" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
+      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
       <div class="panel-content">
         <div id="runtime-error" class="status-message section-hide"></div>
+        <div id="camera-feed-status" class="msg" role="status">Connecting to camera frame endpoint…</div>
+        <div id="camera-diagnostic" class="status-message" role="status">Checking CARLA RGB sensor…</div>
         <div class="metrics">
           <div class="metric"><div class="eyebrow">Lane estimate</div><div id="lane-value" class="value">—</div><div id="lane-valid" class="unit">Waiting for image</div></div>
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
@@ -399,6 +401,7 @@ const mode = {{ mode|tojson }};
 const caps = {{ caps|tojson }};
 const $ = function(id){ return document.getElementById(id); };
 const camera = $("camera");
+let cameraFramePollActive=false,cameraObjectUrl=null,lastCameraFrameSequence=null;
 const seenEvents = new Set();
 let eventKeys = [];
 function setText(id, value){ const e=$(id); if(e) e.textContent = value; }
@@ -502,6 +505,36 @@ function fitSimulatorCameraFrame(){
   frame.style.width=Math.floor(width)+"px";
   frame.style.height=Math.floor(height)+"px";
   drawSimRoiOverlay();
+}
+function setCameraFeedStatus(message,kind){
+  const el=$("camera-feed-status");if(!el)return;
+  el.textContent=message||"";el.className="msg"+(kind==="bad"?" bad":kind==="good"?" good":"");
+}
+async function refreshSimulatorCameraFrame(){
+  if(cameraFramePollActive)return;
+  cameraFramePollActive=true;
+  try{
+    const response=await fetch("/video_feed_frame?t="+Date.now(),{cache:"no-store",headers:{"Accept":"image/jpeg"}});
+    if(response.status===204){
+      if(!camera.naturalWidth)setCameraFeedStatus("Waiting for the CARLA RGB sensor to publish its first frame (HTTP 204).");
+      return;
+    }
+    if(!response.ok)throw new Error("Camera frame endpoint returned HTTP "+response.status+".");
+    const contentType=response.headers.get("content-type")||"";
+    if(!contentType.toLowerCase().startsWith("image/"))throw new Error("Camera endpoint returned "+(contentType||"an unknown content type")+", not an image.");
+    const sequence=response.headers.get("X-Stream-Frame-Sequence");
+    if(sequence!==null&&sequence===lastCameraFrameSequence)return;
+    const blob=await response.blob();
+    if(!blob.size)throw new Error("Camera endpoint returned an empty image.");
+    const previous=cameraObjectUrl;
+    cameraObjectUrl=URL.createObjectURL(blob);
+    camera.src=cameraObjectUrl;
+    if(previous)URL.revokeObjectURL(previous);
+    lastCameraFrameSequence=sequence;
+    setCameraFeedStatus("Camera feed connected"+(sequence!==null?" · frame "+sequence:"")+".","good");
+  }catch(error){
+    setCameraFeedStatus("Camera feed request failed: "+(error.message||String(error)),"bad");
+  }finally{cameraFramePollActive=false;}
 }
 function drawSimRoiOverlay(){
   if(!simRoiCanvas||!caps.supports_lane_roi)return;
@@ -793,10 +826,24 @@ async function poll(){
     setText("connection-label",d.connected?"Connected · "+d.backend.toUpperCase():"Waiting for simulator");
     setText("frame-age",d.frame_age_ms===null?"No frame":numeric(d.frame_age_ms,0)+" ms old");
     const imageInfo=d.image||{};
+    const sensorInfo=d.camera_sensor||{};
     if($("camera-image-state")){
       const cameraText=imageInfo.width?((imageInfo.looks_black?"BLACK FRAME · ":"LIVE · ")+imageInfo.width+"×"+imageInfo.height+" · "+numeric(imageInfo.mean_intensity,1)+" avg · "+String(imageInfo.source||"camera").toUpperCase()):"Waiting for camera frame";
       setText("camera-image-state",cameraText);
       $("camera-image-state").className="pill"+(imageInfo.looks_black?" error":" live");
+    }
+    const cameraDiagnostic=$("camera-diagnostic");
+    if(cameraDiagnostic){
+      let detail="CARLA camera sensor has not reported a frame yet.";
+      if(sensorInfo.rendering_error)detail="CARLA rendering setup error: "+sensorInfo.rendering_error;
+      else if(sensorInfo.no_rendering_mode===true)detail="CARLA no_rendering_mode is still enabled; RGB camera rendering is disabled.";
+      else if(sensorInfo.decode_error)detail="CARLA camera callback could not decode its frame: "+sensorInfo.decode_error;
+      else if(Number(sensorInfo.callback_count||0)===0&&sensorInfo.sensor_spawned&&sensorInfo.synchronous_mode===true)detail="Camera actor exists, but CARLA is in synchronous mode and no world tick has reached the sensor. This runtime does not take ownership of world.tick().";
+      else if(Number(sensorInfo.callback_count||0)===0&&sensorInfo.sensor_spawned)detail="Camera actor exists, but its RGB callback has not fired. Check CARLA rendering/server logs and whether the world is advancing.";
+      else if(Number(sensorInfo.callback_count||0)>0&&imageInfo.looks_black)detail="RGB callbacks are arriving, but the pixels are black. Check the CARLA renderer/GPU and camera mount; no_rendering_mode="+String(sensorInfo.no_rendering_mode)+".";
+      else if(Number(sensorInfo.callback_count||0)>0)detail="RGB sensor callbacks: "+sensorInfo.callback_count+" · last frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago · sequence "+String(sensorInfo.frame_number??"—")+".";
+      cameraDiagnostic.textContent=detail;
+      cameraDiagnostic.className="status-message"+((sensorInfo.rendering_error||sensorInfo.no_rendering_mode===true||sensorInfo.decode_error||Number(sensorInfo.callback_count||0)===0||imageInfo.looks_black)?" error":"");
     }
     if($("carla-run-state")){
       const enabled=!!d.run_enabled;
@@ -913,7 +960,7 @@ $("settings-form").addEventListener("submit",async function(event){
 $("reload-settings").addEventListener("click",function(){loadSettings().then(function(){status("Loaded saved settings.",true);}).catch(function(e){status(e.message,false);});});
 $("refresh").addEventListener("click",function(){poll();});
 $("clear-events").addEventListener("click",function(){$("event-console").replaceChildren();eventKeys=[];seenEvents.clear();});
-camera.addEventListener("error",function(){camera.alt="Waiting for the simulator to publish its first camera frame.";});
+camera.addEventListener("error",function(){camera.alt="The latest simulator camera JPEG could not be decoded.";});
 camera.addEventListener("load",fitSimulatorCameraFrame);
 window.addEventListener("resize",fitSimulatorCameraFrame);
 
@@ -1228,6 +1275,7 @@ loadSettings().then(function(){
   if(caps.simulator_backend==="carla")return loadCarlaScene();
 }).catch(function(e){status(e.message,false);});
 poll();setInterval(poll,650);
+refreshSimulatorCameraFrame();setInterval(refreshSimulatorCameraFrame,120);
 function toggleSensorPanel(panelId,buttonId,expandedClass){
   const panel=$(panelId),button=$(buttonId);if(!panel||!button)return;
   const expanded=panel.classList.toggle(expandedClass);
