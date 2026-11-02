@@ -482,7 +482,7 @@ class SimulatorFramePipelineTests(unittest.TestCase):
                 self.assertEqual(newer.status_code, 200)
                 self.assertEqual(newer.headers.get("X-Stream-Frame-Sequence"), "77")
                 self.assertTrue(frame.copied)
-                self.assertTrue(newer.data.startswith(b"\\xff\\xd8"))
+                self.assertTrue(newer.data.startswith(bytes((255, 216))))
 
     def test_simulator_debug_renderer_coalesces_to_latest_pending_frame(self):
         import threading
