@@ -90,6 +90,16 @@ class StreamMediaMixin:
             response.headers.update(cache_headers)
             return response
 
+        # Clients send the last frame sequence they received. Avoid transferring
+        # the same cached JPEG repeatedly while the detector is processing the
+        # next camera image.
+        requested_frame_id = request.args.get("since")
+        if requested_frame_id is not None and requested_frame_id == str(frame_id):
+            response = Response("", status=204)
+            response.headers.update(cache_headers)
+            response.headers["X-Stream-Frame-Sequence"] = str(frame_id)
+            return response
+
         quality = self._normalize_stream_jpeg_quality(
             getattr(self.config, "STREAM_JPEG_QUALITY", 85)
         )
