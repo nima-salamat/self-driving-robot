@@ -230,8 +230,13 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="setting-block">
             <h3 class="section-title">Virtual vehicle safety</h3>
             <div class="grid-two">
-              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="1" name="SIMULATOR_TARGET_SPEED" required></div>
-              <div class="field"><label for="throttle-limit">Throttle limit (0–1)</label><input id="throttle-limit" type="number" min="0" max="1" step=".05" name="SIMULATOR_THROTTLE_LIMIT" required></div>
+              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}8{% else %}100{% endif %}" step="{% if caps.simulator_backend == 'carla' %}.5{% else %}1{% endif %}" name="SIMULATOR_TARGET_SPEED" required></div>
+              <div class="field"><label for="throttle-limit">Throttle limit (0–{% if caps.simulator_backend == 'carla' %}0.18{% else %}1{% endif %})</label><input id="throttle-limit" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}0.18{% else %}1{% endif %}" step="{% if caps.simulator_backend == 'carla' %}.01{% else %}.05{% endif %}" name="SIMULATOR_THROTTLE_LIMIT" required></div>
+              {% if caps.simulator_backend == 'carla' %}
+              <div class="field"><label for="steering-authority">Maximum steering input (normalized)</label><input id="steering-authority" type="number" min=".05" max=".5" step=".01" name="SIMULATOR_STEERING_LIMIT"></div>
+              <div class="field"><label for="steering-rate">Steering change rate (normalized / s)</label><input id="steering-rate" type="number" min=".1" max="1.5" step=".05" name="SIMULATOR_STEERING_RATE"></div>
+              <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max=".5" step=".01" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
+              {% endif %}
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
             </div>
@@ -299,7 +304,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               </div>
             </details>
             {% endif %}
-            <p class="note">These values are saved only in this simulator's .sim.json profile. They do not modify city.json. BEV is disabled by default for CARLA; enable it after checking the raw camera perspective.</p>
+            <p class="note">CARLA starts at 5 km/h, throttle capped at 0.12 and steering input capped at 0.28. These conservative limits apply while tuning the camera, lane direction and vehicle response. Settings are stored only in this simulator's .sim.json profile and do not modify city.json.</p>
           </div>
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
@@ -417,6 +422,8 @@ function populate(s){
     "ml-lane-model":"ML_LANE_MODEL",
     "target-speed":"SIMULATOR_TARGET_SPEED",
     "throttle-limit":"SIMULATOR_THROTTLE_LIMIT","pulse-distance":"ENCODER_PULSE_DISTANCE_CM",
+    "steering-authority":"SIMULATOR_STEERING_LIMIT","steering-rate":"SIMULATOR_STEERING_RATE",
+    "throttle-rise-rate":"SIMULATOR_THROTTLE_RISE_RATE",
     "city-lane-detector":"CITY_LANE_DETECTOR",
     "lane-threshold":"LANE_THRESHOLD","hough-threshold":"HOUGH_THRESHOLD",
     "hough-min-line":"HOUGH_MIN_LINE_LENGTH","hough-max-gap":"HOUGH_MAX_LINE_GAP",
@@ -443,7 +450,7 @@ function populate(s){
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
   });
-  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, up to 200)");
+  setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, safety-limited to 8)");
   if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
@@ -897,6 +904,11 @@ $("settings-form").addEventListener("submit",async function(event){
     ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
   );
   roiPairs.forEach(function(pair){const el=$(pair[0]);if(el&&el.value!=="")s[pair[1]]=Number(el.value);});
+  if(caps.simulator_backend==="carla"){
+    s.SIMULATOR_STEERING_LIMIT=Number($("steering-authority").value);
+    s.SIMULATOR_STEERING_RATE=Number($("steering-rate").value);
+    s.SIMULATOR_THROTTLE_RISE_RATE=Number($("throttle-rise-rate").value);
+  }
   if(caps.supports_crosswalk) s.SIMULATOR_STOP_ON_CROSSWALK=$("stop-crosswalk").checked;
   if(caps.vision_profile==="city"){
     s.CITY_LANE_DETECTOR=$("city-lane-detector").value;

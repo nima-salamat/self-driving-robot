@@ -48,8 +48,11 @@ class SimulatorSettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory)
             carla_path = load_simulator_settings(config, "carla", "carla")
-            self.assertEqual(config.SIMULATOR_TARGET_SPEED, 50.0)
-            self.assertEqual(config.SIMULATOR_THROTTLE_LIMIT, 0.70)
+            self.assertEqual(config.SIMULATOR_TARGET_SPEED, 5.0)
+            self.assertEqual(config.SIMULATOR_THROTTLE_LIMIT, 0.12)
+            self.assertEqual(config.SIMULATOR_STEERING_LIMIT, 0.28)
+            self.assertEqual(config.SIMULATOR_STEERING_RATE, 0.80)
+            self.assertEqual(config.SIMULATOR_THROTTLE_RISE_RATE, 0.12)
             self.assertFalse(config.USE_BEV)
             self.assertEqual(config.LANE_THRESHOLD, 180)
             self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 6)
@@ -58,7 +61,9 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(config.SERVO_CENTER, 95.0)
             self.assertEqual(config.MAX_SERVO_ANGLE, 130.0)
             save_simulator_settings(config, "carla", {
-                "SIMULATOR_TARGET_SPEED": 12.0, "SIMULATOR_LIDAR_ENABLED": False,
+                "SIMULATOR_TARGET_SPEED": 7.0, "SIMULATOR_THROTTLE_LIMIT": 0.15,
+                "SIMULATOR_STEERING_LIMIT": 0.35, "SIMULATOR_STEERING_RATE": 1.0,
+                "SIMULATOR_THROTTLE_RISE_RATE": 0.20, "SIMULATOR_LIDAR_ENABLED": False,
                 "CITY_LANE_DETECTOR": "blsf-beta", "LANE_THRESHOLD": 145,
                 "HOUGH_THRESHOLD": 24, "CROSSWALK_THRESHOLD": 160,
                 "LANE_ROI_MODE": "trapezoid", "RL_TOP_WIDTH_FACTOR": 0.7,
@@ -68,7 +73,10 @@ class SimulatorSettingsTests(unittest.TestCase):
             })
             self.assertTrue(carla_path.is_file())
             payload = json.loads(carla_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["SIMULATOR_TARGET_SPEED"], 12.0)
+            self.assertEqual(payload["SIMULATOR_TARGET_SPEED"], 7.0)
+            self.assertEqual(payload["SIMULATOR_THROTTLE_LIMIT"], 0.15)
+            self.assertEqual(config.SIMULATOR_STEERING_LIMIT, 0.35)
+            self.assertEqual(config.SIMULATOR_STEERING_RATE, 1.0)
             self.assertFalse(payload["SIMULATOR_LIDAR_ENABLED"])
             self.assertEqual(config.CITY_LANE_DETECTOR, "blsf-beta")
             self.assertEqual(config.LANE_THRESHOLD, 145)
@@ -107,6 +115,24 @@ class SimulatorSettingsTests(unittest.TestCase):
         self.assertIs(adapter._load_world_with_timeout("Town05"), client.world)
         self.assertEqual(client.map_name, "Town05")
         self.assertEqual(client.timeouts, [120.0, 5.0])
+
+    def test_legacy_carla_profile_is_clamped_to_safe_motion_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory) / "carla.sim.json"
+            profile.write_text(json.dumps({
+                "SIMULATOR_TARGET_SPEED": 50.0,
+                "SIMULATOR_THROTTLE_LIMIT": 0.70,
+                "SIMULATOR_STEERING_LIMIT": 1.0,
+                "SIMULATOR_STEERING_RATE": 5.0,
+                "SIMULATOR_THROTTLE_RISE_RATE": 1.0,
+            }), encoding="utf-8")
+            config = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(config, "carla", "carla")
+            self.assertEqual(config.SIMULATOR_TARGET_SPEED, 8.0)
+            self.assertEqual(config.SIMULATOR_THROTTLE_LIMIT, 0.18)
+            self.assertEqual(config.SIMULATOR_STEERING_LIMIT, 0.50)
+            self.assertEqual(config.SIMULATOR_STEERING_RATE, 1.50)
+            self.assertEqual(config.SIMULATOR_THROTTLE_RISE_RATE, 0.50)
 
     def test_avis_target_speed_remains_percentage_limited(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -216,6 +242,10 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertEqual(page.status_code, 200, page.data[:300])
                     page_text = page.get_data(as_text=True)
                     self.assertIn("Simulator camera", page_text)
+                    if backend == "carla":
+                        self.assertIn('id="steering-authority"', page_text)
+                        self.assertIn('id="steering-rate"', page_text)
+                        self.assertIn('id="throttle-rise-rate"', page_text)
                     self.assertIn('id="camera-feed-status"', page_text)
                     self.assertIn('id="camera-diagnostic"', page_text)
                     self.assertIn("/video_feed_frame", page_text)
@@ -287,7 +317,9 @@ class VirtualControllerTests(unittest.TestCase):
     def setUp(self):
         self.config = SimpleNamespace(
             MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
-            SIMULATOR_TARGET_SPEED=20.0, SIMULATOR_THROTTLE_LIMIT=0.3,
+            SIMULATOR_TARGET_SPEED=5.0, SIMULATOR_THROTTLE_LIMIT=0.12,
+            SIMULATOR_STEERING_LIMIT=0.28, SIMULATOR_STEERING_RATE=0.80,
+            SIMULATOR_THROTTLE_RISE_RATE=0.12,
             SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
         )
 
@@ -330,7 +362,9 @@ class VirtualControllerTests(unittest.TestCase):
         config = SimpleNamespace(
             MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
             CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
-            SIMULATOR_TARGET_SPEED=50.0, SIMULATOR_THROTTLE_LIMIT=0.7,
+            SIMULATOR_TARGET_SPEED=5.0, SIMULATOR_THROTTLE_LIMIT=0.12,
+            SIMULATOR_STEERING_LIMIT=0.28, SIMULATOR_STEERING_RATE=0.80,
+            SIMULATOR_THROTTLE_RISE_RATE=0.12,
             SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
             ENCODER_MAP_ENABLED=False, STREAM=False, debug_frames_list=[None, None],
         )
@@ -353,7 +387,9 @@ class VirtualControllerTests(unittest.TestCase):
         config = SimpleNamespace(
             MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
             CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
-            SIMULATOR_TARGET_SPEED=50.0, SIMULATOR_THROTTLE_LIMIT=0.7,
+            SIMULATOR_TARGET_SPEED=5.0, SIMULATOR_THROTTLE_LIMIT=0.12,
+            SIMULATOR_STEERING_LIMIT=0.28, SIMULATOR_STEERING_RATE=0.80,
+            SIMULATOR_THROTTLE_RISE_RATE=0.12,
             SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
             USE_BEV=True, ENCODER_MAP_ENABLED=False, STREAM=True, debug_frames_list=[None, None],
             stream_frame_seq=0,
@@ -376,12 +412,51 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertEqual(command.throttle, 0.0)
         self.assertEqual(command.servo_angle, before)
 
+    def test_carla_steering_and_throttle_are_slew_limited(self):
+        with patch("modes.simulation.controller.time.monotonic", side_effect=[10.0, 10.1, 10.2]):
+            controller = VirtualVehicleController(self.config, "carla")
+            first = controller.command_for({"perception_valid": True, "steering_angle": 180}, speed_kmh=0.0)
+            second = controller.command_for({"perception_valid": True, "steering_angle": 180}, speed_kmh=0.0)
+        self.assertEqual(first.servo_angle, 130)
+        self.assertAlmostEqual(first.steering, 0.08, places=3)
+        self.assertAlmostEqual(second.steering, 0.16, places=3)
+        self.assertAlmostEqual(first.throttle, 0.012, places=3)
+        self.assertAlmostEqual(second.throttle, 0.024, places=3)
+        self.assertLessEqual(abs(second.steering), 0.28)
+
+    def test_carla_brakes_when_above_low_target_speed(self):
+        with patch("modes.simulation.controller.time.monotonic", side_effect=[20.0, 20.1]):
+            controller = VirtualVehicleController(self.config, "carla")
+            command = controller.command_for({"perception_valid": True, "steering_angle": 95}, speed_kmh=7.0)
+        self.assertEqual(command.throttle, 0.0)
+        self.assertGreater(command.brake, 0.0)
+        self.assertLessEqual(command.target_speed, 8.0)
+
+    def test_carla_adapter_applies_final_actuator_safety_caps(self):
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        class FakeVehicle:
+            def apply_control(self, control): self.control = control
+        class FakeCarla:
+            @staticmethod
+            def VehicleControl(**kwargs): return SimpleNamespace(**kwargs)
+
+        adapter = CarlaAdapter(SimpleNamespace(
+            SIMULATOR_THROTTLE_LIMIT=0.12, SIMULATOR_STEERING_LIMIT=0.28
+        ))
+        adapter.vehicle = FakeVehicle()
+        adapter.carla = FakeCarla()
+        command = VehicleCommand(1.0, 1.0, 0.0, 130.0, 50.0, "oversized request")
+        self.assertTrue(adapter.apply_control(command))
+        self.assertEqual(adapter.vehicle.control.steer, 0.28)
+        self.assertEqual(adapter.vehicle.control.throttle, 0.12)
+
     def test_valid_perception_is_clamped_and_throttle_limited(self):
         controller = VirtualVehicleController(self.config, "carla")
         command = controller.command_for({"perception_valid": True, "steering_angle": 180}, speed_kmh=0.0)
         self.assertEqual(command.servo_angle, 130)
-        self.assertEqual(command.steering, 1.0)
-        self.assertLessEqual(command.throttle, 0.3)
+        self.assertLessEqual(abs(command.steering), 0.28)
+        self.assertLessEqual(command.throttle, 0.12)
         self.assertGreaterEqual(command.throttle, 0.0)
 
     def test_avis_adapter_normalizes_sensor_values_and_outputs(self):

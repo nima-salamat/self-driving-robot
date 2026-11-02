@@ -41,7 +41,7 @@ The virtual controller maps the configured servo minimum/center/maximum into a n
 
 CARLA is **disarmed on every launch**. The vehicle is commanded to brake after connection and does not receive autonomous throttle until the user presses **Start Run** in the simulator Stream. **Stop / Brake** disarms it immediately. Opening the camera placement studio or changing the CARLA scene also disarms the run; closing an editor does not re-enable motion. Press Start Run again when the scene and camera are ready. This explicit run gate applies to CARLA; AVIS retains its existing run behavior.
 
-For CARLA the default target is 50 km/h and the virtual throttle cap is 0.70. These are conservative starting points, not guaranteed achieved speeds; the active saved `carla.sim.json` values take precedence. Adjust **Target speed** and **Throttle limit** in the simulator editor to tune them. The maximum configured CARLA target is 200 km/h and throttle is limited to 0–1.
+CARLA now starts at 5 km/h, with throttle capped at 0.12, steering input capped at 0.28 (CARLA normalized -1…+1), steering slew limited to 0.8 normalized units/second, and throttle rise limited to 0.12/second. Hard runtime ceilings during initial tuning are 8 km/h, 0.18 throttle, 0.50 normalized steering, 1.5 steering units/second, and 0.50 throttle rise/second. Legacy `carla.sim.json` profiles are clamped in memory so former 50 km/h / 0.70 settings cannot silently restore aggressive motion. Raise limits only after confirming steering sign and vehicle response at low speed.
 
 Simulator commands and virtual encoder pulses are simulation state/telemetry, not physical Arduino commands or physical encoder measurements.
 
