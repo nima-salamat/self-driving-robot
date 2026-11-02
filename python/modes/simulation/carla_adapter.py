@@ -573,25 +573,48 @@ class CarlaAdapter(SimulatorAdapter):
             ),
         )
 
+    @staticmethod
+    def _rotation_from_matrix(matrix):
+        """Extract CARLA's pitch/yaw/roll convention from a 3x3 rotation matrix."""
+        rotation = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
+        # CARLA uses Rz(yaw) * Ry(-pitch) * Rx(-roll). Its matrix has
+        # sin(pitch) at [2, 0], -cos(pitch)*sin(roll) at [2, 1],
+        # and cos(pitch)*cos(roll) at [2, 2].
+        pitch = math.asin(max(-1.0, min(1.0, float(rotation[2, 0]))))
+        cos_pitch = math.cos(pitch)
+        if abs(cos_pitch) > 1e-8:
+            yaw = math.atan2(float(rotation[1, 0]), float(rotation[0, 0]))
+            roll = math.atan2(-float(rotation[2, 1]), float(rotation[2, 2]))
+        else:
+            # At +/-90 degrees pitch, yaw and roll are coupled. Choose roll=0
+            # and preserve the observable combined heading.
+            yaw = math.atan2(-float(rotation[0, 1]), float(rotation[1, 1]))
+            roll = 0.0
+        return {
+            "pitch": math.degrees(pitch),
+            "yaw": math.degrees(yaw),
+            "roll": math.degrees(roll),
+        }
+
     def _mounted_camera_world_transform(self, values=None):
+        """Compose the vehicle world pose with the camera's vehicle-local mount."""
         if self.vehicle is None:
             raise RuntimeError("CARLA vehicle is not connected")
-        vehicle_transform = self.vehicle.get_transform()
         values = values or self._camera_mount_preview or self._mount_values_from_config()
+        vehicle_transform = self.vehicle.get_transform()
+        local_transform = self._vehicle_camera_transform(values)
+        vehicle_matrix = np.asarray(vehicle_transform.get_matrix(), dtype=np.float64).reshape(4, 4)
+        local_matrix = np.asarray(local_transform.get_matrix(), dtype=np.float64).reshape(4, 4)
+        world_matrix = vehicle_matrix @ local_matrix
         location = self.carla.Location(
-            x=float(values["SIMULATOR_CAMERA_X"]),
-            y=float(values["SIMULATOR_CAMERA_Y"]),
-            z=float(values["SIMULATOR_CAMERA_Z"]),
+            x=float(world_matrix[0, 3]),
+            y=float(world_matrix[1, 3]),
+            z=float(world_matrix[2, 3]),
         )
-        vehicle_transform.transform(location)
-        vehicle_rotation = vehicle_transform.rotation
+        rotation = self._rotation_from_matrix(world_matrix[:3, :3])
         return self.carla.Transform(
             location,
-            self.carla.Rotation(
-                pitch=float(vehicle_rotation.pitch) + float(values["SIMULATOR_CAMERA_PITCH"]),
-                yaw=float(vehicle_rotation.yaw) + float(values["SIMULATOR_CAMERA_YAW"]),
-                roll=float(vehicle_rotation.roll) + float(values["SIMULATOR_CAMERA_ROLL"]),
-            ),
+            self.carla.Rotation(**rotation),
         )
 
     def preview_camera_mount(self, patch):
@@ -694,25 +717,24 @@ class CarlaAdapter(SimulatorAdapter):
         if self.editor_camera is None or self._editor_transform is None or self.vehicle is None:
             raise RuntimeError("Open the CARLA camera placement studio first")
         vehicle_transform = self.vehicle.get_transform()
-        matrix = np.asarray(vehicle_transform.get_inverse_matrix(), dtype=np.float64).reshape(4, 4)
-        world_location = self._editor_transform.location
-        local = matrix @ np.asarray(
-            [world_location.x, world_location.y, world_location.z, 1.0],
-            dtype=np.float64,
-        )
-        vehicle_rotation = vehicle_transform.rotation
-        view_rotation = self._editor_transform.rotation
-
-        def wrap(angle):
-            return (float(angle) + 180.0) % 360.0 - 180.0
-
+        vehicle_inverse = np.asarray(
+            vehicle_transform.get_inverse_matrix(), dtype=np.float64
+        ).reshape(4, 4)
+        world_camera = np.asarray(
+            self._editor_transform.get_matrix(), dtype=np.float64
+        ).reshape(4, 4)
+        # A camera mount is a complete rigid transform. Convert both its
+        # translation and rotation with the same parent inverse matrix; Euler
+        # angle subtraction is not a valid inverse for composed 3D rotations.
+        local_camera = vehicle_inverse @ world_camera
+        local_rotation = self._rotation_from_matrix(local_camera[:3, :3])
         patch = {
-            "SIMULATOR_CAMERA_X": float(local[0]),
-            "SIMULATOR_CAMERA_Y": float(local[1]),
-            "SIMULATOR_CAMERA_Z": float(local[2]),
-            "SIMULATOR_CAMERA_PITCH": wrap(view_rotation.pitch - vehicle_rotation.pitch),
-            "SIMULATOR_CAMERA_YAW": wrap(view_rotation.yaw - vehicle_rotation.yaw),
-            "SIMULATOR_CAMERA_ROLL": wrap(view_rotation.roll - vehicle_rotation.roll),
+            "SIMULATOR_CAMERA_X": float(local_camera[0, 3]),
+            "SIMULATOR_CAMERA_Y": float(local_camera[1, 3]),
+            "SIMULATOR_CAMERA_Z": float(local_camera[2, 3]),
+            "SIMULATOR_CAMERA_PITCH": local_rotation["pitch"],
+            "SIMULATOR_CAMERA_YAW": local_rotation["yaw"],
+            "SIMULATOR_CAMERA_ROLL": local_rotation["roll"],
         }
         from .settings import _validate_settings
         patch = _validate_settings(patch)
