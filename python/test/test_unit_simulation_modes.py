@@ -144,6 +144,7 @@ class SimulatorSettingsTests(unittest.TestCase):
                 "SIMULATOR_STEERING_LIMIT": 0.75,
                 "SIMULATOR_STEERING_RATE": 3.5,
                 "SIMULATOR_THROTTLE_RISE_RATE": 0.65,
+                "RL_TOP_ROI": 0.1,
                 "RL_MIRRORED": True,
                 "LL_MIRRORED": True,
             })
@@ -151,12 +152,14 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(path["SIMULATOR_THROTTLE_LIMIT"], 0.42)
             profile = json.loads((Path(directory) / "carla.sim.json").read_text(encoding="utf-8"))
             self.assertEqual(profile["SIMULATOR_TUNING_PROFILE_VERSION"], 2)
+            self.assertEqual(profile["RL_TOP_ROI"], 0.1)
             self.assertTrue(profile["RL_MIRRORED"])
             self.assertTrue(profile["LL_MIRRORED"])
             restarted = SimpleNamespace(BASE_DIR=directory)
             load_simulator_settings(restarted, "carla", "carla")
             self.assertEqual(restarted.SIMULATOR_TARGET_SPEED, 12.5)
             self.assertEqual(restarted.SIMULATOR_THROTTLE_LIMIT, 0.42)
+            self.assertEqual(restarted.RL_TOP_ROI, 0.1)
             self.assertEqual(restarted.SIMULATOR_STEERING_LIMIT, 0.75)
             self.assertEqual(restarted.SIMULATOR_STEERING_RATE, 3.5)
             self.assertEqual(restarted.SIMULATOR_THROTTLE_RISE_RATE, 0.65)
