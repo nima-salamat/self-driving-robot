@@ -1183,7 +1183,7 @@ async function closeCameraEditor(discard){
   cameraMoveTimer=cameraImageTimer=cameraStateTimer=cameraPreviewTimer=null;
   $("camera-editor-modal").setAttribute("aria-hidden","true");
   $("camera-editor-preview").removeAttribute("src");
-  try{await cameraAction(discard?"discard":"close");setCameraStatus("Saved mount restored. Vehicle control can resume.",false);}
+  try{await cameraAction(discard?"discard":"close");setCameraStatus("Saved mount restored. CARLA remains STOPPED; press Start Run when the scene is ready.",false);}
   catch(error){status(error.message,false);}
 }
 function initCameraEditor(){
