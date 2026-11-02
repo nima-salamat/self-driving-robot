@@ -23,6 +23,7 @@ CAMERA_MOUNT_KEYS = {
 
 LIVE_KEYS = {
     "SIMULATOR_TARGET_SPEED", "SIMULATOR_THROTTLE_LIMIT",
+    "SIMULATOR_STEERING_LIMIT", "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "SIMULATOR_STOP_ON_LOST_LANE", "SIMULATOR_STOP_ON_CROSSWALK",
     "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_STEERING_INVERTED",
     "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
@@ -160,7 +161,7 @@ def register_simulator_routes(app, streamer):
                 target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
             except (TypeError, ValueError, OverflowError):
                 return jsonify(success=False, message="SIMULATOR_TARGET_SPEED must be numeric"), 400
-            maximum_speed = 100 if backend == "avis" else 200
+            maximum_speed = 100 if backend == "avis" else 8
             if not math.isfinite(target_speed) or target_speed < 0 or target_speed > maximum_speed:
                 return jsonify(success=False, message=f"Target speed must be between 0 and {maximum_speed} for {backend.upper()}"), 400
             patch["SIMULATOR_TARGET_SPEED"] = target_speed
@@ -194,8 +195,9 @@ def register_simulator_routes(app, streamer):
                 value = float(patch["SIMULATOR_THROTTLE_LIMIT"])
             except (TypeError, ValueError, OverflowError):
                 return jsonify(success=False, message="SIMULATOR_THROTTLE_LIMIT must be numeric"), 400
-            if not math.isfinite(value) or not 0 <= value <= 1:
-                return jsonify(success=False, message="SIMULATOR_THROTTLE_LIMIT must be between 0 and 1"), 400
+            maximum_throttle = 1.0 if backend == "avis" else 0.18
+            if not math.isfinite(value) or not 0 <= value <= maximum_throttle:
+                return jsonify(success=False, message=f"SIMULATOR_THROTTLE_LIMIT must be between 0 and {maximum_throttle} for {backend.upper()}"), 400
             patch["SIMULATOR_THROTTLE_LIMIT"] = value
         for key in ("SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
                     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED",

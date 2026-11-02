@@ -869,12 +869,15 @@ class CarlaAdapter(SimulatorAdapter):
         with self._world_lock:
             if self.vehicle is None:
                 return False
-            throttle = max(0.0, min(1.0, float(command.throttle)))
+            throttle_cap = min(0.18, max(0.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.12))))
+            steering_cap = min(0.50, max(0.0, float(getattr(self.config, "SIMULATOR_STEERING_LIMIT", 0.28))))
+            throttle = max(0.0, min(throttle_cap, float(command.throttle)))
             brake = max(0.0, min(1.0, float(command.brake)))
+            steering = max(-steering_cap, min(steering_cap, float(command.steering)))
             if time.monotonic() < self._hold_control_until:
                 throttle, brake = 0.0, 1.0
             self.vehicle.apply_control(self.carla.VehicleControl(
-                steer=max(-1.0, min(1.0, float(command.steering))),
+                steer=steering,
                 throttle=throttle, brake=brake,
                 hand_brake=False, reverse=False, manual_gear_shift=False,
             ))

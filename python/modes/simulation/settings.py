@@ -14,7 +14,9 @@ SIMULATOR_KEYS = {
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
     "SIMULATOR_CAMERA_FOV", "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
     "SIMULATOR_CAMERA_PITCH", "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "SIMULATOR_TARGET_SPEED",
-    "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STOP_ON_LOST_LANE",
+    "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STEERING_LIMIT",
+    "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
+    "SIMULATOR_STOP_ON_LOST_LANE",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "SIMULATOR_STEERING_INVERTED", "SIMULATOR_AVIS_SENSOR_ANGLE",
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE", "SERVO_DIRECTION",
@@ -54,6 +56,7 @@ STRING_KEYS = {
 POSITIVE_KEYS = {
     "SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
     "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
+    "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "ENCODER_PULSE_DISTANCE_CM", "CAMERA_HEIGHT", "LANE_WIDTH",
 }
 NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"}
@@ -66,7 +69,8 @@ BEV_KEYS = {
 }
 ROI_FACTOR_KEYS = {"RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR"}
 NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS | {
-    "SIMULATOR_THROTTLE_LIMIT", "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
+    "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STEERING_LIMIT",
+    "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
     "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "CAMERA_PITCH_DEG",
@@ -100,9 +104,12 @@ def _defaults(mode, backend):
         "SIMULATOR_CAMERA_PITCH": -8.0,
         "SIMULATOR_CAMERA_YAW": 0.0,
         "SIMULATOR_CAMERA_ROLL": 0.0,
-        # CARLA target speed is km/h; AVIS target speed is API percentage.
-        "SIMULATOR_TARGET_SPEED": 25.0 if avis else 50.0,
-        "SIMULATOR_THROTTLE_LIMIT": 0.35 if avis else 0.70,
+        # CARLA starts at walking speed; AVIS target remains an API percentage.
+        "SIMULATOR_TARGET_SPEED": 25.0 if avis else 5.0,
+        "SIMULATOR_THROTTLE_LIMIT": 0.35 if avis else 0.12,
+        "SIMULATOR_STEERING_LIMIT": 1.0 if avis else 0.28,
+        "SIMULATOR_STEERING_RATE": 5.0 if avis else 0.80,
+        "SIMULATOR_THROTTLE_RISE_RATE": 1.0 if avis else 0.12,
         # Simulator City vision starts in the raw camera frame. BEV can be
         # enabled and tuned explicitly after checking the camera perspective.
         "USE_BEV": False,
@@ -223,6 +230,12 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_OBSTACLE_STOP_DISTANCE_CM must be at most 500 cm")
             if key == "SIMULATOR_THROTTLE_LIMIT" and not 0 <= value <= 1:
                 raise ValueError("SIMULATOR_THROTTLE_LIMIT must be between 0 and 1")
+            if key == "SIMULATOR_STEERING_LIMIT" and not 0.05 <= value <= 1:
+                raise ValueError("SIMULATOR_STEERING_LIMIT must be between 0.05 and 1")
+            if key == "SIMULATOR_STEERING_RATE" and value > 10:
+                raise ValueError("SIMULATOR_STEERING_RATE must be at most 10 normalized units per second")
+            if key == "SIMULATOR_THROTTLE_RISE_RATE" and value > 1:
+                raise ValueError("SIMULATOR_THROTTLE_RISE_RATE must be at most 1 throttle unit per second")
             if key in ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS and not 0 <= value <= 1:
                 raise ValueError(f"{key} must be between 0 and 1")
             if key == "CAMERA_PITCH_DEG" and not -90 <= value <= 90:
@@ -265,6 +278,14 @@ def load_simulator_settings(config, mode, backend):
     target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
     if backend == "avis" and target > 100:
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
+    if backend == "carla":
+        # Clamp legacy .sim.json profiles in memory; former 50 km/h / 0.70
+        # values must not silently restore the old aggressive control response.
+        config.SIMULATOR_TARGET_SPEED = min(target, 8.0)
+        config.SIMULATOR_THROTTLE_LIMIT = min(float(config.SIMULATOR_THROTTLE_LIMIT), 0.18)
+        config.SIMULATOR_STEERING_LIMIT = min(float(config.SIMULATOR_STEERING_LIMIT), 0.50)
+        config.SIMULATOR_STEERING_RATE = min(float(config.SIMULATOR_STEERING_RATE), 1.50)
+        config.SIMULATOR_THROTTLE_RISE_RATE = min(float(config.SIMULATOR_THROTTLE_RISE_RATE), 0.50)
     if backend == "avis" and float(getattr(config, "SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
         raise ValueError("AVIS Engine request timeout must be at most 1 second")
     return path
@@ -284,6 +305,17 @@ def save_simulator_settings(config, mode, patch):
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
     if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
         raise ValueError("AVIS Engine request timeout must be at most 1 second")
+    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "carla":
+        if float(values.get("SIMULATOR_TARGET_SPEED", 5.0)) > 8.0:
+            raise ValueError("CARLA target speed is safety-limited to 8 km/h during initial tuning")
+        if float(values.get("SIMULATOR_THROTTLE_LIMIT", 0.12)) > 0.18:
+            raise ValueError("CARLA throttle limit is safety-limited to 0.18 during initial tuning")
+        if float(values.get("SIMULATOR_STEERING_LIMIT", 0.28)) > 0.50:
+            raise ValueError("CARLA steering authority is safety-limited to 0.50 during initial tuning")
+        if float(values.get("SIMULATOR_STEERING_RATE", 0.80)) > 1.50:
+            raise ValueError("CARLA steering rate is safety-limited to 1.5 normalized units per second")
+        if float(values.get("SIMULATOR_THROTTLE_RISE_RATE", 0.12)) > 0.50:
+            raise ValueError("CARLA throttle rise rate is safety-limited to 0.5 per second")
     fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
