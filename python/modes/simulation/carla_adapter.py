@@ -80,7 +80,7 @@ class CarlaAdapter(SimulatorAdapter):
         if self.client is None:
             raise RuntimeError("CARLA client is not connected")
         normal_timeout = float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 5.0))
-        load_timeout = max(60.0, normal_timeout)
+        load_timeout = max(120.0, normal_timeout)
         logger.info("Loading CARLA map %s with a %.0f-second RPC timeout", map_name, load_timeout)
         self.client.set_timeout(load_timeout)
         try:
