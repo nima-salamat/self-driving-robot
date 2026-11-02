@@ -441,7 +441,8 @@ class SimulationRuntime:
                 if frame.sequence and frame.sequence == self._last_sequence:
                     continue
                 if frame.sequence and self._last_sequence and frame.sequence > self._last_sequence + 1:
-                    self._camera_frames_skipped += frame.sequence - self._last_sequence - 1
+                    with self._state_lock:
+                        self._camera_frames_skipped += frame.sequence - self._last_sequence - 1
                 self._last_sequence = frame.sequence
                 self._last_frame_at = frame.captured_at
                 self._last_sensor_frame = frame
@@ -541,10 +542,11 @@ class SimulationRuntime:
                 self._stop_event_active = False
                 self._update_virtual_encoder(frame, command, now)
                 self._record_command_if_changed(result, command)
-                self._last_detection_ms = detection_ms
-                self._last_control_ms = control_ms
-                self._detection_times_ms.append(detection_ms)
-                self._cycle_times.append(time.monotonic())
+                with self._state_lock:
+                    self._last_detection_ms = detection_ms
+                    self._last_control_ms = control_ms
+                    self._detection_times_ms.append(detection_ms)
+                    self._cycle_times.append(time.monotonic())
                 self._queue_frame_for_stream(frame, result, command)
                 self._last_cycle_at = now
                 self._next_cycle_at = max(self._next_cycle_at + self._frame_period, now)
