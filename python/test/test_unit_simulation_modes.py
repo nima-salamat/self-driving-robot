@@ -322,6 +322,10 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="min-servo"', page_text)
                         self.assertIn('id="servo-direction"', page_text)
                         self.assertIn("camera-editor-modal", page_text)
+                        self.assertIn('id="camera-mount-readout"', page_text)
+                        self.assertIn('id="camera-stream-readout"', page_text)
+                        self.assertIn("CARLA WORLD", page_text)
+                        self.assertIn("cameraPreviewChain", page_text)
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
@@ -377,6 +381,32 @@ class SimulatorEditorTests(unittest.TestCase):
                             json={"action": "reset_to_spawn"},
                         )
                         self.assertEqual(scene_denied.status_code, 403)
+
+    def test_camera_editor_state_reports_actual_stream_sensor_transform(self):
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        stream_transform = SimpleNamespace(
+            location=SimpleNamespace(x=104.25, y=-32.5, z=3.8),
+            rotation=SimpleNamespace(pitch=-7.0, yaw=91.0, roll=0.5),
+        )
+        adapter = CarlaAdapter(SimpleNamespace())
+        adapter.connected = True
+        adapter.vehicle = object()
+        adapter.camera = SimpleNamespace(get_transform=lambda: stream_transform)
+        adapter.editor_camera = object()
+        adapter._editor_transform = SimpleNamespace(
+            location=SimpleNamespace(x=105.0, y=-33.0, z=4.0),
+            rotation=SimpleNamespace(pitch=-6.0, yaw=92.0, roll=0.0),
+        )
+
+        state = adapter.camera_editor_state()
+
+        self.assertEqual(state["stream_camera_transform"], {
+            "x": 104.25, "y": -32.5, "z": 3.8,
+            "pitch": -7.0, "yaw": 91.0, "roll": 0.5,
+        })
+        self.assertEqual(state["world_transform"]["x"], 105.0)
+        self.assertEqual(state["mount"]["SIMULATOR_CAMERA_X"], 1.45)
 
     def test_carla_settings_api_accepts_user_tuning_and_mirror_flags(self):
         import os
