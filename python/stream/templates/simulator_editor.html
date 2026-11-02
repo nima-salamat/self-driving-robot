@@ -356,7 +356,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <section class="camera-editor-window" role="dialog" aria-modal="true" aria-labelledby="camera-editor-title">
     <header class="camera-editor-header">
       <div><h2 id="camera-editor-title">CARLA · Camera Placement Studio</h2><p>Free-fly through the map, then apply the view as the vehicle's live camera mount.</p></div>
-      <span class="sim-spacer"></span><span class="pill" id="camera-editor-mode">WORLD CAMERA</span>
+      <span class="sim-spacer"></span><span class="pill" id="camera-editor-mode" data-mode="free" title="Keyboard movement and mouse-look control the independent free camera in CARLA world coordinates.">FREE-FLY · WORLD ROTATION</span>
       <button type="button" class="camera-modal-close" id="close-camera-editor" aria-label="Close camera placement studio">×</button>
     </header>
     <div class="camera-editor-main">
@@ -1240,6 +1240,18 @@ const mountFields=[
 let cameraEditorOpen=false,cameraMoveTimer=null,cameraImageTimer=null,cameraStateTimer=null,cameraPreviewTimer=null;
 let cameraPreviewChain=Promise.resolve(),cameraPreviewVersion=0;
 let cameraHeldKeys=new Set(),cameraMovePending=false,cameraLookYaw=0,cameraLookPitch=0,cameraLastPointer=null;
+let cameraControlMode="free";
+function setCameraControlMode(mode){
+  cameraControlMode=mode;
+  const badge=$("camera-editor-mode");if(!badge)return;
+  const modes={
+    free:{label:"FREE-FLY · WORLD ROTATION",title:"Free camera mode: WASD/QE and mouse-look rotate or move the independent camera in CARLA world coordinates."},
+    preview:{label:"MOUNT PREVIEW · VEHICLE-LOCAL",title:"Mount preview mode: slider values are vehicle-relative offsets and angles. The main Stream sensor has not changed until Save mount."},
+    applied:{label:"STREAM MOUNT · APPLIED",title:"Applied mode: the main Stream RGB sensor has been recreated with the selected vehicle-relative camera mount."}
+  };
+  const selected=modes[mode]||modes.free;
+  badge.textContent=selected.label;badge.title=selected.title;badge.dataset.mode=mode;
+}
 function updateCameraMountInputs(mount){
   if(!mount)return;
   mountFields.forEach(function(item){
@@ -1261,7 +1273,8 @@ function renderCameraWorld(state){
   if(mount)setText("camera-mount-readout","VEHICLE-RELATIVE MOUNT\nX "+numeric(mount.SIMULATOR_CAMERA_X,2)+" m · Y "+numeric(mount.SIMULATOR_CAMERA_Y,2)+" m · Z "+numeric(mount.SIMULATOR_CAMERA_Z,2)+" m\nPitch "+numeric(mount.SIMULATOR_CAMERA_PITCH,1)+"° · Yaw "+numeric(mount.SIMULATOR_CAMERA_YAW,1)+"° · Roll "+numeric(mount.SIMULATOR_CAMERA_ROLL,1)+"°");
   if(stream)setText("camera-stream-readout","STREAM RGB SENSOR · CARLA WORLD\nX "+numeric(stream.x,2)+" m · Y "+numeric(stream.y,2)+" m · Z "+numeric(stream.z,2)+" m\nPitch "+numeric(stream.pitch,1)+"° · Yaw "+numeric(stream.yaw,1)+"° · Roll "+numeric(stream.roll,1)+"°");
   if(world)setText("camera-world-readout","FREE PREVIEW · CARLA WORLD\nX "+numeric(world.x,2)+" m · Y "+numeric(world.y,2)+" m · Z "+numeric(world.z,2)+" m\nPitch "+numeric(world.pitch,1)+"° · Yaw "+numeric(world.yaw,1)+"° · Roll "+numeric(world.roll,1)+"°");
-  if(state&&state.active)setText("camera-editor-mode","FREE-FLY ACTIVE");
+  // Keep the selected control mode stable while the state poll refreshes coordinates.
+  setCameraControlMode(cameraControlMode);
 }
 async function cameraAction(action,payload,renderState){
   const response=await fetch("/api/simulation/carla-camera",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({action:action},payload||{})),cache:"no-store"});
@@ -1275,7 +1288,7 @@ async function pollCameraEditorState(){
   catch(error){setCameraStatus(error.message,true);}
 }
 function queueCameraMountPreview(){
-  updateCameraMountOutputs();if(!cameraEditorOpen)return;
+  updateCameraMountOutputs();setCameraControlMode("preview");if(!cameraEditorOpen)return;
   const version=++cameraPreviewVersion;
   const transform=readCameraMount();
   clearTimeout(cameraPreviewTimer);
@@ -1287,7 +1300,7 @@ function queueCameraMountPreview(){
         const state=await cameraAction("preview_mount",{transform:transform,follow_mount:true},false);
         if(cameraEditorOpen&&version===cameraPreviewVersion){
           renderCameraWorld(state);
-          setCameraStatus("Free-fly preview updated. Save mount to reattach the main Stream camera at this position.",false);
+          setCameraStatus("Mount preview updated. The main Stream sensor is unchanged until you click Save mount.",false);
         }
       }catch(error){if(cameraEditorOpen&&version===cameraPreviewVersion)setCameraStatus(error.message,true);}
     });
@@ -1305,7 +1318,8 @@ async function openCameraEditor(){
     const state=await cameraAction("open");
     cameraEditorOpen=true;$("camera-editor-modal").setAttribute("aria-hidden","false");
     if(state&&state.mount)updateCameraMountInputs(state.mount);
-    setCameraStatus("Live camera editor open. The CARLA vehicle is held on the brake while you edit.",false);
+    setCameraControlMode("free");
+    setCameraStatus("FREE-FLY mode: move and rotate the independent world camera. Use the mount sliders to switch to vehicle-local preview.",false);
     const refreshImage=function(){if(cameraEditorOpen)$("camera-editor-preview").src="/api/simulation/carla-camera/frame.jpg?t="+Date.now();};
     refreshImage();cameraImageTimer=setInterval(refreshImage,180);
     cameraStateTimer=setInterval(pollCameraEditorState,350);
@@ -1323,6 +1337,7 @@ async function openCameraEditor(){
       const lookYaw=Math.max(-8,Math.min(8,cameraLookYaw)),lookPitch=Math.max(-8,Math.min(8,cameraLookPitch));
       cameraLookYaw-=lookYaw;cameraLookPitch-=lookPitch;yaw+=lookYaw;pitch+=lookPitch;
       if(!forward&&!right&&!up&&!yaw&&!pitch)return;
+      setCameraControlMode("free");
       cameraMovePending=true;
       try{await cameraAction("move",{forward:forward,right:right,up:up,yaw:yaw,pitch:pitch});}
       catch(error){setCameraStatus(error.message,true);}
@@ -1351,20 +1366,20 @@ function initCameraEditor(){
   $("camera-discard").addEventListener("click",function(){closeCameraEditor(true);});
   $("camera-editor-modal").addEventListener("click",function(event){if(event.target===$("camera-editor-modal"))closeCameraEditor(true);});
   $("camera-save-mount").addEventListener("click",async function(){
-    try{await settleCameraMountPreviews();const state=await cameraAction("save_mount",{transform:readCameraMount()});if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("Saved. Main Stream RGB sensor has been recreated and reattached using the selected vehicle-relative transform.",false);}
+    try{await settleCameraMountPreviews();const state=await cameraAction("save_mount",{transform:readCameraMount()});if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraControlMode("applied");setCameraStatus("Applied: the main Stream RGB sensor now uses this vehicle-local mount.",false);}
     catch(error){setCameraStatus(error.message,true);}
   });
   mountFields.forEach(function(item){$(item[1]).addEventListener("input",queueCameraMountPreview);});
-  $("camera-snap-mount").addEventListener("click",async function(){try{const state=await cameraAction("snap_to_mount");renderCameraWorld(state);setCameraStatus("Free camera snapped to the current vehicle camera position.",false);}catch(e){setCameraStatus(e.message,true);}});
-  $("camera-use-view").addEventListener("click",async function(){try{const state=await cameraAction("use_view_as_mount");if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("World camera pose transferred to the vehicle mount. Save mount to keep it.",false);}catch(e){setCameraStatus(e.message,true);}});
-  $("camera-level-view").addEventListener("click",async function(){try{await cameraAction("level_view");setCameraStatus("Free camera horizon levelled.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-snap-mount").addEventListener("click",async function(){try{const state=await cameraAction("snap_to_mount");setCameraControlMode("free");renderCameraWorld(state);setCameraStatus("FREE-FLY mode: the world camera is snapped to the current Stream camera position.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-use-view").addEventListener("click",async function(){try{const state=await cameraAction("use_view_as_mount");if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraControlMode("preview");setCameraStatus("MOUNT PREVIEW mode: the free world-camera pose is now converted to vehicle-local offsets. Save mount to apply it to Stream.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-level-view").addEventListener("click",async function(){try{await cameraAction("level_view");setCameraControlMode("free");setCameraStatus("FREE-FLY mode: free camera horizon levelled.",false);}catch(e){setCameraStatus(e.message,true);}});
   $("camera-level-mount").addEventListener("click",function(){$("cam-pitch").value="0";$("cam-roll").value="0";queueCameraMountPreview();setCameraStatus("Mount pitch and roll set to zero. Save mount to persist.",false);});
   $("camera-reset-mount").addEventListener("click",function(){updateCameraMountInputs({"SIMULATOR_CAMERA_X":1.45,"SIMULATOR_CAMERA_Y":0,"SIMULATOR_CAMERA_Z":1.8,"SIMULATOR_CAMERA_PITCH":-8,"SIMULATOR_CAMERA_YAW":0,"SIMULATOR_CAMERA_ROLL":0});queueCameraMountPreview();});
-  $("camera-restore-saved").addEventListener("click",async function(){try{await settleCameraMountPreviews();const state=await cameraAction("restore_mount");if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraStatus("Saved mount restored to live preview.",false);}catch(e){setCameraStatus(e.message,true);}});
+  $("camera-restore-saved").addEventListener("click",async function(){try{await settleCameraMountPreviews();const state=await cameraAction("restore_mount");if(state&&state.mount)updateCameraMountInputs(state.mount);setCameraControlMode("applied");setCameraStatus("STREAM MOUNT · APPLIED: saved mount restored to the live Stream sensor.",false);}catch(e){setCameraStatus(e.message,true);}});
   $("camera-editor-preview").addEventListener("error",function(){if(cameraEditorOpen)setCameraStatus("Waiting for the CARLA fly-camera frame. Confirm that the simulator is ticking.",true);});
   const viewport=$("camera-editor-viewport");
-  viewport.addEventListener("pointerdown",function(event){if(!cameraEditorOpen)return;cameraLastPointer={x:event.clientX,y:event.clientY};viewport.classList.add("dragging");viewport.setPointerCapture(event.pointerId);event.preventDefault();});
-  viewport.addEventListener("pointermove",function(event){if(!cameraLastPointer)return;const dx=event.clientX-cameraLastPointer.x,dy=event.clientY-cameraLastPointer.y;cameraLastPointer={x:event.clientX,y:event.clientY};cameraLookYaw=Math.max(-30,Math.min(30,cameraLookYaw+dx*.24));cameraLookPitch=Math.max(-30,Math.min(30,cameraLookPitch-dy*.24));});
+  viewport.addEventListener("pointerdown",function(event){if(!cameraEditorOpen)return;setCameraControlMode("free");cameraLastPointer={x:event.clientX,y:event.clientY};viewport.classList.add("dragging");viewport.setPointerCapture(event.pointerId);event.preventDefault();});
+  viewport.addEventListener("pointermove",function(event){if(!cameraLastPointer)return;setCameraControlMode("free");const dx=event.clientX-cameraLastPointer.x,dy=event.clientY-cameraLastPointer.y;cameraLastPointer={x:event.clientX,y:event.clientY};cameraLookYaw=Math.max(-30,Math.min(30,cameraLookYaw+dx*.24));cameraLookPitch=Math.max(-30,Math.min(30,cameraLookPitch-dy*.24));});
   function endLook(){cameraLastPointer=null;viewport.classList.remove("dragging");}
   viewport.addEventListener("pointerup",endLook);viewport.addEventListener("pointercancel",endLook);viewport.addEventListener("lostpointercapture",endLook);
   window.addEventListener("keydown",function(event){
