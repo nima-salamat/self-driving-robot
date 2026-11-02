@@ -48,15 +48,27 @@ class SimulatorSettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory)
             carla_path = load_simulator_settings(config, "carla", "carla")
+            self.assertEqual(config.SIMULATOR_TARGET_SPEED, 50.0)
+            self.assertEqual(config.SIMULATOR_THROTTLE_LIMIT, 0.70)
+            self.assertFalse(config.USE_BEV)
+            self.assertEqual(config.LANE_THRESHOLD, 180)
+            self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 6)
             save_simulator_settings(config, "carla", {
                 "SIMULATOR_TARGET_SPEED": 12.0, "SIMULATOR_LIDAR_ENABLED": False,
-                "CITY_LANE_DETECTOR": "blsf-beta",
+                "CITY_LANE_DETECTOR": "blsf-beta", "LANE_THRESHOLD": 145,
+                "HOUGH_THRESHOLD": 24, "CROSSWALK_THRESHOLD": 160,
+                "LANE_ROI_MODE": "trapezoid", "RL_TOP_WIDTH_FACTOR": 0.7,
             })
             self.assertTrue(carla_path.is_file())
             payload = json.loads(carla_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["SIMULATOR_TARGET_SPEED"], 12.0)
             self.assertFalse(payload["SIMULATOR_LIDAR_ENABLED"])
             self.assertEqual(config.CITY_LANE_DETECTOR, "blsf-beta")
+            self.assertEqual(config.LANE_THRESHOLD, 145)
+            self.assertEqual(config.HOUGH_THRESHOLD, 24)
+            self.assertEqual(config.CROSSWALK_THRESHOLD, 160)
+            self.assertEqual(config.LANE_ROI_MODE, "trapezoid")
+            self.assertEqual(config.RL_TOP_WIDTH_FACTOR, 0.7)
             self.assertFalse((Path(directory) / "city.json").exists())
             self.assertFalse((Path(directory) / "race.json").exists())
             avis_path = load_simulator_settings(config, "avis", "avis")
@@ -111,6 +123,13 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"CITY_LANE_DETECTOR": "not-a-detector"})
         with self.assertRaises(ValueError):
             _validate_settings({"RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 0.3})
+        with self.assertRaisesRegex(ValueError, "HOUGH_BLUR_KERNEL"):
+            _validate_settings({"HOUGH_BLUR_KERNEL": 4})
+        with self.assertRaisesRegex(ValueError, "LANE_ROI_MODE"):
+            _validate_settings({"LANE_ROI_MODE": "ellipse"})
+        with self.assertRaisesRegex(ValueError, "CROSSWALK_THRESHOLD"):
+            _validate_settings({"CROSSWALK_THRESHOLD": 300})
+        self.assertEqual(_validate_settings({"BEV_SRC_TL_X": 0.25})["BEV_SRC_TL_X"], 0.25)
         self.assertEqual(
             _validate_settings({
                 "SIMULATOR_CAMERA_X": 1.45,
@@ -188,6 +207,12 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
                     if backend == "carla":
                         self.assertIn("Open camera placement studio", page_text)
+                        self.assertIn("Autonomous run control", page_text)
+                        self.assertIn('id="carla-run-start"', page_text)
+                        self.assertIn('id="carla-run-stop"', page_text)
+                        self.assertIn('id="lane-threshold"', page_text)
+                        self.assertIn('id="crosswalk-threshold"', page_text)
+                        self.assertIn('id="bev-tl-x"', page_text)
                         self.assertIn("camera-editor-modal", page_text)
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
@@ -222,6 +247,9 @@ class SimulatorEditorTests(unittest.TestCase):
                     )
                     self.assertEqual(denied.status_code, 403)
                     if backend == "carla":
+                        run_denied = client.post("/api/simulation/run-mode", json={"action": "start"})
+                        self.assertEqual(run_denied.status_code, 403)
+                    if backend == "carla":
                         camera_denied = client.post(
                             "/api/simulation/carla-camera",
                             json={"action": "open"},
@@ -252,7 +280,7 @@ class VirtualControllerTests(unittest.TestCase):
             CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
             SIMULATOR_TARGET_SPEED=20.0, SIMULATOR_THROTTLE_LIMIT=0.3,
             SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
-            ENCODER_MAP_ENABLED=False, STREAM=True, debug_frames_list=[None, None],
+            USE_BEV=True, ENCODER_MAP_ENABLED=False, STREAM=True, debug_frames_list=[None, None],
             stream_frame_seq=0,
         )
         runtime = SimulationRuntime(config)
@@ -268,6 +296,56 @@ class VirtualControllerTests(unittest.TestCase):
         np.testing.assert_array_equal(render.call_args.args[0], vision_frame)
         self.assertEqual(config.debug_frames_list[-1].shape, raw_frame.shape)
         self.assertGreater(int(config.debug_frames_list[-1].max()), int(rendered_frame.max()))
+
+    def test_carla_run_mode_is_disarmed_until_explicit_start(self):
+        from modes.simulation.runtime import SimulationRuntime
+
+        class FakeAdapter:
+            connected = True
+            def __init__(self): self.commands = []
+            def control_ready(self): return True
+            def apply_control(self, command): self.commands.append(command); return True
+
+        config = SimpleNamespace(
+            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+            SIMULATOR_TARGET_SPEED=50.0, SIMULATOR_THROTTLE_LIMIT=0.7,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            ENCODER_MAP_ENABLED=False, STREAM=False, debug_frames_list=[None, None],
+        )
+        adapter = FakeAdapter()
+        with patch("modes.simulation.runtime.create_adapter", return_value=adapter):
+            runtime = SimulationRuntime(config)
+        self.assertFalse(runtime.snapshot()["run_enabled"])
+        self.assertEqual(runtime.snapshot()["run_mode"], "stopped")
+        self.assertTrue(runtime.set_run_enabled(True))
+        self.assertTrue(runtime.snapshot()["run_enabled"])
+        self.assertFalse(runtime.set_run_enabled(False))
+        self.assertEqual(adapter.commands[-1].brake, 1.0)
+        self.assertEqual(adapter.commands[-1].throttle, 0.0)
+
+    def test_carla_bev_blank_frame_falls_back_to_raw_camera(self):
+        import time
+        from modes.simulation.base_adapter import SensorFrame, VehicleCommand
+        from modes.simulation.runtime import SimulationRuntime
+
+        config = SimpleNamespace(
+            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+            SIMULATOR_TARGET_SPEED=50.0, SIMULATOR_THROTTLE_LIMIT=0.7,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            USE_BEV=True, ENCODER_MAP_ENABLED=False, STREAM=True, debug_frames_list=[None, None],
+            stream_frame_seq=0,
+        )
+        runtime = SimulationRuntime(config)
+        raw = np.full((8, 12, 3), 80, dtype=np.uint8)
+        blank_bev = np.zeros((8, 12, 3), dtype=np.uint8)
+        sensor = SensorFrame(image=raw, captured_at=time.monotonic(), sequence=1)
+        command = VehicleCommand(0.0, 0.0, 1.0, 95.0, 0.0, "stopped")
+        runtime._publish_frame(sensor, {"debug": {"combined": blank_bev}}, command)
+        self.assertEqual(runtime._last_image_diagnostics["source"], "camera")
+        self.assertFalse(runtime._last_image_diagnostics["looks_black"])
+        self.assertGreater(int(config.debug_frames_list[-1].mean()), 70)
 
     def test_invalid_perception_brakes_and_retains_steering(self):
         controller = VirtualVehicleController(self.config, "carla")
