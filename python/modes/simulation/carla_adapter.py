@@ -2,6 +2,7 @@
 import logging
 import math
 import threading
+from collections import deque
 import time
 import numpy as np
 import cv2
@@ -33,6 +34,7 @@ class CarlaAdapter(SimulatorAdapter):
         self._hold_control_until = 0.0
         self._scene_transition_active = False
         self._camera_callback_count = 0
+        self._camera_callback_times = deque(maxlen=90)
         self._camera_decode_failures = 0
         self._camera_decode_error = None
         self._camera_last_shape = None
@@ -468,31 +470,19 @@ class CarlaAdapter(SimulatorAdapter):
             finally:
                 self._scene_transition_active = False
 
-    def _publish_camera_preview(self, frame):
-        """Publish the raw RGB sensor frame independently of perception/control processing."""
-        if not bool(getattr(self.config, "STREAM", False)):
-            return
-        lock = getattr(self.config, "stream_frame_lock", None)
-        if lock is None:
-            lock = threading.RLock()
-            self.config.stream_frame_lock = lock
-        with lock:
-            # A stalled detector, LiDAR gate or control cycle cannot hide a
-            # healthy camera sensor from the dashboard.
-            self.config.debug_frames_list = [None, frame.copy()]
-            self.config.stream_frame_seq = int(getattr(self.config, "stream_frame_seq", 0)) + 1
-
     def _on_camera(self, image):
         try:
             raw = np.frombuffer(image.raw_data, dtype=np.uint8)
             width, height = int(image.width), int(image.height)
             frame = raw.reshape((height, width, 4))[:, :, :3].copy()
             sample = frame[::16, ::16]
+            received_at = time.monotonic()
             with self._condition:
                 self._image = frame
-                self._image_at = time.monotonic()
+                self._image_at = received_at
                 self._sequence += 1
                 self._camera_callback_count += 1
+                self._camera_callback_times.append(received_at)
                 self._camera_last_shape = frame.shape
                 self._camera_last_mean = round(float(np.mean(sample)), 2) if sample.size else 0.0
                 self._camera_last_max = int(np.max(sample)) if sample.size else 0
@@ -500,7 +490,9 @@ class CarlaAdapter(SimulatorAdapter):
                 self._camera_last_timestamp = getattr(image, "timestamp", None)
                 self._camera_decode_error = None
                 self._condition.notify_all()
-            self._publish_camera_preview(frame)
+            # Do not publish raw sensor frames to debug_frames_list here.
+            # SimulationRuntime is the sole Stream-frame writer and publishes
+            # the frame paired with the matching lane-detection geometry.
         except Exception as exc:
             with self._condition:
                 self._camera_decode_failures += 1
@@ -514,9 +506,16 @@ class CarlaAdapter(SimulatorAdapter):
             shape = self._camera_last_shape
             mean = self._camera_last_mean
             maximum = self._camera_last_max
+            callback_times = list(self._camera_callback_times)
+            callback_fps = (
+                (len(callback_times) - 1) / (callback_times[-1] - callback_times[0])
+                if len(callback_times) > 1 and callback_times[-1] > callback_times[0]
+                else 0.0
+            )
             return {
                 "sensor_spawned": self.camera is not None,
                 "callback_count": int(self._camera_callback_count),
+                "callback_fps": round(callback_fps, 1),
                 "decode_failures": int(self._camera_decode_failures),
                 "last_frame_age_ms": round(age_ms, 1) if age_ms is not None else None,
                 "width": int(shape[1]) if shape else None,
@@ -802,9 +801,12 @@ class CarlaAdapter(SimulatorAdapter):
                 self._condition.wait(remaining)
             if self._image is None or self._image_at is None or self.vehicle is None:
                 return None
-            frame, captured_at, sequence = self._image.copy(), self._image_at, self._sequence
+            # Camera/LiDAR callbacks replace these arrays rather than mutating
+            # them. Retaining the current references avoids two full-frame
+            # copies per sensor cycle; the old arrays remain alive for readers.
+            frame, captured_at, sequence = self._image, self._image_at, self._sequence
             self._read_sequence = sequence
-            points = self._points.copy()
+            points = self._points
             points_at = self._points_at
         lidar_enabled = bool(getattr(self.config, "SIMULATOR_LIDAR_ENABLED", False))
         lidar_age_s = (
