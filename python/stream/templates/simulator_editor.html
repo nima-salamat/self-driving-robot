@@ -432,8 +432,9 @@ function simRoiClamp(value,min,max){return Math.max(min,Math.min(max,value));}
 function simRoiPointerDown(event){
   if(!simRoiControlsEnabled||!$("sim-roi-overlay-toggle").checked)return;
   const p=simRoiPoint(event);let hit=null,corner=null,bounds=null;
-  for(let i=simRoiDefs.length-1;i>=0;i--){
-    const def=simRoiDefs[i],show=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(show&&!show.checked)continue;
+  const ordered=[simRoiDefs.find(function(def){return def.id===simRoiSelected;})].concat(simRoiDefs.filter(function(def){return def.id!==simRoiSelected;})).filter(Boolean);
+  for(let i=0;i<ordered.length;i++){
+    const def=ordered[i],show=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(show&&!show.checked)continue;
     const b=simRoiBounds(def.id);if(!b)continue;
     const polygon=simRoiPolygon(def.id,b);
     const handles={nw:polygon[0],ne:polygon[1],se:polygon[2],sw:polygon[3]};
