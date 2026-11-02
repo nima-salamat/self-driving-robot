@@ -144,11 +144,15 @@ class SimulatorSettingsTests(unittest.TestCase):
                 "SIMULATOR_STEERING_LIMIT": 0.75,
                 "SIMULATOR_STEERING_RATE": 3.5,
                 "SIMULATOR_THROTTLE_RISE_RATE": 0.65,
+                "RL_MIRRORED": True,
+                "LL_MIRRORED": True,
             })
             self.assertEqual(path["SIMULATOR_TARGET_SPEED"], 12.5)
             self.assertEqual(path["SIMULATOR_THROTTLE_LIMIT"], 0.42)
             profile = json.loads((Path(directory) / "carla.sim.json").read_text(encoding="utf-8"))
             self.assertEqual(profile["SIMULATOR_TUNING_PROFILE_VERSION"], 2)
+            self.assertTrue(profile["RL_MIRRORED"])
+            self.assertTrue(profile["LL_MIRRORED"])
             restarted = SimpleNamespace(BASE_DIR=directory)
             load_simulator_settings(restarted, "carla", "carla")
             self.assertEqual(restarted.SIMULATOR_TARGET_SPEED, 12.5)
@@ -156,6 +160,8 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(restarted.SIMULATOR_STEERING_LIMIT, 0.75)
             self.assertEqual(restarted.SIMULATOR_STEERING_RATE, 3.5)
             self.assertEqual(restarted.SIMULATOR_THROTTLE_RISE_RATE, 0.65)
+            self.assertTrue(restarted.RL_MIRRORED)
+            self.assertTrue(restarted.LL_MIRRORED)
 
     def test_avis_target_speed_remains_percentage_limited(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -468,6 +474,19 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertAlmostEqual(second.throttle, 0.024, places=3)
         self.assertLessEqual(abs(second.steering), 0.28)
 
+    def test_carla_honors_user_configured_values_above_old_ui_caps(self):
+        self.config.SIMULATOR_TARGET_SPEED = 20.0
+        self.config.SIMULATOR_THROTTLE_LIMIT = 0.60
+        self.config.SIMULATOR_STEERING_LIMIT = 0.80
+        self.config.SIMULATOR_STEERING_RATE = 5.0
+        self.config.SIMULATOR_THROTTLE_RISE_RATE = 0.60
+        with patch("modes.simulation.controller.time.monotonic", side_effect=[30.0, 30.25]):
+            controller = VirtualVehicleController(self.config, "carla")
+            command = controller.command_for({"perception_valid": True, "steering_angle": 130}, speed_kmh=0.0)
+        self.assertEqual(command.target_speed, 20.0)
+        self.assertAlmostEqual(command.steering, 0.80, places=3)
+        self.assertAlmostEqual(command.throttle, 0.15, places=3)
+
     def test_carla_brakes_when_above_low_target_speed(self):
         with patch("modes.simulation.controller.time.monotonic", side_effect=[20.0, 20.1]):
             controller = VirtualVehicleController(self.config, "carla")
@@ -486,14 +505,14 @@ class VirtualControllerTests(unittest.TestCase):
             def VehicleControl(**kwargs): return SimpleNamespace(**kwargs)
 
         adapter = CarlaAdapter(SimpleNamespace(
-            SIMULATOR_THROTTLE_LIMIT=0.12, SIMULATOR_STEERING_LIMIT=0.28
+            SIMULATOR_THROTTLE_LIMIT=0.42, SIMULATOR_STEERING_LIMIT=0.75
         ))
         adapter.vehicle = FakeVehicle()
         adapter.carla = FakeCarla()
         command = VehicleCommand(1.0, 1.0, 0.0, 130.0, 50.0, "oversized request")
         self.assertTrue(adapter.apply_control(command))
-        self.assertEqual(adapter.vehicle.control.steer, 0.28)
-        self.assertEqual(adapter.vehicle.control.throttle, 0.12)
+        self.assertEqual(adapter.vehicle.control.steer, 0.75)
+        self.assertEqual(adapter.vehicle.control.throttle, 0.42)
 
     def test_valid_perception_is_clamped_and_throttle_limited(self):
         controller = VirtualVehicleController(self.config, "carla")
