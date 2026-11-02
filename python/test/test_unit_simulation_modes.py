@@ -448,6 +448,33 @@ class SimulatorFramePipelineTests(unittest.TestCase):
         self.assertEqual(adapter.camera_diagnostics()["callback_fps"], 0.0)
         self.assertEqual(adapter._image.shape, (3, 4, 3))
 
+    def test_video_feed_frame_returns_no_content_when_sequence_is_unchanged(self):
+        import os
+        import stream
+        from stream import WebStreamer
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(stream, "BASE_DIR", directory), patch.dict(
+                os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""}
+            ):
+                config = SimpleNamespace(
+                    BASE_DIR=directory, MODE="carla", SIMULATOR_BACKEND="carla",
+                    SIMULATION_VISION_PROFILE="city", STREAM=True,
+                    STREAM_HOST="127.0.0.1", STREAM_PORT=41992,
+                    STREAM_ALLOW_CONTROL=False, RECORD_VIDEO=False,
+                    debug_frames_list=[None, np.full((12, 16, 3), 80, dtype=np.uint8)],
+                    stream_frame_seq=77, OUTPUT_DIR=directory,
+                )
+                client = WebStreamer(config).app.test_client()
+                unchanged = client.get("/video_feed_frame?since=77")
+                self.assertEqual(unchanged.status_code, 204)
+                self.assertEqual(unchanged.headers.get("X-Stream-Frame-Sequence"), "77")
+
+                newer = client.get("/video_feed_frame?since=76")
+                self.assertEqual(newer.status_code, 200)
+                self.assertEqual(newer.headers.get("X-Stream-Frame-Sequence"), "77")
+                self.assertTrue(newer.data.startswith(b"\xff\xd8"))
+
     def test_simulator_debug_renderer_coalesces_to_latest_pending_frame(self):
         import threading
         from modes.simulation.runtime import SimulationRuntime
