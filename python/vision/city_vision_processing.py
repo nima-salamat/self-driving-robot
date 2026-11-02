@@ -109,6 +109,25 @@ class VisionProcessor:
 
         return best_x_mid
 
+    @staticmethod
+    def _prepare_lane_roi(roi, mask=None, mirrored=False):
+        """Prepare one lane crop for processing without changing the source frame."""
+        if not mirrored or roi is None:
+            return roi, mask
+        mirrored_roi = cv2.flip(roi, 1)
+        mirrored_mask = cv2.flip(mask, 1) if mask is not None else None
+        return mirrored_roi, mirrored_mask
+
+    @staticmethod
+    def _restore_lane_roi_lines(lines, roi_width, mirrored=False):
+        """Map line coordinates from a mirrored crop back into source-crop space."""
+        if lines is None or not mirrored:
+            return lines
+        restored = np.asarray(lines).copy()
+        points = restored.reshape(-1, 4)
+        points[:, [0, 2]] = (max(0, int(roi_width)) - 1) - points[:, [0, 2]]
+        return restored
+
     def detect(self, frame, debug_frame=None):
         if frame is None:
             return {
@@ -281,8 +300,15 @@ class VisionProcessor:
                 )
                 return edges, lines
 
-        rl_edge, rl_lines = process_roi(rl_frame, mask=mask_rl)
-        ll_edge, ll_lines = process_roi(ll_frame, mask=mask_ll)
+        rl_current_w = rl_right_ - rl_left
+        ll_current_w = ll_right - ll_left_
+        rl_mirrored = bool(getattr(conf, "RL_MIRRORED", False))
+        ll_mirrored = bool(getattr(conf, "LL_MIRRORED", False))
+        rl_input, rl_input_mask = self._prepare_lane_roi(rl_frame, mask_rl, rl_mirrored)
+        ll_input, ll_input_mask = self._prepare_lane_roi(ll_frame, mask_ll, ll_mirrored)
+
+        rl_edge, rl_lines = process_roi(rl_input, mask=rl_input_mask)
+        ll_edge, ll_lines = process_roi(ll_input, mask=ll_input_mask)
 
         crosswalk = False
         cw_lines = []
@@ -337,11 +363,26 @@ class VisionProcessor:
                     if max(ly0, ly1) > crosswalk_pixel_dist:
                         crosswalk = True
 
-        rl_current_w = rl_right_ - rl_left
-        ll_current_w = ll_right - ll_left_
-
-        rl_x_mid = self._best_mid_x(rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
-        ll_x_mid = self._best_mid_x(ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
+        rl_x_mid = self._best_mid_x(
+            rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI),
+            "left" if rl_mirrored else "right",
+        )
+        ll_x_mid = self._best_mid_x(
+            ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI),
+            "right" if ll_mirrored else "left",
+        )
+        if rl_mirrored:
+            if rl_x_mid is not None:
+                rl_x_mid = (rl_current_w - 1) - rl_x_mid
+            if rl_edge is not None:
+                rl_edge = cv2.flip(rl_edge, 1)
+            rl_lines = self._restore_lane_roi_lines(rl_lines, rl_current_w, True)
+        if ll_mirrored:
+            if ll_x_mid is not None:
+                ll_x_mid = (ll_current_w - 1) - ll_x_mid
+            if ll_edge is not None:
+                ll_edge = cv2.flip(ll_edge, 1)
+            ll_lines = self._restore_lane_roi_lines(ll_lines, ll_current_w, True)
 
         rl_x_mid_full = rl_x_mid
         ll_x_mid_full = ll_x_mid
