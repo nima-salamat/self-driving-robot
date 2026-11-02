@@ -299,14 +299,6 @@ def load_simulator_settings(config, mode, backend):
     target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
     if backend == "avis" and target > 100:
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
-    if backend == "carla":
-        # Clamp legacy .sim.json profiles in memory; former 50 km/h / 0.70
-        # values must not silently restore the old aggressive control response.
-        config.SIMULATOR_TARGET_SPEED = min(target, 5.0)
-        config.SIMULATOR_THROTTLE_LIMIT = min(float(config.SIMULATOR_THROTTLE_LIMIT), 0.12)
-        config.SIMULATOR_STEERING_LIMIT = min(float(config.SIMULATOR_STEERING_LIMIT), 0.28)
-        config.SIMULATOR_STEERING_RATE = min(float(config.SIMULATOR_STEERING_RATE), 0.80)
-        config.SIMULATOR_THROTTLE_RISE_RATE = min(float(config.SIMULATOR_THROTTLE_RISE_RATE), 0.12)
     if backend == "avis" and float(getattr(config, "SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
         raise ValueError("AVIS Engine request timeout must be at most 1 second")
     return path
@@ -326,7 +318,7 @@ def save_simulator_settings(config, mode, patch):
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
     if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
         raise ValueError("AVIS Engine request timeout must be at most 1 second")
-remove hard carla caps    fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
+    fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(values, handle, indent=2, sort_keys=True)
