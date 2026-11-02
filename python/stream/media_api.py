@@ -1,5 +1,6 @@
 """StreamMedia endpoints and state operations for the Stream dashboard."""
 import sys as _sys
+from flask import has_request_context
 
 # These methods were moved from WebStreamer without changing their behavior.
 # Bind shared Stream globals at import time; BASE_DIR is deliberately resolved
@@ -56,7 +57,7 @@ class StreamMediaMixin:
         return jsonify(success=True, quality=quality, runtime_only=True)
 
     def video_feed_frame(self):
-        requested_frame_id = request.args.get("since")
+        requested_frame_id = request.args.get("since") if has_request_context() else None
         unchanged_frame = False
         with self._frame_lock:
             frozen = getattr(self.config, "frozen_debug_frame", None)
