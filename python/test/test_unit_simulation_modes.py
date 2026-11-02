@@ -236,6 +236,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn("lidar-expand", page_text)
                         self.assertIn("CARLA · World & Spawn Studio", page_text)
                         self.assertIn('id="sim-roi-canvas"', page_text)
+                    self.assertIn("background:transparent!important", page_text)
                         self.assertIn('data-sim-roi-select="RL"', page_text)
                         self.assertIn("drag inside to move it", page_text.lower())
                         self.assertIn('id="carla-map-select"', page_text)
