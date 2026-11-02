@@ -55,7 +55,7 @@ class VisionProcessor:
         alpha = math.degrees(math.atan((lane_width / 2) / y_projection))
         return 90 + alpha if side == "right" else 90 - alpha
 
-    def _best_mid_x(self, lines, roi_w, roi_h, side=""):
+    def _best_mid_x(self, lines, roi_w, roi_h, side="", angle_side=None):
         if lines is None:
             return None
         
@@ -87,10 +87,11 @@ class VisionProcessor:
             else:
                 norm_x_side = max(0.0, min(1.0, 1.0 - abs(x_mid - roi_w_center) / roi_w_center))
             
-            if side == "left":
+            angle_reference = angle_side or side
+            if angle_reference == "left":
                 target_angle = self._expected_lane_angle("left")
                 angle_score = self._angle_target_score(angle, target_angle, sigma=20)
-            elif side == "right":
+            elif angle_reference == "right":
                 target_angle = self._expected_lane_angle("right")
                 angle_score = self._angle_target_score(angle, target_angle, sigma=20)
             else:
@@ -366,10 +367,12 @@ class VisionProcessor:
         rl_x_mid = self._best_mid_x(
             rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI),
             "left" if rl_mirrored else "right",
+            angle_side="right",
         )
         ll_x_mid = self._best_mid_x(
             ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI),
             "right" if ll_mirrored else "left",
+            angle_side="left",
         )
         if rl_mirrored:
             if rl_x_mid is not None:
