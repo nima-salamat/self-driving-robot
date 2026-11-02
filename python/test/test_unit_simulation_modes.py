@@ -82,7 +82,7 @@ class SimulatorSettingsTests(unittest.TestCase):
         adapter.client = client
         self.assertIs(adapter._load_world_with_timeout("Town05"), client.world)
         self.assertEqual(client.map_name, "Town05")
-        self.assertEqual(client.timeouts, [60.0, 5.0])
+        self.assertEqual(client.timeouts, [120.0, 5.0])
 
     def test_avis_target_speed_remains_percentage_limited(self):
         with tempfile.TemporaryDirectory() as directory:
