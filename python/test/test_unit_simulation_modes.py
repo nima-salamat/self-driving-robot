@@ -408,6 +408,94 @@ class SimulatorEditorTests(unittest.TestCase):
         self.assertEqual(state["world_transform"]["x"], 105.0)
         self.assertEqual(state["mount"]["SIMULATOR_CAMERA_X"], 1.45)
 
+    def test_camera_mount_world_local_round_trip_uses_full_rotation_matrices(self):
+        import math
+        from modes.simulation.carla_adapter import CarlaAdapter
+
+        class FakeLocation:
+            def __init__(self, x=0.0, y=0.0, z=0.0):
+                self.x, self.y, self.z = float(x), float(y), float(z)
+
+        class FakeRotation:
+            def __init__(self, pitch=0.0, yaw=0.0, roll=0.0):
+                self.pitch, self.yaw, self.roll = float(pitch), float(yaw), float(roll)
+
+        class FakeTransform:
+            def __init__(self, location=None, rotation=None):
+                self.location = location or FakeLocation()
+                self.rotation = rotation or FakeRotation()
+
+            def get_matrix(self):
+                pitch, yaw, roll = map(
+                    math.radians,
+                    (self.rotation.pitch, self.rotation.yaw, self.rotation.roll),
+                )
+                cp, sp = math.cos(pitch), math.sin(pitch)
+                cy, sy = math.cos(yaw), math.sin(yaw)
+                cr, sr = math.cos(roll), math.sin(roll)
+                return np.asarray([
+                    [cp * cy, cy * sp * sr - sy * cr, -cy * sp * cr - sy * sr, self.location.x],
+                    [cp * sy, sy * sp * sr + cy * cr, -sy * sp * cr + cy * sr, self.location.y],
+                    [sp, -cp * sr, cp * cr, self.location.z],
+                    [0.0, 0.0, 0.0, 1.0],
+                ], dtype=np.float64)
+
+            def get_inverse_matrix(self):
+                return np.linalg.inv(self.get_matrix())
+
+        class FakeCamera:
+            def __init__(self):
+                self.transform = None
+
+            def set_transform(self, transform):
+                self.transform = transform
+
+            def get_transform(self):
+                return self.transform
+
+        config = SimpleNamespace(
+            SIMULATOR_CAMERA_X=1.45, SIMULATOR_CAMERA_Y=0.0, SIMULATOR_CAMERA_Z=1.8,
+            SIMULATOR_CAMERA_PITCH=-8.0, SIMULATOR_CAMERA_YAW=0.0,
+            SIMULATOR_CAMERA_ROLL=0.0,
+        )
+        adapter = CarlaAdapter(config)
+        adapter.carla = SimpleNamespace(
+            Location=FakeLocation, Rotation=FakeRotation, Transform=FakeTransform,
+        )
+        vehicle_transform = FakeTransform(
+            FakeLocation(10.0, -3.0, 1.0),
+            FakeRotation(pitch=17.0, yaw=63.0, roll=-12.0),
+        )
+        adapter.vehicle = SimpleNamespace(get_transform=lambda: vehicle_transform)
+        adapter.connected = True
+        adapter.camera = FakeCamera()
+        adapter._camera_mount_preview = adapter._mount_values_from_config()
+
+        # The mounted world pose must equal parent_world * mount_local, not
+        # the invalid component-wise sum of the two Euler-angle triplets.
+        local_mount = adapter._vehicle_camera_transform()
+        expected_world = vehicle_transform.get_matrix() @ local_mount.get_matrix()
+        actual_world = adapter._mounted_camera_world_transform().get_matrix()
+        np.testing.assert_allclose(actual_world, expected_world, atol=1e-7)
+
+        # An arbitrary free-fly world pose must survive world->local->world
+        # conversion exactly, including coupled pitch/yaw/roll rotations.
+        desired_world_camera = FakeTransform(
+            FakeLocation(13.0, -1.0, 4.2),
+            FakeRotation(pitch=26.0, yaw=118.0, roll=31.0),
+        )
+        adapter.editor_camera = object()
+        adapter._editor_transform = desired_world_camera
+        adapter.use_camera_editor_view_as_mount()
+        reconstructed = adapter._mounted_camera_world_transform()
+        np.testing.assert_allclose(
+            reconstructed.get_matrix(), desired_world_camera.get_matrix(), atol=1e-6,
+        )
+        np.testing.assert_allclose(
+            adapter.camera.get_transform().get_matrix(),
+            desired_world_camera.get_matrix(), atol=1e-6,
+        )
+
     def test_carla_settings_api_accepts_user_tuning_and_mirror_flags(self):
         import os
         import stream
