@@ -17,6 +17,7 @@ SIMULATOR_KEYS = {
     "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STOP_ON_LOST_LANE",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "SIMULATOR_STEERING_INVERTED", "SIMULATOR_AVIS_SENSOR_ANGLE",
+    "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE", "SERVO_DIRECTION",
     "ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM",
     "USE_BEV", "USE_ML_LANE_DETECTOR", "ML_LANE_MODEL", "DEBUG",
     "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
@@ -47,7 +48,7 @@ INT_KEYS = {
 }
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
-    "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL", "LANE_ROI_MODE",
+    "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL", "LANE_ROI_MODE", "SERVO_DIRECTION",
 }
 POSITIVE_KEYS = {
     "SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
@@ -65,6 +66,7 @@ BEV_KEYS = {
 ROI_FACTOR_KEYS = {"RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR"}
 NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS | {
     "SIMULATOR_THROTTLE_LIMIT", "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
+    "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
     "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "CAMERA_PITCH_DEG",
 }
@@ -134,6 +136,13 @@ def _defaults(mode, backend):
         "USE_ML_LANE_DETECTOR": False,
         "ML_LANE_MODEL": "unet_depthwise_nano",
         "SIMULATOR_STEERING_INVERTED": False,
+        "MIN_SERVO_ANGLE": 50.0,
+        "SERVO_CENTER": 95.0,
+        "MAX_SERVO_ANGLE": 130.0,
+        "SERVO_DIRECTION": "ltr",
+        "RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 1.0, "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
+        "LL_TOP_ROI": 0.8, "LL_BOTTOM_ROI": 1.0, "LL_LEFT_ROI": 0.2, "LL_RIGHT_ROI": 0.5,
+        "CW_TOP_ROI": 0.8, "CW_BOTTOM_ROI": 1.0, "CW_LEFT_ROI": 0.3, "CW_RIGHT_ROI": 0.9,
         "SIMULATOR_AVIS_SENSOR_ANGLE": 30,
         "ENCODER_PULSE_DISTANCE_CM": 0.5,
     }
@@ -160,6 +169,8 @@ def _validate_settings(data):
                 raise ValueError("ML_LANE_MODEL must be a supported Race lane model")
             if key == "LANE_ROI_MODE" and value not in {"rectangle", "trapezoid"}:
                 raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
+            if key == "SERVO_DIRECTION" and value not in {"ltr", "rtl"}:
+                raise ValueError("SERVO_DIRECTION must be ltr or rtl")
         elif key in INT_KEYS:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError(f"{key} must be an integer")
@@ -214,6 +225,8 @@ def _validate_settings(data):
                 raise ValueError(f"{key} must be between 0 and 1")
             if key == "CAMERA_PITCH_DEG" and not -90 <= value <= 90:
                 raise ValueError("CAMERA_PITCH_DEG must be between -90 and 90 degrees")
+            if key in {"MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE"} and not 0 <= value <= 180:
+                raise ValueError(f"{key} must be between 0 and 180 degrees")
             camera_axis = key.removeprefix("SIMULATOR_CAMERA_")
             if camera_axis in {"X", "Y"} and not -20 <= value <= 20:
                 raise ValueError(f"{key} must be between -20 and 20 meters")
@@ -230,6 +243,9 @@ def _validate_settings(data):
                         ("RL_LEFT_ROI", "RL_RIGHT_ROI"), ("LL_LEFT_ROI", "LL_RIGHT_ROI"), ("CW_LEFT_ROI", "CW_RIGHT_ROI")):
         if left in clean and right in clean and clean[left] >= clean[right]:
             raise ValueError(f"{left} must be smaller than {right}")
+    if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
+        if not clean["MIN_SERVO_ANGLE"] < clean["SERVO_CENTER"] < clean["MAX_SERVO_ANGLE"]:
+            raise ValueError("MIN_SERVO_ANGLE must be smaller than SERVO_CENTER, which must be smaller than MAX_SERVO_ANGLE")
     return clean
 
 
