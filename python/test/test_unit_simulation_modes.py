@@ -240,6 +240,17 @@ class CityRoiMirroringTests(unittest.TestCase):
         expected = np.asarray([[[2, 1, 0, 1]], [[1, 0, 0, 0]]], dtype=np.int32)
         np.testing.assert_array_equal(restored, expected)
 
+    def test_mirroring_changes_lateral_score_but_keeps_original_angle_reference(self):
+        from vision.city_vision_processing import VisionProcessor
+
+        processor = VisionProcessor()
+        lines = np.asarray([[[10, 90, 20, 10]]], dtype=np.float32)
+        with patch.object(processor, "_expected_lane_angle", return_value=80.0) as angle_reference, patch.object(
+            processor, "_angle_target_score", return_value=1.0
+        ):
+            processor._best_mid_x(lines, roi_w=100, roi_h=100, side="left", angle_side="right")
+        angle_reference.assert_called_once_with("right")
+
 
 class SimulatorEditorTests(unittest.TestCase):
     def test_simulator_editor_renders_with_mode_specific_capabilities(self):
