@@ -19,6 +19,14 @@
 .sim-roi-hint{color:var(--sim-muted);font-size:11px;margin:8px 0 0}
 .sim-roi-status{font-size:11px;color:var(--sim-muted)}
 .sim-roi-save{padding:6px 10px;font-size:12px}
+.carla-run-panel{border-color:#3d5971}
+.carla-run-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.carla-run-state{font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.04em}
+.carla-run-state.stopped{color:#ffcf7b}
+.carla-run-state.running{color:#78e2a7}
+.carla-run-note{font-size:11px;color:var(--sim-muted);margin:8px 0 0}
+.carla-run-start{background:#1d6548;border-color:#328b63}
+.carla-run-stop{background:#713b3b;border-color:#a75b5b}
 @media(max-width:680px){.sim-roi-editor-head{align-items:flex-start}.sim-roi-actions{width:100%;justify-content:space-between}}
 :root{color-scheme:dark;--sim-bg:#10151d;--sim-panel:#171e28;--sim-panel2:#1c2633;--sim-border:#2b3747;--sim-text:#e5edf5;--sim-muted:#93a4b8;--sim-accent:#73c5ff;--sim-green:#71d9a0;--sim-warn:#ffc56d;--sim-red:#ff8282}
 *{box-sizing:border-box}body{margin:0;background:var(--sim-bg);color:var(--sim-text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overflow:auto}
@@ -68,7 +76,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 <main class="sim-layout">
   <div class="stack">
     <section class="panel">
-      <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="frame-age" class="pill">No frame</span></div>
+      <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
       <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" src="/video_feed" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
       <div class="panel-content">
         <div id="runtime-error" class="status-message section-hide"></div>
@@ -136,6 +144,17 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 
   <div class="stack">
     {% if caps.simulator_backend == 'carla' %}
+    <section class="panel carla-run-panel" id="carla-run-panel">
+      <div class="panel-head"><div><h2>Autonomous run control</h2><p>CARLA never starts moving automatically after launch or reconnect.</p></div><span class="sim-spacer"></span><span class="pill" id="carla-run-state">STOPPED</span></div>
+      <div class="panel-content">
+        <div class="carla-run-controls">
+          <button type="button" id="carla-run-start" class="carla-run-start">▶ Start Run</button>
+          <button type="button" id="carla-run-stop" class="carla-run-stop">■ Stop / Brake</button>
+          <span id="carla-run-message" class="msg" role="status"></span>
+        </div>
+        <p class="carla-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake immediately disarms it. Changing the map, vehicle or spawn point disarms the run; press Start Run again after scene changes.</p>
+      </div>
+    </section>
     <section class="panel" id="carla-scene-panel">
       <div class="panel-head">
         <div><h2>CARLA · World & Spawn Studio</h2><p>Choose a map, vehicle blueprint and exact spawn location</p></div>
@@ -227,6 +246,50 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <label class="check-field"><input id="debug-overlay" type="checkbox" name="DEBUG"> Debug overlays</label>
             <div class="field {% if caps.vision_profile != 'city' %}section-hide{% endif %}"><label for="city-lane-detector">City lane detector</label><select id="city-lane-detector" name="CITY_LANE_DETECTOR"><option value="default">Default City processor</option><option value="blsf-beta">BLSF beta</option></select></div>
             <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
+          </div>
+          <div class="setting-block {% if caps.vision_profile != 'city' %}section-hide{% endif %}" id="city-vision-settings">
+            <h3 class="section-title">City vision thresholds & geometry</h3>
+            <div class="grid-two">
+              <div class="field"><label for="lane-threshold">Lane pixel threshold (0–255)</label><input id="lane-threshold" type="number" min="0" max="255" step="1" name="LANE_THRESHOLD"></div>
+              <div class="field"><label for="hough-threshold">Hough vote threshold</label><input id="hough-threshold" type="number" min="1" max="255" step="1" name="HOUGH_THRESHOLD"></div>
+              <div class="field"><label for="hough-min-line">Minimum lane segment length (px)</label><input id="hough-min-line" type="number" min="1" max="500" step="1" name="HOUGH_MIN_LINE_LENGTH"></div>
+              <div class="field"><label for="hough-max-gap">Maximum segment gap (px)</label><input id="hough-max-gap" type="number" min="0" max="100" step="1" name="HOUGH_MAX_LINE_GAP"></div>
+              <div class="field"><label for="hough-blur">Blur kernel (1 or odd 3–15)</label><input id="hough-blur" type="number" min="1" max="15" step="2" name="HOUGH_BLUR_KERNEL"></div>
+              <div class="field"><label for="lane-roi-mode">Lane ROI shape</label><select id="lane-roi-mode" name="LANE_ROI_MODE"><option value="rectangle">Rectangle</option><option value="trapezoid">Trapezoid</option></select></div>
+              <div class="field"><label for="camera-pitch-deg">Vision camera pitch (degrees)</label><input id="camera-pitch-deg" type="number" min="-90" max="90" step=".5" name="CAMERA_PITCH_DEG"></div>
+              <div class="field"><label for="camera-height">Vision camera height (cm)</label><input id="camera-height" type="number" min=".1" max="1000" step="1" name="CAMERA_HEIGHT"></div>
+              <div class="field"><label for="lane-width">Expected lane width (cm)</label><input id="lane-width" type="number" min=".1" max="1000" step="1" name="LANE_WIDTH"></div>
+              <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step=".01" name="RL_TOP_WIDTH_FACTOR"></div>
+              <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step=".01" name="LL_TOP_WIDTH_FACTOR"></div>
+            </div>
+            <label class="check-field"><input id="hough-morph-close" type="checkbox" name="HOUGH_MORPH_CLOSE"> Close small gaps in lane edges (morphological close)</label>
+            <label class="check-field"><input id="old-method" type="checkbox" name="OLD_METHOD"> Use legacy Hough/Canny lane detector</label>
+            {% if caps.supports_crosswalk %}
+            <div class="grid-two" style="margin-top:10px">
+              <div class="field"><label for="crosswalk-threshold">Crosswalk pixel threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
+              <div class="field"><label for="crosswalk-min-vertical">Minimum vertical crosswalk lines</label><input id="crosswalk-min-vertical" type="number" min="1" max="1000" step="1" name="CROSSWALK_VERTICAL_MIN_LINES"></div>
+              <div class="field"><label for="crosswalk-min-horizontal">Minimum horizontal crosswalk lines</label><input id="crosswalk-min-horizontal" type="number" min="1" max="1000" step="1" name="CROSSWALK_HORIZONTAL_MIN_LINES"></div>
+              <div class="field"><label for="cw-top-factor">Crosswalk trapezoid top width (0–1)</label><input id="cw-top-factor" type="number" min="0" max="1" step=".01" name="CW_TOP_WIDTH_FACTOR"></div>
+            </div>
+            <label class="check-field"><input id="cw-trapezoid" type="checkbox" name="CW_TRAPEZOID_MODE"> Use trapezoid crosswalk ROI mask</label>
+            <label class="check-field"><input id="cw-old-method" type="checkbox" name="CW_OLD_METHOD"> Use legacy LSD crosswalk detector</label>
+            {% endif %}
+            {% if caps.supports_bev %}
+            <details style="margin-top:10px">
+              <summary class="section-title">BEV source corners · normalized 0–1</summary>
+              <div class="grid-two">
+                <div class="field"><label for="bev-tl-x">Top-left X</label><input id="bev-tl-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_TL_X"></div>
+                <div class="field"><label for="bev-tl-y">Top-left Y</label><input id="bev-tl-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_TL_Y"></div>
+                <div class="field"><label for="bev-tr-x">Top-right X</label><input id="bev-tr-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_TR_X"></div>
+                <div class="field"><label for="bev-tr-y">Top-right Y</label><input id="bev-tr-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_TR_Y"></div>
+                <div class="field"><label for="bev-br-x">Bottom-right X</label><input id="bev-br-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_BR_X"></div>
+                <div class="field"><label for="bev-br-y">Bottom-right Y</label><input id="bev-br-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_BR_Y"></div>
+                <div class="field"><label for="bev-bl-x">Bottom-left X</label><input id="bev-bl-x" type="number" min="0" max="1" step=".01" name="BEV_SRC_BL_X"></div>
+                <div class="field"><label for="bev-bl-y">Bottom-left Y</label><input id="bev-bl-y" type="number" min="0" max="1" step=".01" name="BEV_SRC_BL_Y"></div>
+              </div>
+            </details>
+            {% endif %}
+            <p class="note">These values are saved only in this simulator's .sim.json profile. They do not modify city.json. BEV is disabled by default for CARLA; enable it after checking the raw camera perspective.</p>
           </div>
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
