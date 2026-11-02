@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 SIMULATOR_KEYS = {
-    "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S",
+    "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S", "SIMULATOR_TUNING_PROFILE_VERSION",
     "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
     "SIMULATOR_SPAWN_POINT_INDEX", "CITY_LANE_DETECTOR", "SIMULATOR_LIDAR_ENABLED",
     "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_CHANNELS",
@@ -31,18 +31,18 @@ SIMULATOR_KEYS = {
     "OLD_METHOD", "CW_OLD_METHOD", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
     "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y",
     "BEV_SRC_BR_X", "BEV_SRC_BR_Y", "BEV_SRC_BL_X", "BEV_SRC_BL_Y",
-    "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
-    "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
+    "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI", "RL_MIRRORED",
+    "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
 }
 BOOL_KEYS = {
-    "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
+    "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
     "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
     "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD", "ROI_RESIZABLE",
 }
 INT_KEYS = {
-    "SIMULATOR_PORT", "SIMULATOR_LIDAR_CHANNELS",
+    "SIMULATOR_PORT", "SIMULATOR_TUNING_PROFILE_VERSION", "SIMULATOR_LIDAR_CHANNELS",
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_AVIS_SENSOR_ANGLE",
     "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
@@ -86,6 +86,7 @@ def _defaults(mode, backend):
     avis = backend == "avis"
     return {
         "SIMULATOR_HOST": "127.0.0.1",
+        "SIMULATOR_TUNING_PROFILE_VERSION": 2,
         "SIMULATOR_PORT": 25001 if avis else 2000,
         "SIMULATOR_TIMEOUT_S": 1.0 if avis else 5.0,
         "SIMULATOR_VEHICLE_FILTER": "vehicle.*",
@@ -149,6 +150,7 @@ def _defaults(mode, backend):
         "SERVO_CENTER": 95.0,
         "MAX_SERVO_ANGLE": 130.0,
         "SERVO_DIRECTION": "ltr",
+        "RL_MIRRORED": False, "LL_MIRRORED": False,
         "RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 1.0, "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
         "LL_TOP_ROI": 0.8, "LL_BOTTOM_ROI": 1.0, "LL_LEFT_ROI": 0.2, "LL_RIGHT_ROI": 0.5,
         "CW_TOP_ROI": 0.8, "CW_BOTTOM_ROI": 1.0, "CW_LEFT_ROI": 0.3, "CW_RIGHT_ROI": 0.9,
@@ -209,6 +211,8 @@ def _validate_settings(data):
                 raise ValueError(f"{key} must be between 1 and 1000")
             if key == "SIMULATOR_SPAWN_POINT_INDEX" and not -1 <= value <= 100000:
                 raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
+            if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
+                raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
         elif key in NUMERIC_KEYS:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be a finite number")
@@ -270,11 +274,28 @@ def load_simulator_settings(config, mode, backend):
     for key, value in _defaults(mode, backend).items():
         setattr(config, key, value)
     path = settings_path(config, mode)
+    saved_values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            values = _validate_settings(json.load(handle))
-        for key, value in values.items():
+            saved_values = _validate_settings(json.load(handle))
+        for key, value in saved_values.items():
             setattr(config, key, value)
+    if backend == "carla" and path.is_file() and int(saved_values.get("SIMULATOR_TUNING_PROFILE_VERSION", 0)) < 2:
+        # One-time migration: clamp only profiles written before the safety
+        # envelope became editable. Persist the migration so users can raise
+        # values later without having them silently clamped on every restart.
+        migration = {"SIMULATOR_TUNING_PROFILE_VERSION": 2}
+        legacy_limits = {
+            "SIMULATOR_TARGET_SPEED": (8.0, 5.0),
+            "SIMULATOR_THROTTLE_LIMIT": (0.18, 0.12),
+            "SIMULATOR_STEERING_LIMIT": (0.50, 0.28),
+            "SIMULATOR_STEERING_RATE": (1.50, 0.80),
+            "SIMULATOR_THROTTLE_RISE_RATE": (0.50, 0.12),
+        }
+        for key, (old_limit, safe_default) in legacy_limits.items():
+            if float(getattr(config, key, safe_default)) > old_limit:
+                migration[key] = safe_default
+        save_simulator_settings(config, mode, migration)
     target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
     if backend == "avis" and target > 100:
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
@@ -305,18 +326,7 @@ def save_simulator_settings(config, mode, patch):
         raise ValueError("AVIS Engine target speed must be between 0 and 100")
     if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
         raise ValueError("AVIS Engine request timeout must be at most 1 second")
-    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "carla":
-        if float(values.get("SIMULATOR_TARGET_SPEED", 5.0)) > 8.0:
-            raise ValueError("CARLA target speed is safety-limited to 8 km/h during initial tuning")
-        if float(values.get("SIMULATOR_THROTTLE_LIMIT", 0.12)) > 0.18:
-            raise ValueError("CARLA throttle limit is safety-limited to 0.18 during initial tuning")
-        if float(values.get("SIMULATOR_STEERING_LIMIT", 0.28)) > 0.50:
-            raise ValueError("CARLA steering authority is safety-limited to 0.50 during initial tuning")
-        if float(values.get("SIMULATOR_STEERING_RATE", 0.80)) > 1.50:
-            raise ValueError("CARLA steering rate is safety-limited to 1.5 normalized units per second")
-        if float(values.get("SIMULATOR_THROTTLE_RISE_RATE", 0.12)) > 0.50:
-            raise ValueError("CARLA throttle rise rate is safety-limited to 0.5 per second")
-    fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
+remove hard carla caps    fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(values, handle, indent=2, sort_keys=True)
