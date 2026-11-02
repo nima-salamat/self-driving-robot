@@ -32,7 +32,7 @@ LIVE_KEYS = {
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
     "LANE_THRESHOLD", "HOUGH_THRESHOLD", "HOUGH_MIN_LINE_LENGTH",
-    "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE",
+    "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE", "ROI_RESIZABLE",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
     "CROSSWALK_HORIZONTAL_MIN_LINES", "LANE_ROI_MODE", "CW_TRAPEZOID_MODE",
     "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
@@ -63,6 +63,7 @@ def _roi_geometry(config):
         "rl_top_width_factor": factor("RL_TOP_WIDTH_FACTOR", 0.85),
         "ll_top_width_factor": factor("LL_TOP_WIDTH_FACTOR", 0.85),
         "cw_top_width_factor": factor("CW_TOP_WIDTH_FACTOR", 0.90),
+        "roi_resizable": bool(getattr(config, "ROI_RESIZABLE", False)),
         "use_bev": bool(getattr(config, "USE_BEV", False)),
     }
 
