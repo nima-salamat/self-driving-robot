@@ -437,8 +437,11 @@ def register_simulator_routes(app, streamer):
                 saved = save_simulator_settings(
                     streamer.config, getattr(streamer.config, "MODE", "carla"), patch
                 )
-                adapter.preview_camera_mount({key: saved[key] for key in CAMERA_MOUNT_KEYS})
-                runtime._record_event("info", "CARLA camera mount position and rotation saved and applied live.")
+                adapter.apply_camera_mount({key: saved[key] for key in CAMERA_MOUNT_KEYS})
+                runtime._record_event(
+                    "info",
+                    "CARLA RGB sensor recreated with the saved vehicle-relative camera mount; no server restart required.",
+                )
             elif action == "move":
                 deltas = {}
                 limits = {
