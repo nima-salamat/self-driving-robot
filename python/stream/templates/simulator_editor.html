@@ -407,17 +407,32 @@ function populate(s){
     "target-speed":"SIMULATOR_TARGET_SPEED",
     "throttle-limit":"SIMULATOR_THROTTLE_LIMIT","pulse-distance":"ENCODER_PULSE_DISTANCE_CM",
     "city-lane-detector":"CITY_LANE_DETECTOR",
+    "lane-threshold":"LANE_THRESHOLD","hough-threshold":"HOUGH_THRESHOLD",
+    "hough-min-line":"HOUGH_MIN_LINE_LENGTH","hough-max-gap":"HOUGH_MAX_LINE_GAP",
+    "hough-blur":"HOUGH_BLUR_KERNEL","crosswalk-threshold":"CROSSWALK_THRESHOLD",
+    "crosswalk-min-vertical":"CROSSWALK_VERTICAL_MIN_LINES",
+    "crosswalk-min-horizontal":"CROSSWALK_HORIZONTAL_MIN_LINES",
+    "lane-roi-mode":"LANE_ROI_MODE","rl-top-factor":"RL_TOP_WIDTH_FACTOR",
+    "ll-top-factor":"LL_TOP_WIDTH_FACTOR","cw-top-factor":"CW_TOP_WIDTH_FACTOR",
+    "camera-pitch-deg":"CAMERA_PITCH_DEG","camera-height":"CAMERA_HEIGHT","lane-width":"LANE_WIDTH",
+    "bev-tl-x":"BEV_SRC_TL_X","bev-tl-y":"BEV_SRC_TL_Y",
+    "bev-tr-x":"BEV_SRC_TR_X","bev-tr-y":"BEV_SRC_TR_Y",
+    "bev-br-x":"BEV_SRC_BR_X","bev-br-y":"BEV_SRC_BR_Y",
+    "bev-bl-x":"BEV_SRC_BL_X","bev-bl-y":"BEV_SRC_BL_Y",
     "rl-top":"RL_TOP_ROI","rl-bottom":"RL_BOTTOM_ROI","rl-left":"RL_LEFT_ROI","rl-right":"RL_RIGHT_ROI",
     "ll-top":"LL_TOP_ROI","ll-bottom":"LL_BOTTOM_ROI","ll-left":"LL_LEFT_ROI","ll-right":"LL_RIGHT_ROI",
     "cw-top":"CW_TOP_ROI","cw-bottom":"CW_BOTTOM_ROI","cw-left":"CW_LEFT_ROI","cw-right":"CW_RIGHT_ROI"
   };
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
-  ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled"].forEach(function(id){
+  ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
+   "hough-morph-close","cw-trapezoid","old-method","cw-old-method"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
   });
   setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, up to 200)");
+  if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled;
+  if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
 }
 const simRoiDefs = [
@@ -561,6 +576,8 @@ async function loadSettings(){
   const roiHint=document.querySelector("#sim-roi-editor .sim-roi-hint");
   if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+ "Coordinates are normalized to the vision frame; City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
   populate(data.settings||{});
+  if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
+  if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
   const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
   $("save-settings").disabled=!data.controls_enabled;
   if($("open-camera-editor"))$("open-camera-editor").disabled=!data.controls_enabled;
@@ -780,7 +797,38 @@ $("settings-form").addEventListener("submit",async function(event){
   );
   roiPairs.forEach(function(pair){const el=$(pair[0]);if(el&&el.value!=="")s[pair[1]]=Number(el.value);});
   if(caps.supports_crosswalk) s.SIMULATOR_STOP_ON_CROSSWALK=$("stop-crosswalk").checked;
-  if(caps.vision_profile==="city") s.CITY_LANE_DETECTOR=$("city-lane-detector").value;
+  if(caps.vision_profile==="city"){
+    s.CITY_LANE_DETECTOR=$("city-lane-detector").value;
+    if($("lane-threshold"))s.LANE_THRESHOLD=Number($("lane-threshold").value);
+    if($("hough-threshold"))s.HOUGH_THRESHOLD=Number($("hough-threshold").value);
+    if($("hough-min-line"))s.HOUGH_MIN_LINE_LENGTH=Number($("hough-min-line").value);
+    if($("hough-max-gap"))s.HOUGH_MAX_LINE_GAP=Number($("hough-max-gap").value);
+    if($("hough-blur"))s.HOUGH_BLUR_KERNEL=Number($("hough-blur").value);
+    if($("lane-roi-mode"))s.LANE_ROI_MODE=$("lane-roi-mode").value;
+    if($("camera-pitch-deg"))s.CAMERA_PITCH_DEG=Number($("camera-pitch-deg").value);
+    if($("camera-height"))s.CAMERA_HEIGHT=Number($("camera-height").value);
+    if($("lane-width"))s.LANE_WIDTH=Number($("lane-width").value);
+    if($("hough-morph-close"))s.HOUGH_MORPH_CLOSE=$("hough-morph-close").checked;
+    if($("old-method"))s.OLD_METHOD=$("old-method").checked;
+    if($("rl-top-factor"))s.RL_TOP_WIDTH_FACTOR=Number($("rl-top-factor").value);
+    if($("ll-top-factor"))s.LL_TOP_WIDTH_FACTOR=Number($("ll-top-factor").value);
+    if(caps.supports_crosswalk){
+      s.CROSSWALK_THRESHOLD=Number($("crosswalk-threshold").value);
+      s.CROSSWALK_VERTICAL_MIN_LINES=Number($("crosswalk-min-vertical").value);
+      s.CROSSWALK_HORIZONTAL_MIN_LINES=Number($("crosswalk-min-horizontal").value);
+      s.CW_TOP_WIDTH_FACTOR=Number($("cw-top-factor").value);
+      s.CW_TRAPEZOID_MODE=$("cw-trapezoid").checked;
+      s.CW_OLD_METHOD=$("cw-old-method").checked;
+    }
+  }
+  if(caps.supports_bev){
+    ["TL","TR","BR","BL"].forEach(function(corner){
+      ["X","Y"].forEach(function(axis){
+        const id="bev-"+corner.toLowerCase()+"-"+axis.toLowerCase();
+        const el=$(id);if(el)s["BEV_SRC_"+corner+"_"+axis]=Number(el.value);
+      });
+    });
+  }
   if(caps.vision_profile==="race"){
     s.USE_ML_LANE_DETECTOR=$("ml-lane-enabled").checked;
     s.ML_LANE_MODEL=$("ml-lane-model").value;
