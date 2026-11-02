@@ -49,7 +49,7 @@ Simulator commands and virtual encoder pulses are simulation state/telemetry, no
 
 Implementation: `python/modes/simulation/carla_adapter.py`.
 
-The CARLA adapter manages the client connection, vehicle actor and sensor lifecycle. Its supported editor operations include selecting a map, vehicle blueprint and spawn point, resetting the vehicle to the selected spawn, and editing/previewing the camera mount. CARLA mode can publish an RGB image and, when enabled, a ray-cast LiDAR point cloud. The Stream editor provides a bounded point-cloud view and range summaries.
+The CARLA adapter manages the client connection, vehicle actor and sensor lifecycle. Its supported editor operations include selecting a map, vehicle blueprint and spawn point, resetting the vehicle to the selected spawn, and editing/previewing the camera mount. CARLA mode can publish an RGB image and, when enabled, a ray-cast LiDAR point cloud. The Stream editor provides a bounded point-cloud view and range summaries. Camera mount X/Y/Z and pitch/yaw/roll values are vehicle-local offsets and rotations. The editor separately reports the actual RGB sensor's world transform (the source of the main Stream frames) and the independent free-fly preview camera's world transform; these map/world coordinates are expected to differ from the vehicle-local mount values when the vehicle is not at the world origin. Slider previews are serialized so an older in-flight update cannot overwrite a newer mount selection.
 
 The editor's vehicle/map/spawn/camera values are simulator settings. Saving them requires Stream control to be enabled; use `--stream-read-only` when you want a read-only dashboard.
 
