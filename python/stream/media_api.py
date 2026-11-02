@@ -56,28 +56,27 @@ class StreamMediaMixin:
         return jsonify(success=True, quality=quality, runtime_only=True)
 
     def video_feed_frame(self):
+        requested_frame_id = request.args.get("since")
+        unchanged_frame = False
         with self._frame_lock:
             frozen = getattr(self.config, "frozen_debug_frame", None)
             if frozen is not None:
-                frame = frozen.copy()
                 # Live frames keep advancing during a freeze; use a stable ID for the frozen image.
                 frame_id = f"frozen-{int(getattr(self.config, 'frozen_debug_frame_seq', 0))}"
+                unchanged_frame = requested_frame_id is not None and requested_frame_id == str(frame_id)
+                frame = None if unchanged_frame else frozen.copy()
             else:
                 frames_list = getattr(self.config, "debug_frames_list", [])
-                frame = (
-                    (
-                        frames_list[-1].copy()
-                        if hasattr(frames_list[-1], "copy")
-                        else frames_list[-1]
-                    )
-                    if frames_list and frames_list[-1] is not None
-                    else None
-                )
                 frame_id = getattr(
                     self.config,
                     "stream_frame_seq",
-                    id(frame) if frame is not None else None,
+                    id(frames_list[-1]) if frames_list and frames_list[-1] is not None else None,
                 )
+                unchanged_frame = requested_frame_id is not None and requested_frame_id == str(frame_id)
+                if unchanged_frame or not frames_list or frames_list[-1] is None:
+                    frame = None
+                else:
+                    frame = frames_list[-1].copy() if hasattr(frames_list[-1], "copy") else frames_list[-1]
 
         cache_headers = {
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -85,19 +84,15 @@ class StreamMediaMixin:
             "Expires": "0",
         }
 
-        if frame is None:
-            response = Response("", status=204)
-            response.headers.update(cache_headers)
-            return response
-
-        # Clients send the last frame sequence they received. Avoid transferring
-        # the same cached JPEG repeatedly while the detector is processing the
-        # next camera image.
-        requested_frame_id = request.args.get("since")
-        if requested_frame_id is not None and requested_frame_id == str(frame_id):
+        if unchanged_frame:
             response = Response("", status=204)
             response.headers.update(cache_headers)
             response.headers["X-Stream-Frame-Sequence"] = str(frame_id)
+            return response
+
+        if frame is None:
+            response = Response("", status=204)
+            response.headers.update(cache_headers)
             return response
 
         quality = self._normalize_stream_jpeg_quality(
