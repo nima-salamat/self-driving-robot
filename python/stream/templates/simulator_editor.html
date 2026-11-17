@@ -529,7 +529,7 @@ function simRoiUpdateSelection(){
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.classList.toggle("active",button.dataset.simRoiSelect===simRoiSelected);});
   if(simRoiCanvas)simRoiCanvas.style.pointerEvents=$("sim-roi-overlay-toggle")&&$("sim-roi-overlay-toggle").checked?"auto":"none";
   const mirrorControl=$("sim-roi-mirror-control"),mirrorInput=$("sim-roi-mirror-selected"),mirrorLabel=$("sim-roi-mirror-label");
-  const laneSelected=simRoiSelected==="RL"||simRoiSelected==="LL";
+  const laneSelected=(simRoiSelected==="RL"||simRoiSelected==="LL")&&caps.vision_profile==="city";
   if(mirrorControl)mirrorControl.classList.toggle("section-hide",!laneSelected);
   if(mirrorInput&&laneSelected)mirrorInput.checked=!!simRoiMirrors[simRoiSelected];
   if(mirrorLabel&&laneSelected)mirrorLabel.lastChild.textContent=" Mirror "+(simRoiSelected==="RL"?"right":"left")+" lane ROI before detection";
@@ -654,8 +654,13 @@ function simRoiCollectSettings(){
     const prefix=def.id+"_";
     Object.keys(def.fields).forEach(function(key){settings[prefix+({top:"TOP_ROI",bottom:"BOTTOM_ROI",left:"LEFT_ROI",right:"RIGHT_ROI"})[key]]=b[key];});
   }
-  settings.RL_MIRRORED=!!simRoiMirrors.RL;
-  settings.LL_MIRRORED=!!simRoiMirrors.LL;
+  // Race/AVIS-Race exposes lane ROI geometry but not City-only mirror
+  // controls. Sending these keys anyway makes the API reject the entire
+  // otherwise-valid ROI patch for non-City profiles.
+  if(caps.vision_profile==="city"){
+    settings.RL_MIRRORED=!!simRoiMirrors.RL;
+    settings.LL_MIRRORED=!!simRoiMirrors.LL;
+  }
   return {settings:settings};
 }
 function scheduleSimRoiSave(delay){
