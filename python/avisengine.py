@@ -186,20 +186,32 @@ class Car():
             "speed_tag": speed_match is not None,
             "image_decoded": False,
         }
-        if image_match is not None:
-            image_data = re.sub(r"\s+", "", image_match.group(1))
+
+        # Some AVIS builds emit the JPEG as a bare base64 field instead of
+        # wrapping it in <image>...</image>. Search only long base64-like
+        # runs and require an actual JPEG SOI/EOI pair before accepting one.
+        payloads = [image_match.group(1)] if image_match is not None else []
+        if not payloads:
+            payloads = re.findall(r"[A-Za-z0-9+/=\r\n]{256,}", receive)
+        image_bytes = None
+        decoded = None
+        for payload in payloads:
             try:
-                image_bytes = base64.b64decode(image_data, validate=False)
-                image_array = np.frombuffer(image_bytes, dtype=np.uint8)
-                decoded = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
-            except Exception as exc:
-                info["decode_error"] = f"{type(exc).__name__}: {exc}"[:240]
-                self.last_response_info = info
-                raise RuntimeError("AVIS image payload could not be decoded: " + info["decode_error"]) from exc
-            if decoded is None or not decoded.size:
-                info["decode_error"] = "OpenCV returned an empty image"
-                self.last_response_info = info
-                raise RuntimeError("AVIS image payload could not be decoded: OpenCV returned an empty image")
+                candidate = base64.b64decode(re.sub(r"\s+", "", payload), validate=False)
+            except (ValueError, base64.binascii.Error):
+                continue
+            start = candidate.find(b"\xff\xd8")
+            end = candidate.rfind(b"\xff\xd9")
+            if start < 0 or end <= start:
+                continue
+            candidate = candidate[start:end + 2]
+            image_array = np.frombuffer(candidate, dtype=np.uint8)
+            decoded_candidate = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
+            if decoded_candidate is not None and decoded_candidate.size:
+                image_bytes, decoded = candidate, decoded_candidate
+                break
+
+        if decoded is not None:
             self.image = decoded
             self.image_sequence += 1
             self.image_received_at = time.monotonic()
@@ -209,7 +221,10 @@ class Car():
                 "image_height": int(decoded.shape[0]),
                 "image_sequence": int(self.image_sequence),
                 "encoded_bytes": len(image_bytes),
+                "image_payload_format": "tagged" if image_match is not None else "bare-base64-jpeg",
             })
+        elif image_match is not None:
+            info["decode_error"] = "Tagged image payload did not contain a decodable JPEG"
 
         if sensor_match is not None:
             sensor_values = re.findall(r"-?\d+", sensor_match.group(1))
@@ -228,7 +243,11 @@ class Car():
 
         # Do not include the base64 image in logs or diagnostics.
         if image_match is None:
-            info["response_prefix"] = re.sub(r"[^\x20-\x7e]", " ", receive[:180])[:180]
+            prefix = receive[:180].strip()
+            info["response_prefix_kind"] = (
+                "base64-like" if re.fullmatch(r"[A-Za-z0-9+/=\s]+", prefix)
+                else "mixed-protocol-data" if prefix else "empty"
+            )
         self.last_response_info = info
         return bool(info["image_decoded"])
 
