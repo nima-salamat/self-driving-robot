@@ -471,6 +471,8 @@ class SimulationRuntime:
                             self._run_enabled = False
                             self._record_event("warning", "AVIS link lost; autonomy disarmed. Press Start after camera frames return.")
                         self._safe_stop("AVIS camera link is reconnecting; vehicle braked and run disarmed.")
+                    elif self.backend == "avis":
+                        self._safe_stop("AVIS TCP connected, but no fresh image was present in the latest response; braking while waiting for the next image.")
                     else:
                         self._safe_stop("No fresh simulator camera frame; braking until frames resume.")
                     self.shutdown_event.wait(0.05)

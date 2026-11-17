@@ -558,7 +558,7 @@ async function refreshSimulatorCameraFrame(){
     const since=lastCameraFrameSequence===null?"":"&since="+encodeURIComponent(lastCameraFrameSequence);
     const response=await fetch("/video_feed_frame?t="+Date.now()+since,{cache:"no-store",headers:{"Accept":"image/jpeg"}});
     if(response.status===204){
-      if(!camera.naturalWidth)setCameraFeedStatus("Waiting for the CARLA RGB sensor to publish its first frame (HTTP 204).");
+      if(!camera.naturalWidth)setCameraFeedStatus("Waiting for the {{ caps.simulator_backend|upper }} camera adapter to publish its first frame (HTTP 204).");
       return;
     }
     if(!response.ok)throw new Error("Camera frame endpoint returned HTTP "+response.status+".");
@@ -922,7 +922,7 @@ async function poll(){
     }
     const cameraDiagnostic=$("camera-diagnostic");
     if(cameraDiagnostic){
-      let detail="CARLA camera sensor has not reported a frame yet.";
+      let detail=caps.simulator_backend==="avis"?"Waiting for AVIS camera response…":"CARLA camera sensor has not reported a frame yet.";
       if(sensorInfo.rendering_error)detail="CARLA rendering setup error: "+sensorInfo.rendering_error;
       else if(sensorInfo.no_rendering_mode===true)detail="CARLA no_rendering_mode is still enabled; RGB camera rendering is disabled.";
       else if(sensorInfo.decode_error)detail="CARLA camera callback could not decode its frame: "+sensorInfo.decode_error;

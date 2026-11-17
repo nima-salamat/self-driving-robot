@@ -57,6 +57,7 @@ class Car():
         self.image_sequence = 0
         self.image_received_at = None
         self.last_response_at = None
+        self.last_response_info = {}
 
     #Attributes to kind of replicate a Pub-sub pattern messaging to request data  
     steering_value = 0
@@ -161,9 +162,12 @@ class Car():
         self.sock.sendall(self.data_str.encode("utf-8"))
         
     def getData(self):
-        '''
-        Requesting for the data from the simulator
-        '''
+        """Request one AVIS sample and retain explicit camera/protocol diagnostics.
+
+        AVIS may return sensor data without an image (for example while the
+        simulator is resetting). Never leave that condition indistinguishable
+        from a socket failure, and never let a stale image masquerade as fresh.
+        """
         self.image_mode = 1
         self.sensor_status = 1
         self.updateData()
@@ -171,38 +175,62 @@ class Car():
 
         receive = self.recvall(self.sock)
         self.last_response_at = time.monotonic()
+        image_match = re.search(r"<image>(.*?)</image>", receive, flags=re.IGNORECASE | re.DOTALL)
+        sensor_match = re.search(r"<sensor>(.*?)</sensor>", receive, flags=re.IGNORECASE | re.DOTALL)
+        speed_match = re.search(r"<speed>(.*?)</speed>", receive, flags=re.IGNORECASE | re.DOTALL)
 
-        imageTagCheck = re.search('<image>(.*?)<\/image>', receive)
-        sensorTagCheck = re.search('<sensor>(.*?)<\/sensor>', receive)
-        speedTagCheck = re.search('<speed>(.*?)<\/speed>', receive)            
-        
-        try:
-            if(imageTagCheck):
-                imageData = imageTagCheck.group(1)
-                im_bytes = base64.b64decode(imageData)
-                im_arr = np.frombuffer(im_bytes, dtype=np.uint8)  # im_arr is one-dim Numpy array
-                imageOpenCV = cv2.imdecode(im_arr, flags=cv2.IMREAD_COLOR)
-                if imageOpenCV is not None and imageOpenCV.size:
-                    self.image = imageOpenCV
-                    self.image_sequence += 1
-                    self.image_received_at = time.monotonic()
-            
-            if(sensorTagCheck):
-                sensorData = sensorTagCheck.group(1)
-                sensor_arr = re.findall(r"-?\d+", sensorData)
-                sensor_int_arr = list(map(int, sensor_arr)) 
-                self.sensors = sensor_int_arr
-            else:
-                self.sensors = [1500,1500,1500]
+        info = {
+            "response_bytes": len(receive.encode("utf-8", errors="replace")),
+            "image_tag": image_match is not None,
+            "sensor_tag": sensor_match is not None,
+            "speed_tag": speed_match is not None,
+            "image_decoded": False,
+        }
+        if image_match is not None:
+            image_data = re.sub(r"\s+", "", image_match.group(1))
+            try:
+                image_bytes = base64.b64decode(image_data, validate=False)
+                image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+                decoded = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
+            except Exception as exc:
+                info["decode_error"] = f"{type(exc).__name__}: {exc}"[:240]
+                self.last_response_info = info
+                raise RuntimeError("AVIS image payload could not be decoded: " + info["decode_error"]) from exc
+            if decoded is None or not decoded.size:
+                info["decode_error"] = "OpenCV returned an empty image"
+                self.last_response_info = info
+                raise RuntimeError("AVIS image payload could not be decoded: OpenCV returned an empty image")
+            self.image = decoded
+            self.image_sequence += 1
+            self.image_received_at = time.monotonic()
+            info.update({
+                "image_decoded": True,
+                "image_width": int(decoded.shape[1]),
+                "image_height": int(decoded.shape[0]),
+                "image_sequence": int(self.image_sequence),
+                "encoded_bytes": len(image_bytes),
+            })
 
-            if(speedTagCheck):
-                current_sp = speedTagCheck.group(1)
-                self.current_speed = int(current_sp)
-            else:
+        if sensor_match is not None:
+            sensor_values = re.findall(r"-?\d+", sensor_match.group(1))
+            self.sensors = list(map(int, sensor_values))
+        else:
+            self.sensors = [1500, 1500, 1500]
+
+        if speed_match is not None:
+            try:
+                self.current_speed = int(float(speed_match.group(1).strip()))
+            except (TypeError, ValueError, OverflowError):
                 self.current_speed = 0
-        except:
-            print("Failed to receive data")
+                info["speed_parse_error"] = True
+        else:
+            self.current_speed = 0
 
+        # Do not include the base64 image in logs or diagnostics.
+        if image_match is None:
+            info["response_prefix"] = re.sub(r"[^\\x20-\\x7e]", " ", receive[:180])[:180]
+        self.last_response_info = info
+        return bool(info["image_decoded"])
 
     def getImage(self):
         '''

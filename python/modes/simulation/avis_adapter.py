@@ -31,6 +31,8 @@ class AvisAdapter(SimulatorAdapter):
         self._next_reconnect_at = 0.0
         self._reconnect_delay_s = 0.5
         self._last_image_stats = {}
+        self._last_response_signature = None
+        self._missing_image_log_active = False
 
     def _request_timeout(self):
         return min(1.0, max(0.1, float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 1.0))))
@@ -170,9 +172,10 @@ class AvisAdapter(SimulatorAdapter):
             car.getData()
         except Exception as exc:
             self._consecutive_failures += 1
-            logger.debug("AVIS getData failed (%s consecutive)", self._consecutive_failures, exc_info=True)
+            self._last_error = f"{type(exc).__name__}: {exc}"[:300]
+            logger.warning("AVIS data request failed (%s consecutive): %s", self._consecutive_failures, self._last_error)
             if self._consecutive_failures >= 2:
-                self._schedule_reconnect_locked(f"{type(exc).__name__}: {exc}")
+                self._schedule_reconnect_locked(self._last_error)
             return None
 
         self._consecutive_failures = 0
@@ -192,11 +195,33 @@ class AvisAdapter(SimulatorAdapter):
 
         if frame is None or not is_fresh:
             self._missing_images += 1
-            if self._missing_images >= 4:
-                self._schedule_reconnect_locked(
-                    f"AVIS returned no new camera image in {self._missing_images} consecutive replies."
+            response_info = dict(getattr(car, "last_response_info", {}) or {})
+            signature = (
+                bool(response_info.get("image_tag")),
+                bool(response_info.get("image_decoded")),
+                response_info.get("decode_error"),
+                response_info.get("response_prefix"),
+            )
+            self._last_error = (
+                "AVIS response contained no fresh image; "
+                + str(response_info)[:220]
+            )
+            # A missing image tag is not proof that the TCP connection is dead.
+            # Keep the socket alive and request the next sample instead of
+            # entering an endless close/reconnect loop.
+            if signature != self._last_response_signature:
+                logger.warning(
+                    "AVIS response has no fresh camera frame (missing count=%s): %s",
+                    self._missing_images, self._last_error,
                 )
+                self._last_response_signature = signature
+            self._missing_image_log_active = True
             return None
+
+        self._missing_images = 0
+        self._missing_image_log_active = False
+        self._last_response_signature = None
+        self._last_error = ""
 
         image = np.asarray(frame)
         if image.ndim != 3 or image.shape[2] < 3 or not image.size:
@@ -281,6 +306,7 @@ class AvisAdapter(SimulatorAdapter):
                 "consecutive_failures": int(self._consecutive_failures),
                 "missing_images": int(self._missing_images),
                 "last_error": self._last_error or None,
+                "response": dict(getattr(self.car, "last_response_info", {}) or {}) if self.car is not None else {},
             }
 
     def close(self):
