@@ -774,7 +774,7 @@ function drawLidar(points){
   });
   ctx.save();ctx.translate(cx,cy);ctx.fillStyle="#e7f4ff";ctx.strokeStyle="#79cbff";ctx.lineWidth=1.5;
   ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(10,8);ctx.lineTo(0,4);ctx.lineTo(-10,8);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
-  setText("lidar-note","360° top-down cloud · "+visible+" displayed points · near points red, medium range amber, farther points cyan. Rings are 5 m apart.");
+  setText("lidar-note","360° top-down cloud · "+visible+" displayed points · near points red, medium range amber, farther points cyan. Diagram scale: 0–1500 cm; rings are 250 cm apart.");
 }
 function avisRangeStatus(value,threshold,key){
   if(value===null||value===undefined||!Number.isFinite(Number(value))||Number(value)<0)return "No valid reading";
