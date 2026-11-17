@@ -665,24 +665,51 @@ function scheduleSimRoiSave(delay){
   simRoiSaveTimer=setTimeout(function(){simRoiSaveTimer=null;saveSimRoiSettings();},Math.max(0,Number(delay)||0));
 }
 async function saveSimRoiSettings(){
-  if(!simRoiControlsEnabled)return false;
+  if(!simRoiControlsEnabled){
+    setText("sim-roi-status","Cannot save: Stream control is disabled. Enable STREAM_ALLOW_CONTROL and reload Workbench.");
+    return false;
+  }
   if(simRoiSaveInFlight){simRoiSaveQueued=true;return false;}
   const collected=simRoiCollectSettings();
-  if(collected.error){setText("sim-roi-status",collected.error);return false;}
-  const button=$("sim-roi-save");
-  simRoiSaveInFlight=true;if(button)button.disabled=true;
-  setText("sim-roi-status","Saving ROI changes…");
+  if(collected.error){setText("sim-roi-status","Not saved: "+collected.error);return false;}
+  const button=$("sim-roi-save"),originalLabel=button?button.textContent:"Save now";
+  simRoiSaveInFlight=true;
+  if(button){button.disabled=true;button.textContent="Saving…";}
+  setText("sim-roi-status","Saving ROI settings to "+mode+".sim.json…");
   try{
-    const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:collected.settings})});
-    const data=await response.json();
-    if(!response.ok||!data.success)throw new Error(data.message||"ROI save failed");
-    setText("sim-roi-status","Saved ROI settings to "+mode+".sim.json");
+    const response=await fetch("/api/simulation/settings",{
+      method:"POST",cache:"no-store",credentials:"same-origin",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body:JSON.stringify({settings:collected.settings})
+    });
+    const raw=await response.text();
+    let data={};
+    try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error("Server returned a non-JSON response (HTTP "+response.status+").");}
+    if(!response.ok||!data.success)throw new Error(data.message||("HTTP "+response.status));
+
+    // Read back the persisted profile after the POST. A 200 response alone
+    // is not enough feedback for an editor: verify every submitted ROI value.
+    const verifyResponse=await fetch("/api/simulation/settings",{cache:"no-store",credentials:"same-origin",headers:{"Accept":"application/json"}});
+    const verifyRaw=await verifyResponse.text();
+    let verify={};
+    try{verify=verifyRaw?JSON.parse(verifyRaw):{};}catch(_){throw new Error("Save request succeeded, but the verification response was invalid.");}
+    if(!verifyResponse.ok||!verify.success)throw new Error(verify.message||"Could not verify saved ROI settings.");
+    const current=verify.settings||{};
+    const mismatches=Object.keys(collected.settings).filter(function(key){
+      const expected=collected.settings[key],actual=current[key];
+      if(typeof expected==="number")return !Number.isFinite(Number(actual))||Math.abs(Number(actual)-expected)>0.00001;
+      return actual!==expected;
+    });
+    if(mismatches.length)throw new Error("Server did not retain: "+mismatches.join(", "));
+    setText("sim-roi-status","Saved and verified · "+mode+".sim.json");
+    if(typeof window.showToast==="function")window.showToast("ROI settings saved and verified.");
     return true;
   }catch(error){
-    setText("sim-roi-status","Could not auto-save: "+(error.message||error));
+    setText("sim-roi-status","Save failed: "+(error.message||String(error)));
     return false;
   }finally{
-    simRoiSaveInFlight=false;if(button)button.disabled=!simRoiControlsEnabled;
+    simRoiSaveInFlight=false;
+    if(button){button.disabled=!simRoiControlsEnabled;button.textContent=originalLabel;}
     if(simRoiSaveQueued){simRoiSaveQueued=false;scheduleSimRoiSave(0);}
   }
 }
@@ -692,14 +719,17 @@ function bindSimRoiEditor(){
   // The previous early return silently left the Save button without a handler
   // whenever the canvas could not be initialized.
   const saveButton=$("sim-roi-save");
-  if(saveButton)saveButton.addEventListener("click",function(event){
+  if(saveButton)saveButton.addEventListener("click",async function(event){
     event.preventDefault();
     if(simRoiSaveTimer!==null){clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;}
-    saveSimRoiSettings();
+    await saveSimRoiSettings();
   });
   simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){
     const el=$(id);if(!el)return;
-    el.addEventListener("input",function(){drawSimRoiOverlay();scheduleSimRoiSave(700);});
+    const changed=function(){drawSimRoiOverlay();scheduleSimRoiSave(700);};
+    el.addEventListener("input",changed);
+    el.addEventListener("change",changed);
+    el.addEventListener("blur",function(){if(simRoiSaveTimer!==null)scheduleSimRoiSave(0);});
   });});
   if(!simRoiCanvas){setText("sim-roi-status","ROI numeric controls are active; overlay canvas is unavailable.");return;}
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.addEventListener("click",function(){simRoiSelected=button.dataset.simRoiSelect;simRoiUpdateSelection();drawSimRoiOverlay();});});
@@ -726,7 +756,10 @@ async function loadSettings(){
   populate(data.settings||{});
   if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
-  const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
+  const roiSaveButton=$("sim-roi-save");
+  if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
+  if(!simRoiControlsEnabled)setText("sim-roi-status","Read-only: enable STREAM_ALLOW_CONTROL to save ROI changes.");
+  else setText("sim-roi-status","Loaded saved ROI settings · changes auto-save");
   const roiMirrorInput=$("sim-roi-mirror-selected");if(roiMirrorInput)roiMirrorInput.disabled=!simRoiControlsEnabled;
   simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){const input=$(id);if(input)input.disabled=!simRoiControlsEnabled;});});
   $("save-settings").disabled=!data.controls_enabled;
