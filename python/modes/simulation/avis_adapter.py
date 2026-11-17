@@ -33,6 +33,7 @@ class AvisAdapter(SimulatorAdapter):
         self._last_image_stats = {}
         self._last_response_signature = None
         self._missing_image_log_active = False
+        self._last_missing_image_log_at = 0.0
 
     def _request_timeout(self):
         return min(1.0, max(0.1, float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 1.0))))
@@ -214,11 +215,13 @@ class AvisAdapter(SimulatorAdapter):
             # Report the transition into the missing-frame state once.
             # Sensor metadata can vary on every sample; logging each variant
             # performs synchronous console I/O in the camera/control loop.
-            if not self._missing_image_log_active:
+            now = time.monotonic()
+            if now - self._last_missing_image_log_at >= 5.0:
                 logger.warning(
                     "AVIS camera frame unavailable; retaining TCP connection. Latest response: %s",
                     self._last_error,
                 )
+                self._last_missing_image_log_at = now
             self._last_response_signature = signature
             self._missing_image_log_active = True
             return None
