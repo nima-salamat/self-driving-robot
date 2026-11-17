@@ -106,7 +106,11 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         base["option_groups"] = [
             {"title": "Shared vision", "description": profile_description + ". The image processor and steering semantics are shared with the corresponding physical mode."},
             {"title": "Mode-specific vision", "description": "City lane ROI, BEV and crosswalk tuning." if profile == "city" else "Race lane geometry and optional ML lane model; no City crosswalk processing."},
-            {"title": "Virtual vehicle I/O", "description": "Normalized steering, throttle and brake replace serial commands. A motion-derived virtual encoder replaces unavailable hardware telemetry."},
+            {"title": "Virtual vehicle I/O", "description": (
+                "Vision steering is converted to the legacy AVIS signed range (-100 left to +100 right); speed is sent as a 0-100 percentage. A motion-derived virtual encoder replaces unavailable hardware telemetry."
+                if backend == "avis" else
+                "Normalized steering, throttle and brake replace serial commands. A motion-derived virtual encoder replaces unavailable hardware telemetry."
+            )},
             {"title": "Simulator sensors", "description": "CARLA camera and ray-cast LiDAR." if backend == "carla" else "AVIS camera and its native left/front/right distance sensors; no LiDAR point cloud is exposed by this adapter."},
         ]
     else:
