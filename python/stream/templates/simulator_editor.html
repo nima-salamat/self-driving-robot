@@ -64,6 +64,11 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 @media(max-width:900px){.camera-editor-main{grid-template-columns:1fr;grid-template-rows:minmax(220px,1fr) auto}.camera-editor-controls{max-height:42vh;border-left:0;border-top:1px solid var(--sim-border)}.camera-editor-window{height:96vh}.camera-editor-footer{flex-wrap:wrap}.camera-editor-footer .msg{flex-basis:100%;order:2}}
 @media(max-width:520px){.camera-editor-modal{padding:0}.camera-editor-window{width:100vw;height:100vh;border-radius:0}.camera-editor-header{padding:10px}.camera-world-readout{display:none}.camera-editor-footer button{font-size:11px;padding:7px}.camera-editor-controls{padding:10px}}
 
+.sim-settings-panel{position:sticky;top:76px;height:clamp(360px,calc(100vh - 90px),760px);min-height:0;display:flex;flex-direction:column;align-self:start}
+.sim-settings-panel>.panel-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.avis-control-map{display:grid;gap:7px}
+.avis-control-map p+p{margin-top:0}
+@media(max-width:1020px){.sim-settings-panel{position:static;height:auto;max-height:none}.sim-settings-panel>.panel-content{overflow:visible}}
 </style>
 {% if auth_enabled %}
 <script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
@@ -93,7 +98,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
         <div class="metrics">
           <div class="metric"><div class="eyebrow">Lane estimate</div><div id="lane-value" class="value">—</div><div id="lane-valid" class="unit">Waiting for image</div></div>
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
-          <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">Virtual servo scale and normalized steering</div></div>
+          <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">{% if caps.simulator_backend == 'avis' %}AVIS signed percentage · −100 left / +100 right{% else %}Virtual servo scale and normalized steering{% endif %}</div></div>
           <div class="metric"><div class="eyebrow">Throttle / brake</div><div id="motion-value" class="value">—</div><div id="motion-reason" class="unit">Safe stop until perception is valid</div></div>
           <div class="metric"><div class="eyebrow">Line tracking</div><div id="line-tracking-state" class="value">DISABLED</div><div id="line-tracking-detail" class="unit">Hall matching is disabled</div></div>
         </div>
@@ -205,7 +210,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       </div>
     </section>
     {% endif %}
-    <section class="panel">
+    <section class="panel sim-settings-panel" id="sim-settings-panel">
       <div class="panel-head"><div><h2>Mode-aware editor</h2><p id="editor-description">Settings are isolated in a mode-specific file.</p></div></div>
       <div class="panel-content">
         <div id="save-message" class="msg" role="status"></div>
@@ -215,7 +220,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <div class="grid-two">
               <div class="field"><label for="sim-host">Host / IP</label><input id="sim-host" name="SIMULATOR_HOST" autocomplete="off" required></div>
               <div class="field"><label for="sim-port">Port</label><input id="sim-port" name="SIMULATOR_PORT" type="number" min="1" max="65535" step="1" required></div>
-              <div class="field"><label for="sim-timeout">Connection / request timeout (s)</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="{% if caps.simulator_backend == 'avis' %}1{% else %}60{% endif %}" step=".1" required><span class="note">{% if caps.simulator_backend == 'avis' %}AVIS Engine uses synchronous TCP requests; maximum 1 second{% else %}CARLA client timeout{% endif %}</span></div>
+              <div class="field"><label for="sim-timeout">{% if caps.simulator_backend == 'avis' %}AVIS TCP response timeout (s){% else %}CARLA client timeout (s){% endif %}</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="60" step=".1" required><span class="note">{% if caps.simulator_backend == 'avis' %}Allow enough time for the full camera JPEG and sensor metadata; valid range 0.1–60 seconds (default 5).{% else %}Maximum 60 seconds.{% endif %}</span></div>
               <div class="field {% if caps.simulator_backend != 'carla' %}section-hide{% endif %}" id="vehicle-filter-field"><label for="vehicle-filter">CARLA vehicle blueprint filter</label><input id="vehicle-filter" name="SIMULATOR_VEHICLE_FILTER"></div>
             </div>
           </div>
@@ -234,14 +239,19 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="setting-block {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="avis-settings">
             <h3 class="section-title">AVIS sensor setup</h3>
             <div class="grid-two">
-              <div class="field"><label for="avis-angle">Distance sensor angle (degrees)</label><input id="avis-angle" type="number" min="0" max="90" step="1" name="SIMULATOR_AVIS_SENSOR_ANGLE"></div>
+              <div class="field"><label for="avis-angle">Distance sensor side-ray angle (degrees)</label><input id="avis-angle" type="number" min="0" max="90" step="1" name="SIMULATOR_AVIS_SENSOR_ANGLE"></div>
+            </div>
+            <div class="option-group avis-control-map">
+              <h4>Legacy AVIS actuator mapping</h4>
+              <p>Steering is sent as a signed percentage: <strong>−100</strong> full left · <strong>0</strong> straight · <strong>+100</strong> full right. The sensor angle above changes distance-ray spread only; it does not change steering.</p>
+              <p>Target speed is an AVIS percentage from 0 to 100. The throttle limit below is a normalized cap from 0 to 1.</p>
             </div>
           </div>
           <div class="setting-block">
             <h3 class="section-title">Virtual vehicle safety</h3>
             <div class="grid-two">
-              <div class="field"><label for="target-speed" id="target-speed-label">Target speed</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="any" name="SIMULATOR_TARGET_SPEED" required></div>
-              <div class="field"><label for="throttle-limit">Throttle limit (0–1)</label><input id="throttle-limit" type="number" min="0" max="1" step="any" name="SIMULATOR_THROTTLE_LIMIT" required></div>
+              <div class="field"><label for="target-speed" id="target-speed-label">{% if caps.simulator_backend == 'avis' %}Target speed command (%){% else %}Target speed (km/h){% endif %}</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="any" name="SIMULATOR_TARGET_SPEED" required></div>
+              <div class="field"><label for="throttle-limit">{% if caps.simulator_backend == 'avis' %}Maximum command limit (0–1){% else %}Throttle limit (0–1){% endif %}</label><input id="throttle-limit" type="number" min="0" max="1" step="any" name="SIMULATOR_THROTTLE_LIMIT" required></div>
               {% if caps.simulator_backend == 'carla' %}
               <div class="field"><label for="steering-authority">Maximum steering input (normalized)</label><input id="steering-authority" type="number" min=".05" max="1" step="any" name="SIMULATOR_STEERING_LIMIT"></div>
               <div class="field"><label for="steering-rate">Steering change rate (normalized / s)</label><input id="steering-rate" type="number" min=".1" max="10" step="any" name="SIMULATOR_STEERING_RATE"></div>
@@ -272,14 +282,14 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
           </div>
           <div class="setting-block" id="sim-servo-calibration">
-            <h3 class="section-title">Shared steering calibration</h3>
+            <h3 class="section-title">{% if caps.simulator_backend == 'avis' %}Vision-to-AVIS steering calibration{% else %}Shared steering calibration{% endif %}</h3>
             <div class="grid-two">
               <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="1" name="MIN_SERVO_ANGLE"></div>
               <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="1" name="SERVO_CENTER"></div>
               <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="1" name="MAX_SERVO_ANGLE"></div>
               <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
             </div>
-            <p class="note">Defaults are 55° / 95° / 125°, matching the physical City/Race configuration defaults. Calibrate and save for the connected model before enabling motion; these defaults are not a substitute for measuring your actual steering linkage.</p>
+            <p class="note">{% if caps.simulator_backend == 'avis' %}These angles normalize the vision processor's steering estimate before it is converted to the AVIS signed command range −100..100. They are not the distance sensor angle.{% else %}Defaults are 55° / 95° / 125°, matching the physical City/Race configuration defaults. Calibrate for the connected model before enabling motion.{% endif %}</p>
           </div>
           <div class="setting-block {% if caps.vision_profile != 'city' %}section-hide{% endif %}" id="city-vision-settings">
             <h3 class="section-title">City vision thresholds & geometry</h3>
@@ -324,7 +334,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               </div>
             </details>
             {% endif %}
-            <p class="note">CARLA starts conservatively at 5 km/h, throttle 0.12 and steering input 0.28. These are editable starting values, not fixed UI caps: speed 0–200 km/h, throttle 0–1, steering 0.05–1. Increase motion values gradually while tuning. Settings stay in this simulator's .sim.json profile and do not modify city.json.</p>
+            <p class="note">{% if caps.simulator_backend == 'avis' %}AVIS target speed is a percentage command (0–100); the command limit caps output as a normalized value (0–1). Steering is transmitted separately as −100 to +100. Increase speed gradually while tuning. These values are stored in this mode's .sim.json profile.{% else %}CARLA starts conservatively at 5 km/h, throttle 0.12 and steering input 0.28. These are editable starting values, not fixed UI caps: speed 0–200 km/h, throttle 0–1, steering 0.05–1. Increase motion values gradually while tuning. Settings stay in this simulator's .sim.json profile and do not modify city.json.{% endif %}</p>
           </div>
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
@@ -358,9 +368,9 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
     </section>
     <section class="panel"><div class="panel-head"><div><h2>Integration notes</h2><p>What the adapter abstracts away</p></div></div><div class="panel-content">
       <p class="note"><strong>Vision:</strong> {{ caps.vision_profile|capitalize }} image processing is reused directly; the camera source changes, not the algorithm.</p>
-      <p class="note"><strong>Arduino:</strong> there is no hardware serial channel here. Structured simulator actuator events are shown in the virtual console.</p>
+      <p class="note"><strong>Actuators:</strong> there is no hardware serial channel here. Structured simulator actuator events are shown in the virtual console. {% if caps.simulator_backend == 'avis' %}Steering uses the legacy signed −100..100 protocol; speed uses 0..100 percent.{% endif %}</p>
       <p class="note"><strong>Encoder:</strong> pulse count/distance are estimated from simulator movement, not treated as a hardware-grade measurement.</p>
-      <p class="note"><strong>Restart:</strong> host/port, CARLA vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.</p>
+      <p class="note"><strong>Restart:</strong> {% if caps.simulator_backend == 'avis' %}Host, port and TCP timeout are saved in this AVIS mode's profile; reconnect the AVIS TCP session after changing connection details.{% else %}Host/port, vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.{% endif %}</p>
     </div></section>
   </div>
 
@@ -938,7 +948,7 @@ async function setCarlaRunMode(action){
   try{
     const response=await fetch("/api/simulation/run-mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:action})});
     const data=await response.json();
-    if(!response.ok||!data.success)throw new Error(data.message||"Could not change CARLA run mode");
+    if(!response.ok||!data.success)throw new Error(data.message||"Could not change simulator run mode");
     if(message){message.textContent=data.message||"Run mode updated.";message.className="msg good";}
     await poll();
   }catch(error){
