@@ -105,6 +105,10 @@ MAX_SERVO_ANGLE = 125.0
 SERVO_CENTER = 95
 SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 
+# Optional frame-to-frame line identity association using Hall matching.
+HALL_LINE_TRACKING_ENABLED = False  # [JSON] enable temporal line tracking
+HALL_LINE_TRACKING_MAX_MISSED = 4  # [JSON] tolerated missed frames before LOST
+
 # --- Speed Config ---
 SPEED = 255
 HARDCODE_SPEED = 220

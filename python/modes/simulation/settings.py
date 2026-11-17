@@ -34,10 +34,12 @@ SIMULATOR_KEYS = {
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI", "RL_MIRRORED",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+    "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
 }
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
+    "HALL_LINE_TRACKING_ENABLED",
     "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
     "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD", "ROI_RESIZABLE",
 }
@@ -47,7 +49,7 @@ INT_KEYS = {
     "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
-    "CROSSWALK_HORIZONTAL_MIN_LINES",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "HALL_LINE_TRACKING_MAX_MISSED",
 }
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
@@ -114,6 +116,8 @@ def _defaults(mode, backend):
         # Simulator City vision starts in the raw camera frame. BEV can be
         # enabled and tuned explicitly after checking the camera perspective.
         "USE_BEV": False,
+        "HALL_LINE_TRACKING_ENABLED": False,
+        "HALL_LINE_TRACKING_MAX_MISSED": 4,
         "DEBUG": False,
         "LANE_THRESHOLD": 180,
         "HOUGH_THRESHOLD": 15,
@@ -146,9 +150,9 @@ def _defaults(mode, backend):
         "USE_ML_LANE_DETECTOR": False,
         "ML_LANE_MODEL": "unet_depthwise_nano",
         "SIMULATOR_STEERING_INVERTED": False,
-        "MIN_SERVO_ANGLE": 50.0,
+        "MIN_SERVO_ANGLE": 55.0,
         "SERVO_CENTER": 95.0,
-        "MAX_SERVO_ANGLE": 130.0,
+        "MAX_SERVO_ANGLE": 125.0,
         "SERVO_DIRECTION": "ltr",
         "RL_MIRRORED": False, "LL_MIRRORED": False,
         "RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 1.0, "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
@@ -211,6 +215,8 @@ def _validate_settings(data):
                 raise ValueError(f"{key} must be between 1 and 1000")
             if key == "SIMULATOR_SPAWN_POINT_INDEX" and not -1 <= value <= 100000:
                 raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
+            if key == "HALL_LINE_TRACKING_MAX_MISSED" and not 1 <= value <= 12:
+                raise ValueError("HALL_LINE_TRACKING_MAX_MISSED must be between 1 and 12")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
                 raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
         elif key in NUMERIC_KEYS:

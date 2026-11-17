@@ -95,8 +95,8 @@ class SimulationRuntime:
                 float(getattr(config, "ENCODER_PULSE_DISTANCE_CM", 0.5)),
                 wheelbase_cm=wheelbase,
                 servo_center=getattr(config, "SERVO_CENTER", 95),
-                servo_min=getattr(config, "MIN_SERVO_ANGLE", 50),
-                servo_max=getattr(config, "MAX_SERVO_ANGLE", 130),
+                servo_min=getattr(config, "MIN_SERVO_ANGLE", 55),
+                servo_max=getattr(config, "MAX_SERVO_ANGLE", 125),
                 max_wheel_angle_deg=max_wheel_angle,
             )
             config.encoder_odometry = self.odometry

@@ -9,8 +9,8 @@ class VirtualVehicleController:
     def __init__(self, config, backend):
         self.config = config
         self.backend = backend
-        self.minimum = float(getattr(config, "MIN_SERVO_ANGLE", 50))
-        self.maximum = float(getattr(config, "MAX_SERVO_ANGLE", 130))
+        self.minimum = float(getattr(config, "MIN_SERVO_ANGLE", 55))
+        self.maximum = float(getattr(config, "MAX_SERVO_ANGLE", 125))
         self.center = float(getattr(config, "SERVO_CENTER", 95))
         if not self.minimum < self.center < self.maximum:
             raise ValueError("servo limits must contain SERVO_CENTER")
