@@ -211,12 +211,15 @@ class AvisAdapter(SimulatorAdapter):
             # A missing image tag is not proof that the TCP connection is dead.
             # Keep the socket alive and request the next sample instead of
             # entering an endless close/reconnect loop.
-            if signature != self._last_response_signature:
+            # Report the transition into the missing-frame state once.
+            # Sensor metadata can vary on every sample; logging each variant
+            # performs synchronous console I/O in the camera/control loop.
+            if not self._missing_image_log_active:
                 logger.warning(
-                    "AVIS response has no fresh camera frame (missing count=%s): %s",
-                    self._missing_images, self._last_error,
+                    "AVIS camera frame unavailable; retaining TCP connection. Latest response: %s",
+                    self._last_error,
                 )
-                self._last_response_signature = signature
+            self._last_response_signature = signature
             self._missing_image_log_active = True
             return None
 
