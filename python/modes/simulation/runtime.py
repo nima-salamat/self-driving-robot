@@ -299,6 +299,7 @@ class SimulationRuntime:
                     reason="AVIS Engine explicit stop command sent.",
                 )
                 self._stop_event_active = True
+                self._last_safe_stop_command_at = time.monotonic()
             else:
                 self._safe_stop(self.backend.upper() + " run stopped; waiting for an explicit Start Run command.")
             self._last_error = None
