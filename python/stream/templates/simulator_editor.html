@@ -69,6 +69,24 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 .avis-control-map{display:grid;gap:7px}
 .avis-control-map p+p{margin-top:0}
 @media(max-width:1020px){.sim-settings-panel{position:static;height:auto;max-height:none}.sim-settings-panel>.panel-content{overflow:visible}}
+
+/* AVIS has additional simulator-specific controls; give them room and contrast. */
+.sim-layout.avis-layout{grid-template-columns:minmax(0,1.15fr) minmax(440px,.95fr)}
+.avis-layout .sim-settings-panel .grid-two{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:13px;row-gap:14px}
+.avis-layout .sim-settings-panel .setting-block{padding:16px 2px}
+.avis-layout .sim-settings-panel .section-title{font-size:14px;line-height:1.4;color:#e6f0fa}
+.avis-layout .sim-settings-panel .field label{font-size:13px;font-weight:600;line-height:1.4;color:#c5d5e5}
+.avis-layout .sim-settings-panel .field input,.avis-layout .sim-settings-panel .field select{min-height:40px;padding:9px 10px;border-color:#40546a;background:#0d1722;font-size:14px}
+.avis-layout .sim-settings-panel .check-field{align-items:flex-start;margin-top:7px;padding:9px 10px;border:1px solid #2e4052;border-radius:8px;background:#1a2633;color:#e5edf5;font-size:13px;line-height:1.45}
+.avis-layout .sim-settings-panel .check-field input{flex:0 0 auto;margin-top:3px}
+.avis-layout .sim-settings-panel .note{font-size:12px;line-height:1.55;color:#a9bbcd}
+.avis-layout .avis-control-map{margin-top:12px;border-color:#3e5d78;background:#172838}
+.avis-layout .avis-control-map h4{font-size:13px;color:#e5f2ff}
+.avis-layout .avis-control-map p{font-size:12px;line-height:1.6}
+.avis-layout .sim-settings-panel .pill{color:#b8d7ee;border-color:#415a70}
+@media(max-width:1200px){.sim-layout.avis-layout{grid-template-columns:minmax(0,1fr) minmax(400px,.95fr)}}
+@media(max-width:1020px){.sim-layout.avis-layout{grid-template-columns:1fr}}
+@media(max-width:520px){.avis-layout .sim-settings-panel .grid-two{grid-template-columns:1fr}}
 </style>
 {% if auth_enabled %}
 <script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
@@ -86,7 +104,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   {% if caps.supports_range_sensors %}<button id="avis-reconnect" type="button">↻ Reconnect AVIS</button>{% endif %}
   <button id="refresh" type="button">Refresh</button>
 </header>
-<main class="sim-layout">
+<main class="sim-layout{% if caps.simulator_backend == 'avis' %} avis-layout{% endif %}">
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
@@ -220,7 +238,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <div class="grid-two">
               <div class="field"><label for="sim-host">Host / IP</label><input id="sim-host" name="SIMULATOR_HOST" autocomplete="off" required></div>
               <div class="field"><label for="sim-port">Port</label><input id="sim-port" name="SIMULATOR_PORT" type="number" min="1" max="65535" step="1" required></div>
-              <div class="field"><label for="sim-timeout">{% if caps.simulator_backend == 'avis' %}AVIS TCP response timeout (s){% else %}CARLA client timeout (s){% endif %}</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="60" step=".1" required><span class="note">{% if caps.simulator_backend == 'avis' %}Allow enough time for the full camera JPEG and sensor metadata; valid range 0.1–60 seconds (default 5).{% else %}Maximum 60 seconds.{% endif %}</span></div>
+              <div class="field"><label for="sim-timeout">{% if caps.simulator_backend == 'avis' %}AVIS TCP response timeout (s){% else %}CARLA client timeout (s){% endif %}</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="60" step="any" required><span class="note">{% if caps.simulator_backend == 'avis' %}Allow enough time for the full camera JPEG and sensor metadata; valid range 0.1–60 seconds (default 5).{% else %}Maximum 60 seconds.{% endif %}</span></div>
               <div class="field {% if caps.simulator_backend != 'carla' %}section-hide{% endif %}" id="vehicle-filter-field"><label for="vehicle-filter">CARLA vehicle blueprint filter</label><input id="vehicle-filter" name="SIMULATOR_VEHICLE_FILTER"></div>
             </div>
           </div>
@@ -353,7 +371,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min="0" max="1" step="any" name="CW_RIGHT_ROI"></div>
             </div>
           </div>
-          <div class="actions"><button type="button" id="reload-settings">Reload saved</button><button class="primary" type="submit" id="save-settings">Save settings</button></div>
+          <div class="actions"><button type="button" id="reload-settings" disabled>Reload saved</button><button class="primary" type="submit" id="save-settings" disabled>Save settings</button></div>
         </form>
       </div>
     </section>
@@ -446,6 +464,16 @@ let eventKeys = [];
 function setText(id, value){ const e=$(id); if(e) e.textContent = value; }
 function numeric(value, places){ return Number.isFinite(Number(value)) ? Number(value).toFixed(places||0) : "—"; }
 function status(message, good){ const e=$("save-message"); e.textContent=message||""; e.className="msg"+(good===true?" good":good===false?" bad":""); }
+let simulatorSettingsReady=false;
+function readSettingNumber(id){
+  const input=$(id);
+  if(!input)throw new Error("Setting control is unavailable: "+id);
+  const raw=String(input.value??"").trim();
+  if(raw==="")throw new Error((input.name||id)+" is empty. Reload saved defaults or enter a value before saving.");
+  const value=Number(raw);
+  if(!Number.isFinite(value))throw new Error((input.name||id)+" must be a finite number.");
+  return value;
+}
 function populate(s){
   const fields = {
     "sim-host":"SIMULATOR_HOST","sim-port":"SIMULATOR_PORT","sim-timeout":"SIMULATOR_TIMEOUT_S",
@@ -761,9 +789,14 @@ function bindSimRoiEditor(){
 }
 bindSimRoiEditor();
 async function loadSettings(){
-  const response=await fetch("/api/simulation/settings",{cache:"no-store"});
-  const data=await response.json();
-  if(!response.ok||!data.success) throw new Error(data.message||"Could not load simulator settings");
+  simulatorSettingsReady=false;
+  const saveButton=$("save-settings"),reloadButton=$("reload-settings");
+  if(saveButton)saveButton.disabled=true;
+  if(reloadButton)reloadButton.disabled=true;
+  try{
+    const response=await fetch("/api/simulation/settings",{cache:"no-store"});
+    const data=await response.json();
+    if(!response.ok||!data.success) throw new Error(data.message||"Could not load simulator settings");
   simRoiControlsEnabled=!!data.controls_enabled;
   simRoiGeometry=Object.assign(simRoiGeometry,data.roi_geometry||{});
   const roiHint=document.querySelector("#sim-roi-editor .sim-roi-hint");
@@ -789,6 +822,13 @@ async function loadSettings(){
       const p=document.createElement("p"); p.textContent=group.description;
       card.append(h,p); parent.append(card);
     });
+  }
+  simulatorSettingsReady=true;
+  }catch(error){
+    simulatorSettingsReady=false;
+    throw error;
+  }finally{
+    if(reloadButton)reloadButton.disabled=false;
   }
 }
 function drawLidar(points){
@@ -992,7 +1032,7 @@ async function poll(){
             " · image tag: "+String(responseInfo.image_tag===true)+
             " · sensor tag: "+String(responseInfo.sensor_tag===true)+
             " · decoded: "+String(responseInfo.image_decoded===true)+".";
-          if(sensorInfo.frame_count>0)detail+=" Last good frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago.";
+          if(sensorInfo.frame_count>0)detail+=" The dashboard is retaining the last successfully decoded frame on screen ("+numeric(sensorInfo.last_frame_age_ms,0)+" ms old); this response did not contain a fresh frame.";
           if(sensorInfo.last_error)detail+=" Detail: "+String(sensorInfo.last_error);
           diagnosticError=true;
         }
@@ -1049,24 +1089,27 @@ async function poll(){
   }
 }
 $("settings-form").addEventListener("submit",async function(event){
-  event.preventDefault();status("Saving settings…");
+  event.preventDefault();
+  if(!simulatorSettingsReady){status("Settings have not finished loading. Saving is disabled until the saved values are ready.",false);return;}
+  status("Saving settings…");
+  try{
   const s={
     SIMULATOR_HOST:$("sim-host").value.trim(),
-    SIMULATOR_PORT:Number($("sim-port").value),
-    SIMULATOR_TIMEOUT_S:Number($("sim-timeout").value),
-    SIMULATOR_TARGET_SPEED:Number($("target-speed").value),
-    SIMULATOR_THROTTLE_LIMIT:Number($("throttle-limit").value),
+    SIMULATOR_PORT:readSettingNumber("sim-port"),
+    SIMULATOR_TIMEOUT_S:readSettingNumber("sim-timeout"),
+    SIMULATOR_TARGET_SPEED:readSettingNumber("target-speed"),
+    SIMULATOR_THROTTLE_LIMIT:readSettingNumber("throttle-limit"),
     SIMULATOR_STOP_ON_LOST_LANE:$("stop-lost-lane").checked,
     SIMULATOR_STEERING_INVERTED:$("steering-inverted").checked,
     DEBUG:$("debug-overlay").checked,
     HALL_LINE_TRACKING_ENABLED:$("hall-line-tracking").checked,
-    HALL_LINE_TRACKING_MAX_MISSED:Number($("hall-line-max-missed").value),
-    MIN_SERVO_ANGLE:Number($("min-servo").value),
-    SERVO_CENTER:Number($("servo-center").value),
-    MAX_SERVO_ANGLE:Number($("max-servo").value),
+    HALL_LINE_TRACKING_MAX_MISSED:readSettingNumber("hall-line-max-missed"),
+    MIN_SERVO_ANGLE:readSettingNumber("min-servo"),
+    SERVO_CENTER:readSettingNumber("servo-center"),
+    MAX_SERVO_ANGLE:readSettingNumber("max-servo"),
     SERVO_DIRECTION:$("servo-direction").value,
-    SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:Number($("obstacle-stop-distance").value),
-    ENCODER_PULSE_DISTANCE_CM:Number($("pulse-distance").value)
+    SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:readSettingNumber("obstacle-stop-distance"),
+    ENCODER_PULSE_DISTANCE_CM:readSettingNumber("pulse-distance")
   };
   const roiPairs=[];
   // Submit only controls supported by the active vision processor. Hidden
@@ -1084,34 +1127,34 @@ $("settings-form").addEventListener("submit",async function(event){
   if(caps.supports_crosswalk) roiPairs.push(
     ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
   );
-  roiPairs.forEach(function(pair){const el=$(pair[0]);if(el&&el.value!=="")s[pair[1]]=Number(el.value);});
+  roiPairs.forEach(function(pair){const el=$(pair[0]);if(el)s[pair[1]]=readSettingNumber(pair[0]);});
   if(caps.simulator_backend==="carla"){
-    s.SIMULATOR_STEERING_LIMIT=Number($("steering-authority").value);
-    s.SIMULATOR_STEERING_RATE=Number($("steering-rate").value);
-    s.SIMULATOR_THROTTLE_RISE_RATE=Number($("throttle-rise-rate").value);
+    s.SIMULATOR_STEERING_LIMIT=readSettingNumber("steering-authority");
+    s.SIMULATOR_STEERING_RATE=readSettingNumber("steering-rate");
+    s.SIMULATOR_THROTTLE_RISE_RATE=readSettingNumber("throttle-rise-rate");
   }
   if(caps.supports_crosswalk) s.SIMULATOR_STOP_ON_CROSSWALK=$("stop-crosswalk").checked;
   if(caps.vision_profile==="city"){
     s.CITY_LANE_DETECTOR=$("city-lane-detector").value;
-    if($("lane-threshold"))s.LANE_THRESHOLD=Number($("lane-threshold").value);
-    if($("hough-threshold"))s.HOUGH_THRESHOLD=Number($("hough-threshold").value);
-    if($("hough-min-line"))s.HOUGH_MIN_LINE_LENGTH=Number($("hough-min-line").value);
-    if($("hough-max-gap"))s.HOUGH_MAX_LINE_GAP=Number($("hough-max-gap").value);
-    if($("hough-blur"))s.HOUGH_BLUR_KERNEL=Number($("hough-blur").value);
+    if($("lane-threshold"))s.LANE_THRESHOLD=readSettingNumber("lane-threshold");
+    if($("hough-threshold"))s.HOUGH_THRESHOLD=readSettingNumber("hough-threshold");
+    if($("hough-min-line"))s.HOUGH_MIN_LINE_LENGTH=readSettingNumber("hough-min-line");
+    if($("hough-max-gap"))s.HOUGH_MAX_LINE_GAP=readSettingNumber("hough-max-gap");
+    if($("hough-blur"))s.HOUGH_BLUR_KERNEL=readSettingNumber("hough-blur");
     if($("lane-roi-mode"))s.LANE_ROI_MODE=$("lane-roi-mode").value;
-    if($("camera-pitch-deg"))s.CAMERA_PITCH_DEG=Number($("camera-pitch-deg").value);
-    if($("camera-height"))s.CAMERA_HEIGHT=Number($("camera-height").value);
-    if($("lane-width"))s.LANE_WIDTH=Number($("lane-width").value);
+    if($("camera-pitch-deg"))s.CAMERA_PITCH_DEG=readSettingNumber("camera-pitch-deg");
+    if($("camera-height"))s.CAMERA_HEIGHT=readSettingNumber("camera-height");
+    if($("lane-width"))s.LANE_WIDTH=readSettingNumber("lane-width");
     if($("hough-morph-close"))s.HOUGH_MORPH_CLOSE=$("hough-morph-close").checked;
     if($("old-method"))s.OLD_METHOD=$("old-method").checked;
     if($("roi-resizable"))s.ROI_RESIZABLE=$("roi-resizable").checked;
-    if($("rl-top-factor"))s.RL_TOP_WIDTH_FACTOR=Number($("rl-top-factor").value);
-    if($("ll-top-factor"))s.LL_TOP_WIDTH_FACTOR=Number($("ll-top-factor").value);
+    if($("rl-top-factor"))s.RL_TOP_WIDTH_FACTOR=readSettingNumber("rl-top-factor");
+    if($("ll-top-factor"))s.LL_TOP_WIDTH_FACTOR=readSettingNumber("ll-top-factor");
     if(caps.supports_crosswalk){
-      s.CROSSWALK_THRESHOLD=Number($("crosswalk-threshold").value);
-      s.CROSSWALK_VERTICAL_MIN_LINES=Number($("crosswalk-min-vertical").value);
-      s.CROSSWALK_HORIZONTAL_MIN_LINES=Number($("crosswalk-min-horizontal").value);
-      s.CW_TOP_WIDTH_FACTOR=Number($("cw-top-factor").value);
+      s.CROSSWALK_THRESHOLD=readSettingNumber("crosswalk-threshold");
+      s.CROSSWALK_VERTICAL_MIN_LINES=readSettingNumber("crosswalk-min-vertical");
+      s.CROSSWALK_HORIZONTAL_MIN_LINES=readSettingNumber("crosswalk-min-horizontal");
+      s.CW_TOP_WIDTH_FACTOR=readSettingNumber("cw-top-factor");
       s.CW_TRAPEZOID_MODE=$("cw-trapezoid").checked;
       s.CW_OLD_METHOD=$("cw-old-method").checked;
     }
@@ -1121,7 +1164,7 @@ $("settings-form").addEventListener("submit",async function(event){
     ["TL","TR","BR","BL"].forEach(function(corner){
       ["X","Y"].forEach(function(axis){
         const id="bev-"+corner.toLowerCase()+"-"+axis.toLowerCase();
-        const el=$(id);if(el)s["BEV_SRC_"+corner+"_"+axis]=Number(el.value);
+        const el=$(id);if(el)s["BEV_SRC_"+corner+"_"+axis]=readSettingNumber(id);
       });
     });
   }
@@ -1132,14 +1175,13 @@ $("settings-form").addEventListener("submit",async function(event){
   if(caps.simulator_backend==="carla") s.SIMULATOR_VEHICLE_FILTER=$("vehicle-filter").value.trim() || "vehicle.*";
   if(caps.supports_lidar){
     s.SIMULATOR_LIDAR_ENABLED=$("lidar-enabled").checked;
-    s.SIMULATOR_LIDAR_RANGE_M=Number($("lidar-range").value);
-    s.SIMULATOR_LIDAR_CHANNELS=Number($("lidar-channels").value);
-    s.SIMULATOR_LIDAR_POINTS_PER_SECOND=Number($("lidar-pps").value);
-    s.SIMULATOR_LIDAR_ROTATION_FREQUENCY=Number($("lidar-rotation").value);
-    s.SIMULATOR_CAMERA_FOV=Number($("camera-fov").value);
+    s.SIMULATOR_LIDAR_RANGE_M=readSettingNumber("lidar-range");
+    s.SIMULATOR_LIDAR_CHANNELS=readSettingNumber("lidar-channels");
+    s.SIMULATOR_LIDAR_POINTS_PER_SECOND=readSettingNumber("lidar-pps");
+    s.SIMULATOR_LIDAR_ROTATION_FREQUENCY=readSettingNumber("lidar-rotation");
+    s.SIMULATOR_CAMERA_FOV=readSettingNumber("camera-fov");
   }
-  if(caps.supports_range_sensors)s.SIMULATOR_AVIS_SENSOR_ANGLE=Number($("avis-angle").value);
-  try{
+  if(caps.supports_range_sensors)s.SIMULATOR_AVIS_SENSOR_ANGLE=readSettingNumber("avis-angle");
     const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:s})});
     const data=await response.json();
     if(!response.ok||!data.success)throw new Error(data.message||"Save failed");

@@ -140,6 +140,12 @@ def register_simulator_routes(app, streamer):
         unknown = set(patch) - SIMULATOR_KEYS
         if unknown:
             return jsonify(success=False, message="unsupported settings: " + ", ".join(sorted(unknown))), 400
+        try:
+            # Share the same schema used by profile loading and persistence.
+            # This prevents the API and saved profiles from disagreeing.
+            patch = _validate_settings(patch)
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
         backend = str(getattr(streamer.config, "SIMULATOR_BACKEND", ""))
         caps = mode_capabilities(streamer.config)
         profile = caps.get("vision_profile", "city")
@@ -178,60 +184,12 @@ def register_simulator_routes(app, streamer):
             if not math.isfinite(target_speed) or target_speed < 0 or target_speed > maximum_speed:
                 return jsonify(success=False, message=f"Target speed must be between 0 and {maximum_speed} for {backend.upper()}"), 400
             patch["SIMULATOR_TARGET_SPEED"] = target_speed
+        if backend == "avis" and "SIMULATOR_TARGET_SPEED" in patch:
+            target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
+            if target_speed > 100:
+                return jsonify(success=False, message="Target speed must be between 0 and 100 for AVIS"), 400
         if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
             return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
-        if "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in patch:
-            try:
-                obstacle_distance = float(patch["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"])
-            except (TypeError, ValueError, OverflowError):
-                return jsonify(success=False, message="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM must be numeric"), 400
-            if not math.isfinite(obstacle_distance) or not 0 <= obstacle_distance <= 500:
-                return jsonify(success=False, message="Obstacle stop distance must be between 0 and 500 cm"), 400
-            patch["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"] = obstacle_distance
-        if "SIMULATOR_PORT" in patch:
-            value = patch["SIMULATOR_PORT"]
-            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535:
-                return jsonify(success=False, message="SIMULATOR_PORT must be an integer from 1 to 65535"), 400
-        for key in ("SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
-                    "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
-                    "ENCODER_PULSE_DISTANCE_CM"):
-            if key in patch:
-                try:
-                    value = float(patch[key])
-                except (TypeError, ValueError, OverflowError):
-                    return jsonify(success=False, message=key + " must be numeric"), 400
-                if not math.isfinite(value) or value <= 0:
-                    return jsonify(success=False, message=key + " must be positive and finite"), 400
-                patch[key] = value
-        if "SIMULATOR_THROTTLE_LIMIT" in patch:
-            try:
-                value = float(patch["SIMULATOR_THROTTLE_LIMIT"])
-            except (TypeError, ValueError, OverflowError):
-                return jsonify(success=False, message="SIMULATOR_THROTTLE_LIMIT must be numeric"), 400
-            maximum_throttle = 1.0
-            if not math.isfinite(value) or not 0 <= value <= maximum_throttle:
-                return jsonify(success=False, message=f"SIMULATOR_THROTTLE_LIMIT must be between 0 and {maximum_throttle} for {backend.upper()}"), 400
-            patch["SIMULATOR_THROTTLE_LIMIT"] = value
-        for key in ("SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
-                    "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED",
-                    "USE_BEV", "USE_ML_LANE_DETECTOR", "DEBUG", "HALL_LINE_TRACKING_ENABLED"):
-            if key in patch and not isinstance(patch[key], bool):
-                return jsonify(success=False, message=key + " must be boolean"), 400
-        if "HALL_LINE_TRACKING_MAX_MISSED" in patch:
-            value = patch["HALL_LINE_TRACKING_MAX_MISSED"]
-            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 12:
-                return jsonify(success=False, message="HALL_LINE_TRACKING_MAX_MISSED must be an integer from 1 to 12"), 400
-        for key in ("RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
-                    "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
-                    "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"):
-            if key in patch:
-                try:
-                    value = float(patch[key])
-                except (TypeError, ValueError, OverflowError):
-                    return jsonify(success=False, message=key + " must be numeric"), 400
-                if not math.isfinite(value) or not 0 <= value <= 1:
-                    return jsonify(success=False, message=key + " must be between 0 and 1"), 400
-                patch[key] = value
         if patch.get("WITH_SIGN") and patch.get("WITH_APRILTAG"):
             return jsonify(success=False, message="Choose traffic signs or AprilTags, not both"), 400
         try:

@@ -360,7 +360,7 @@ class SimulationRuntime:
         now = time.monotonic()
         # Frame availability can flicker. Keep the event visible, but avoid
         # synchronous warning I/O on every brief loss/recovery transition.
-        if reason != self._last_safe_stop_reason or now - self._last_safe_stop_log_at >= 5.0:
+        if reason != self._last_safe_stop_reason or now - self._last_safe_stop_log_at >= 30.0:
             self._record_event("warning", reason)
             self._last_safe_stop_reason = reason
             self._last_safe_stop_log_at = now

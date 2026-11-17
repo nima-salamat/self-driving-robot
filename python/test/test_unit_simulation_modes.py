@@ -46,12 +46,37 @@ class AvisEngineProtocolTests(unittest.TestCase):
             + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
         )
         car = Car()
-        car.sock.close()
         car.sock = FakeSocket(payload)
         self.assertTrue(car.getData())
         self.assertEqual(car.image.shape[:2], (12, 16))
         self.assertEqual(car.image_sequence, 1)
         self.assertTrue(car.last_response_info["image_tag"])
+        self.assertEqual(car.last_response_info["image_payload_format"], "tagged")
+        car.sock = None
+
+    def test_get_data_accepts_wrapped_base64_inside_image_tag(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((12, 16, 3), 127, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        base64_text = base64.b64encode(encoded.tobytes()).decode("ascii")
+        wrapped = "\n".join(base64_text[index:index + 48] for index in range(0, len(base64_text), 48))
+        payload = (
+            "<image>\n" + wrapped + "\n</image>"
+            "<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        ).encode("utf-8")
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (12, 16))
         self.assertEqual(car.last_response_info["image_payload_format"], "tagged")
         car.sock = None
 
@@ -73,7 +98,6 @@ class AvisEngineProtocolTests(unittest.TestCase):
             + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
         )
         car = Car()
-        car.sock.close()
         car.sock = FakeSocket(payload)
         self.assertTrue(car.getData())
         self.assertEqual(car.image.shape[:2], (12, 16))
@@ -99,13 +123,32 @@ class AvisEngineProtocolTests(unittest.TestCase):
             + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
         )
         car = Car()
-        car.sock.close()
         car.sock = FakeSocket(payload)
         self.assertFalse(car.getData())
         self.assertIsNone(car.image)
         self.assertFalse(car.last_response_info["image_decoded"])
         self.assertIn("not a valid JPEG", car.last_response_info["decode_error"])
         car.sock = None
+
+    def test_get_data_does_not_treat_sensor_only_response_as_a_fresh_image(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        car = Car()
+        car.sock = FakeSocket(b"<sensor>21,30,42</sensor><speed>0</speed><EOF>")
+        self.assertFalse(car.getData())
+        self.assertIsNone(car.image)
+        self.assertEqual(car.image_sequence, 0)
+        self.assertTrue(car.last_response_info["sensor_tag"])
+        self.assertFalse(car.last_response_info["image_decoded"])
+        car.sock = None
+
 
 class ModeRegistryTests(unittest.TestCase):
     def test_sim_modes_choose_city_and_race_vision_profiles(self):
@@ -360,6 +403,93 @@ class SimulatorSettingsTests(unittest.TestCase):
             _validate_settings({"SIMULATOR_VEHICLE_BLUEPRINT": "walker.pedestrian.*"})
 
 
+class SimulatorSettingsApiTests(unittest.TestCase):
+    def test_avis_default_stream_payload_passes_api_for_city_and_race(self):
+        from flask import Flask
+        from stream.simulator_api import register_simulator_routes
+
+        class StreamStub:
+            def __init__(self, config):
+                self.config = config
+            def _control_allowed(self):
+                return True
+            def _control_denied(self):
+                raise AssertionError("Control should be enabled for this test")
+
+        # Build the body the browser submits from the active mode's defaults.
+        common = (
+            "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S",
+            "SIMULATOR_TARGET_SPEED", "SIMULATOR_THROTTLE_LIMIT",
+            "SIMULATOR_STOP_ON_LOST_LANE", "SIMULATOR_STEERING_INVERTED",
+            "DEBUG", "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
+            "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE", "SERVO_DIRECTION",
+            "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "ENCODER_PULSE_DISTANCE_CM",
+            "SIMULATOR_AVIS_SENSOR_ANGLE",
+        )
+        lane_roi = (
+            "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
+            "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
+        )
+        city_only = (
+            "CITY_LANE_DETECTOR", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
+            "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
+            "LANE_ROI_MODE", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
+            "HOUGH_MORPH_CLOSE", "OLD_METHOD", "ROI_RESIZABLE",
+            "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR",
+            "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
+            "CROSSWALK_HORIZONTAL_MIN_LINES", "CW_TOP_WIDTH_FACTOR",
+            "CW_TRAPEZOID_MODE", "CW_OLD_METHOD",
+            "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+            "SIMULATOR_STOP_ON_CROSSWALK", "RL_MIRRORED", "LL_MIRRORED",
+        )
+        bev = (
+            "USE_BEV", "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X",
+            "BEV_SRC_TR_Y", "BEV_SRC_BR_X", "BEV_SRC_BR_Y",
+            "BEV_SRC_BL_X", "BEV_SRC_BL_Y",
+        )
+
+        for mode, profile in (("avis", "city"), ("avis-race", "race")):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                config = SimpleNamespace(
+                    BASE_DIR=directory, MODE=mode,
+                    SIMULATION_VISION_PROFILE=profile, SIMULATOR_BACKEND="avis",
+                    STREAM_ALLOW_CONTROL=True,
+                )
+                load_simulator_settings(config, mode, "avis")
+                defaults = {key: getattr(config, key) for key in SIMULATOR_KEYS}
+                payload = {key: defaults[key] for key in common + lane_roi}
+                payload.update({key: defaults[key] for key in bev})
+                if profile == "city":
+                    payload.update({key: defaults[key] for key in city_only})
+                else:
+                    payload["USE_ML_LANE_DETECTOR"] = defaults["USE_ML_LANE_DETECTOR"]
+                    payload["ML_LANE_MODEL"] = defaults["ML_LANE_MODEL"]
+
+                app = Flask(__name__)
+                register_simulator_routes(app, StreamStub(config))
+                response = app.test_client().post(
+                    "/api/simulation/settings",
+                    json={"settings": payload},
+                )
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                saved = response.get_json()["settings"]
+                self.assertEqual(saved["SIMULATOR_TIMEOUT_S"], 5.0)
+                self.assertEqual(saved["SIMULATOR_TARGET_SPEED"], 25.0)
+                self.assertEqual(saved["SIMULATOR_THROTTLE_LIMIT"], 0.35)
+
+    def test_simulator_editor_does_not_save_before_load_or_coerce_empty_numbers(self):
+        from pathlib import Path
+
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator_editor.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("function readSettingNumber(id)", template)
+        self.assertIn("simulatorSettingsReady=false", template)
+        self.assertIn('id="save-settings" disabled', template)
+        self.assertIn("is empty. Reload saved defaults", template)
+
+
 class CityRoiMirroringTests(unittest.TestCase):
     def test_lane_roi_mirror_flips_crop_mask_and_restores_detection_coordinates(self):
         from vision.city_vision_processing import VisionProcessor
@@ -436,6 +566,7 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertEqual(page.status_code, 200, page.data[:300])
                     page_text = page.get_data(as_text=True)
                     self.assertIn("Simulator camera", page_text)
+                    self.assertIn('id="save-settings" disabled', page_text)
                     if backend == "carla":
                         self.assertIn('id="steering-authority"', page_text)
                         self.assertIn('id="steering-rate"', page_text)

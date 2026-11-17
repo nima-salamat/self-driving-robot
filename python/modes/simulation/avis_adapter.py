@@ -263,7 +263,11 @@ class AvisAdapter(SimulatorAdapter):
             # Sensor metadata can vary on every sample; logging each variant
             # performs synchronous console I/O in the camera/control loop.
             now = time.monotonic()
-            if now - self._last_missing_image_log_at >= 5.0:
+            state_changed = (
+                not self._missing_image_log_active
+                or signature != self._last_response_signature
+            )
+            if state_changed or now - self._last_missing_image_log_at >= 30.0:
                 logger.warning(
                     "AVIS camera frame unavailable; retaining TCP connection. Latest response: %s",
                     self._last_error,
