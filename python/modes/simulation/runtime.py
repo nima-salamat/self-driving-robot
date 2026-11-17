@@ -58,6 +58,7 @@ class SimulationRuntime:
         self._last_event_key = None
         self._last_cycle_at = None
         self._stop_event_active = False
+        self._last_safe_stop_command_at = 0.0
         self._camera_editor_active = False
         self._scene_edit_active = False
         # Every simulator starts disarmed. Reconnecting never auto-resumes motion.
@@ -341,6 +342,13 @@ class SimulationRuntime:
         if not self._stop_event_active:
             self._record_event("warning", reason)
         self._stop_event_active = True
+        now = time.monotonic()
+        # A missing camera frame can persist for many processing cycles. Do
+        # not issue two socket writes on every 50 ms retry; refresh the
+        # hardware stop at most twice per second while remaining disarmed.
+        if now - self._last_safe_stop_command_at < 0.5:
+            return
+        self._last_safe_stop_command_at = now
         safe = VehicleCommand(
             steering=self._last_command.steering if self._last_command else 0.0,
             throttle=0.0, brake=1.0,
