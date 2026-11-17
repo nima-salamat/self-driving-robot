@@ -164,7 +164,7 @@ def _defaults(mode, backend):
     }
 
 
-def _validate_settings(data):
+def _validate_settings(data, backend=None):
     if not isinstance(data, dict):
         raise ValueError("simulator settings must be a JSON object")
     clean = {}
@@ -233,8 +233,13 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_CAMERA_FOV must be between 10 and 150 degrees")
             if key == "SIMULATOR_LIDAR_ROTATION_FREQUENCY" and value > 50:
                 raise ValueError("SIMULATOR_LIDAR_ROTATION_FREQUENCY must be at most 50 Hz")
-            if key == "SIMULATOR_TARGET_SPEED" and value > 200:
-                raise ValueError("SIMULATOR_TARGET_SPEED must be at most 200")
+            if key == "SIMULATOR_TARGET_SPEED":
+                maximum = 100 if str(backend or "").lower() == "avis" else 200
+                if value > maximum:
+                    label = "AVIS percentage" if maximum == 100 else "200 km/h"
+                    raise ValueError(
+                        f"SIMULATOR_TARGET_SPEED must be between 0 and {maximum} ({label})"
+                    )
             if key == "SIMULATOR_LIDAR_RANGE_M" and value > 500:
                 raise ValueError("SIMULATOR_LIDAR_RANGE_M must be at most 500 meters")
             if key == "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" and value > 500:
@@ -284,7 +289,7 @@ def load_simulator_settings(config, mode, backend):
     saved_values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            saved_values = _validate_settings(json.load(handle))
+            saved_values = _validate_settings(json.load(handle), backend=backend)
         for key, value in saved_values.items():
             setattr(config, key, value)
     if backend == "carla" and path.is_file() and int(saved_values.get("SIMULATOR_TUNING_PROFILE_VERSION", 0)) < 2:
@@ -303,28 +308,24 @@ def load_simulator_settings(config, mode, backend):
             if float(getattr(config, key, safe_default)) > old_limit:
                 migration[key] = safe_default
         save_simulator_settings(config, mode, migration)
-    target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
-    if backend == "avis" and target > 100:
-        raise ValueError("AVIS Engine target speed must be between 0 and 100")
     return path
 
 
 def save_simulator_settings(config, mode, patch):
     """Atomically persist whitelisted settings in a mode-specific file."""
+    backend = str(getattr(config, "SIMULATOR_BACKEND", "")).lower()
     path = settings_path(config, mode)
     path.parent.mkdir(parents=True, exist_ok=True)
     values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            values.update(_validate_settings(json.load(handle)))
-    values.update(_validate_settings(patch))
-    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "carla":
+            values.update(_validate_settings(json.load(handle), backend=backend))
+    values.update(_validate_settings(patch, backend=backend))
+    if backend == "carla":
         # Mark all newly written CARLA profiles as migrated. This prevents a
         # future restart from applying the one-time legacy safety clamp again.
         values["SIMULATOR_TUNING_PROFILE_VERSION"] = 2
-    values = _validate_settings(values)
-    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TARGET_SPEED", 0)) > 100:
-        raise ValueError("AVIS Engine target speed must be between 0 and 100")
+    values = _validate_settings(values, backend=backend)
     fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

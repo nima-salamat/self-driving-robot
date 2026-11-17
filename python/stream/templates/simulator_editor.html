@@ -87,6 +87,25 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 @media(max-width:1200px){.sim-layout.avis-layout{grid-template-columns:minmax(0,1fr) minmax(400px,.95fr)}}
 @media(max-width:1020px){.sim-layout.avis-layout{grid-template-columns:1fr}}
 @media(max-width:520px){.avis-layout .sim-settings-panel .grid-two{grid-template-columns:1fr}}
+
+.avis-layout{grid-template-columns:minmax(0,1.05fr) minmax(490px,.95fr)}
+.avis-layout .sim-settings-panel{top:70px;height:min(82vh,820px);max-height:calc(100vh - 82px)}
+.avis-layout .sim-settings-panel>.panel-content{padding:12px 16px;scrollbar-width:thin;scrollbar-color:#50677d #121a23}
+.avis-layout .avis-settings-toolbar{position:sticky;top:-12px;z-index:4;margin:-12px -16px 12px;padding:12px 16px 10px;background:#171e28;border-bottom:1px solid #34475b;display:grid;gap:9px}
+.avis-layout .avis-settings-toolbar>div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.avis-layout .avis-settings-toolbar strong{font-size:14px;color:#edf6ff}
+.avis-layout .avis-settings-toolbar span{font-size:11px;color:#9fb5c8}
+.avis-layout .avis-settings-toolbar nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.avis-layout .avis-settings-toolbar nav a{display:inline-flex;align-items:center;padding:6px 9px;border:1px solid #38536a;border-radius:7px;background:#1b2b3a;color:#c8e4f9;text-decoration:none;font-size:11px;font-weight:650}
+.avis-layout .avis-settings-toolbar nav a:hover{background:#28455e;border-color:#72b8e7;color:#fff}
+.avis-layout .sim-settings-panel .setting-block{scroll-margin-top:72px;padding:15px 0}
+.avis-layout .sim-settings-panel .field input,.avis-layout .sim-settings-panel .field select{min-height:42px;font-size:14px}
+.avis-layout .sim-settings-panel .field label{font-size:13px}
+.avis-layout .sim-settings-panel .check-field{min-height:40px}
+@media(max-width:1200px){.avis-layout{grid-template-columns:minmax(0,1fr) minmax(450px,.95fr)}}
+@media(max-width:1020px){.avis-layout{grid-template-columns:1fr}.avis-layout .sim-settings-panel{position:static;height:auto;max-height:none}.avis-layout .sim-settings-panel>.panel-content{overflow:visible}.avis-layout .avis-settings-toolbar{position:static;margin:0 0 12px}}
+@media(max-width:520px){.avis-layout .sim-settings-panel .grid-two{grid-template-columns:1fr}.avis-layout .avis-settings-toolbar nav a{flex:1;justify-content:center}}
+.camera-stale-overlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;max-width:min(92%,560px);padding:11px 15px;border:1px solid #b47a43;border-radius:10px;background:#24190fee;color:#ffddb4;box-shadow:0 8px 30px #0009;text-align:center;font:700 12px/1.5 ui-monospace,Consolas,monospace;letter-spacing:.025em;pointer-events:none}
 </style>
 {% if auth_enabled %}
 <script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
@@ -108,7 +127,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
-      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
+      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><div id="camera-stale-overlay" class="camera-stale-overlay section-hide" role="status" aria-live="polite"></div><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
       <div class="panel-content">
         <div id="runtime-error" class="status-message section-hide"></div>
         <div id="camera-feed-status" class="msg" role="status">Connecting to camera frame endpoint…</div>
@@ -233,7 +252,19 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       <div class="panel-content">
         <div id="save-message" class="msg" role="status"></div>
         <form id="settings-form">
-          <div class="setting-block">
+          {% if caps.simulator_backend == 'avis' %}
+          <div class="avis-settings-toolbar">
+            <div><strong>AVIS configuration</strong><span>Mode-specific settings · {{ mode }}.sim.json</span></div>
+            <nav aria-label="AVIS settings sections">
+              <a href="#sim-connection-settings">Connection</a>
+              <a href="#avis-settings">Sensors</a>
+              <a href="#sim-vehicle-safety">Motion</a>
+              <a href="#sim-vision-settings">Vision</a>
+              <a href="#sim-servo-calibration">Steering</a>
+            </nav>
+          </div>
+          {% endif %}
+          <div class="setting-block" id="sim-connection-settings">
             <h3 class="section-title">Simulator connection</h3>
             <div class="grid-two">
               <div class="field"><label for="sim-host">Host / IP</label><input id="sim-host" name="SIMULATOR_HOST" autocomplete="off" required></div>
@@ -246,11 +277,11 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <h3 class="section-title">CARLA sensor configuration <span class="pill">Restart required</span></h3>
             <label class="check-field"><input id="lidar-enabled" type="checkbox" name="SIMULATOR_LIDAR_ENABLED"> Enable ray-cast LiDAR</label>
             <div class="grid-two">
-              <div class="field"><label for="lidar-range">LiDAR range (m)</label><input id="lidar-range" type="number" min="1" max="500" step="1" name="SIMULATOR_LIDAR_RANGE_M"></div>
+              <div class="field"><label for="lidar-range">LiDAR range (m)</label><input id="lidar-range" type="number" min="1" max="500" step="any" name="SIMULATOR_LIDAR_RANGE_M"></div>
               <div class="field"><label for="lidar-channels">Channels</label><input id="lidar-channels" type="number" min="1" max="256" step="1" name="SIMULATOR_LIDAR_CHANNELS"></div>
               <div class="field"><label for="lidar-pps">Points / second</label><input id="lidar-pps" type="number" min="100" max="2000000" step="100" name="SIMULATOR_LIDAR_POINTS_PER_SECOND"></div>
-              <div class="field"><label for="lidar-rotation">LiDAR rotation frequency (Hz)</label><input id="lidar-rotation" type="number" min="1" max="50" step="1" name="SIMULATOR_LIDAR_ROTATION_FREQUENCY"></div>
-              <div class="field"><label for="camera-fov">Camera FOV (degrees)</label><input id="camera-fov" type="number" min="10" max="150" step="1" name="SIMULATOR_CAMERA_FOV"></div>
+              <div class="field"><label for="lidar-rotation">LiDAR rotation frequency (Hz)</label><input id="lidar-rotation" type="number" min="1" max="50" step="any" name="SIMULATOR_LIDAR_ROTATION_FREQUENCY"></div>
+              <div class="field"><label for="camera-fov">Camera FOV (degrees)</label><input id="camera-fov" type="number" min="10" max="150" step="any" name="SIMULATOR_CAMERA_FOV"></div>
             </div>
             <div class="camera-studio-launch"><button type="button" class="primary" id="open-camera-editor">Open camera placement studio ↗</button><p class="note">Explore the CARLA world with a free-fly camera, tune the vehicle-mounted sensor live, and save its position and rotation without restarting.</p></div>
           </div>
@@ -265,7 +296,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <p>Target speed is an AVIS percentage from 0 to 100. The throttle limit below is a normalized cap from 0 to 1.</p>
             </div>
           </div>
-          <div class="setting-block">
+          <div class="setting-block" id="sim-vehicle-safety">
             <h3 class="section-title">Virtual vehicle safety</h3>
             <div class="grid-two">
               <div class="field"><label for="target-speed" id="target-speed-label">{% if caps.simulator_backend == 'avis' %}Target speed command (%){% else %}Target speed (km/h){% endif %}</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="any" name="SIMULATOR_TARGET_SPEED" required></div>
@@ -275,8 +306,8 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="steering-rate">Steering change rate (normalized / s)</label><input id="steering-rate" type="number" min=".1" max="10" step="any" name="SIMULATOR_STEERING_RATE"></div>
               <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max="1" step="any" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
               {% endif %}
-              <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
-              <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
+              <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step="any" name="ENCODER_PULSE_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="any" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
             </div>
             <label class="check-field"><input id="stop-lost-lane" type="checkbox" name="SIMULATOR_STOP_ON_LOST_LANE"> Brake when no valid lane is detected</label>
             <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
@@ -288,7 +319,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <div class="field"><label for="ml-lane-model">ML lane model</label><select id="ml-lane-model" name="ML_LANE_MODEL"><option value="unet_depthwise_nano">UNet depthwise nano</option><option value="unet_depthwise_small">UNet depthwise small</option></select></div>
             <p class="note">Changing the Race lane model requires a restart because the vision processor is initialized once per runtime.</p>
           </div>
-          <div class="setting-block">
+          <div class="setting-block" id="sim-vision-settings">
             <h3 class="section-title">Shared vision processing <span class="pill">{{ caps.vision_profile|upper }} profile</span></h3>
             <label class="check-field {% if not caps.supports_bev %}section-hide{% endif %}"><input id="use-bev" type="checkbox" name="USE_BEV"> Bird's-eye perspective transform (BEV)</label>
             <label class="check-field"><input id="debug-overlay" type="checkbox" name="DEBUG"> Debug overlays</label>
@@ -302,9 +333,9 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="setting-block" id="sim-servo-calibration">
             <h3 class="section-title">{% if caps.simulator_backend == 'avis' %}Vision-to-AVIS steering calibration{% else %}Shared steering calibration{% endif %}</h3>
             <div class="grid-two">
-              <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="1" name="MIN_SERVO_ANGLE"></div>
-              <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="1" name="SERVO_CENTER"></div>
-              <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="1" name="MAX_SERVO_ANGLE"></div>
+              <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="any" name="MIN_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="any" name="SERVO_CENTER"></div>
+              <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="any" name="MAX_SERVO_ANGLE"></div>
               <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
             </div>
             <p class="note">{% if caps.simulator_backend == 'avis' %}These angles normalize the vision processor's steering estimate before it is converted to the AVIS signed command range −100..100. They are not the distance sensor angle.{% else %}Defaults are 55° / 95° / 125°, matching the physical City/Race configuration defaults. Calibrate for the connected model before enabling motion.{% endif %}</p>
@@ -318,9 +349,9 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="hough-max-gap">Maximum segment gap (px)</label><input id="hough-max-gap" type="number" min="0" max="100" step="1" name="HOUGH_MAX_LINE_GAP"></div>
               <div class="field"><label for="hough-blur">Blur kernel (1 or odd 3–15)</label><input id="hough-blur" type="number" min="1" max="15" step="2" name="HOUGH_BLUR_KERNEL"></div>
               <div class="field"><label for="lane-roi-mode">Lane ROI shape</label><select id="lane-roi-mode" name="LANE_ROI_MODE"><option value="rectangle">Rectangle</option><option value="trapezoid">Trapezoid</option></select></div>
-              <div class="field"><label for="camera-pitch-deg">Vision camera pitch (degrees)</label><input id="camera-pitch-deg" type="number" min="-90" max="90" step=".5" name="CAMERA_PITCH_DEG"></div>
-              <div class="field"><label for="camera-height">Vision camera height (cm)</label><input id="camera-height" type="number" min=".1" max="1000" step="1" name="CAMERA_HEIGHT"></div>
-              <div class="field"><label for="lane-width">Expected lane width (cm)</label><input id="lane-width" type="number" min=".1" max="1000" step="1" name="LANE_WIDTH"></div>
+              <div class="field"><label for="camera-pitch-deg">Vision camera pitch (degrees)</label><input id="camera-pitch-deg" type="number" min="-90" max="90" step="any" name="CAMERA_PITCH_DEG"></div>
+              <div class="field"><label for="camera-height">Vision camera height (cm)</label><input id="camera-height" type="number" min=".1" max="1000" step="any" name="CAMERA_HEIGHT"></div>
+              <div class="field"><label for="lane-width">Expected lane width (cm)</label><input id="lane-width" type="number" min=".1" max="1000" step="any" name="LANE_WIDTH"></div>
               <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step="any" name="RL_TOP_WIDTH_FACTOR"></div>
               <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step="any" name="LL_TOP_WIDTH_FACTOR"></div>
             </div>
@@ -473,6 +504,32 @@ function readSettingNumber(id){
   const value=Number(raw);
   if(!Number.isFinite(value))throw new Error((input.name||id)+" must be a finite number.");
   return value;
+}
+function collectSimulatorSettings(){
+  const form=$("settings-form");
+  if(!form)throw new Error("Simulator settings form is unavailable.");
+  const values={};
+  form.querySelectorAll("[name]").forEach(function(control){
+    if(control.disabled||control.closest(".section-hide")||control.closest("[hidden]"))return;
+    const name=control.name;if(!name)return;
+    if(!control.checkValidity()){
+      if(typeof control.reportValidity==="function")control.reportValidity();
+      const label=control.labels&&control.labels[0]?control.labels[0].textContent.trim():name;
+      throw new Error(label+" is outside its allowed range or step.");
+    }
+    if(control.type==="checkbox")values[name]=!!control.checked;
+    else if(control.type==="number")values[name]=readSettingNumber(control.id);
+    else values[name]=String(control.value??"").trim();
+  });
+  if(values.SIMULATOR_VEHICLE_FILTER!==undefined&&!values.SIMULATOR_VEHICLE_FILTER){
+    values.SIMULATOR_VEHICLE_FILTER="vehicle.*";
+  }
+  if(caps.supports_lane_roi&&caps.vision_profile==="city"){
+    values.RL_MIRRORED=!!simRoiMirrors.RL;
+    values.LL_MIRRORED=!!simRoiMirrors.LL;
+  }
+  if(!Object.keys(values).length)throw new Error("No active simulator settings are available to save.");
+  return values;
 }
 function populate(s){
   const fields = {
@@ -1009,6 +1066,19 @@ async function poll(){
     setText("frame-age",d.frame_age_ms===null?"No frame":numeric(d.frame_age_ms,0)+" ms old");
     const imageInfo=d.image||{};
     const sensorInfo=d.camera_sensor||{};
+    if(caps.simulator_backend==="avis"){
+      const overlay=$("camera-stale-overlay");
+      const responseInfo=sensorInfo.response||{};
+      const age=Number(sensorInfo.last_frame_age_ms);
+      const stale=responseInfo.image_decoded!==true
+        ||(sensorInfo.frame_count>0&&Number.isFinite(age)&&age>1200);
+      if(overlay){
+        overlay.classList.toggle("section-hide",!stale);
+        overlay.textContent=sensorInfo.frame_count>0
+          ?"STALE AVIS FRAME · last decoded frame "+numeric(age,0)+" ms ago · waiting for a new image"
+          :"NO FRESH AVIS IMAGE · displayed picture is not confirmed as a new simulator frame";
+      }
+    }
     if($("camera-image-state")){
       const cameraText=imageInfo.width?((imageInfo.looks_black?"BLACK FRAME · ":"LIVE · ")+imageInfo.width+"×"+imageInfo.height+" · "+numeric(imageInfo.mean_intensity,1)+" avg · "+String(imageInfo.source||"camera").toUpperCase()):"Waiting for camera frame";
       setText("camera-image-state",cameraText);
@@ -1091,97 +1161,10 @@ async function poll(){
 $("settings-form").addEventListener("submit",async function(event){
   event.preventDefault();
   if(!simulatorSettingsReady){status("Settings have not finished loading. Saving is disabled until the saved values are ready.",false);return;}
-  status("Saving settings…");
+  status("Validating active settings…");
   try{
-  const s={
-    SIMULATOR_HOST:$("sim-host").value.trim(),
-    SIMULATOR_PORT:readSettingNumber("sim-port"),
-    SIMULATOR_TIMEOUT_S:readSettingNumber("sim-timeout"),
-    SIMULATOR_TARGET_SPEED:readSettingNumber("target-speed"),
-    SIMULATOR_THROTTLE_LIMIT:readSettingNumber("throttle-limit"),
-    SIMULATOR_STOP_ON_LOST_LANE:$("stop-lost-lane").checked,
-    SIMULATOR_STEERING_INVERTED:$("steering-inverted").checked,
-    DEBUG:$("debug-overlay").checked,
-    HALL_LINE_TRACKING_ENABLED:$("hall-line-tracking").checked,
-    HALL_LINE_TRACKING_MAX_MISSED:readSettingNumber("hall-line-max-missed"),
-    MIN_SERVO_ANGLE:readSettingNumber("min-servo"),
-    SERVO_CENTER:readSettingNumber("servo-center"),
-    MAX_SERVO_ANGLE:readSettingNumber("max-servo"),
-    SERVO_DIRECTION:$("servo-direction").value,
-    SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:readSettingNumber("obstacle-stop-distance"),
-    ENCODER_PULSE_DISTANCE_CM:readSettingNumber("pulse-distance")
-  };
-  const roiPairs=[];
-  // Submit only controls supported by the active vision processor. Hidden
-  // controls still exist in the DOM and may contain stale/invalid values.
-  if(caps.supports_lane_roi){
-    roiPairs.push(
-      ["rl-top","RL_TOP_ROI"],["rl-bottom","RL_BOTTOM_ROI"],["rl-left","RL_LEFT_ROI"],["rl-right","RL_RIGHT_ROI"],
-      ["ll-top","LL_TOP_ROI"],["ll-bottom","LL_BOTTOM_ROI"],["ll-left","LL_LEFT_ROI"],["ll-right","LL_RIGHT_ROI"]
-    );
-    if(caps.vision_profile==="city"){
-      s.RL_MIRRORED=!!simRoiMirrors.RL;
-      s.LL_MIRRORED=!!simRoiMirrors.LL;
-    }
-  }
-  if(caps.supports_crosswalk) roiPairs.push(
-    ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
-  );
-  roiPairs.forEach(function(pair){const el=$(pair[0]);if(el)s[pair[1]]=readSettingNumber(pair[0]);});
-  if(caps.simulator_backend==="carla"){
-    s.SIMULATOR_STEERING_LIMIT=readSettingNumber("steering-authority");
-    s.SIMULATOR_STEERING_RATE=readSettingNumber("steering-rate");
-    s.SIMULATOR_THROTTLE_RISE_RATE=readSettingNumber("throttle-rise-rate");
-  }
-  if(caps.supports_crosswalk) s.SIMULATOR_STOP_ON_CROSSWALK=$("stop-crosswalk").checked;
-  if(caps.vision_profile==="city"){
-    s.CITY_LANE_DETECTOR=$("city-lane-detector").value;
-    if($("lane-threshold"))s.LANE_THRESHOLD=readSettingNumber("lane-threshold");
-    if($("hough-threshold"))s.HOUGH_THRESHOLD=readSettingNumber("hough-threshold");
-    if($("hough-min-line"))s.HOUGH_MIN_LINE_LENGTH=readSettingNumber("hough-min-line");
-    if($("hough-max-gap"))s.HOUGH_MAX_LINE_GAP=readSettingNumber("hough-max-gap");
-    if($("hough-blur"))s.HOUGH_BLUR_KERNEL=readSettingNumber("hough-blur");
-    if($("lane-roi-mode"))s.LANE_ROI_MODE=$("lane-roi-mode").value;
-    if($("camera-pitch-deg"))s.CAMERA_PITCH_DEG=readSettingNumber("camera-pitch-deg");
-    if($("camera-height"))s.CAMERA_HEIGHT=readSettingNumber("camera-height");
-    if($("lane-width"))s.LANE_WIDTH=readSettingNumber("lane-width");
-    if($("hough-morph-close"))s.HOUGH_MORPH_CLOSE=$("hough-morph-close").checked;
-    if($("old-method"))s.OLD_METHOD=$("old-method").checked;
-    if($("roi-resizable"))s.ROI_RESIZABLE=$("roi-resizable").checked;
-    if($("rl-top-factor"))s.RL_TOP_WIDTH_FACTOR=readSettingNumber("rl-top-factor");
-    if($("ll-top-factor"))s.LL_TOP_WIDTH_FACTOR=readSettingNumber("ll-top-factor");
-    if(caps.supports_crosswalk){
-      s.CROSSWALK_THRESHOLD=readSettingNumber("crosswalk-threshold");
-      s.CROSSWALK_VERTICAL_MIN_LINES=readSettingNumber("crosswalk-min-vertical");
-      s.CROSSWALK_HORIZONTAL_MIN_LINES=readSettingNumber("crosswalk-min-horizontal");
-      s.CW_TOP_WIDTH_FACTOR=readSettingNumber("cw-top-factor");
-      s.CW_TRAPEZOID_MODE=$("cw-trapezoid").checked;
-      s.CW_OLD_METHOD=$("cw-old-method").checked;
-    }
-  }
-  if(caps.supports_bev){
-    s.USE_BEV=$("use-bev").checked;
-    ["TL","TR","BR","BL"].forEach(function(corner){
-      ["X","Y"].forEach(function(axis){
-        const id="bev-"+corner.toLowerCase()+"-"+axis.toLowerCase();
-        const el=$(id);if(el)s["BEV_SRC_"+corner+"_"+axis]=readSettingNumber(id);
-      });
-    });
-  }
-  if(caps.vision_profile==="race"){
-    s.USE_ML_LANE_DETECTOR=$("ml-lane-enabled").checked;
-    s.ML_LANE_MODEL=$("ml-lane-model").value;
-  }
-  if(caps.simulator_backend==="carla") s.SIMULATOR_VEHICLE_FILTER=$("vehicle-filter").value.trim() || "vehicle.*";
-  if(caps.supports_lidar){
-    s.SIMULATOR_LIDAR_ENABLED=$("lidar-enabled").checked;
-    s.SIMULATOR_LIDAR_RANGE_M=readSettingNumber("lidar-range");
-    s.SIMULATOR_LIDAR_CHANNELS=readSettingNumber("lidar-channels");
-    s.SIMULATOR_LIDAR_POINTS_PER_SECOND=readSettingNumber("lidar-pps");
-    s.SIMULATOR_LIDAR_ROTATION_FREQUENCY=readSettingNumber("lidar-rotation");
-    s.SIMULATOR_CAMERA_FOV=readSettingNumber("camera-fov");
-  }
-  if(caps.supports_range_sensors)s.SIMULATOR_AVIS_SENSOR_ANGLE=readSettingNumber("avis-angle");
+    const s=collectSimulatorSettings();
+    status("Saving settings…");
     const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:s})});
     const data=await response.json();
     if(!response.ok||!data.success)throw new Error(data.message||"Save failed");

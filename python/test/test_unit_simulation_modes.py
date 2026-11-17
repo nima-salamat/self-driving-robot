@@ -1,6 +1,7 @@
 """Hardware-free tests for simulator mode registration, settings and controls."""
 import base64
 import json
+import re
 import sys
 import tempfile
 import types
@@ -21,7 +22,7 @@ from modes.registry import (
 from modes.simulation.base_adapter import VehicleCommand
 from modes.simulation.controller import VirtualVehicleController
 from modes.simulation.settings import (
-    _validate_settings, load_simulator_settings, save_simulator_settings,
+    SIMULATOR_KEYS, _validate_settings, load_simulator_settings, save_simulator_settings,
 )
 from modes.simulation.avis_adapter import AvisAdapter
 from utils.parser import parse_args
@@ -105,7 +106,30 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertFalse(car.last_response_info["image_tag"])
         self.assertTrue(car.last_response_info["sensor_tag"])
         self.assertTrue(car.last_response_info["speed_tag"])
-        self.assertEqual(car.last_response_info["image_payload_format"], "bare-base64-jpeg")
+        self.assertEqual(car.last_response_info["image_payload_format"], "leading-base64")
+        car.sock = None
+
+    def test_get_data_accepts_unpadded_urlsafe_base64_png(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((9, 13, 3), 91, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".png", source)
+        self.assertTrue(ok)
+        payload = base64.urlsafe_b64encode(encoded.tobytes()).rstrip(b"=")
+        payload += b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (9, 13))
+        self.assertEqual(car.last_response_info["image_payload_format"], "leading-base64")
+        self.assertEqual(car.last_response_info["image_format"], "png")
         car.sock = None
 
     def test_get_data_rejects_base64_payload_that_is_not_a_jpeg(self):
@@ -127,7 +151,7 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertFalse(car.getData())
         self.assertIsNone(car.image)
         self.assertFalse(car.last_response_info["image_decoded"])
-        self.assertIn("not a valid JPEG", car.last_response_info["decode_error"])
+        self.assertIn("OpenCV could not decode a supported image", car.last_response_info["decode_error"])
         car.sock = None
 
     def test_get_data_does_not_treat_sensor_only_response_as_a_fresh_image(self):
@@ -341,10 +365,24 @@ class SimulatorSettingsTests(unittest.TestCase):
                 self.assertNotIn("RL_MIRRORED", saved)
                 self.assertNotIn("LL_MIRRORED", saved)
 
+    def test_backend_aware_target_speed_validation_uses_aviss_percentage_range(self):
+        self.assertEqual(
+            _validate_settings({"SIMULATOR_TARGET_SPEED": 100}, backend="avis")["SIMULATOR_TARGET_SPEED"],
+            100,
+        )
+        with self.assertRaisesRegex(ValueError, "AVIS percentage"):
+            _validate_settings({"SIMULATOR_TARGET_SPEED": 100.1}, backend="avis")
+        self.assertEqual(
+            _validate_settings({"SIMULATOR_TARGET_SPEED": 200}, backend="carla")["SIMULATOR_TARGET_SPEED"],
+            200,
+        )
+        with self.assertRaisesRegex(ValueError, "200 km/h"):
+            _validate_settings({"SIMULATOR_TARGET_SPEED": 200.1}, backend="carla")
+
     def test_avis_target_speed_remains_percentage_limited_and_timeout_is_configurable(self):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
-            with self.assertRaisesRegex(ValueError, "AVIS Engine target speed"):
+            with self.assertRaisesRegex(ValueError, "AVIS percentage"):
                 save_simulator_settings(config, "avis", {"SIMULATOR_TARGET_SPEED": 150})
             saved = save_simulator_settings(config, "avis", {"SIMULATOR_TIMEOUT_S": 5.0})
             self.assertEqual(saved["SIMULATOR_TIMEOUT_S"], 5.0)
@@ -485,9 +523,26 @@ class SimulatorSettingsApiTests(unittest.TestCase):
             / "stream" / "templates" / "simulator_editor.html"
         ).read_text(encoding="utf-8")
         self.assertIn("function readSettingNumber(id)", template)
+        self.assertIn("function collectSimulatorSettings()", template)
+        self.assertIn('control.closest(".section-hide")', template)
+        self.assertIn("camera-stale-overlay", template)
         self.assertIn("simulatorSettingsReady=false", template)
         self.assertIn('id="save-settings" disabled', template)
         self.assertIn("is empty. Reload saved defaults", template)
+        decimal_settings = (
+            "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
+            "SIMULATOR_CAMERA_FOV", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+            "ENCODER_PULSE_DISTANCE_CM", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT",
+            "LANE_WIDTH", "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
+        )
+        for name in decimal_settings:
+            with self.subTest(setting=name):
+                match = re.search(
+                    r'<input\b(?=[^>]*\bname="' + re.escape(name) + r'")[^>]*>',
+                    template,
+                )
+                self.assertIsNotNone(match, name + " input was not found")
+                self.assertIn('step="any"', match.group(0), name + " rejects decimal values in the browser")
 
 
 class CityRoiMirroringTests(unittest.TestCase):

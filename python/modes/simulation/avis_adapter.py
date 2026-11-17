@@ -244,13 +244,29 @@ class AvisAdapter(SimulatorAdapter):
         if frame is None or not is_fresh:
             self._missing_images += 1
             response_info = dict(getattr(car, "last_response_info", {}) or {})
-            # Sensor values in response_prefix change on every sample; do
-            # not include them in the log-deduplication key or warnings spam
-            # once per frame when the image tag is consistently absent.
+            # Keep the log signature stable across frames. Image byte counts,
+            # Base64 payload lengths and OpenCV's detailed error text naturally
+            # vary from frame to frame and must not defeat warning de-duplication.
+            decode_error = str(response_info.get("decode_error") or "")
+            if "Base64 image payload could not be decoded" in decode_error:
+                decode_error_kind = "invalid-base64"
+            elif "OpenCV could not decode" in decode_error:
+                decode_error_kind = "undecodable-image"
+            elif "no <image> tag" in decode_error or "no leading Base64" in decode_error:
+                decode_error_kind = "missing-image"
+            elif decode_error:
+                decode_error_kind = "other"
+            else:
+                decode_error_kind = ""
             signature = (
                 bool(response_info.get("image_tag")),
                 bool(response_info.get("image_decoded")),
-                response_info.get("decode_error"),
+                response_info.get("image_payload_format"),
+                response_info.get("image_format"),
+                response_info.get("response_prefix_kind"),
+                bool(response_info.get("sensor_tag")),
+                bool(response_info.get("speed_tag")),
+                decode_error_kind,
             )
             self._last_error = (
                 "AVIS response contained no fresh image; "

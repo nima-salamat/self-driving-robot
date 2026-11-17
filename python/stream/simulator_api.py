@@ -140,13 +140,13 @@ def register_simulator_routes(app, streamer):
         unknown = set(patch) - SIMULATOR_KEYS
         if unknown:
             return jsonify(success=False, message="unsupported settings: " + ", ".join(sorted(unknown))), 400
+        backend = str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower()
         try:
-            # Share the same schema used by profile loading and persistence.
-            # This prevents the API and saved profiles from disagreeing.
-            patch = _validate_settings(patch)
+            # Use the same type, range and backend-specific rules as profile
+            # loading and saving; the API must not maintain a second schema.
+            patch = _validate_settings(patch, backend=backend)
         except (TypeError, ValueError) as exc:
             return jsonify(success=False, message=str(exc)), 400
-        backend = str(getattr(streamer.config, "SIMULATOR_BACKEND", ""))
         caps = mode_capabilities(streamer.config)
         profile = caps.get("vision_profile", "city")
         carla_only = {
@@ -175,19 +175,6 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message="City lane/crosswalk settings are available only for the City vision profile"), 400
         if profile != "race" and ({"USE_ML_LANE_DETECTOR", "ML_LANE_MODEL"} & set(patch)):
             return jsonify(success=False, message="ML lane settings are available only for the Race vision profile"), 400
-        if "SIMULATOR_TARGET_SPEED" in patch:
-            try:
-                target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
-            except (TypeError, ValueError, OverflowError):
-                return jsonify(success=False, message="SIMULATOR_TARGET_SPEED must be numeric"), 400
-            maximum_speed = 100 if backend == "avis" else 200
-            if not math.isfinite(target_speed) or target_speed < 0 or target_speed > maximum_speed:
-                return jsonify(success=False, message=f"Target speed must be between 0 and {maximum_speed} for {backend.upper()}"), 400
-            patch["SIMULATOR_TARGET_SPEED"] = target_speed
-        if backend == "avis" and "SIMULATOR_TARGET_SPEED" in patch:
-            target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
-            if target_speed > 100:
-                return jsonify(success=False, message="Target speed must be between 0 and 100 for AVIS"), 400
         if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
             return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
         if patch.get("WITH_SIGN") and patch.get("WITH_APRILTAG"):
