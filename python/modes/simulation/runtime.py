@@ -60,9 +60,8 @@ class SimulationRuntime:
         self._stop_event_active = False
         self._camera_editor_active = False
         self._scene_edit_active = False
-        # CARLA is deliberately disarmed on every process start. AVIS keeps
-        # its historical auto-run behavior until it gains a separate run UI.
-        self._run_enabled = self.backend != "carla"
+        # Every simulator starts disarmed. Reconnecting never auto-resumes motion.
+        self._run_enabled = False
         self._last_image_diagnostics = {}
         self._cycle_times = deque(maxlen=120)
         self._detection_times_ms = deque(maxlen=120)
@@ -258,28 +257,49 @@ class SimulationRuntime:
             )
             self._record_event(level, message, log=False)
 
+    def _adapter_control_ready(self):
+        if not bool(getattr(self.adapter, "connected", False)):
+            return False
+        readiness = getattr(self.adapter, "control_ready", None)
+        return bool(readiness()) if callable(readiness) else True
+
     def set_run_enabled(self, enabled):
-        """Arm/disarm CARLA autonomous motion; disarming applies the brake immediately."""
-        if self.backend != "carla":
-            raise RuntimeError("Explicit run mode is currently available only for CARLA.")
+        """Arm/disarm autonomous motion on CARLA or AVIS.
+
+        Reconnection is independent of run arming: the operator must press Start
+        again after any AVIS link loss or simulator reset.
+        """
         enabled = bool(enabled)
         if enabled == self._run_enabled:
             return self._run_enabled
         if enabled:
-            if self._camera_editor_active or self._scene_edit_active:
+            if self.backend == "carla" and (self._camera_editor_active or self._scene_edit_active):
                 raise RuntimeError("Close the CARLA camera/scene editor before starting autonomous run.")
-            if not self.adapter.connected or not self._carla_vehicle_ready():
-                raise RuntimeError("CARLA vehicle is not ready; autonomous run cannot be started.")
+            if not self._adapter_control_ready():
+                label = "CARLA vehicle" if self.backend == "carla" else "AVIS connection"
+                raise RuntimeError(label + " is not ready; wait for reconnection before starting.")
             self._run_enabled = True
             self._last_error = None
             self._stop_event_active = False
-            self._record_event("info", "CARLA autonomous run enabled by an explicit Stream command.")
+            self._record_event("info", self.backend.upper() + " autonomous run enabled by an explicit Stream Start command.")
         else:
             self._run_enabled = False
-            self._safe_stop("CARLA run mode stopped; waiting for an explicit Start Run command.")
+            self._safe_stop(self.backend.upper() + " run stopped; waiting for an explicit Start Run command.")
             self._last_error = None
-            self._record_event("warning", "CARLA autonomous run disabled; vehicle is held by the brake.")
+            self._record_event("warning", self.backend.upper() + " autonomous run disabled; vehicle is held by the brake.")
         return self._run_enabled
+
+    def request_reconnect(self):
+        """Force an AVIS socket reconnect while keeping the vehicle disarmed."""
+        if self.backend != "avis":
+            raise RuntimeError("Manual reconnect is available only for AVIS Engine modes.")
+        self.set_run_enabled(False)
+        callback = getattr(self.adapter, "request_reconnect", None)
+        if not callable(callback):
+            raise RuntimeError("The active AVIS adapter does not support reconnect requests.")
+        result = callback()
+        self._record_event("warning", "AVIS reconnect requested; autonomous run remains STOPPED.")
+        return result
 
     def set_camera_editor_active(self, active):
         """Hold the CARLA vehicle while the user is positioning the camera."""
@@ -408,6 +428,7 @@ class SimulationRuntime:
                 "frame_age_ms": round(age_ms, 1) if age_ms is not None else None,
                 "lane_type": str(result.get("lane_type", "none")),
                 "perception_valid": bool(result.get("perception_valid", False)),
+                "line_tracking": result.get("line_tracking", {"enabled": False, "state": "DISABLED"}),
                 "steering_angle": round(float(self.controller.last_servo), 2),
                 "steering_normalized": round(float(self._last_command.steering), 3),
                 "crosswalk": bool(result.get("crosswalk", False)), "speed_kmh": round(speed, 2),
@@ -423,19 +444,35 @@ class SimulationRuntime:
 
     def run(self):
         try:
-            self.adapter.connect()
+            while not self.shutdown_event.is_set():
+                try:
+                    self.adapter.connect()
+                    break
+                except Exception as exc:
+                    if self.backend != "avis":
+                        raise
+                    self._last_error = f"{type(exc).__name__}: {exc}"
+                    self._record_event("warning", "AVIS is not available yet; retrying connection: " + str(exc))
+                    logger.warning("AVIS initial connection failed; retrying", exc_info=True)
+                    self.shutdown_event.wait(1.0)
+            if self.shutdown_event.is_set():
+                return
             self._start_visualization_worker()
             self._started_at = time.monotonic()
             self._stop_event_active = False
             self._record_event("info", f"Connected {self.backend}; {self.vision_profile} vision processor loaded.")
-            if self.backend == "carla":
-                # Apply a physical CARLA brake before the first sensor/control cycle.
-                self._safe_stop("CARLA connected in STOPPED mode; press Start Run to enable autonomy.")
+            self._safe_stop(self.backend.upper() + " connected in STOPPED mode; press Start Run to enable autonomy.")
             while not self.shutdown_event.is_set():
                 frame = self.adapter.read(timeout=0.25)
                 now = time.monotonic()
                 if frame is None:
-                    self._safe_stop("No fresh simulator camera frame; braking until frames resume.")
+                    if self.backend == "avis" and not bool(getattr(self.adapter, "connected", False)):
+                        if self._run_enabled:
+                            self._run_enabled = False
+                            self._record_event("warning", "AVIS link lost; autonomy disarmed. Press Start after camera frames return.")
+                        self._safe_stop("AVIS camera link is reconnecting; vehicle braked and run disarmed.")
+                    else:
+                        self._safe_stop("No fresh simulator camera frame; braking until frames resume.")
                     self.shutdown_event.wait(0.05)
                     continue
                 if frame.sequence and frame.sequence == self._last_sequence:
@@ -496,7 +533,7 @@ class SimulationRuntime:
                         servo_angle=command.servo_angle, target_speed=0.0,
                         reason="crosswalk detected; simulator braking",
                     )
-                if self.backend == "carla" and not self._run_enabled:
+                if not self._run_enabled:
                     command = VehicleCommand(
                         steering=command.steering, throttle=0.0, brake=1.0,
                         servo_angle=command.servo_angle, target_speed=0.0,
@@ -526,7 +563,7 @@ class SimulationRuntime:
                 control_accepted = self.adapter.apply_control(command)
                 control_ms = (time.perf_counter() - control_started) * 1000.0
                 if not control_accepted:
-                    # A stale camera frame can be processed just as CARLA destroys the old actor.
+                    # CARLA actors can disappear during world changes.
                     if self.backend == "carla" and not self._carla_vehicle_ready():
                         self._last_command = VehicleCommand(
                             steering=command.steering, throttle=0.0, brake=1.0,
@@ -534,6 +571,11 @@ class SimulationRuntime:
                             reason="CARLA vehicle actor is temporarily unavailable; waiting for scene recovery.",
                         )
                         self.shutdown_event.wait(0.05)
+                        continue
+                    if self.backend == "avis":
+                        self._run_enabled = False
+                        self._safe_stop("AVIS actuator link failed; reconnecting while remaining STOPPED.")
+                        self.shutdown_event.wait(0.1)
                         continue
                     raise RuntimeError("simulator adapter did not accept the virtual actuator command")
                 self._last_command = command
