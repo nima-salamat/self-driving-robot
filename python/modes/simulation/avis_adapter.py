@@ -311,6 +311,29 @@ class AvisAdapter(SimulatorAdapter):
                 "response": dict(getattr(self.car, "last_response_info", {}) or {}) if self.car is not None else {},
             }
 
+    def stop_vehicle(self):
+        """Issue AVIS Engine's explicit stop command, then let the runtime reconnect.
+
+        The bundled Car.stop() sends zero speed/steering plus the protocol stop
+        token and closes the socket. This is stronger than repeatedly setting
+        the throttle percentage to zero.
+        """
+        with self._io_lock:
+            car, self.car = self.car, None
+            self.connected = False
+            if car is None:
+                return False
+            stopper = getattr(car, "stop", None)
+            if callable(stopper):
+                try:
+                    stopper()
+                    return True
+                except Exception as exc:
+                    self._last_error = f"AVIS stop command failed: {type(exc).__name__}: {exc}"[:300]
+                    logger.warning("%s", self._last_error)
+            self._close_transport(car)
+            return False
+
     def close(self):
         with self._io_lock:
             car, self.car = self.car, None
