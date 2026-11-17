@@ -1058,7 +1058,7 @@ $("settings-form").addEventListener("submit",async function(event){
     SIMULATOR_THROTTLE_LIMIT:Number($("throttle-limit").value),
     SIMULATOR_STOP_ON_LOST_LANE:$("stop-lost-lane").checked,
     SIMULATOR_STEERING_INVERTED:$("steering-inverted").checked,
-    USE_BEV:$("use-bev").checked,DEBUG:$("debug-overlay").checked,
+    DEBUG:$("debug-overlay").checked,
     HALL_LINE_TRACKING_ENABLED:$("hall-line-tracking").checked,
     HALL_LINE_TRACKING_MAX_MISSED:Number($("hall-line-max-missed").value),
     MIN_SERVO_ANGLE:Number($("min-servo").value),
@@ -1068,11 +1068,19 @@ $("settings-form").addEventListener("submit",async function(event){
     SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:Number($("obstacle-stop-distance").value),
     ENCODER_PULSE_DISTANCE_CM:Number($("pulse-distance").value)
   };
-  const roiPairs=[
-    ["rl-top","RL_TOP_ROI"],["rl-bottom","RL_BOTTOM_ROI"],["rl-left","RL_LEFT_ROI"],["rl-right","RL_RIGHT_ROI"],
-    ["ll-top","LL_TOP_ROI"],["ll-bottom","LL_BOTTOM_ROI"],["ll-left","LL_LEFT_ROI"],["ll-right","LL_RIGHT_ROI"]
-  ];
-  s.RL_MIRRORED=!!simRoiMirrors.RL;s.LL_MIRRORED=!!simRoiMirrors.LL;
+  const roiPairs=[];
+  // Submit only controls supported by the active vision processor. Hidden
+  // controls still exist in the DOM and may contain stale/invalid values.
+  if(caps.supports_lane_roi){
+    roiPairs.push(
+      ["rl-top","RL_TOP_ROI"],["rl-bottom","RL_BOTTOM_ROI"],["rl-left","RL_LEFT_ROI"],["rl-right","RL_RIGHT_ROI"],
+      ["ll-top","LL_TOP_ROI"],["ll-bottom","LL_BOTTOM_ROI"],["ll-left","LL_LEFT_ROI"],["ll-right","LL_RIGHT_ROI"]
+    );
+    if(caps.vision_profile==="city"){
+      s.RL_MIRRORED=!!simRoiMirrors.RL;
+      s.LL_MIRRORED=!!simRoiMirrors.LL;
+    }
+  }
   if(caps.supports_crosswalk) roiPairs.push(
     ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
   );
@@ -1109,6 +1117,7 @@ $("settings-form").addEventListener("submit",async function(event){
     }
   }
   if(caps.supports_bev){
+    s.USE_BEV=$("use-bev").checked;
     ["TL","TR","BR","BL"].forEach(function(corner){
       ["X","Y"].forEach(function(axis){
         const id="bev-"+corner.toLowerCase()+"-"+axis.toLowerCase();
