@@ -187,29 +187,27 @@ class Car():
             "image_decoded": False,
         }
 
-        # Some AVIS builds emit the JPEG as a bare base64 field instead of
-        # wrapping it in <image>...</image>. Search only long base64-like
-        # runs and require an actual JPEG SOI/EOI pair before accepting one.
-        payloads = [image_match.group(1)] if image_match is not None else []
-        if not payloads:
-            payloads = re.findall(r"[A-Za-z0-9+/=\r\n]{256,}", receive)
+        # The legacy AVIS TCP protocol carries camera data explicitly in
+        # <image>...</image>. Do not guess that arbitrary response text is an
+        # image: sensor/status payloads can contain long Base64-looking fields.
         image_bytes = None
         decoded = None
-        for payload in payloads:
+        if image_match is not None:
             try:
-                candidate = base64.b64decode(re.sub(r"\s+", "", payload), validate=False)
+                candidate = base64.b64decode(
+                    re.sub(r"\\s+", "", image_match.group(1)),
+                    validate=True,
+                )
+                start = candidate.find(b"\\xff\\xd8")
+                end = candidate.rfind(b"\\xff\\xd9")
+                if start >= 0 and end > start:
+                    image_bytes = candidate[start:end + 2]
+                    image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+                    decoded = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
+                    if decoded is None or not decoded.size:
+                        decoded = None
             except (ValueError, base64.binascii.Error):
-                continue
-            start = candidate.find(b"\xff\xd8")
-            end = candidate.rfind(b"\xff\xd9")
-            if start < 0 or end <= start:
-                continue
-            candidate = candidate[start:end + 2]
-            image_array = np.frombuffer(candidate, dtype=np.uint8)
-            decoded_candidate = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
-            if decoded_candidate is not None and decoded_candidate.size:
-                image_bytes, decoded = candidate, decoded_candidate
-                break
+                decoded = None
 
         if decoded is not None:
             self.image = decoded
@@ -225,6 +223,8 @@ class Car():
             })
         elif image_match is not None:
             info["decode_error"] = "Tagged image payload did not contain a decodable JPEG"
+        else:
+            info["decode_error"] = "Legacy AVIS response did not contain an <image> tag"
 
         if sensor_match is not None:
             sensor_values = re.findall(r"-?\d+", sensor_match.group(1))
