@@ -159,6 +159,29 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertEqual(car.last_response_info["image_format"], "jpeg")
         car.sock = None
 
+    def test_get_data_decodes_image_after_validated_transport_header(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((11, 17, 3), 153, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        raw = b"AVIS\x01\x00" + encoded.tobytes()
+        payload = base64.b64encode(raw) + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (11, 17))
+        self.assertEqual(car.last_response_info["image_payload_offset_bytes"], 6)
+        self.assertEqual(car.last_response_info["image_format"], "jpeg")
+        car.sock = None
+
     def test_get_data_does_not_send_unknown_base64_to_opencv(self):
         class FakeSocket:
             def __init__(self, payload):

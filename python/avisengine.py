@@ -102,15 +102,46 @@ def _avis_image_format(payload):
     return None
 
 
+def _find_avis_image_payload(payload):
+    """Find an image only at a fully validated format header."""
+    image_format = _avis_image_format(payload)
+    if image_format is not None:
+        return payload, 0, image_format
+
+    # Packet framing can prepend a few bytes before the encoded image. Search
+    # only for strong format signatures; every candidate must pass the complete
+    # header checks above before it is sent to OpenCV.
+    for signature in (
+        b"\xff\xd8\xff",
+        b"\x89PNG\r\n\x1a\n",
+        b"RIFF",
+        b"BM",
+        b"II*\x00",
+        b"MM\x00*",
+    ):
+        offset = payload.find(signature, 1)
+        while offset > 0:
+            candidate = payload[offset:]
+            image_format = _avis_image_format(candidate)
+            if image_format is not None:
+                return candidate, offset, image_format
+            offset = payload.find(signature, offset + 1)
+    return None, 0, None
+
+
 def _decode_avis_image_payload(payload):
     """Decode verified image payload and expose only safe protocol diagnostics."""
     image_payload, transport, transport_error = _decompress_avis_transport(payload)
     inspected = image_payload if image_payload is not None else payload
-    image_format = _avis_image_format(inspected) if image_payload is not None else None
+    image_candidate, image_offset, image_format = (
+        _find_avis_image_payload(inspected) if image_payload is not None else (None, 0, None)
+    )
+    diagnostic_prefix = image_candidate if image_candidate is not None else inspected
     diagnostics = {
         "image_transport_encoding": transport,
         "transport_payload_prefix_hex": payload[:12].hex(),
-        "image_payload_prefix_hex": inspected[:12].hex(),
+        "image_payload_prefix_hex": diagnostic_prefix[:12].hex(),
+        "image_payload_offset_bytes": int(image_offset),
         "image_payload_magic": image_format or (
             "gzip" if payload.startswith(b"\x1f\x8b")
             else "zlib" if _is_zlib_stream(payload)
@@ -119,7 +150,7 @@ def _decode_avis_image_payload(payload):
     }
     if transport_error:
         return None, None, diagnostics, "AVIS " + transport + " decompression failed: " + transport_error
-    if image_format is None:
+    if image_candidate is None:
         return None, None, diagnostics, (
             "Unsupported AVIS image payload signature (prefix "
             + inspected[:12].hex() + ")"
@@ -127,7 +158,7 @@ def _decode_avis_image_payload(payload):
 
     try:
         frame = cv2.imdecode(
-            np.frombuffer(image_payload, dtype=np.uint8),
+            np.frombuffer(image_candidate, dtype=np.uint8),
             flags=cv2.IMREAD_COLOR,
         )
     except cv2.error as exc:
@@ -138,7 +169,7 @@ def _decode_avis_image_payload(payload):
     if frame is None or not frame.size:
         return None, None, diagnostics, "OpenCV returned an empty " + image_format + " frame"
     diagnostics["image_format"] = image_format
-    return frame, image_payload, diagnostics, None
+    return frame, image_candidate, diagnostics, None
 
 
 class Car():
