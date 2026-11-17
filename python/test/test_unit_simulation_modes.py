@@ -967,6 +967,37 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.connected = True
         self.assertIsNone(adapter.read())
 
+    def test_avis_adapter_keeps_tcp_connection_when_response_has_no_image_tag(self):
+        class ConnectedWithoutImages:
+            def __init__(self):
+                self.image_sequence = 0
+                self.image = np.zeros((8, 10, 3), dtype=np.uint8)
+                self.last_response_info = {
+                    "response_bytes": 42, "image_tag": False,
+                    "sensor_tag": True, "image_decoded": False,
+                    "response_prefix": "<sensor>10,20,30</sensor><EOF>",
+                }
+            def getData(self):
+                # Simulates a valid TCP reply carrying sensor data but no image.
+                return False
+            def getImage(self):
+                return self.image
+            def getSensors(self):
+                return [10, 20, 30]
+            def getSpeed(self):
+                return 0
+
+        car = ConnectedWithoutImages()
+        adapter = AvisAdapter(SimpleNamespace())
+        adapter.car = car
+        adapter.connected = True
+        for _ in range(6):
+            self.assertIsNone(adapter.read())
+        self.assertTrue(adapter.connected)
+        self.assertIs(adapter.car, car)
+        self.assertEqual(adapter.camera_diagnostics()["missing_images"], 6)
+        self.assertEqual(adapter.camera_diagnostics()["response"]["image_tag"], False)
+
     def test_carla_camera_callback_keeps_raw_frames_out_of_lane_debug_stream(self):
         import threading
         from modes.simulation.carla_adapter import CarlaAdapter
