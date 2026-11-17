@@ -261,6 +261,43 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertTrue(restarted.RL_MIRRORED)
             self.assertTrue(restarted.LL_MIRRORED)
 
+    def test_avis_and_avis_race_default_stream_settings_are_valid(self):
+        # Mirror the shared settings submitted by the Stream editor. Race must
+        # not submit City-only RL/LL mirror toggles when those controls are hidden.
+        common_stream_settings = {
+            "SIMULATOR_HOST": "127.0.0.1",
+            "SIMULATOR_PORT": 25001,
+            "SIMULATOR_TIMEOUT_S": 5.0,
+            "SIMULATOR_TARGET_SPEED": 25.0,
+            "SIMULATOR_THROTTLE_LIMIT": 0.35,
+            "SIMULATOR_STOP_ON_LOST_LANE": True,
+            "SIMULATOR_STEERING_INVERTED": False,
+            "DEBUG": False,
+            "HALL_LINE_TRACKING_ENABLED": False,
+            "HALL_LINE_TRACKING_MAX_MISSED": 4,
+            "MIN_SERVO_ANGLE": 55.0,
+            "SERVO_CENTER": 95.0,
+            "MAX_SERVO_ANGLE": 125.0,
+            "SERVO_DIRECTION": "ltr",
+            "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
+            "ENCODER_PULSE_DISTANCE_CM": 0.5,
+            "RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 1.0,
+            "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
+            "LL_TOP_ROI": 0.8, "LL_BOTTOM_ROI": 1.0,
+            "LL_LEFT_ROI": 0.2, "LL_RIGHT_ROI": 0.5,
+            "USE_BEV": False,
+        }
+        for mode in ("avis", "avis-race"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
+                load_simulator_settings(config, mode, "avis")
+                saved = save_simulator_settings(config, mode, common_stream_settings)
+                self.assertEqual(saved["SIMULATOR_TIMEOUT_S"], 5.0)
+                self.assertEqual(saved["SIMULATOR_TARGET_SPEED"], 25.0)
+                self.assertEqual(saved["SIMULATOR_THROTTLE_LIMIT"], 0.35)
+                self.assertNotIn("RL_MIRRORED", saved)
+                self.assertNotIn("LL_MIRRORED", saved)
+
     def test_avis_target_speed_remains_percentage_limited_and_timeout_is_configurable(self):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
