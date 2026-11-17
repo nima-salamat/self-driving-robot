@@ -53,6 +53,10 @@ class Car():
         self.image = None
         self.sensors = None
         self.current_speed = None
+        # This generation advances only when a valid fresh image is decoded.
+        self.image_sequence = 0
+        self.image_received_at = None
+        self.last_response_at = None
 
     #Attributes to kind of replicate a Pub-sub pattern messaging to request data  
     steering_value = 0
@@ -166,6 +170,7 @@ class Car():
         self.sock.sendall(self.data_str.encode("utf-8"))
 
         receive = self.recvall(self.sock)
+        self.last_response_at = time.monotonic()
 
         imageTagCheck = re.search('<image>(.*?)<\/image>', receive)
         sensorTagCheck = re.search('<sensor>(.*?)<\/sensor>', receive)
@@ -177,7 +182,10 @@ class Car():
                 im_bytes = base64.b64decode(imageData)
                 im_arr = np.frombuffer(im_bytes, dtype=np.uint8)  # im_arr is one-dim Numpy array
                 imageOpenCV = cv2.imdecode(im_arr, flags=cv2.IMREAD_COLOR)
-                self.image = imageOpenCV
+                if imageOpenCV is not None and imageOpenCV.size:
+                    self.image = imageOpenCV
+                    self.image_sequence += 1
+                    self.image_received_at = time.monotonic()
             
             if(sensorTagCheck):
                 sensorData = sensorTagCheck.group(1)
@@ -224,17 +232,29 @@ class Car():
         self.data_str = self._data_format.format(data[0], data[1], data[2], data[3], data[4], data[5])
         
     def stop(self):
-        '''
-        Stoping the car and closing the socket
-        '''
-        self.setSpeed(0)
-        self.setSteering(0)
-        self.sock.sendall("stop".encode("utf-8"))
-        self.sock.close()
-        print("Process stopped successfully!")
-    
+        """Best-effort stop and close; safe after a server-side reset."""
+        sock = getattr(self, "sock", None)
+        if sock is None:
+            return
+        try:
+            if not getattr(sock, "_closed", False):
+                try:
+                    self.setSpeed(0)
+                    self.setSteering(0)
+                    sock.sendall(b"stop")
+                except Exception:
+                    pass
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
     def __del__(self):
-        self.stop()
+        try:
+            self.stop()
+        except Exception:
+            pass
     
         
         
