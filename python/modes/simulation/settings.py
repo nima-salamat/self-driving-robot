@@ -90,7 +90,8 @@ def _defaults(mode, backend):
         "SIMULATOR_HOST": "127.0.0.1",
         "SIMULATOR_TUNING_PROFILE_VERSION": 2,
         "SIMULATOR_PORT": 25001 if avis else 2000,
-        "SIMULATOR_TIMEOUT_S": 1.0 if avis else 5.0,
+        # Legacy AVIS camera responses need a realistic TCP read window.
+        "SIMULATOR_TIMEOUT_S": 5.0,
         "SIMULATOR_VEHICLE_FILTER": "vehicle.*",
         "SIMULATOR_VEHICLE_BLUEPRINT": "auto",
         "SIMULATOR_MAP": "current",
