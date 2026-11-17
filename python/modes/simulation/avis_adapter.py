@@ -34,9 +34,20 @@ class AvisAdapter(SimulatorAdapter):
         self._last_response_signature = None
         self._missing_image_log_active = False
         self._last_missing_image_log_at = 0.0
+        self._ready_at = 0.0
+        self._sensor_angle_applied = False
 
     def _request_timeout(self):
-        return min(1.0, max(0.1, float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 1.0))))
+        # The legacy AVIS TCP client may need several seconds to return a full
+        # camera frame. Respect the configured timeout instead of truncating it
+        # to one second.
+        try:
+            configured = float(getattr(self.config, "SIMULATOR_TIMEOUT_S", 5.0))
+        except (TypeError, ValueError, OverflowError):
+            configured = 5.0
+        if not math.isfinite(configured):
+            configured = 5.0
+        return min(60.0, max(0.1, configured))
 
     def connect(self):
         with self._io_lock:
@@ -70,8 +81,21 @@ class AvisAdapter(SimulatorAdapter):
         self._last_connected_at = time.monotonic()
         self._next_reconnect_at = 0.0
         self._reconnect_delay_s = 0.5
-        self.set_sensor_angle(int(getattr(self.config, "SIMULATOR_AVIS_SENSOR_ANGLE", 30)))
-        logger.info("Connected to AVIS Engine at %s:%s", host, port)
+        # The legacy AVIS client example allows the simulator three seconds
+        # to finish initializing after TCP connect. Defer the first protocol
+        # command without blocking the runtime thread.
+        try:
+            startup_delay = float(getattr(self.config, "SIMULATOR_AVIS_STARTUP_DELAY_S", 3.0))
+        except (TypeError, ValueError, OverflowError):
+            startup_delay = 3.0
+        if not math.isfinite(startup_delay):
+            startup_delay = 3.0
+        self._ready_at = time.monotonic() + min(15.0, max(0.0, startup_delay))
+        self._sensor_angle_applied = False
+        logger.info(
+            "Connected to legacy AVIS TCP Engine at %s:%s (ready in %.1fs)",
+            host, port, max(0.0, self._ready_at - time.monotonic())
+        )
         return True
 
     @staticmethod
@@ -166,6 +190,12 @@ class AvisAdapter(SimulatorAdapter):
         car = self.car
         if not self.connected or car is None:
             return None
+        if time.monotonic() < self._ready_at:
+            return None
+        if not self._sensor_angle_applied:
+            if not self.set_sensor_angle(int(getattr(self.config, "SIMULATOR_AVIS_SENSOR_ANGLE", 30))):
+                return None
+            self._sensor_angle_applied = True
 
         old_generation = getattr(car, "image_sequence", None)
         try:
