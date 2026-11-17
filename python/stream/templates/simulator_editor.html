@@ -271,6 +271,16 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <p class="note">Uses bipartite maximum matching to preserve line identities across frames. Works with classical Hough in City/Race and BLSF in City; Race ML lane-mask mode reports it as unsupported.</p>
             <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
           </div>
+          <div class="setting-block" id="sim-servo-calibration">
+            <h3 class="section-title">Shared steering calibration</h3>
+            <div class="grid-two">
+              <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="1" name="MIN_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="1" name="SERVO_CENTER"></div>
+              <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="1" name="MAX_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
+            </div>
+            <p class="note">Defaults are 55° / 95° / 125°, matching the physical City/Race configuration defaults. Calibrate and save for the connected model before enabling motion; these defaults are not a substitute for measuring your actual steering linkage.</p>
+          </div>
           <div class="setting-block {% if caps.vision_profile != 'city' %}section-hide{% endif %}" id="city-vision-settings">
             <h3 class="section-title">City vision thresholds & geometry</h3>
             <div class="grid-two">
@@ -283,10 +293,6 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="camera-pitch-deg">Vision camera pitch (degrees)</label><input id="camera-pitch-deg" type="number" min="-90" max="90" step=".5" name="CAMERA_PITCH_DEG"></div>
               <div class="field"><label for="camera-height">Vision camera height (cm)</label><input id="camera-height" type="number" min=".1" max="1000" step="1" name="CAMERA_HEIGHT"></div>
               <div class="field"><label for="lane-width">Expected lane width (cm)</label><input id="lane-width" type="number" min=".1" max="1000" step="1" name="LANE_WIDTH"></div>
-              <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="1" name="MIN_SERVO_ANGLE"></div>
-              <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="1" name="SERVO_CENTER"></div>
-              <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="1" name="MAX_SERVO_ANGLE"></div>
-              <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
               <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step="any" name="RL_TOP_WIDTH_FACTOR"></div>
               <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step="any" name="LL_TOP_WIDTH_FACTOR"></div>
             </div>
@@ -445,7 +451,7 @@ function populate(s){
     "city-lane-detector":"CITY_LANE_DETECTOR",
     "lane-threshold":"LANE_THRESHOLD","hough-threshold":"HOUGH_THRESHOLD",
     "hough-min-line":"HOUGH_MIN_LINE_LENGTH","hough-max-gap":"HOUGH_MAX_LINE_GAP",
-    "hough-blur":"HOUGH_BLUR_KERNEL","crosswalk-threshold":"CROSSWALK_THRESHOLD",
+    "hough-blur":"HOUGH_BLUR_KERNEL","hall-line-max-missed":"HALL_LINE_TRACKING_MAX_MISSED","crosswalk-threshold":"CROSSWALK_THRESHOLD",
     "crosswalk-min-vertical":"CROSSWALK_VERTICAL_MIN_LINES",
     "crosswalk-min-horizontal":"CROSSWALK_HORIZONTAL_MIN_LINES",
     "lane-roi-mode":"LANE_ROI_MODE","rl-top-factor":"RL_TOP_WIDTH_FACTOR",
@@ -463,7 +469,7 @@ function populate(s){
   };
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
   ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
-   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable"].forEach(function(id){
+   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable","hall-line-tracking"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
@@ -974,6 +980,12 @@ $("settings-form").addEventListener("submit",async function(event){
     SIMULATOR_STOP_ON_LOST_LANE:$("stop-lost-lane").checked,
     SIMULATOR_STEERING_INVERTED:$("steering-inverted").checked,
     USE_BEV:$("use-bev").checked,DEBUG:$("debug-overlay").checked,
+    HALL_LINE_TRACKING_ENABLED:$("hall-line-tracking").checked,
+    HALL_LINE_TRACKING_MAX_MISSED:Number($("hall-line-max-missed").value),
+    MIN_SERVO_ANGLE:Number($("min-servo").value),
+    SERVO_CENTER:Number($("servo-center").value),
+    MAX_SERVO_ANGLE:Number($("max-servo").value),
+    SERVO_DIRECTION:$("servo-direction").value,
     SIMULATOR_OBSTACLE_STOP_DISTANCE_CM:Number($("obstacle-stop-distance").value),
     ENCODER_PULSE_DISTANCE_CM:Number($("pulse-distance").value)
   };
@@ -1003,10 +1015,6 @@ $("settings-form").addEventListener("submit",async function(event){
     if($("camera-pitch-deg"))s.CAMERA_PITCH_DEG=Number($("camera-pitch-deg").value);
     if($("camera-height"))s.CAMERA_HEIGHT=Number($("camera-height").value);
     if($("lane-width"))s.LANE_WIDTH=Number($("lane-width").value);
-    if($("min-servo"))s.MIN_SERVO_ANGLE=Number($("min-servo").value);
-    if($("servo-center"))s.SERVO_CENTER=Number($("servo-center").value);
-    if($("max-servo"))s.MAX_SERVO_ANGLE=Number($("max-servo").value);
-    if($("servo-direction"))s.SERVO_DIRECTION=$("servo-direction").value;
     if($("hough-morph-close"))s.HOUGH_MORPH_CLOSE=$("hough-morph-close").checked;
     if($("old-method"))s.OLD_METHOD=$("old-method").checked;
     if($("roi-resizable"))s.ROI_RESIZABLE=$("roi-resizable").checked;
