@@ -228,7 +228,7 @@ class Car():
 
         # Do not include the base64 image in logs or diagnostics.
         if image_match is None:
-            info["response_prefix"] = re.sub(r"[^\\x20-\\x7e]", " ", receive[:180])[:180]
+            info["response_prefix"] = re.sub(r"[^\x20-\x7e]", " ", receive[:180])[:180]
         self.last_response_info = info
         return bool(info["image_decoded"])
 
