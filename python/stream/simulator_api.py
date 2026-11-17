@@ -29,6 +29,7 @@ LIVE_KEYS = {
     "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
     "SIMULATOR_CAMERA_PITCH", "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL",
     "SIMULATOR_AVIS_SENSOR_ANGLE", "USE_BEV", "DEBUG",
+    "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "RL_MIRRORED", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
@@ -81,11 +82,9 @@ def register_simulator_routes(app, streamer):
     def simulator_run_mode():
         if not streamer._control_allowed():
             return streamer._control_denied()
-        if str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower() != "carla":
-            return jsonify(success=False, message="Explicit run mode is currently available only for CARLA."), 409
         runtime = getattr(streamer.config, "simulation_runtime", None)
         if runtime is None:
-            return jsonify(success=False, message="CARLA simulation runtime is not initialized."), 503
+            return jsonify(success=False, message="Simulation runtime is not initialized."), 503
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify(success=False, message="JSON object required"), 400
@@ -98,7 +97,20 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message=str(exc)), 409
         return jsonify(success=True, run_enabled=enabled,
                        run_mode="running" if enabled else "stopped",
-                       message="CARLA autonomous run started." if enabled else "CARLA autonomous run stopped; brake applied.")
+                       message="Autonomous run started." if enabled else "Autonomous run stopped; brake applied.")
+
+    @app.post("/api/simulation/reconnect")
+    def simulator_reconnect():
+        if not streamer._control_allowed():
+            return streamer._control_denied()
+        runtime = getattr(streamer.config, "simulation_runtime", None)
+        if runtime is None:
+            return jsonify(success=False, message="Simulation runtime is not initialized."), 503
+        try:
+            result = runtime.request_reconnect()
+        except RuntimeError as exc:
+            return jsonify(success=False, message=str(exc)), 409
+        return jsonify(success=True, **result)
 
 
     @app.get("/api/simulation/settings")
@@ -202,9 +214,13 @@ def register_simulator_routes(app, streamer):
             patch["SIMULATOR_THROTTLE_LIMIT"] = value
         for key in ("SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
                     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED",
-                    "USE_BEV", "USE_ML_LANE_DETECTOR", "DEBUG"):
+                    "USE_BEV", "USE_ML_LANE_DETECTOR", "DEBUG", "HALL_LINE_TRACKING_ENABLED"):
             if key in patch and not isinstance(patch[key], bool):
                 return jsonify(success=False, message=key + " must be boolean"), 400
+        if "HALL_LINE_TRACKING_MAX_MISSED" in patch:
+            value = patch["HALL_LINE_TRACKING_MAX_MISSED"]
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 12:
+                return jsonify(success=False, message="HALL_LINE_TRACKING_MAX_MISSED must be an integer from 1 to 12"), 400
         for key in ("RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
                     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
                     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"):
