@@ -984,6 +984,33 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertLessEqual(command.throttle, 0.12)
         self.assertGreaterEqual(command.throttle, 0.0)
 
+    def test_avis_adapter_waits_for_legacy_engine_startup_before_commands(self):
+        class FakeCar:
+            def __init__(self):
+                self.angle = None
+            def connect(self, host, port):
+                return True
+            def setSensorAngle(self, angle):
+                self.angle = angle
+            def stop(self):
+                pass
+
+        fake = FakeCar()
+        module = types.SimpleNamespace(Car=lambda: fake)
+        config = SimpleNamespace(
+            SIMULATOR_HOST="127.0.0.1", SIMULATOR_PORT=25001,
+            SIMULATOR_TIMEOUT_S=5.0, SIMULATOR_AVIS_SENSOR_ANGLE=30,
+            SIMULATOR_AVIS_STARTUP_DELAY_S=3.0,
+        )
+        with patch.dict(sys.modules, {"avisengine": module}), patch(
+            "modes.simulation.avis_adapter.time.monotonic", return_value=100.0
+        ):
+            adapter = AvisAdapter(config)
+            adapter.connect()
+            self.assertIsNone(fake.angle)
+            self.assertEqual(adapter._ready_at, 103.0)
+            adapter.close()
+
     def test_avis_adapter_normalizes_sensor_values_and_outputs(self):
         class FakeCar:
             def __init__(self):
