@@ -929,15 +929,16 @@ async function poll(){
         if(!sensorInfo.connected){
           detail="AVIS TCP disconnected. Reconnect is retrying; autonomous motion remains disarmed.";
           diagnosticError=true;
-        }else if(sensorInfo.frame_count>0){
-          detail="AVIS camera decoded "+String(sensorInfo.frame_count)+" frames · last frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago.";
+        }else if(responseInfo.image_decoded===true){
+          detail="AVIS camera decoded "+String(sensorInfo.frame_count||0)+" frames · last frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago.";
           if(imageInfo.looks_black){detail+=" The latest decoded image is black.";diagnosticError=true;}
         }else{
-          detail="AVIS TCP connected, but no image has been decoded yet.";
+          detail="AVIS TCP connected, but the latest response contains no decoded image.";
           detail+=" Response bytes: "+String(responseInfo.response_bytes??"—")+
             " · image tag: "+String(responseInfo.image_tag===true)+
             " · sensor tag: "+String(responseInfo.sensor_tag===true)+
             " · decoded: "+String(responseInfo.image_decoded===true)+".";
+          if(sensorInfo.frame_count>0)detail+=" Last good frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago.";
           if(sensorInfo.last_error)detail+=" Detail: "+String(sensorInfo.last_error);
           diagnosticError=true;
         }
