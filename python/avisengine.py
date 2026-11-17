@@ -187,15 +187,24 @@ class Car():
             "image_decoded": False,
         }
 
-        # The legacy AVIS TCP protocol carries camera data explicitly in
-        # <image>...</image>. Do not guess that arbitrary response text is an
-        # image: sensor/status payloads can contain long Base64-looking fields.
+        # Some deployed legacy AVIS builds return the JPEG as a bare Base64
+        # field followed by <sensor>/<speed> metadata instead of wrapping it
+        # in <image> tags. Accept that form only when the decoded bytes contain
+        # a real JPEG SOI/EOI pair and OpenCV can decode the image; arbitrary
+        # Base64-looking sensor/status text is still rejected.
         image_bytes = None
         decoded = None
-        if image_match is not None:
+        payload_text = image_match.group(1) if image_match is not None else ""
+        payload_format = "tagged"
+        if image_match is None:
+            leading_payload = re.match(r"\s*([A-Za-z0-9+/=\r\n]+)", receive)
+            if leading_payload is not None:
+                payload_text = leading_payload.group(1)
+                payload_format = "bare-base64-jpeg"
+        if payload_text:
             try:
                 candidate = base64.b64decode(
-                    re.sub(r"\s+", "", image_match.group(1)),
+                    re.sub(r"\s+", "", payload_text),
                     validate=True,
                 )
                 start = candidate.find(b"\xff\xd8")
@@ -219,12 +228,14 @@ class Car():
                 "image_height": int(decoded.shape[0]),
                 "image_sequence": int(self.image_sequence),
                 "encoded_bytes": len(image_bytes),
-                "image_payload_format": "tagged" if image_match is not None else "bare-base64-jpeg",
+                "image_payload_format": payload_format,
             })
         elif image_match is not None:
             info["decode_error"] = "Tagged image payload did not contain a decodable JPEG"
+        elif payload_text:
+            info["decode_error"] = "Untagged AVIS payload was not a valid JPEG"
         else:
-            info["decode_error"] = "Legacy AVIS response did not contain an <image> tag"
+            info["decode_error"] = "Legacy AVIS response contained no tagged or valid bare JPEG"
 
         if sensor_match is not None:
             sensor_values = re.findall(r"-?\d+", sensor_match.group(1))
