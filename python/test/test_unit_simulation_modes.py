@@ -103,6 +103,17 @@ class ModeRegistryTests(unittest.TestCase):
 
 
 class SimulatorSettingsTests(unittest.TestCase):
+    def test_avis_uses_configured_tcp_timeout_without_one_second_cap(self):
+        self.assertEqual(AvisAdapter(SimpleNamespace())._request_timeout(), 5.0)
+        self.assertEqual(
+            AvisAdapter(SimpleNamespace(SIMULATOR_TIMEOUT_S=8.5))._request_timeout(),
+            8.5,
+        )
+        self.assertEqual(
+            AvisAdapter(SimpleNamespace(SIMULATOR_TIMEOUT_S=90.0))._request_timeout(),
+            60.0,
+        )
+
     def test_settings_are_mode_specific_and_update_config(self):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory)
@@ -999,7 +1010,8 @@ class VirtualControllerTests(unittest.TestCase):
         fake = FakeCar()
         module = types.SimpleNamespace(Car=lambda: fake)
         config = SimpleNamespace(SIMULATOR_HOST="127.0.0.1", SIMULATOR_PORT=25001,
-                                 SIMULATOR_TIMEOUT_S=1.0, SIMULATOR_AVIS_SENSOR_ANGLE=15)
+                                 SIMULATOR_TIMEOUT_S=5.0, SIMULATOR_AVIS_SENSOR_ANGLE=15,
+            SIMULATOR_AVIS_STARTUP_DELAY_S=0.0)
         with patch.dict(sys.modules, {"avisengine": module}):
             adapter = AvisAdapter(config)
             adapter.connect()
@@ -1024,6 +1036,7 @@ class VirtualControllerTests(unittest.TestCase):
         adapter = AvisAdapter(SimpleNamespace())
         adapter.car = EmptyCar()
         adapter.connected = True
+        adapter._sensor_angle_applied = True
         self.assertIsNone(adapter.read())
 
     def test_avis_adapter_keeps_tcp_connection_when_response_has_no_image_tag(self):
@@ -1050,6 +1063,7 @@ class VirtualControllerTests(unittest.TestCase):
         adapter = AvisAdapter(SimpleNamespace())
         adapter.car = car
         adapter.connected = True
+        adapter._sensor_angle_applied = True
         for _ in range(6):
             self.assertIsNone(adapter.read())
         self.assertTrue(adapter.connected)
