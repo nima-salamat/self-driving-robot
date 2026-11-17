@@ -1054,6 +1054,32 @@ class VirtualControllerTests(unittest.TestCase):
             adapter.close()
             self.assertIn(("stop",), fake.commands)
 
+    def test_avis_adapter_maps_signed_steering_to_legacy_percent_range(self):
+        from modes.simulation.base_adapter import VehicleCommand
+
+        class FakeCar:
+            def __init__(self):
+                self.steering = []
+                self.speeds = []
+            def setSteering(self, value):
+                self.steering.append(value)
+            def setSpeed(self, value):
+                self.speeds.append(value)
+
+        car = FakeCar()
+        adapter = AvisAdapter(SimpleNamespace())
+        adapter.car = car
+        adapter.connected = True
+
+        for normalized, expected in ((-1.0, -100), (0.0, 0), (1.0, 100),
+                                     (-1.5, -100), (1.5, 100)):
+            command = VehicleCommand(
+                steering=normalized, throttle=0.0, brake=0.0,
+                servo_angle=95.0, target_speed=0.0, reason="steering test",
+            )
+            self.assertTrue(adapter.apply_control(command))
+            self.assertEqual(car.steering[-1], expected)
+
     def test_avis_adapter_returns_none_when_server_has_no_camera_frame(self):
         class EmptyCar:
             def getImage(self):
