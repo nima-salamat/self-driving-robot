@@ -7,11 +7,138 @@ import re
 import base64
 import time
 import socket
+import zlib
 import numpy as np
 import avisengine_utils as utils
 
 __author__ = "Amirmohammad Zarif"
 __email__ = "amir@avisengine.com"
+
+
+_MAX_AVIS_DECOMPRESSED_BYTES = 64 * 1024 * 1024
+
+
+def _is_zlib_stream(payload):
+    if len(payload) < 2:
+        return False
+    cmf, flg = payload[0], payload[1]
+    return (
+        (cmf & 0x0F) == 8
+        and (cmf >> 4) <= 7
+        and ((cmf << 8) | flg) % 31 == 0
+    )
+
+
+def _decompress_avis_transport(payload):
+    """Inflate only standard zlib/gzip streams and bound output size."""
+    if payload.startswith(b"\x1f\x8b"):
+        encoding, window_bits = "gzip", zlib.MAX_WBITS | 16
+    elif _is_zlib_stream(payload):
+        encoding, window_bits = "zlib", zlib.MAX_WBITS
+    else:
+        return payload, "identity", None
+
+    try:
+        inflater = zlib.decompressobj(window_bits)
+        expanded = inflater.decompress(payload, _MAX_AVIS_DECOMPRESSED_BYTES + 1)
+        if len(expanded) > _MAX_AVIS_DECOMPRESSED_BYTES or inflater.unconsumed_tail:
+            raise ValueError("decompressed payload exceeds 64 MiB safety limit")
+        expanded += inflater.flush()
+        if len(expanded) > _MAX_AVIS_DECOMPRESSED_BYTES:
+            raise ValueError("decompressed payload exceeds 64 MiB safety limit")
+        if not inflater.eof:
+            raise ValueError("compressed payload ended before stream completion")
+        if inflater.unused_data:
+            raise ValueError("compressed payload contains trailing bytes")
+        return expanded, encoding, None
+    except (zlib.error, ValueError) as exc:
+        return None, encoding, str(exc)
+
+
+def _avis_image_format(payload):
+    """Validate a real image header before asking OpenCV to parse the payload."""
+    if len(payload) >= 6 and payload.startswith(b"\xff\xd8\xff") and payload.rfind(b"\xff\xd9") >= 3:
+        return "jpeg"
+
+    if payload.startswith(b"\x89PNG\r\n\x1a\n") and len(payload) >= 24:
+        width = int.from_bytes(payload[16:20], "big")
+        height = int.from_bytes(payload[20:24], "big")
+        if 0 < width <= 20000 and 0 < height <= 20000:
+            return "png"
+
+    if len(payload) >= 30 and payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
+        declared_size = int.from_bytes(payload[4:8], "little") + 8
+        if 30 <= declared_size <= len(payload):
+            return "webp"
+
+    if len(payload) >= 8 and (
+        payload.startswith(b"II*\x00") or payload.startswith(b"MM\x00*")
+    ):
+        return "tiff"
+
+    # Validate a complete BMP header; random "BM" bytes are not enough.
+    if len(payload) >= 54 and payload.startswith(b"BM"):
+        file_size = int.from_bytes(payload[2:6], "little")
+        pixel_offset = int.from_bytes(payload[10:14], "little")
+        dib_size = int.from_bytes(payload[14:18], "little")
+        width = int.from_bytes(payload[18:22], "little", signed=True)
+        height = int.from_bytes(payload[22:26], "little", signed=True)
+        planes = int.from_bytes(payload[26:28], "little")
+        bits_per_pixel = int.from_bytes(payload[28:30], "little")
+        compression = int.from_bytes(payload[30:34], "little")
+        if (
+            dib_size in (40, 52, 56, 108, 124)
+            and 0 < width <= 20000
+            and 0 < abs(height) <= 20000
+            and planes == 1
+            and bits_per_pixel in (1, 4, 8, 16, 24, 32)
+            and compression in (0, 3, 6)
+            and pixel_offset >= 14 + dib_size
+            and pixel_offset < len(payload)
+            and (file_size == 0 or pixel_offset <= file_size <= len(payload))
+        ):
+            return "bmp"
+
+    return None
+
+
+def _decode_avis_image_payload(payload):
+    """Decode verified image payload and expose only safe protocol diagnostics."""
+    image_payload, transport, transport_error = _decompress_avis_transport(payload)
+    inspected = image_payload if image_payload is not None else payload
+    image_format = _avis_image_format(inspected) if image_payload is not None else None
+    diagnostics = {
+        "image_transport_encoding": transport,
+        "transport_payload_prefix_hex": payload[:12].hex(),
+        "image_payload_prefix_hex": inspected[:12].hex(),
+        "image_payload_magic": image_format or (
+            "gzip" if payload.startswith(b"\x1f\x8b")
+            else "zlib" if _is_zlib_stream(payload)
+            else "unknown"
+        ),
+    }
+    if transport_error:
+        return None, None, diagnostics, "AVIS " + transport + " decompression failed: " + transport_error
+    if image_format is None:
+        return None, None, diagnostics, (
+            "Unsupported AVIS image payload signature (prefix "
+            + inspected[:12].hex() + ")"
+        )
+
+    try:
+        frame = cv2.imdecode(
+            np.frombuffer(image_payload, dtype=np.uint8),
+            flags=cv2.IMREAD_COLOR,
+        )
+    except cv2.error as exc:
+        return None, None, diagnostics, (
+            "OpenCV failed on validated " + image_format + " payload: "
+            + str(exc).splitlines()[0]
+        )
+    if frame is None or not frame.size:
+        return None, None, diagnostics, "OpenCV returned an empty " + image_format + " frame"
+    diagnostics["image_format"] = image_format
+    return frame, image_payload, diagnostics, None
 
 
 class Car():
@@ -211,43 +338,17 @@ class Car():
                 payload_format = "leading-base64"
 
         decode_failure = None
+        decode_info = {}
         if payload_format is not None:
             try:
                 encoded = re.sub(r"\s+", "", encoded_payload)
-                # AVIS versions may emit URL-safe or unpadded Base64. Normalize
-                # padding but keep strict validation of the encoded alphabet.
                 encoded = encoded.rstrip("=")
                 if len(encoded) % 4 == 1:
                     raise ValueError("invalid Base64 length")
                 encoded += "=" * ((-len(encoded)) % 4)
                 candidate = base64.b64decode(encoded, altchars=b"-_", validate=True)
-
-                # Try the complete decoded buffer first, then known image
-                # signatures for servers which prepend a small transport header.
-                candidates = [candidate]
-                for signature in (
-                    b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n",
-                    b"RIFF", b"BM", b"II*\x00", b"MM\x00*",
-                ):
-                    offset = candidate.find(signature)
-                    if offset > 0:
-                        candidates.append(candidate[offset:])
-
-                for image_candidate in candidates:
-                    attempt = cv2.imdecode(
-                        np.frombuffer(image_candidate, dtype=np.uint8),
-                        flags=cv2.IMREAD_COLOR,
-                    )
-                    if attempt is not None and attempt.size:
-                        decoded = attempt
-                        image_bytes = image_candidate
-                        break
-
-                if decoded is None:
-                    decode_failure = (
-                        "Base64 decoded to " + str(len(candidate))
-                        + " bytes, but OpenCV could not decode a supported image"
-                    )
+                decoded, image_bytes, decode_info, decode_failure = _decode_avis_image_payload(candidate)
+                info.update(decode_info)
             except (ValueError, base64.binascii.Error) as exc:
                 decode_failure = "Base64 image payload could not be decoded: " + str(exc)
 
@@ -255,13 +356,7 @@ class Car():
             self.image = decoded
             self.image_sequence += 1
             self.image_received_at = time.monotonic()
-            image_format = (
-                "jpeg" if image_bytes.startswith(b"\xff\xd8")
-                else "png" if image_bytes.startswith(b"\x89PNG")
-                else "webp" if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP"
-                else "bmp" if image_bytes.startswith(b"BM")
-                else "other"
-            )
+            image_format = decode_info.get("image_format", "other")
             info.update({
                 "image_decoded": True,
                 "image_width": int(decoded.shape[1]),
@@ -270,6 +365,7 @@ class Car():
                 "encoded_bytes": len(image_bytes),
                 "image_payload_format": payload_format,
                 "image_format": image_format,
+                "image_transport_encoding": decode_info.get("image_transport_encoding", "identity"),
             })
         elif image_match is not None:
             info["decode_error"] = decode_failure or "Tagged <image> payload did not contain a decodable image"

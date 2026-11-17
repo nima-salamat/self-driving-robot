@@ -31,9 +31,7 @@ class AvisAdapter(SimulatorAdapter):
         self._next_reconnect_at = 0.0
         self._reconnect_delay_s = 0.5
         self._last_image_stats = {}
-        self._last_response_signature = None
         self._missing_image_log_active = False
-        self._last_missing_image_log_at = 0.0
         self._ready_at = 0.0
         self._sensor_angle_applied = False
 
@@ -244,58 +242,30 @@ class AvisAdapter(SimulatorAdapter):
         if frame is None or not is_fresh:
             self._missing_images += 1
             response_info = dict(getattr(car, "last_response_info", {}) or {})
-            # Keep the log signature stable across frames. Image byte counts,
-            # Base64 payload lengths and OpenCV's detailed error text naturally
-            # vary from frame to frame and must not defeat warning de-duplication.
-            decode_error = str(response_info.get("decode_error") or "")
-            if "Base64 image payload could not be decoded" in decode_error:
-                decode_error_kind = "invalid-base64"
-            elif "OpenCV could not decode" in decode_error:
-                decode_error_kind = "undecodable-image"
-            elif "no <image> tag" in decode_error or "no leading Base64" in decode_error:
-                decode_error_kind = "missing-image"
-            elif decode_error:
-                decode_error_kind = "other"
-            else:
-                decode_error_kind = ""
-            signature = (
-                bool(response_info.get("image_tag")),
-                bool(response_info.get("image_decoded")),
-                response_info.get("image_payload_format"),
-                response_info.get("image_format"),
-                response_info.get("response_prefix_kind"),
-                bool(response_info.get("sensor_tag")),
-                bool(response_info.get("speed_tag")),
-                decode_error_kind,
-            )
             self._last_error = (
                 "AVIS response contained no fresh image; "
-                + str(response_info)[:220]
+                + "bytes=" + str(response_info.get("response_bytes", 0))
+                + ", transport=" + str(response_info.get("image_transport_encoding", "unknown"))
+                + ", magic=" + str(response_info.get("image_payload_magic", "unknown"))
+                + ", prefix_hex=" + str(response_info.get("image_payload_prefix_hex", ""))
+                + ", error=" + str(response_info.get("decode_error", "unknown"))[:180]
             )
             # A missing image tag is not proof that the TCP connection is dead.
             # Keep the socket alive and request the next sample instead of
             # entering an endless close/reconnect loop.
-            # Report the transition into the missing-frame state once.
-            # Sensor metadata can vary on every sample; logging each variant
-            # performs synchronous console I/O in the camera/control loop.
-            now = time.monotonic()
-            state_changed = (
-                not self._missing_image_log_active
-                or signature != self._last_response_signature
-            )
-            if state_changed or now - self._last_missing_image_log_at >= 30.0:
+            # Payload lengths/errors fluctuate on every sample; log only the
+            # transition into a missing-frame episode. Diagnostics remain in
+            # camera_diagnostics() without synchronous console I/O each frame.
+            if not self._missing_image_log_active:
                 logger.warning(
                     "AVIS camera frame unavailable; retaining TCP connection. Latest response: %s",
                     self._last_error,
                 )
-                self._last_missing_image_log_at = now
-            self._last_response_signature = signature
             self._missing_image_log_active = True
             return None
 
         self._missing_images = 0
         self._missing_image_log_active = False
-        self._last_response_signature = None
         self._last_error = ""
 
         image = np.asarray(frame)

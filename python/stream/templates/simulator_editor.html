@@ -6,6 +6,9 @@
 <title>Simulator Workbench · Self-Driving Robot</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='stream.css') }}">
 <style>
+/* This workbench is a full document; do not inherit Stream's fixed viewport shell. */
+html{width:100%;height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+body{width:100%;height:auto;min-height:100vh;overflow:visible}
 .sim-camera-frame{position:relative;width:100%;line-height:0;overflow:hidden}
 .sim-camera-frame img{display:block;width:100%;height:auto;max-height:68vh;object-fit:contain}
 .sim-roi-canvas{position:absolute;inset:0;width:100%;height:100%;background:transparent!important;touch-action:none;cursor:crosshair}
@@ -64,47 +67,68 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
 @media(max-width:900px){.camera-editor-main{grid-template-columns:1fr;grid-template-rows:minmax(220px,1fr) auto}.camera-editor-controls{max-height:42vh;border-left:0;border-top:1px solid var(--sim-border)}.camera-editor-window{height:96vh}.camera-editor-footer{flex-wrap:wrap}.camera-editor-footer .msg{flex-basis:100%;order:2}}
 @media(max-width:520px){.camera-editor-modal{padding:0}.camera-editor-window{width:100vw;height:100vh;border-radius:0}.camera-editor-header{padding:10px}.camera-world-readout{display:none}.camera-editor-footer button{font-size:11px;padding:7px}.camera-editor-controls{padding:10px}}
 
-.sim-settings-panel{position:sticky;top:76px;height:clamp(360px,calc(100vh - 90px),760px);min-height:0;display:flex;flex-direction:column;align-self:start}
-.sim-settings-panel>.panel-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.sim-settings-panel{position:static;align-self:start;min-width:0;width:100%;max-width:100%;height:auto;max-height:none;display:flex;flex-direction:column}
+.sim-settings-panel>.panel-content{flex:1;min-width:0;min-height:0;overflow-x:hidden;overflow-y:visible;overscroll-behavior:contain}
 .avis-control-map{display:grid;gap:7px}
 .avis-control-map p+p{margin-top:0}
-@media(max-width:1020px){.sim-settings-panel{position:static;height:auto;max-height:none}.sim-settings-panel>.panel-content{overflow:visible}}
 
-/* AVIS has additional simulator-specific controls; give them room and contrast. */
-.sim-layout.avis-layout{grid-template-columns:minmax(0,1.15fr) minmax(440px,.95fr)}
+/* AVIS editor uses a single two-column grid. Its right-hand stack always ends
+   at the content edge; no sticky panel floats over a sibling control panel. */
+.sim-layout.avis-layout{
+  width:100%;max-width:100%;min-width:0;
+  grid-template-columns:minmax(0,1fr) minmax(420px,min(560px,42vw));
+  gap:12px;align-items:start;
+}
+.sim-layout.avis-layout>.stack{width:100%;max-width:100%;min-width:0}
+.sim-layout.avis-layout>.stack:last-child{justify-self:stretch}
+.sim-layout.avis-layout .sim-settings-panel{width:100%;max-width:100%;min-width:0;margin:0}
+.sim-layout.avis-layout .sim-settings-panel>.panel-content{
+  width:100%;max-width:100%;min-width:0;overflow-x:hidden;overflow-y:visible;padding:12px 16px;
+}
+.avis-layout .sim-settings-panel #settings-form{width:100%;max-width:100%;min-width:0}
 .avis-layout .sim-settings-panel .grid-two{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:13px;row-gap:14px}
-.avis-layout .sim-settings-panel .setting-block{padding:16px 2px}
+.avis-layout .sim-settings-panel .setting-block{min-width:0;padding:15px 0}
 .avis-layout .sim-settings-panel .section-title{font-size:14px;line-height:1.4;color:#e6f0fa}
+.avis-layout .sim-settings-panel .field{min-width:0}
 .avis-layout .sim-settings-panel .field label{font-size:13px;font-weight:600;line-height:1.4;color:#c5d5e5}
-.avis-layout .sim-settings-panel .field input,.avis-layout .sim-settings-panel .field select{min-height:40px;padding:9px 10px;border-color:#40546a;background:#0d1722;font-size:14px}
-.avis-layout .sim-settings-panel .check-field{align-items:flex-start;margin-top:7px;padding:9px 10px;border:1px solid #2e4052;border-radius:8px;background:#1a2633;color:#e5edf5;font-size:13px;line-height:1.45}
+.avis-layout .sim-settings-panel .field input,.avis-layout .sim-settings-panel .field select{
+  width:100%;min-width:0;min-height:42px;padding:9px 10px;
+  border-color:#40546a;background:#0d1722;font-size:14px;
+}
+.avis-layout .sim-settings-panel .check-field{
+  min-width:0;min-height:40px;align-items:flex-start;margin-top:7px;padding:9px 10px;
+  border:1px solid #2e4052;border-radius:8px;background:#1a2633;
+  color:#e5edf5;font-size:13px;line-height:1.45;
+}
 .avis-layout .sim-settings-panel .check-field input{flex:0 0 auto;margin-top:3px}
 .avis-layout .sim-settings-panel .note{font-size:12px;line-height:1.55;color:#a9bbcd}
 .avis-layout .avis-control-map{margin-top:12px;border-color:#3e5d78;background:#172838}
 .avis-layout .avis-control-map h4{font-size:13px;color:#e5f2ff}
 .avis-layout .avis-control-map p{font-size:12px;line-height:1.6}
 .avis-layout .sim-settings-panel .pill{color:#b8d7ee;border-color:#415a70}
-@media(max-width:1200px){.sim-layout.avis-layout{grid-template-columns:minmax(0,1fr) minmax(400px,.95fr)}}
-@media(max-width:1020px){.sim-layout.avis-layout{grid-template-columns:1fr}}
-@media(max-width:520px){.avis-layout .sim-settings-panel .grid-two{grid-template-columns:1fr}}
-
-.avis-layout{grid-template-columns:minmax(0,1.05fr) minmax(490px,.95fr)}
-.avis-layout .sim-settings-panel{top:70px;height:min(82vh,820px);max-height:calc(100vh - 82px)}
-.avis-layout .sim-settings-panel>.panel-content{padding:12px 16px;scrollbar-width:thin;scrollbar-color:#50677d #121a23}
-.avis-layout .avis-settings-toolbar{position:sticky;top:-12px;z-index:4;margin:-12px -16px 12px;padding:12px 16px 10px;background:#171e28;border-bottom:1px solid #34475b;display:grid;gap:9px}
+.avis-layout .avis-settings-toolbar{
+  position:static;margin:0 -16px 12px;padding:12px 16px 10px;
+  background:#171e28;border-bottom:1px solid #34475b;display:grid;gap:9px;
+}
 .avis-layout .avis-settings-toolbar>div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .avis-layout .avis-settings-toolbar strong{font-size:14px;color:#edf6ff}
 .avis-layout .avis-settings-toolbar span{font-size:11px;color:#9fb5c8}
 .avis-layout .avis-settings-toolbar nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.avis-layout .avis-settings-toolbar nav a{display:inline-flex;align-items:center;padding:6px 9px;border:1px solid #38536a;border-radius:7px;background:#1b2b3a;color:#c8e4f9;text-decoration:none;font-size:11px;font-weight:650}
+.avis-layout .avis-settings-toolbar nav a{
+  display:inline-flex;align-items:center;padding:6px 9px;border:1px solid #38536a;
+  border-radius:7px;background:#1b2b3a;color:#c8e4f9;text-decoration:none;font-size:11px;font-weight:650;
+}
 .avis-layout .avis-settings-toolbar nav a:hover{background:#28455e;border-color:#72b8e7;color:#fff}
-.avis-layout .sim-settings-panel .setting-block{scroll-margin-top:72px;padding:15px 0}
-.avis-layout .sim-settings-panel .field input,.avis-layout .sim-settings-panel .field select{min-height:42px;font-size:14px}
-.avis-layout .sim-settings-panel .field label{font-size:13px}
-.avis-layout .sim-settings-panel .check-field{min-height:40px}
-@media(max-width:1200px){.avis-layout{grid-template-columns:minmax(0,1fr) minmax(450px,.95fr)}}
-@media(max-width:1020px){.avis-layout{grid-template-columns:1fr}.avis-layout .sim-settings-panel{position:static;height:auto;max-height:none}.avis-layout .sim-settings-panel>.panel-content{overflow:visible}.avis-layout .avis-settings-toolbar{position:static;margin:0 0 12px}}
-@media(max-width:520px){.avis-layout .sim-settings-panel .grid-two{grid-template-columns:1fr}.avis-layout .avis-settings-toolbar nav a{flex:1;justify-content:center}}
+@media(max-width:1020px){
+  .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr)}
+  .sim-layout.avis-layout .sim-settings-panel{position:static;height:auto;max-height:none}
+  .sim-layout.avis-layout .sim-settings-panel>.panel-content{overflow:visible}
+}
+@media(max-width:520px){
+  .avis-layout .sim-settings-panel .grid-two{grid-template-columns:minmax(0,1fr)}
+  .avis-layout .avis-settings-toolbar nav a{flex:1;justify-content:center}
+}
+
 .camera-stale-overlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;max-width:min(92%,560px);padding:11px 15px;border:1px solid #b47a43;border-radius:10px;background:#24190fee;color:#ffddb4;box-shadow:0 8px 30px #0009;text-align:center;font:700 12px/1.5 ui-monospace,Consolas,monospace;letter-spacing:.025em;pointer-events:none}
 </style>
 {% if auth_enabled %}

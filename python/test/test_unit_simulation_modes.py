@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -132,6 +133,57 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertEqual(car.last_response_info["image_format"], "png")
         car.sock = None
 
+    def test_get_data_decodes_zlib_compressed_base64_jpeg(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((15, 19, 3), 111, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        compressed = zlib.compress(encoded.tobytes())
+        payload = (
+            base64.b64encode(compressed)
+            + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (15, 19))
+        self.assertEqual(car.last_response_info["image_transport_encoding"], "zlib")
+        self.assertEqual(car.last_response_info["image_format"], "jpeg")
+        car.sock = None
+
+    def test_get_data_does_not_send_unknown_base64_to_opencv(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        raw = b"telemetry-is-not-an-image-BM-not-a-bitmap-header"
+        payload = (
+            base64.b64encode(raw)
+            + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock = FakeSocket(payload)
+        with patch("avisengine.cv2.imdecode") as decode:
+            self.assertFalse(car.getData())
+            decode.assert_not_called()
+        self.assertEqual(car.last_response_info["image_payload_magic"], "unknown")
+        self.assertEqual(car.last_response_info["image_payload_prefix_hex"], raw[:12].hex())
+        self.assertIn("Unsupported AVIS image payload signature", car.last_response_info["decode_error"])
+        car.sock = None
+
     def test_get_data_rejects_base64_payload_that_is_not_a_jpeg(self):
         class FakeSocket:
             def __init__(self, payload):
@@ -151,7 +203,7 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertFalse(car.getData())
         self.assertIsNone(car.image)
         self.assertFalse(car.last_response_info["image_decoded"])
-        self.assertIn("OpenCV could not decode a supported image", car.last_response_info["decode_error"])
+        self.assertIn("Unsupported AVIS image payload signature", car.last_response_info["decode_error"])
         car.sock = None
 
     def test_get_data_does_not_treat_sensor_only_response_as_a_fresh_image(self):
@@ -1361,6 +1413,45 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.connected = True
         adapter._sensor_angle_applied = True
         self.assertIsNone(adapter.read())
+
+    def test_avis_missing_frame_warning_is_once_per_outage(self):
+        class FakeCar:
+            def __init__(self):
+                self.image_sequence = 0
+                self.last_response_info = {}
+                self.index = 0
+            def setSensorAngle(self, angle):
+                return None
+            def getData(self):
+                self.index += 1
+                error = (
+                    "Base64 image payload could not be decoded: invalid Base64 length"
+                    if self.index % 2 else
+                    "Unsupported AVIS image payload signature (decoded prefix 00112233)"
+                )
+                self.last_response_info = {
+                    "response_bytes": 24000 + self.index,
+                    "image_tag": False, "sensor_tag": True, "speed_tag": True,
+                    "image_decoded": False, "image_payload_format": "leading-base64",
+                    "image_payload_magic": "unknown", "image_payload_prefix_hex": "00112233",
+                    "response_prefix_kind": "base64-like", "decode_error": error,
+                }
+            def getImage(self):
+                return None
+
+        fake = FakeCar()
+        adapter = AvisAdapter(SimpleNamespace(SIMULATOR_AVIS_SENSOR_ANGLE=30))
+        adapter.car = fake
+        adapter.connected = True
+        adapter._ready_at = 0.0
+        adapter._sensor_angle_applied = True
+        with patch("modes.simulation.avis_adapter.logger.warning") as warning:
+            for _ in range(12):
+                self.assertIsNone(adapter.read())
+        self.assertEqual(warning.call_count, 1)
+        diagnostics = adapter.camera_diagnostics()["response"]
+        self.assertEqual(diagnostics["image_payload_prefix_hex"], "00112233")
+        self.assertEqual(adapter.camera_diagnostics()["missing_images"], 12)
 
     def test_avis_adapter_keeps_tcp_connection_when_response_has_no_image_tag(self):
         class ConnectedWithoutImages:

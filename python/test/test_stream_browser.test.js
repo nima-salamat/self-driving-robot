@@ -1,5 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 const {spawn}=require('node:child_process');
 const {setTimeout:delay}=require('node:timers/promises');
 const {chromium}=require('playwright');
@@ -35,6 +36,46 @@ async function waitForServer(child){
     await waitForServer(server);
     browser=await chromium.launch({headless:true,args:['--no-sandbox']});
     const page=await browser.newPage({viewport:{width:1365,height:900}});
+    // Regression-test the simulator editor with its real Stream stylesheet.
+    // The right-hand settings stack must terminate at the content edge with no
+    // sticky overlap or horizontal overflow at desktop, tablet and mobile sizes.
+    const simulatorTemplate=fs.readFileSync('python/stream/templates/simulator_editor.html','utf8');
+    const sharedStreamCss=fs.readFileSync('python/stream/static/stream.css','utf8');
+    const simulatorInlineCss=(simulatorTemplate.match(/<style>([\s\S]*?)<\/style>/i)||[])[1];
+    assert.ok(simulatorInlineCss,'Simulator editor inline stylesheet should exist');
+    const layoutPage=await browser.newPage({viewport:{width:1365,height:900}});
+    const layoutHtml='<!doctype html><html><head><style>'+sharedStreamCss+
+      '</style><style>'+simulatorInlineCss+'</style></head><body>'+
+      '<header class="sim-top">AVIS Stream</header><main class="sim-layout avis-layout">'+
+      '<div class="stack"><section class="panel"><div class="panel-content" style="height:420px">Camera</div></section></div>'+
+      '<div class="stack"><section class="panel" style="height:60px">Run controls</section>'+
+      '<section class="panel sim-settings-panel" id="sim-settings-panel"><div class="panel-head">Editor</div>'+
+      '<div class="panel-content"><form id="settings-form"><div class="avis-settings-toolbar">AVIS</div>'+
+      '<div class="setting-block"><div class="grid-two"><div class="field"><label>Host</label><input value="127.0.0.1"></div>'+
+      '<div class="field"><label>Port</label><input value="25001"></div></div></div></form></div></section></div></main></body></html>';
+    for(const width of [1440,1365,1200,1100,1024,1021,1020,900,520]){
+      await layoutPage.setViewportSize({width,height:900});
+      await layoutPage.setContent(layoutHtml,{waitUntil:'domcontentloaded'});
+      const geometry=await layoutPage.evaluate(()=>{
+        const main=document.querySelector('.sim-layout'),panel=document.querySelector('#sim-settings-panel');
+        const mainRect=main.getBoundingClientRect(),panelRect=panel.getBoundingClientRect();
+        return {
+          contentRight:mainRect.right-parseFloat(getComputedStyle(main).paddingRight),
+          panelRight:panelRect.right,panelWidth:panelRect.width,
+          viewportWidth:innerWidth,
+          documentWidth:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth),
+          columns:getComputedStyle(main).gridTemplateColumns.trim().split(/\s+/).length
+        };
+      });
+      assert.ok(Math.abs(geometry.panelRight-geometry.contentRight)<=1,
+        'Settings must fit the exact right content edge at '+width+': '+JSON.stringify(geometry));
+      assert.ok(geometry.panelWidth>=300,'Settings panel must stay readable at '+width);
+      assert.ok(geometry.documentWidth<=width+1,'No horizontal overflow at '+width+': '+JSON.stringify(geometry));
+      assert.equal(geometry.columns,width>1020?2:1,'Responsive layout breakpoint at '+width);
+    }
+    await layoutPage.close();
+
+
     const pageErrors=[],consoleErrors=[],criticalRequestFailures=[],commandRequests=[];
     const unexpectedHttpResponses=[],expectedInjectedFailures=[];
     page.on('pageerror',error=>pageErrors.push(error.message));
