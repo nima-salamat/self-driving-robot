@@ -328,6 +328,10 @@ window.STREAM_BOOTSTRAP = { values: {{ values|tojson }}, ui: {{ ui|tojson }}, ad
         <label>Blur kernel (odd)<input id="wb_hough_blur" type="number" min="1" max="15" step="2"></label>
       </div>
       <label class="wb-check"><input id="wb_hough_morph" type="checkbox"> Morphological close</label>
+      <div class="section-title" style="margin-top:12px">Temporal line tracking · Hall matching</div>
+      <label class="wb-check"><input id="wb_hall_tracking_enabled" type="checkbox"> Enable line identity tracking across frames</label>
+      <div class="wb-form-grid"><label>Missed frames before LOST<input id="wb_hall_tracking_max_missed" type="number" min="1" max="12" step="1" value="4"></label></div>
+      <p class="small-muted">Uses bipartite maximum matching to associate segments between frames. Available for classical Hough in City/Race and BLSF in City. It is not applied to the Race ML lane mask detector.</p>
       <div id="wb_blsf_fields" hidden>
         <div class="section-title">BLSF beta parameters</div>
         <div class="wb-form-grid">

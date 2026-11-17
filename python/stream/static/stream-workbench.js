@@ -13,6 +13,8 @@ async function refreshVision(){
  try{
   const d=await api('/api/vision/tuning'),s=d.settings||{};fill(hough,s);if(mode==='city')fill(blsf,s);
   $('wb_hough_morph').checked=!!s.HOUGH_MORPH_CLOSE;$('wb_sign_area_enabled').checked=!!s.SIGN_AREA_FILTER_ENABLED;
+  $('wb_hall_tracking_enabled').checked=!!s.HALL_LINE_TRACKING_ENABLED;
+  $('wb_hall_tracking_max_missed').value=String(s.HALL_LINE_TRACKING_MAX_MISSED||4);
   $('wb_sign_min_area').value=String(s.SIGN_AREA_MIN_PX2);$('wb_sign_targets').value=(s.SIGN_AREA_FILTER_TARGETS||['STOP']).join(', ');
   $('wb_detector').value=mode==='city'?(s.CITY_LANE_DETECTOR||'default'):(s.USE_ML_LANE_DETECTOR?'ml':'default');
   const blsfOption=$('wb_detector').querySelector('option[value="blsf-beta"]');if(blsfOption)blsfOption.disabled=mode!=='city';
@@ -25,6 +27,8 @@ async function refreshVision(){
 function readVision(){
  const s={};hough.forEach(([k,id])=>s[k]=Number($(id).value));
  s.HOUGH_MORPH_CLOSE=$('wb_hough_morph').checked;s.SIGN_AREA_FILTER_ENABLED=$('wb_sign_area_enabled').checked;
+ s.HALL_LINE_TRACKING_ENABLED=$('wb_hall_tracking_enabled').checked;
+ s.HALL_LINE_TRACKING_MAX_MISSED=Number($('wb_hall_tracking_max_missed').value);
  s.SIGN_AREA_MIN_PX2=Number($('wb_sign_min_area').value);s.SIGN_AREA_FILTER_TARGETS=$('wb_sign_targets').value.split(',').map(v=>v.trim()).filter(Boolean);
  if(mode==='city'){blsf.forEach(([k,id])=>s[k]=Number($(id).value));s.CITY_LANE_DETECTOR=$('wb_detector').value;}
  else s.USE_ML_LANE_DETECTOR=$('wb_detector').value==='ml';
@@ -34,7 +38,7 @@ async function applyVision(){
  if(!writable)throw new Error('Stream is read-only.');
  const settings=readVision();Object.keys(settings).forEach(k=>{if(typeof settings[k]==='number'&&!Number.isFinite(settings[k]))throw new Error(k+' must be finite.');});
  const d=await api('/api/vision/tuning',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings})});
- const restart=d.restart_required||[],message=restart.length?'Saved. Restart required for: '+restart.join(', ')+'.':(d.live_hough_settings?'Saved; classical Hough reads these values during processing.':'Saved; no running detector was hot-swapped.');
+ const restart=d.restart_required||[],message=restart.length?'Saved. Restart required for: '+restart.join(', ')+'.':(d.live_line_tracking_settings?'Saved; Hall association settings are read live by the detector.':(d.live_hough_settings?'Saved; classical Hough reads these values during processing.':'Saved; no running detector was hot-swapped.'));
  msg('wb_vision_status',message);if(typeof window.showToast==='function')window.showToast(message);
 }
 function frameUrl(){
