@@ -102,19 +102,36 @@ class AvisAdapter(SimulatorAdapter):
     def _close_transport(car):
         if car is None:
             return
-        sock = getattr(car, "sock", None)
-        if sock is not None:
-            try:
-                sock.close()
-            except Exception:
-                pass
+        # Prefer the protocol-level disconnect before touching the raw socket.
+        # Legacy AVIS servers may keep the previous client session allocated
+        # until they receive the literal "stop" token.
         for name in ("disconnect", "close"):
             method = getattr(car, name, None)
             if callable(method):
                 try:
-                    method()
+                    if name == "disconnect":
+                        method(send_stop=True)
+                    else:
+                        method()
+                    return
+                except TypeError:
+                    try:
+                        method()
+                        return
+                    except Exception:
+                        logger.debug("AVIS %s failed while closing a lost connection", name, exc_info=True)
                 except Exception:
                     logger.debug("AVIS %s failed while closing a lost connection", name, exc_info=True)
+        sock = getattr(car, "sock", None)
+        if sock is not None:
+            try:
+                sock.shutdown(2)
+            except Exception:
+                pass
+            try:
+                sock.close()
+            except Exception:
+                pass
 
     def _schedule_reconnect_locked(self, reason, *, immediate=False):
         car, self.car = self.car, None
