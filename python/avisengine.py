@@ -187,34 +187,22 @@ class Car():
             "image_decoded": False,
         }
 
-        # Some deployed legacy AVIS builds return the JPEG as a bare Base64
-        # field followed by <sensor>/<speed> metadata instead of wrapping it
-        # in <image> tags. Accept that form only when the decoded bytes contain
-        # a real JPEG SOI/EOI pair and OpenCV can decode the image; arbitrary
-        # Base64-looking sensor/status text is still rejected.
+        # Match the official AVIS client contract: camera data is carried only
+        # inside <image>...</image>. Do not guess that an untagged Base64-looking
+        # response is a frame; sensor/status payloads can look similar and would
+        # otherwise hide a protocol mismatch.
         image_bytes = None
         decoded = None
-        payload_text = image_match.group(1) if image_match is not None else ""
-        payload_format = "tagged"
-        if image_match is None:
-            leading_payload = re.match(r"\s*([A-Za-z0-9+/=\r\n]+)", receive)
-            if leading_payload is not None:
-                payload_text = leading_payload.group(1)
-                payload_format = "bare-base64-jpeg"
-        if payload_text:
+        if image_match is not None:
             try:
-                candidate = base64.b64decode(
-                    re.sub(r"\s+", "", payload_text),
-                    validate=True,
-                )
-                start = candidate.find(b"\xff\xd8")
-                end = candidate.rfind(b"\xff\xd9")
-                if start >= 0 and end > start:
-                    image_bytes = candidate[start:end + 2]
-                    image_array = np.frombuffer(image_bytes, dtype=np.uint8)
-                    decoded = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
-                    if decoded is None or not decoded.size:
-                        decoded = None
+                encoded = re.sub(r"\\s+", "", image_match.group(1))
+                candidate = base64.b64decode(encoded, validate=True)
+                image_array = np.frombuffer(candidate, dtype=np.uint8)
+                decoded = cv2.imdecode(image_array, flags=cv2.IMREAD_COLOR)
+                if decoded is None or not decoded.size:
+                    decoded = None
+                else:
+                    image_bytes = candidate
             except (ValueError, base64.binascii.Error):
                 decoded = None
 
@@ -228,14 +216,12 @@ class Car():
                 "image_height": int(decoded.shape[0]),
                 "image_sequence": int(self.image_sequence),
                 "encoded_bytes": len(image_bytes),
-                "image_payload_format": payload_format,
+                "image_payload_format": "tagged",
             })
         elif image_match is not None:
-            info["decode_error"] = "Tagged image payload did not contain a decodable JPEG"
-        elif payload_text:
-            info["decode_error"] = "Untagged AVIS payload was not a valid JPEG"
+            info["decode_error"] = "Tagged <image> payload was not a decodable image"
         else:
-            info["decode_error"] = "Legacy AVIS response contained no tagged or valid bare JPEG"
+            info["decode_error"] = "Legacy AVIS response contained no <image> tag"
 
         if sensor_match is not None:
             sensor_values = re.findall(r"-?\d+", sensor_match.group(1))
