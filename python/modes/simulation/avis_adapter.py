@@ -315,7 +315,14 @@ class AvisAdapter(SimulatorAdapter):
         with self._io_lock:
             if self.car is None or not self.connected:
                 return False
-            steering = max(-100, min(100, int(round(float(command.steering) * 100.0))))
+            # SimulatorController expresses steering as normalized [-1, 1].
+            # Legacy AVIS expects a signed percentage: -100 = full left,
+            # 0 = straight, +100 = full right.
+            normalized_steering = float(command.steering)
+            if not math.isfinite(normalized_steering):
+                normalized_steering = 0.0
+            normalized_steering = max(-1.0, min(1.0, normalized_steering))
+            steering = int(round(normalized_steering * 100.0))
             speed = 0 if float(command.brake) >= 0.5 else max(
                 0, min(100, int(round(float(command.throttle) * 100.0)))
             )
