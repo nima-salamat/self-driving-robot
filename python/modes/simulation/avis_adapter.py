@@ -315,6 +315,11 @@ class AvisAdapter(SimulatorAdapter):
         with self._io_lock:
             if self.car is None or not self.connected:
                 return False
+            # A reconnect may happen immediately after AVIS stop() closes the
+            # previous socket. Do not write actuator commands during the
+            # server's startup window; sensor requests use the same delay.
+            if time.monotonic() < self._ready_at:
+                return False
             # SimulatorController expresses steering as normalized [-1, 1].
             # Legacy AVIS expects a signed percentage: -100 = full left,
             # 0 = straight, +100 = full right.
