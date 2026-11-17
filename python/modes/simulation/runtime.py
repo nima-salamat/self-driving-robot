@@ -285,9 +285,24 @@ class SimulationRuntime:
             self._record_event("info", self.backend.upper() + " autonomous run enabled by an explicit Stream Start command.")
         else:
             self._run_enabled = False
-            self._safe_stop(self.backend.upper() + " run stopped; waiting for an explicit Start Run command.")
+            stop_vehicle = getattr(self.adapter, "stop_vehicle", None) if self.backend == "avis" else None
+            stopped = False
+            if callable(stop_vehicle):
+                try:
+                    stopped = bool(stop_vehicle())
+                except Exception:
+                    logger.warning("Explicit AVIS stop command failed; falling back to zero-throttle safety control", exc_info=True)
+            if stopped:
+                self._last_command = VehicleCommand(
+                    steering=0.0, throttle=0.0, brake=1.0,
+                    servo_angle=self.controller.last_servo, target_speed=0.0,
+                    reason="AVIS Engine explicit stop command sent.",
+                )
+                self._stop_event_active = True
+            else:
+                self._safe_stop(self.backend.upper() + " run stopped; waiting for an explicit Start Run command.")
             self._last_error = None
-            self._record_event("warning", self.backend.upper() + " autonomous run disabled; vehicle is held by the brake.")
+            self._record_event("warning", self.backend.upper() + " autonomous run disabled; explicit stop requested.")
         return self._run_enabled
 
     def request_reconnect(self):
