@@ -77,6 +77,8 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <span class="pill">{{ caps.vision_profile|upper }} VISION</span>
   <span class="sim-spacer"></span>
   <div class="sim-status"><span id="connection-led" class="led"></span><span id="connection-label">Connecting…</span></div>
+  <button id="settings-search-open" type="button" title="Search settings · Ctrl+K">⌕ Settings <kbd>Ctrl K</kbd></button>
+  {% if caps.supports_range_sensors %}<button id="avis-reconnect" type="button">↻ Reconnect AVIS</button>{% endif %}
   <button id="refresh" type="button">Refresh</button>
 </header>
 <main class="sim-layout">
@@ -87,12 +89,13 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       <div class="panel-content">
         <div id="runtime-error" class="status-message section-hide"></div>
         <div id="camera-feed-status" class="msg" role="status">Connecting to camera frame endpoint…</div>
-        <div id="camera-diagnostic" class="status-message" role="status">Checking CARLA RGB sensor…</div>
+        <div id="camera-diagnostic" class="status-message" role="status">Checking {{ caps.simulator_backend|upper }} camera…</div>
         <div class="metrics">
           <div class="metric"><div class="eyebrow">Lane estimate</div><div id="lane-value" class="value">—</div><div id="lane-valid" class="unit">Waiting for image</div></div>
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
           <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">Virtual servo scale and normalized steering</div></div>
           <div class="metric"><div class="eyebrow">Throttle / brake</div><div id="motion-value" class="value">—</div><div id="motion-reason" class="unit">Safe stop until perception is valid</div></div>
+          <div class="metric"><div class="eyebrow">Line tracking</div><div id="line-tracking-state" class="value">DISABLED</div><div id="line-tracking-detail" class="unit">Hall matching is disabled</div></div>
         </div>
         <div class="sim-roi-editor {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-roi-editor">
           <div class="sim-roi-editor-head">
@@ -155,18 +158,18 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   </div>
 
   <div class="stack">
-    {% if caps.simulator_backend == 'carla' %}
     <section class="panel carla-run-panel" id="carla-run-panel">
-      <div class="panel-head"><div><h2>Autonomous run control</h2><p>CARLA never starts moving automatically after launch or reconnect.</p></div><span class="sim-spacer"></span><span class="pill" id="carla-run-state">STOPPED</span></div>
+      <div class="panel-head"><div><h2>Autonomous run control</h2><p>{{ caps.simulator_backend|upper }} starts STOPPED after launch, reset or reconnect. Press Start Run to arm autonomous motion.</p></div><span class="sim-spacer"></span><span class="pill carla-run-state stopped" id="carla-run-state">STOPPED</span></div>
       <div class="panel-content">
         <div class="carla-run-controls">
           <button type="button" id="carla-run-start" class="carla-run-start">▶ Start Run</button>
           <button type="button" id="carla-run-stop" class="carla-run-stop">■ Stop / Brake</button>
-          <span id="carla-run-message" class="msg" role="status"></span>
+          <span id="carla-run-message" class="msg" role="status" aria-live="polite"></span>
         </div>
-        <p class="carla-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake immediately disarms it. Changing the map, vehicle or spawn point disarms the run; press Start Run again after scene changes.</p>
+        <p class="carla-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake disarms it immediately. Reconnection never resumes motion automatically.</p>
       </div>
     </section>
+    {% if caps.simulator_backend == 'carla' %}
     <section class="panel" id="carla-scene-panel">
       <div class="panel-head">
         <div><h2>CARLA · World & Spawn Studio</h2><p>Choose a map, vehicle blueprint and exact spawn location</p></div>
@@ -262,6 +265,10 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <label class="check-field {% if not caps.supports_bev %}section-hide{% endif %}"><input id="use-bev" type="checkbox" name="USE_BEV"> Bird's-eye perspective transform (BEV)</label>
             <label class="check-field"><input id="debug-overlay" type="checkbox" name="DEBUG"> Debug overlays</label>
             <div class="field {% if caps.vision_profile != 'city' %}section-hide{% endif %}"><label for="city-lane-detector">City lane detector</label><select id="city-lane-detector" name="CITY_LANE_DETECTOR"><option value="default">Default City processor</option><option value="blsf-beta">BLSF beta</option></select></div>
+            <div class="section-title" style="margin-top:12px">Temporal line identity · Hall matching</div>
+            <label class="check-field"><input id="hall-line-tracking" type="checkbox" name="HALL_LINE_TRACKING_ENABLED"> Enable line tracking across camera frames</label>
+            <div class="field"><label for="hall-line-max-missed">Missed frames before LOST (1–12)</label><input id="hall-line-max-missed" type="number" min="1" max="12" step="1" name="HALL_LINE_TRACKING_MAX_MISSED"></div>
+            <p class="note">Uses bipartite maximum matching to preserve line identities across frames. Works with classical Hough in City/Race and BLSF in City; Race ML lane-mask mode reports it as unsupported.</p>
             <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
           </div>
           <div class="setting-block {% if caps.vision_profile != 'city' %}section-hide{% endif %}" id="city-vision-settings">
