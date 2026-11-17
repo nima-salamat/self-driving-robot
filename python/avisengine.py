@@ -195,11 +195,11 @@ class Car():
         if image_match is not None:
             try:
                 candidate = base64.b64decode(
-                    re.sub(r"\\s+", "", image_match.group(1)),
+                    re.sub(r"\s+", "", image_match.group(1)),
                     validate=True,
                 )
-                start = candidate.find(b"\\xff\\xd8")
-                end = candidate.rfind(b"\\xff\\xd9")
+                start = candidate.find(b"\xff\xd8")
+                end = candidate.rfind(b"\xff\xd9")
                 if start >= 0 and end > start:
                     image_bytes = candidate[start:end + 2]
                     image_array = np.frombuffer(image_bytes, dtype=np.uint8)
