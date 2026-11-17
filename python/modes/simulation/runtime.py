@@ -59,6 +59,8 @@ class SimulationRuntime:
         self._last_cycle_at = None
         self._stop_event_active = False
         self._last_safe_stop_command_at = 0.0
+        self._last_safe_stop_log_at = 0.0
+        self._last_safe_stop_reason = None
         self._camera_editor_active = False
         self._scene_edit_active = False
         # Every simulator starts disarmed. Reconnecting never auto-resumes motion.
@@ -355,10 +357,14 @@ class SimulationRuntime:
 
     def _safe_stop(self, reason):
         self._last_error = str(reason)
-        if not self._stop_event_active:
-            self._record_event("warning", reason)
-        self._stop_event_active = True
         now = time.monotonic()
+        # Frame availability can flicker. Keep the event visible, but avoid
+        # synchronous warning I/O on every brief loss/recovery transition.
+        if reason != self._last_safe_stop_reason or now - self._last_safe_stop_log_at >= 5.0:
+            self._record_event("warning", reason)
+            self._last_safe_stop_reason = reason
+            self._last_safe_stop_log_at = now
+        self._stop_event_active = True
         # A missing camera frame can persist for many processing cycles. Do
         # not issue two socket writes on every 50 ms retry; refresh the
         # hardware stop at most twice per second while remaining disarmed.
