@@ -4,6 +4,8 @@ import time
 import cv2
 import numpy as np
 
+from vision.hall_line_tracking import HallLineTracker
+
 
 class BLSFLaneDetector:
     """
@@ -21,6 +23,9 @@ class BLSFLaneDetector:
         self.config = config
         self.last_steering = float(getattr(config, "SERVO_CENTER", 95))
         self.last_error = 0.0
+        self._hall_line_tracker = HallLineTracker(
+            max_missed_frames=getattr(config, "HALL_LINE_TRACKING_MAX_MISSED", 4)
+        )
 
         self._bev_key = None
         self._bev_matrix = None
@@ -669,12 +674,27 @@ class BLSFLaneDetector:
         thresholded = self._median_local_threshold(gray)
 
         segments = self._segments(thresholded)
-        band, votes = self._blsf_band(segments)
-        binary = self._blsf_binary(
-            thresholded,
-            segments,
-            band,
-        )
+        tracking_info = None
+        lane_segments = segments
+        if bool(self._cfg("HALL_LINE_TRACKING_ENABLED", False)):
+            self._hall_line_tracker.max_missed_frames = max(
+                1, int(self._cfg("HALL_LINE_TRACKING_MAX_MISSED", 4))
+            )
+            tracking_info = self._hall_line_tracker.update(segments, frame.shape[1], frame.shape[0])
+            stable_segments = tracking_info["stable_lines"]
+            if len(stable_segments) >= 3:
+                stable_band, stable_votes = self._blsf_band(stable_segments)
+                if stable_band is not None:
+                    lane_segments = stable_segments
+                    band, votes = stable_band, stable_votes
+                else:
+                    band, votes = self._blsf_band(segments)
+            else:
+                band, votes = self._blsf_band(segments)
+        else:
+            self._hall_line_tracker.reset()
+            band, votes = self._blsf_band(segments)
+        binary = self._blsf_binary(thresholded, lane_segments, band)
 
         left_seed, right_seed, histogram = self._seeds(binary)
 
@@ -733,6 +753,15 @@ class BLSFLaneDetector:
             self._detect_crosswalk(bev)
         )
 
+        tracking_summary = {"enabled": False, "state": "DISABLED"}
+        if tracking_info is not None:
+            tracking_summary = {
+                key: tracking_info[key] for key in (
+                    "state", "selected_track_id", "active_tracks", "matched_tracks",
+                    "hall_satisfied", "hall_deficiency", "missed_frames",
+                )
+            }
+            tracking_summary["enabled"] = True
         debug = None
         if self._cfg("DEBUG", False) or self._cfg("STREAM", False):
             debug = {
@@ -783,6 +812,7 @@ class BLSFLaneDetector:
             "lane_angle_votes": votes,
             "perception_quality": min(1.0, (len(segments) / 20.0) * 0.4 + (0.6 if lane_type == "both" else 0.25 if lane_type in ("only_left", "only_right") else 0.0)),
             "observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0,
+            "line_tracking": tracking_summary,
         }
 
 

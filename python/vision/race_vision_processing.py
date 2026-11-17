@@ -9,6 +9,8 @@ import math
 import cv2
 import numpy as np
 
+from vision.hall_line_tracking import HallLineTracker
+
 class VisionProcessor:
     def __init__(self):
         self.last_steering = float(getattr(conf, "SERVO_CENTER", SERVO_CENTER))
@@ -21,6 +23,8 @@ class VisionProcessor:
         self._bev_matrix = None
         self._morph_kernel = np.ones((3, 3), np.uint8)
         self._lsd = cv2.createLineSegmentDetector(0)
+        self._right_line_tracker = HallLineTracker()
+        self._left_line_tracker = HallLineTracker()
 
     @staticmethod
     def _extract_line(line):
@@ -105,12 +109,31 @@ class VisionProcessor:
 
         return best_x_mid
 
+    @staticmethod
+    def _line_index_for_midpoint(lines, midpoint):
+        if lines is None or midpoint is None:
+            return None
+        best_index, best_distance = None, float("inf")
+        for index, line in enumerate(lines):
+            x1, _y1, x2, _y2 = VisionProcessor._extract_line(line)
+            distance = abs(float((x1 + x2) * 0.5) - float(midpoint))
+            if distance < best_distance:
+                best_index, best_distance = index, distance
+        return best_index
+
     def detect(self, frame, debug_frame=None):
         if self.ml_lane_detector is not None:
             visualization_enabled = bool(conf.DEBUG or conf.STREAM)
-            return self.ml_lane_detector.detect(
+            result = self.ml_lane_detector.detect(
                 frame, debug_frame if visualization_enabled else None
             )
+            if bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False)):
+                result["line_tracking"] = {
+                    "enabled": False,
+                    "state": "UNSUPPORTED_ML",
+                    "reason": "Hall line matching requires the classical Hough detector; the ML detector works on a lane mask.",
+                }
+            return result
 
         if frame is None:
             return {
@@ -284,6 +307,46 @@ class VisionProcessor:
 
         rl_x_mid = self._best_mid_x(rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
         ll_x_mid = self._best_mid_x(ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
+        line_tracking = {"enabled": False, "state": "DISABLED"}
+        if bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False)):
+            max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
+            self._right_line_tracker.max_missed_frames = max_missed
+            self._left_line_tracker.max_missed_frames = max_missed
+            right_info = self._right_line_tracker.update(
+                rl_lines, rl_current_w,
+                max(1, int(height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI))),
+                preferred_index=self._line_index_for_midpoint(rl_lines, rl_x_mid),
+            )
+            left_info = self._left_line_tracker.update(
+                ll_lines, ll_current_w,
+                max(1, int(height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI))),
+                preferred_index=self._line_index_for_midpoint(ll_lines, ll_x_mid),
+            )
+            rl_x_mid = right_info["selected_midpoint"]
+            ll_x_mid = left_info["selected_midpoint"]
+
+            def tracking_side(info):
+                return {key: info[key] for key in (
+                    "state", "selected_track_id", "active_tracks", "matched_tracks",
+                    "hall_satisfied", "hall_deficiency", "missed_frames",
+                )}
+
+            states = (right_info["state"], left_info["state"])
+            overall = "COASTING" if "COASTING" in states else (
+                "REACQUIRING" if "REACQUIRING" in states else (
+                    "TRACKING" if "TRACKING" in states else "LOST"
+                )
+            )
+            line_tracking = {
+                "enabled": True,
+                "state": overall,
+                "hall_satisfied": bool(right_info["hall_satisfied"] and left_info["hall_satisfied"]),
+                "right": tracking_side(right_info),
+                "left": tracking_side(left_info),
+            }
+        else:
+            self._right_line_tracker.reset()
+            self._left_line_tracker.reset()
 
         rl_x_mid_full = rl_x_mid
         ll_x_mid_full = ll_x_mid
@@ -414,4 +477,5 @@ class VisionProcessor:
             ,"lane_segments_px": lane_segments_px
             ,"frame_width_px": int(width)
             ,"frame_height_px": int(height)
+            ,"line_tracking": line_tracking
         }
