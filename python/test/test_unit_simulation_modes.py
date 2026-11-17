@@ -55,7 +55,7 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertEqual(car.last_response_info["image_payload_format"], "tagged")
         car.sock = None
 
-    def test_get_data_rejects_untagged_base64_in_legacy_avis_response(self):
+    def test_get_data_decodes_bare_base64_jpeg_before_legacy_sensor_metadata(self):
         class FakeSocket:
             def __init__(self, payload):
                 self.payload = payload
@@ -75,11 +75,36 @@ class AvisEngineProtocolTests(unittest.TestCase):
         car = Car()
         car.sock.close()
         car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (12, 16))
+        self.assertEqual(car.image_sequence, 1)
+        self.assertFalse(car.last_response_info["image_tag"])
+        self.assertTrue(car.last_response_info["sensor_tag"])
+        self.assertTrue(car.last_response_info["speed_tag"])
+        self.assertEqual(car.last_response_info["image_payload_format"], "bare-base64-jpeg")
+        car.sock = None
+
+    def test_get_data_rejects_base64_payload_that_is_not_a_jpeg(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        payload = (
+            base64.b64encode(b"not an image" * 30)
+            + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock.close()
+        car.sock = FakeSocket(payload)
         self.assertFalse(car.getData())
         self.assertIsNone(car.image)
-        self.assertFalse(car.last_response_info["image_tag"])
         self.assertFalse(car.last_response_info["image_decoded"])
-        self.assertIn("did not contain an <image> tag", car.last_response_info["decode_error"])
+        self.assertIn("not a valid JPEG", car.last_response_info["decode_error"])
         car.sock = None
 
 class ModeRegistryTests(unittest.TestCase):
@@ -1056,6 +1081,25 @@ class VirtualControllerTests(unittest.TestCase):
             self.assertEqual(fake.angle, 15)
             adapter.close()
             self.assertIn(("stop",), fake.commands)
+
+    def test_avis_adapter_does_not_write_actuators_before_reconnect_startup_delay(self):
+        class FakeCar:
+            def __init__(self):
+                self.commands = []
+            def setSteering(self, value):
+                self.commands.append(("steering", value))
+            def setSpeed(self, value):
+                self.commands.append(("speed", value))
+
+        car = FakeCar()
+        adapter = AvisAdapter(SimpleNamespace())
+        adapter.car = car
+        adapter.connected = True
+        adapter._ready_at = 103.0
+        with patch("modes.simulation.avis_adapter.time.monotonic", return_value=102.0):
+            command = VehicleCommand(0.0, 0.0, 1.0, 95.0, 0.0, "startup safety stop")
+            self.assertFalse(adapter.apply_control(command))
+        self.assertEqual(car.commands, [])
 
     def test_avis_adapter_maps_signed_steering_to_legacy_percent_range(self):
         from modes.simulation.base_adapter import VehicleCommand
