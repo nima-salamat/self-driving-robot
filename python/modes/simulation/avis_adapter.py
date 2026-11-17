@@ -196,11 +196,13 @@ class AvisAdapter(SimulatorAdapter):
         if frame is None or not is_fresh:
             self._missing_images += 1
             response_info = dict(getattr(car, "last_response_info", {}) or {})
+            # Sensor values in response_prefix change on every sample; do
+            # not include them in the log-deduplication key or warnings spam
+            # once per frame when the image tag is consistently absent.
             signature = (
                 bool(response_info.get("image_tag")),
                 bool(response_info.get("image_decoded")),
                 response_info.get("decode_error"),
-                response_info.get("response_prefix"),
             )
             self._last_error = (
                 "AVIS response contained no fresh image; "
