@@ -1026,7 +1026,9 @@ async function poll(){
     setText("lane-value",d.lane_type||"none");
     setText("lane-valid",d.perception_valid?"Perception valid":"Invalid lane estimate · safety policy applies");
     setText("speed-value",numeric(d.speed_kmh,1)+" km/h");
-    setText("steer-value",numeric(d.steering_angle,1)+"° / "+numeric(d.steering_normalized,2));
+    setText("steer-value",caps.simulator_backend==="avis"
+      ? numeric(d.steering_normalized*100,0)+"% ("+numeric(d.steering_angle,1)+"° vision)"
+      : numeric(d.steering_angle,1)+"° / "+numeric(d.steering_normalized,2));
     setText("motion-value",numeric(d.command.throttle,2)+" / "+numeric(d.command.brake,2));
     setText("motion-reason",d.command.reason||"");
     setText("encoder-count",String(d.virtual_io.pulses||0));
