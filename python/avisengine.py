@@ -39,7 +39,8 @@ class Car():
     def __init__(self):
         # Keep each robot runtime isolated; the upstream API stores its socket
         # at class scope, which would otherwise share a closed socket on restart.
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Create the TCP socket in connect(), never reuse a closed socket.
+        self.sock = None
         self.timeout = 5.0
         self.steering_value = 0
         self.speed_value = 0
@@ -78,17 +79,22 @@ class Car():
     sensors = None
     current_speed = None
 
-    def connect(self,server,port):
-        '''
-        Connecting to the simulator (server)
-        '''
+    def connect(self, server, port):
+        """Open a brand-new TCP socket for this connection attempt."""
+        self.disconnect(send_stop=False)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock = sock
         try:
-            self.sock.settimeout(float(getattr(self, "timeout", 5.0)))
-            self.sock.connect((server, port))
-            
+            sock.settimeout(float(getattr(self, "timeout", 5.0)))
+            sock.connect((server, int(port)))
             print("connected to ", server, port)
             return True
-        except:
+        except OSError:
+            try:
+                sock.close()
+            finally:
+                if self.sock is sock:
+                    self.sock = None
             print("Failed to connect to ", server, port)
             return False
 
@@ -275,28 +281,52 @@ class Car():
         data = [self.speed_value,self.steering_value,self.image_mode,self.sensor_status,self.get_Speed, self.sensor_angle]
         self.data_str = self._data_format.format(data[0], data[1], data[2], data[3], data[4], data[5])
         
+    def disconnect(self, send_stop=True):
+        """Release the AVIS server-side client slot and close this socket once.
+
+        The legacy Engine protocol uses the literal stop token to end a client
+        session. A plain TCP close after a timed-out request can leave older
+        Engine builds holding the previous session open.
+        """
+        sock = getattr(self, "sock", None)
+        self.sock = None
+        if sock is None:
+            return
+        try:
+            if send_stop and sock.fileno() >= 0:
+                try:
+                    sock.sendall(b"stop")
+                except OSError:
+                    pass
+        finally:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                sock.close()
+            except OSError:
+                pass
+
     def stop(self):
-        """Best-effort stop and close; safe after a server-side reset."""
+        """Best-effort actuator stop followed by protocol-level disconnect."""
         sock = getattr(self, "sock", None)
         if sock is None:
             return
         try:
-            if not getattr(sock, "_closed", False):
+            if sock.fileno() >= 0:
                 try:
                     self.setSpeed(0)
                     self.setSteering(0)
-                    sock.sendall(b"stop")
-                except Exception:
+                except OSError:
                     pass
         finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
+            self.disconnect(send_stop=True)
 
     def __del__(self):
+        # Destruction must not send actuator commands or issue a second stop.
         try:
-            self.stop()
+            self.disconnect(send_stop=False)
         except Exception:
             pass
     
