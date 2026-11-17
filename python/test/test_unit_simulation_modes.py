@@ -28,7 +28,34 @@ from utils.parser import parse_args
 
 
 class AvisEngineProtocolTests(unittest.TestCase):
-    def test_get_data_decodes_bare_base64_jpeg_without_image_tags(self):
+    def test_get_data_decodes_tagged_jpeg_using_legacy_avis_protocol(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((12, 16, 3), 127, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        payload = (
+            b"<image>" + base64.b64encode(encoded.tobytes()) + b"</image>"
+            + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock.close()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (12, 16))
+        self.assertEqual(car.image_sequence, 1)
+        self.assertTrue(car.last_response_info["image_tag"])
+        self.assertEqual(car.last_response_info["image_payload_format"], "tagged")
+        car.sock = None
+
+    def test_get_data_rejects_untagged_base64_in_legacy_avis_response(self):
         class FakeSocket:
             def __init__(self, payload):
                 self.payload = payload
@@ -48,11 +75,11 @@ class AvisEngineProtocolTests(unittest.TestCase):
         car = Car()
         car.sock.close()
         car.sock = FakeSocket(payload)
-        self.assertTrue(car.getData())
-        self.assertEqual(car.image.shape[:2], (12, 16))
-        self.assertEqual(car.image_sequence, 1)
+        self.assertFalse(car.getData())
+        self.assertIsNone(car.image)
         self.assertFalse(car.last_response_info["image_tag"])
-        self.assertEqual(car.last_response_info["image_payload_format"], "bare-base64-jpeg")
+        self.assertFalse(car.last_response_info["image_decoded"])
+        self.assertIn("did not contain an <image> tag", car.last_response_info["decode_error"])
         car.sock = None
 
 class ModeRegistryTests(unittest.TestCase):
