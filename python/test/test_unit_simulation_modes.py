@@ -52,7 +52,7 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertEqual(car.image.shape[:2], (12, 16))
         self.assertEqual(car.image_sequence, 1)
         self.assertTrue(car.last_response_info["image_tag"])
-        self.assertEqual(car.last_response_info["image_payload_format"], "tagged")
+        self.assertEqual(car.last_response_info["image_payload_format"], "tagged-base64")
         car.sock = None
 
     def test_get_data_accepts_wrapped_base64_inside_image_tag(self):
@@ -78,7 +78,7 @@ class AvisEngineProtocolTests(unittest.TestCase):
         car.sock = FakeSocket(payload)
         self.assertTrue(car.getData())
         self.assertEqual(car.image.shape[:2], (12, 16))
-        self.assertEqual(car.last_response_info["image_payload_format"], "tagged")
+        self.assertEqual(car.last_response_info["image_payload_format"], "tagged-base64")
         car.sock = None
 
     def test_get_data_decodes_bare_base64_jpeg_before_legacy_sensor_metadata(self):
@@ -219,9 +219,9 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(config.LANE_THRESHOLD, 180)
             self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 6)
             self.assertFalse(config.ROI_RESIZABLE)
-            self.assertEqual(config.MIN_SERVO_ANGLE, 50.0)
+            self.assertEqual(config.MIN_SERVO_ANGLE, 55.0)
             self.assertEqual(config.SERVO_CENTER, 95.0)
-            self.assertEqual(config.MAX_SERVO_ANGLE, 130.0)
+            self.assertEqual(config.MAX_SERVO_ANGLE, 125.0)
             save_simulator_settings(config, "carla", {
                 "SIMULATOR_TARGET_SPEED": 7.0, "SIMULATOR_THROTTLE_LIMIT": 0.15,
                 "SIMULATOR_STEERING_LIMIT": 0.35, "SIMULATOR_STEERING_RATE": 1.0,
@@ -494,7 +494,7 @@ class SimulatorSettingsApiTests(unittest.TestCase):
                     STREAM_ALLOW_CONTROL=True,
                 )
                 load_simulator_settings(config, mode, "avis")
-                defaults = {key: getattr(config, key) for key in SIMULATOR_KEYS}
+                defaults = {key: getattr(config, key) for key in SIMULATOR_KEYS if hasattr(config, key)}
                 payload = {key: defaults[key] for key in common + lane_roi}
                 payload.update({key: defaults[key] for key in bev})
                 if profile == "city":

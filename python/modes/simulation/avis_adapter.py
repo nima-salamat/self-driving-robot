@@ -105,7 +105,7 @@ class AvisAdapter(SimulatorAdapter):
         # Prefer the protocol-level disconnect before touching the raw socket.
         # Legacy AVIS servers may keep the previous client session allocated
         # until they receive the literal "stop" token.
-        for name in ("disconnect", "close"):
+        for name in ("stop", "disconnect", "close"):
             method = getattr(car, name, None)
             if callable(method):
                 try:

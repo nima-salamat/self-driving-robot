@@ -360,15 +360,14 @@ class SimulationRuntime:
         now = time.monotonic()
         # Frame availability can flicker. Keep the event visible, but avoid
         # synchronous warning I/O on every brief loss/recovery transition.
-        if reason != self._last_safe_stop_reason or now - self._last_safe_stop_log_at >= 30.0:
+        reason_changed = reason != self._last_safe_stop_reason
+        if reason_changed or now - self._last_safe_stop_log_at >= 30.0:
             self._record_event("warning", reason)
             self._last_safe_stop_reason = reason
             self._last_safe_stop_log_at = now
-        self._stop_event_active = True
-        # A missing camera frame can persist for many processing cycles. Do
-        # not issue two socket writes on every 50 ms retry; refresh the
-        # hardware stop at most twice per second while remaining disarmed.
-        if now - self._last_safe_stop_command_at < 0.5:
+        # Repeated stops are rate-limited, but a new safety reason must issue
+        # an immediate brake command instead of being hidden by the prior one.
+        if not reason_changed and now - self._last_safe_stop_command_at < 0.5:
             return
         self._last_safe_stop_command_at = now
         safe = VehicleCommand(

@@ -297,7 +297,7 @@ class Car():
         if image_match is None:
             prefix = receive[:180].strip()
             info["response_prefix_kind"] = (
-                "base64-like" if re.fullmatch(r"[A-Za-z0-9+/=_-\s]+", prefix)
+                "base64-like" if re.fullmatch(r"[-A-Za-z0-9+/=_\s]+", prefix)
                 else "mixed-protocol-data" if prefix else "empty"
             )
         self.last_response_info = info
