@@ -1,4 +1,5 @@
 """Hardware-free tests for simulator mode registration, settings and controls."""
+import base64
 import json
 import sys
 import tempfile
@@ -8,7 +9,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import cv2
 import numpy as np
+
+from avisengine import Car
 
 from modes.registry import (
     CITY_VISION_MODES, RACE_VISION_MODES, SIMULATOR_MODES, get_mode_spec,
@@ -22,6 +26,34 @@ from modes.simulation.settings import (
 from modes.simulation.avis_adapter import AvisAdapter
 from utils.parser import parse_args
 
+
+class AvisEngineProtocolTests(unittest.TestCase):
+    def test_get_data_decodes_bare_base64_jpeg_without_image_tags(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((12, 16, 3), 127, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        payload = (
+            base64.b64encode(encoded.tobytes())
+            + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock.close()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (12, 16))
+        self.assertEqual(car.image_sequence, 1)
+        self.assertFalse(car.last_response_info["image_tag"])
+        self.assertEqual(car.last_response_info["image_payload_format"], "bare-base64-jpeg")
+        car.sock = None
 
 class ModeRegistryTests(unittest.TestCase):
     def test_sim_modes_choose_city_and_race_vision_profiles(self):
