@@ -687,7 +687,21 @@ async function saveSimRoiSettings(){
   }
 }
 function bindSimRoiEditor(){
-  if(!simRoiCanvas||!caps.supports_lane_roi)return;
+  if(!caps.supports_lane_roi)return;
+  // Saving must not depend on the optional canvas overlay being available.
+  // The previous early return silently left the Save button without a handler
+  // whenever the canvas could not be initialized.
+  const saveButton=$("sim-roi-save");
+  if(saveButton)saveButton.addEventListener("click",function(event){
+    event.preventDefault();
+    if(simRoiSaveTimer!==null){clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;}
+    saveSimRoiSettings();
+  });
+  simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){
+    const el=$(id);if(!el)return;
+    el.addEventListener("input",function(){drawSimRoiOverlay();scheduleSimRoiSave(700);});
+  });});
+  if(!simRoiCanvas){setText("sim-roi-status","ROI numeric controls are active; overlay canvas is unavailable.");return;}
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){button.addEventListener("click",function(){simRoiSelected=button.dataset.simRoiSelect;simRoiUpdateSelection();drawSimRoiOverlay();});});
   document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",drawSimRoiOverlay);});
   $("sim-roi-overlay-toggle").addEventListener("change",function(){simRoiUpdateSelection();drawSimRoiOverlay();});
@@ -697,15 +711,7 @@ function bindSimRoiEditor(){
   });
   simRoiCanvas.addEventListener("pointerdown",simRoiPointerDown);simRoiCanvas.addEventListener("pointermove",simRoiPointerMove);
   simRoiCanvas.addEventListener("pointerup",simRoiPointerUp);simRoiCanvas.addEventListener("pointercancel",simRoiPointerUp);
-  simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){
-    const el=$(id);if(!el)return;
-    el.addEventListener("input",function(){drawSimRoiOverlay();scheduleSimRoiSave(700);});
-  });});
   window.addEventListener("resize",drawSimRoiOverlay);camera.addEventListener("load",drawSimRoiOverlay);
-  $("sim-roi-save").addEventListener("click",function(){
-    if(simRoiSaveTimer!==null){clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;}
-    saveSimRoiSettings();
-  });
   simRoiUpdateSelection();drawSimRoiOverlay();
 }
 bindSimRoiEditor();
@@ -788,13 +794,13 @@ function drawAvisSensors(ranges,stale){
   const canvas=$("avis-sensor-view");if(!canvas)return;
   const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
   ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
-  const maxRange=300,scale=Math.min((w-80)/(maxRange*2),(h-100)/maxRange);
+  const maxRange=1500,scale=Math.min((w-80)/(maxRange*2),(h-100)/maxRange);
   const configuredAngle=Number(($("avis-angle")||{}).value),cx=w/2,carY=h-78,frontY=carY-44,sideAngle=Number.isFinite(configuredAngle)?Math.max(0,Math.min(90,configuredAngle)):30;
   const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
   ctx.strokeStyle="#1d2b39";ctx.lineWidth=1;
   for(let x=20;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
   for(let y=20;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
-  for(let distance=50;distance<=maxRange;distance+=50){
+  for(let distance=250;distance<=maxRange;distance+=250){
     ctx.beginPath();ctx.arc(cx,frontY,distance*scale,Math.PI,Math.PI*2);
     ctx.strokeStyle="#314457";ctx.stroke();
     ctx.fillStyle="#8298ac";ctx.font="10px ui-monospace,monospace";
@@ -851,7 +857,7 @@ function renderRanges(ranges,frameAgeMs){
     const valueEl=$("range-"+key);
     if(valueEl)valueEl.innerHTML=good?numeric(value,0)+' <span class="unit">cm</span>':'— <span class="unit">cm</span>';
     const bar=$("bar-"+key);
-    if(bar){bar.style.width=good?Math.max(0,Math.min(100,value/300*100))+"%":"0%";bar.style.background=stale?"#7d8b9b":avisRangeColor(value,threshold,key);}
+    if(bar){bar.style.width=good?Math.max(0,Math.min(100,value/1500*100))+"%":"0%";bar.style.background=stale?"#7d8b9b":avisRangeColor(value,threshold,key);}
     setText("range-"+key+"-state",stale?"Stale sample":avisRangeStatus(value,threshold,key));
   });
   drawAvisSensors(ranges,stale);
