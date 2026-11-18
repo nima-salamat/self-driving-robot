@@ -685,7 +685,10 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn("function readSettingNumber(id)", template)
         self.assertIn("function collectSimulatorSettings()", template)
         self.assertIn('control.closest(".section-hide")', template)
-        self.assertIn("camera-stale-overlay", template)
+        self.assertIn("camera-status-stack", template)
+        self.assertIn("runtime-error-slot", template)
+        self.assertIn("camera-performance", template)
+        self.assertNotIn("camera-stale-overlay", template)
         self.assertIn("simulatorSettingsReady=false", template)
         self.assertIn('id="save-settings" disabled', template)
         self.assertIn("is empty. Reload saved defaults", template)
@@ -693,6 +696,12 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn('querySelectorAll("[name], [id]")', template)
         self.assertIn("searchableText.includes(query)", template)
         self.assertIn("settings-search-clear", template)
+        self.assertIn('event.code==="KeyK"', template)
+        self.assertIn('addEventListener("click",focusSearch)', template)
+        self.assertIn('sim-run-controls-top', template)
+        self.assertIn('id="carla-run-start"', template)
+        self.assertNotIn("Feature map", template)
+        self.assertNotIn("Integration notes", template)
         decimal_settings = (
             "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
             "SIMULATOR_CAMERA_FOV", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
@@ -792,6 +801,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="throttle-rise-rate"', page_text)
                     self.assertIn('id="camera-feed-status"', page_text)
                     self.assertIn('id="camera-diagnostic"', page_text)
+                    self.assertIn('id="camera-performance"', page_text)
                     self.assertIn("/video_feed_frame", page_text)
                     self.assertIn('id="sim-pid-settings"', page_text)
                     self.assertIn('id="pid-enabled"', page_text)
@@ -799,6 +809,12 @@ class SimulatorEditorTests(unittest.TestCase):
                     if backend == "avis":
                         self.assertIn('id="settings-search"', page_text)
                         self.assertIn('href="#sim-pid-settings"', page_text)
+                        self.assertIn('id="carla-run-start"', page_text)
+                        self.assertIn('id="carla-run-stop"', page_text)
+                        self.assertIn('sim-run-controls-top', page_text)
+                        self.assertNotIn('id="carla-run-panel"', page_text)
+                        self.assertNotIn("Feature map", page_text)
+                        self.assertNotIn("Integration notes", page_text)
                     self.assertIn(mode.upper(), page_text)
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
                     if backend == "carla":
@@ -1411,6 +1427,25 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertAlmostEqual(left.steering, 0.0, places=3)
         self.assertAlmostEqual(right_again.steering, 0.2, places=3)
 
+    def test_avis_layout_moves_run_controls_to_topbar_and_reserves_error_space(self):
+        from pathlib import Path
+
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator_editor.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('body class="{% if caps.simulator_backend == \'avis\' %}avis-workbench{% endif %}"', template)
+        topbar = template[template.index('<header class="sim-top">'):template.index("</header>")]
+        self.assertLess(topbar.index('id="carla-run-start"'), topbar.index("</header>"))
+        self.assertLess(topbar.index('id="carla-run-stop"'), topbar.index("</header>"))
+        self.assertIn('class="runtime-error-slot"', template)
+        self.assertIn('class="camera-performance"', template)
+        self.assertNotIn('id="camera-stale-overlay"', template)
+        self.assertNotIn("<h2>Feature map</h2>", template)
+        self.assertNotIn("<h2>Integration notes</h2>", template)
+        self.assertIn('window.addEventListener("keydown"', template)
+        self.assertIn('},true);', template)
+
     def test_settings_panel_is_bounded_and_scrollable(self):
         template = (
             Path(__file__).resolve().parents[1]
@@ -1418,12 +1453,14 @@ class VirtualControllerTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         scroll_styles = template[
             template.index(".sim-settings-panel{"):
-            template.index("camera-stale-overlay")
+            template.index("</style>")
         ]
         self.assertIn("height:min(82vh,820px)", scroll_styles)
         self.assertIn("overflow-y:auto", scroll_styles)
-        self.assertNotIn("overflow-y:visible", scroll_styles)
-        self.assertNotIn("overflow:visible", scroll_styles)
+        self.assertIn("body.avis-workbench .sim-layout.avis-layout{", scroll_styles)
+        self.assertIn("height:100%", scroll_styles)
+        self.assertIn("height:64px", scroll_styles)
+        self.assertNotIn(".camera-stale-overlay{", scroll_styles)
 
     def test_carla_honors_user_configured_values_above_old_ui_caps(self):
         self.config.SIMULATOR_TARGET_SPEED = 20.0

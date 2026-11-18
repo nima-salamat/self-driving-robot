@@ -139,13 +139,89 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   .avis-layout .avis-settings-toolbar nav a{flex:1;justify-content:center}
 }
 
-.camera-stale-overlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;max-width:min(92%,560px);padding:11px 15px;border:1px solid #b47a43;border-radius:10px;background:#24190fee;color:#ffddb4;box-shadow:0 8px 30px #0009;text-align:center;font:700 12px/1.5 ui-monospace,Consolas,monospace;letter-spacing:.025em;pointer-events:none}
+
+/* AVIS desktop workbench: one top bar, scrollable work area, full-height settings rail. */
+body.avis-workbench{height:100dvh;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+body.avis-workbench .sim-top{position:relative;top:auto;z-index:20;flex:0 0 64px;height:64px;min-height:64px;gap:9px;padding:8px 12px;flex-wrap:nowrap}
+body.avis-workbench .sim-layout.avis-layout{flex:1 1 auto;height:auto;min-height:0;max-height:none;overflow:hidden;grid-template-columns:minmax(0,1fr) minmax(390px,450px);gap:12px;padding:10px;align-items:stretch}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child{height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;align-content:start;padding:0 5px 10px 0;overscroll-behavior:contain;scrollbar-gutter:stable}
+body.avis-workbench .sim-layout.avis-layout>.stack:last-child{height:100%;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:0}
+body.avis-workbench .sim-layout.avis-layout .sim-settings-panel{position:relative;flex:1 1 auto;width:100%;height:100%;min-height:0;max-height:none;align-self:stretch;margin:0}
+body.avis-workbench .sim-layout.avis-layout .sim-settings-panel>.panel-head{flex:0 0 auto}
+body.avis-workbench .sim-layout.avis-layout .sim-settings-panel>.panel-content{flex:1 1 auto;height:0;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+body.avis-workbench .sim-layout.avis-layout .avis-settings-toolbar{top:0}
+body.avis-workbench .sim-settings-panel #save-message{height:22px;min-height:22px;max-height:22px;margin:0 0 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+body.avis-workbench .topbar-search{white-space:nowrap}
+body.avis-workbench .sim-run-controls-top{display:flex;align-items:center;gap:6px;flex:0 0 auto;min-width:0}
+body.avis-workbench .sim-run-controls-top button{height:34px;padding:6px 10px;font-size:11px;font-weight:800;letter-spacing:.035em;white-space:nowrap}
+body.avis-workbench .sim-run-controls-top .carla-run-start{background:linear-gradient(135deg,#176b4d,#1e805b);border-color:#399b74;color:#eafff4}
+body.avis-workbench .sim-run-controls-top .carla-run-stop{background:linear-gradient(135deg,#71373b,#8e4147);border-color:#b85d65;color:#fff0f0}
+body.avis-workbench .sim-run-controls-top .carla-run-state{white-space:nowrap}
+body.avis-workbench .sim-run-feedback{display:block;min-width:0;max-width:160px;height:30px;overflow:hidden;align-content:center;color:var(--sim-muted);font-size:10px;line-height:1.25}
+body.avis-workbench .sim-run-feedback.bad{color:var(--sim-red)}
+body.avis-workbench .sim-run-feedback.good{color:var(--sim-green)}
+body.avis-workbench .camera-status-stack{display:grid;gap:5px;min-width:0;margin-bottom:10px}
+body.avis-workbench .runtime-error-slot{display:flex;align-items:center;width:100%;height:28px;min-height:28px;max-height:28px;padding:3px 10px;border:1px solid transparent;border-radius:7px;background:transparent;visibility:hidden;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:18px}
+body.avis-workbench .runtime-error-slot.visible{visibility:visible;border-color:#895056;background:#2a191e;color:#ffb7bd}
+body.avis-workbench .camera-feed-status{height:22px;min-height:22px;max-height:22px;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;align-content:center}
+body.avis-workbench .camera-status-meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,1.15fr);gap:7px;min-width:0}
+body.avis-workbench .camera-diagnostic{display:flex;align-items:center;height:30px;min-height:30px;max-height:30px;margin:0;padding:5px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-color:#2b4358;background:#121e2a;color:#b9d1e4;font-size:10px}
+body.avis-workbench .camera-diagnostic.error{border-color:#79504b;background:#261e1a;color:#ffca9d}
+body.avis-workbench .camera-performance{display:flex;align-items:center;height:30px;min-height:30px;max-height:30px;padding:5px 9px;border:1px solid #2b3747;border-radius:8px;background:#121a24;color:#93a9bc;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:10px ui-monospace,Consolas,monospace}
+body.avis-workbench .avis-sensor-stage{border:1px solid #2c4053;border-radius:12px;overflow:hidden;background:radial-gradient(ellipse at 50% 36%,#162638 0%,#0b141e 68%,#081018 100%);box-shadow:inset 0 1px #ffffff08}
+body.avis-workbench .avis-sensor-stage-head{height:34px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 12px;border-bottom:1px solid #243749;color:#8faac0;font:700 10px ui-monospace,Consolas,monospace;letter-spacing:.09em}
+body.avis-workbench .avis-sensor-canvas{display:block;width:100%;height:320px;border:0;border-radius:0;background:transparent}
+body.avis-workbench .avis-sensor-legend{display:flex;align-items:center;gap:15px;flex-wrap:wrap;margin:10px 2px 12px;color:#96aabd;font-size:10px}
+body.avis-workbench .avis-sensor-legend span{display:inline-flex;align-items:center;gap:6px}
+body.avis-workbench .avis-sensor-legend i{width:7px;height:7px;border-radius:50%;display:inline-block}
+body.avis-workbench .avis-sensor-legend .safe{background:#70d8eb;box-shadow:0 0 8px #70d8eb66}
+body.avis-workbench .avis-sensor-legend .near{background:#f6bd64}
+body.avis-workbench .avis-sensor-legend .danger{background:#ff7c82}
+body.avis-workbench .avis-sensor-legend .unknown{background:#72869a}
+body.avis-workbench .avis-distance-card{padding:11px 12px;border-radius:10px;background:linear-gradient(145deg,#1b2b3b,#15212e);box-shadow:inset 0 1px #ffffff08}
+body.avis-workbench .avis-distance-card .eyebrow{font-size:9px;letter-spacing:.12em}
+body.avis-workbench .avis-distance-card .range-number{font:750 21px ui-monospace,Consolas,monospace;color:#e7f4ff;margin-top:4px}
+body.avis-workbench .avis-distance-card .range-track{height:4px;margin-top:9px;background:#0b141e}
+body.avis-workbench .avis-distance-card .unit:last-child{display:block;margin-top:6px;min-height:15px;font-size:10px;color:#8fa5b8}
+body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28px;margin:9px 1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px}
+@media(max-width:1250px) and (min-width:1021px){
+ body.avis-workbench .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr) minmax(360px,410px)}
+ body.avis-workbench .sim-top{gap:7px}
+ body.avis-workbench .sim-brand{font-size:12px}
+ body.avis-workbench .sim-top>.pill{display:none}
+ body.avis-workbench .sim-run-feedback{display:none}
+}
+@media(max-width:1020px){
+ body.avis-workbench{height:auto;min-height:100dvh;overflow:auto;display:block}
+ body.avis-workbench .sim-top{position:sticky;top:0;height:auto;min-height:56px;flex-wrap:wrap}
+ body.avis-workbench .sim-layout.avis-layout{height:auto;min-height:0;max-height:none;overflow:visible;grid-template-columns:minmax(0,1fr)}
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child,body.avis-workbench .sim-layout.avis-layout>.stack:last-child{height:auto;min-height:0;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout .sim-settings-panel{height:min(76vh,760px);min-height:420px;max-height:760px}
+ body.avis-workbench .camera-status-meta{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:650px){
+ body.avis-workbench .sim-run-controls-top{order:5;width:100%;justify-content:flex-end}
+ body.avis-workbench .avis-sensor-canvas{height:280px}
+ body.avis-workbench .avis-sensor-legend{gap:9px}
+ body.avis-workbench .sensor-columns{gap:6px}
+ body.avis-workbench .avis-distance-card{padding:8px}
+ body.avis-workbench .avis-distance-card .range-number{font-size:17px}
+}
+@media(max-width:520px){
+ body.avis-workbench .sim-run-controls-top .carla-run-state{margin-right:auto}
+ body.avis-workbench .sim-run-feedback{display:none}
+ body.avis-workbench .avis-sensor-canvas{height:250px}
+ body.avis-workbench .avis-sensor-panel .sensor-columns{grid-template-columns:repeat(3,minmax(0,1fr))}
+ body.avis-workbench .avis-distance-card .eyebrow{font-size:8px}
+ body.avis-workbench .avis-distance-card .range-number{font-size:15px}
+}
+
 </style>
 {% if auth_enabled %}
 <script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
 {% endif %}
 </head>
-<body>
+<body class="{% if caps.simulator_backend == 'avis' %}avis-workbench{% endif %}">
 <header class="sim-top">
   <div class="sim-brand">SDR / SIMULATOR WORKBENCH</div>
   <span class="sim-mode">{{ mode|upper }}</span>
@@ -153,7 +229,15 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <span class="pill">{{ caps.vision_profile|upper }} VISION</span>
   <span class="sim-spacer"></span>
   <div class="sim-status"><span id="connection-led" class="led"></span><span id="connection-label">Connecting…</span></div>
-  <button id="settings-search-open" type="button" title="Search settings · Ctrl+K">⌕ Settings <kbd>Ctrl K</kbd></button>
+  {% if caps.simulator_backend == 'avis' %}
+  <button id="settings-search-open" class="topbar-search" type="button" title="Search settings · Ctrl+K" aria-controls="settings-search">⌕ Search <kbd>Ctrl K</kbd></button>
+  <div class="sim-run-controls sim-run-controls-top" role="group" aria-label="AVIS autonomous run controls">
+    <span class="pill carla-run-state stopped" id="carla-run-state">STOPPED</span>
+    <button type="button" id="carla-run-start" class="carla-run-start" disabled>▶ START</button>
+    <button type="button" id="carla-run-stop" class="carla-run-stop" disabled>■ STOP</button>
+    <span id="carla-run-message" class="sim-run-feedback" role="status" aria-live="polite"></span>
+  </div>
+  {% endif %}
   {% if caps.supports_range_sensors %}<button id="avis-reconnect" type="button">↻ Reconnect AVIS</button>{% endif %}
   <button id="refresh" type="button">Refresh</button>
 </header>
@@ -161,11 +245,16 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
-      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><div id="camera-stale-overlay" class="camera-stale-overlay section-hide" role="status" aria-live="polite"></div><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
+      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
       <div class="panel-content">
-        <div id="runtime-error" class="status-message section-hide"></div>
-        <div id="camera-feed-status" class="msg" role="status">Connecting to camera frame endpoint…</div>
-        <div id="camera-diagnostic" class="status-message" role="status">Checking {{ caps.simulator_backend|upper }} camera…</div>
+        <div class="camera-status-stack" aria-live="polite">
+          <div id="runtime-error" class="runtime-error-slot" role="alert" aria-live="assertive"></div>
+          <div id="camera-feed-status" class="msg camera-feed-status" role="status">Connecting to camera frame endpoint…</div>
+          <div class="camera-status-meta">
+            <div id="camera-diagnostic" class="status-message camera-diagnostic" role="status">Checking {{ caps.simulator_backend|upper }} camera…</div>
+            <div id="camera-performance" class="camera-performance" role="status">Loop — FPS · Detection — ms · Render — ms</div>
+          </div>
+        </div>
         <div class="metrics">
           <div class="metric"><div class="eyebrow">Lane estimate</div><div id="lane-value" class="value">—</div><div id="lane-valid" class="unit">Waiting for image</div></div>
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
@@ -203,16 +292,25 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
     </section>
 
     <section class="panel avis-sensor-panel {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="range-panel">
-      <div class="panel-head"><div><h2>AVIS Engine · Top-down range sensors</h2><p>Live distance rays and numeric readings · schematic layout, not a fabricated point cloud</p></div><span class="sim-spacer"></span><span id="avis-sensor-state" class="pill">Waiting for sensors</span><button type="button" id="avis-sensor-expand">Expand view</button></div>
+      <div class="panel-head">
+        <div><h2>AVIS · Range sensors</h2><p>Measured distances · left, front and right</p></div>
+        <span class="sim-spacer"></span><span id="avis-sensor-state" class="pill">Waiting for sensors</span>
+        <button type="button" id="avis-sensor-expand">Expand</button>
+      </div>
       <div class="panel-content">
-        <canvas id="avis-sensor-view" class="avis-sensor-canvas" width="900" height="420" aria-label="Top-down diagram of AVIS left, front and right distance sensors"></canvas>
-        <div class="avis-legend"><span><i class="safe"></i>Clear range</span><span><i class="near"></i>Approaching stop threshold</span><span><i class="danger"></i>Front brake threshold reached</span><span><i class="unknown"></i>No valid reading</span><span id="avis-angle-hint">Side sensor angle: —</span></div>
-        <div class="sensor-columns">
-          <div class="avis-distance-card"><div class="eyebrow">Left</div><div id="range-left" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-left" class="range-fill"></div></div><div id="range-left-state" class="unit">Waiting</div></div>
-          <div class="avis-distance-card"><div class="eyebrow">Front / middle</div><div id="range-front" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-front" class="range-fill"></div></div><div id="range-front-state" class="unit">Waiting</div></div>
-          <div class="avis-distance-card"><div class="eyebrow">Right</div><div id="range-right" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-right" class="range-fill"></div></div><div id="range-right-state" class="unit">Waiting</div></div>
+        <div class="avis-sensor-stage">
+          <div class="avis-sensor-stage-head"><span>TOP-DOWN SENSOR VIEW</span><span id="avis-angle-hint">SIDE ANGLE · —</span></div>
+          <canvas id="avis-sensor-view" class="avis-sensor-canvas" width="900" height="420" aria-label="Top-down diagram of AVIS left, front and right distance sensors"></canvas>
         </div>
-        <p class="note" id="avis-sensor-note">The diagram shows only AVIS's actual left, middle/front and right distance values. A missing/invalid value is shown as unknown, never as zero or as a detected object.</p>
+        <div class="avis-sensor-legend">
+          <span><i class="safe"></i>Clear</span><span><i class="near"></i>Near threshold</span><span><i class="danger"></i>Stop threshold</span><span><i class="unknown"></i>No reading</span>
+        </div>
+        <div class="sensor-columns">
+          <div class="avis-distance-card"><div class="eyebrow">LEFT</div><div id="range-left" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-left" class="range-fill"></div></div><div id="range-left-state" class="unit">Waiting</div></div>
+          <div class="avis-distance-card"><div class="eyebrow">FRONT / MIDDLE</div><div id="range-front" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-front" class="range-fill"></div></div><div id="range-front-state" class="unit">Waiting</div></div>
+          <div class="avis-distance-card"><div class="eyebrow">RIGHT</div><div id="range-right" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-right" class="range-fill"></div></div><div id="range-right-state" class="unit">Waiting</div></div>
+        </div>
+        <p class="note avis-sensor-note" id="avis-sensor-note">Waiting for the latest AVIS sensor sample.</p>
       </div>
     </section>
 
@@ -234,6 +332,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   </div>
 
   <div class="stack">
+    {% if caps.simulator_backend != 'avis' %}
     <section class="panel carla-run-panel" id="carla-run-panel">
       <div class="panel-head"><div><h2>Autonomous run control</h2><p>{{ caps.simulator_backend|upper }} starts STOPPED after launch, reset or reconnect. Press Start Run to arm autonomous motion.</p></div><span class="sim-spacer"></span><span class="pill carla-run-state stopped" id="carla-run-state">STOPPED</span></div>
       <div class="panel-content">
@@ -245,6 +344,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
         <p class="carla-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake disarms it immediately. Reconnection never resumes motion automatically.</p>
       </div>
     </section>
+    {% endif %}
     {% if caps.simulator_backend == 'carla' %}
     <section class="panel" id="carla-scene-panel">
       <div class="panel-head">
@@ -282,7 +382,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
     </section>
     {% endif %}
     <section class="panel sim-settings-panel" id="sim-settings-panel">
-      <div class="panel-head"><div><h2>Mode-aware editor</h2><p id="editor-description">Settings are isolated in a mode-specific file.</p></div></div>
+      <div class="panel-head"><div><h2>Settings</h2><p id="editor-description">{{ mode|upper }} profile · live simulator configuration</p></div></div>
       <div class="panel-content">
         <div id="save-message" class="msg" role="status"></div>
         <form id="settings-form">
@@ -467,20 +567,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel-head"><div><h2>Feature map</h2><p>Options separated by shared vision, active mode and simulator capability</p></div></div>
-      <div class="panel-content"><div class="options" id="option-groups">
-        {% for group in caps.option_groups %}
-        <div class="option-group"><h4>{{ group.title }}</h4><p>{{ group.description }}</p></div>
-        {% endfor %}
-      </div></div>
-    </section>
-    <section class="panel"><div class="panel-head"><div><h2>Integration notes</h2><p>What the adapter abstracts away</p></div></div><div class="panel-content">
-      <p class="note"><strong>Vision:</strong> {{ caps.vision_profile|capitalize }} image processing is reused directly; the camera source changes, not the algorithm.</p>
-      <p class="note"><strong>Actuators:</strong> there is no hardware serial channel here. Structured simulator actuator events are shown in the virtual console. {% if caps.simulator_backend == 'avis' %}Steering uses the legacy signed −100..100 protocol; speed uses 0..100 percent.{% endif %}</p>
-      <p class="note"><strong>Encoder:</strong> pulse count/distance are estimated from simulator movement, not treated as a hardware-grade measurement.</p>
-      <p class="note"><strong>Restart:</strong> {% if caps.simulator_backend == 'avis' %}Host, port and TCP timeout are saved in this AVIS mode's profile; reconnect the AVIS TCP session after changing connection details.{% else %}Host/port, vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.{% endif %}</p>
-    </div></section>
+
   </div>
 
 {% if caps.simulator_backend == 'carla' %}
@@ -677,21 +764,32 @@ function bindSettingsSearch(){
       if(link)link.classList.toggle("search-hidden",!!query&&(!available||!match));
     });
     clear.disabled=!query;
-    summary.textContent=query
-      ? (visible+" of "+total+" sections match")
-      : ("All "+total+" sections visible");
+    summary.textContent=query?(visible+" of "+total+" sections match"):("All "+total+" sections visible");
     if(query&&visible===0)summary.textContent="No matching settings sections";
   }
+  function focusSearch(){
+    const content=$("sim-settings-panel")&&$("sim-settings-panel").querySelector(".panel-content");
+    if(content)content.scrollTop=0;
+    input.focus({preventScroll:true});
+    input.select();
+  }
   input.addEventListener("input",apply);
-  clear.addEventListener("click",function(){input.value="";apply();input.focus();});
+  clear.addEventListener("click",function(){input.value="";apply();focusSearch();});
   input.addEventListener("keydown",function(event){
-    if(event.key==="Escape"){input.value="";apply();input.blur();}
+    if(event.key==="Escape"){event.preventDefault();input.value="";apply();input.blur();}
   });
-  document.addEventListener("keydown",function(event){
-    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){
-      event.preventDefault();input.focus();input.select();
+  const launcher=$("settings-search-open");
+  if(launcher)launcher.addEventListener("click",focusSearch);
+  // Capture before browser/editor shortcuts so Ctrl/Cmd+K consistently opens AVIS search.
+  window.addEventListener("keydown",function(event){
+    if((event.ctrlKey||event.metaKey)&&!event.altKey&&
+       (String(event.key||"").toLowerCase()==="k"||event.code==="KeyK")){
+      event.preventDefault();
+      event.stopPropagation();
+      if(typeof event.stopImmediatePropagation==="function")event.stopImmediatePropagation();
+      focusSearch();
     }
-  });
+  },true);
   apply();
 }
 bindSettingsSearch();
@@ -762,7 +860,7 @@ function fitSimulatorCameraFrame(){
 }
 function setCameraFeedStatus(message,kind){
   const el=$("camera-feed-status");if(!el)return;
-  el.textContent=message||"";el.className="msg"+(kind==="bad"?" bad":kind==="good"?" good":"");
+  el.textContent=message||"";el.className="msg camera-feed-status"+(kind==="bad"?" bad":kind==="good"?" good":"");
 }
 async function refreshSimulatorCameraFrame(){
   if(cameraFramePollActive)return;
@@ -786,7 +884,7 @@ async function refreshSimulatorCameraFrame(){
     camera.src=cameraObjectUrl;
     if(previous)URL.revokeObjectURL(previous);
     lastCameraFrameSequence=sequence;
-    setCameraFeedStatus("Camera feed connected"+(sequence!==null?" · frame "+sequence:"")+".","good");
+    setCameraFeedStatus("LIVE · frame "+(sequence!==null?sequence:"updated"),"good");
   }catch(error){
     setCameraFeedStatus("Camera feed request failed: "+(error.message||String(error)),"bad");
   }finally{cameraFramePollActive=false;}
@@ -1056,57 +1154,102 @@ function avisRangeColor(value,threshold,key){
 function drawAvisSensors(ranges,stale){
   const canvas=$("avis-sensor-view");if(!canvas)return;
   const ctx=canvas.getContext("2d"),w=canvas.width,h=canvas.height;
-  ctx.clearRect(0,0,w,h);ctx.fillStyle="#081018";ctx.fillRect(0,0,w,h);
-  const maxRange=1500,scale=Math.min((w-80)/(maxRange*2),(h-100)/maxRange);
-  const configuredAngle=Number(($("avis-angle")||{}).value),cx=w/2,carY=h-78,frontY=carY-44,sideAngle=Number.isFinite(configuredAngle)?Math.max(0,Math.min(90,configuredAngle)):30;
+  ctx.clearRect(0,0,w,h);
+  const background=ctx.createLinearGradient(0,0,w,h);
+  background.addColorStop(0,"#102131");background.addColorStop(.52,"#0b1723");background.addColorStop(1,"#09121b");
+  ctx.fillStyle=background;ctx.fillRect(0,0,w,h);
+  // Low-contrast technical grid.
+  ctx.strokeStyle="#213448";ctx.lineWidth=1;
+  for(let x=18;x<w;x+=36){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
+  for(let y=18;y<h;y+=36){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+
+  const maxRange=1500,cx=w/2,carY=h*.79,frontY=carY-76;
+  const scale=Math.min((w*.40)/maxRange,(h*.60)/maxRange);
+  const configuredAngle=Number(($("avis-angle")||{}).value);
+  const sideAngle=Number.isFinite(configuredAngle)?Math.max(0,Math.min(90,configuredAngle)):30;
   const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
-  ctx.strokeStyle="#1d2b39";ctx.lineWidth=1;
-  for(let x=20;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();}
-  for(let y=20;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+
+  // Semicircular distance bands use the same 0–1500 cm scale as the sensor values.
   for(let distance=250;distance<=maxRange;distance+=250){
-    ctx.beginPath();ctx.arc(cx,frontY,distance*scale,Math.PI,Math.PI*2);
-    ctx.strokeStyle="#314457";ctx.stroke();
-    ctx.fillStyle="#8298ac";ctx.font="10px ui-monospace,monospace";
-    ctx.fillText(distance+" cm",cx+5,frontY-distance*scale+12);
+    const radius=distance*scale;
+    ctx.beginPath();ctx.arc(cx,frontY,radius,Math.PI,Math.PI*2);
+    ctx.strokeStyle=stale?"#2b3947":"#294459";ctx.lineWidth=distance===maxRange?1.5:1;
+    ctx.setLineDash(distance===maxRange?[4,5]:[]);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle="#7e98ae";ctx.font="10px ui-monospace,Consolas,monospace";ctx.textAlign="left";
+    ctx.fillText(distance+" cm",cx+7,frontY-radius+13);
   }
-  ctx.fillStyle="#a9c2d7";ctx.font="11px system-ui";ctx.fillText("FRONT ↑",cx+8,13);
-  const sensorDefs=[
-    {key:"left",label:"LEFT",x:cx-18,y:frontY+14,angle:-sideAngle},
-    {key:"front",label:"FRONT",x:cx,y:frontY,angle:0},
-    {key:"right",label:"RIGHT",x:cx+18,y:frontY+14,angle:sideAngle}
+  ctx.fillStyle="#9bb4c9";ctx.font="700 10px ui-monospace,Consolas,monospace";ctx.textAlign="center";
+  ctx.fillText("FRONT  ↑",cx,17);
+
+  const sensors=[
+    {key:"left",label:"LEFT",x:cx-24,y:frontY+4,angle:-sideAngle},
+    {key:"front",label:"FRONT",x:cx,y:frontY-8,angle:0},
+    {key:"right",label:"RIGHT",x:cx+24,y:frontY+4,angle:sideAngle}
   ];
-  sensorDefs.forEach(function(sensor){
+  sensors.forEach(function(sensor){
     const raw=ranges&&ranges[sensor.key]!==undefined?ranges[sensor.key]:null;
     const valid=raw!==null&&raw!==undefined&&Number.isFinite(Number(raw))&&Number(raw)>=0;
-    const distance=valid?Math.min(maxRange,Number(raw)):58;
-    const theta=sensor.angle*Math.PI/180;
-    const dx=Math.sin(theta)*distance*scale;
-    const dy=-Math.cos(theta)*distance*scale;
-    const color=stale?"#7d8b9b":avisRangeColor(raw,threshold,sensor.key);
-    ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=valid?3:2;ctx.setLineDash(valid?[]:[5,5]);
-    ctx.beginPath();ctx.moveTo(sensor.x,sensor.y);ctx.lineTo(sensor.x+dx,sensor.y+dy);ctx.stroke();ctx.setLineDash([]);
-    ctx.beginPath();ctx.arc(sensor.x,sensor.y,5,0,Math.PI*2);ctx.fill();
-    if(valid){ctx.beginPath();ctx.arc(sensor.x+dx,sensor.y+dy,4,0,Math.PI*2);ctx.fill();}
-    const label=valid?((stale?"STALE · ":"")+(Number(raw)>maxRange?">300":numeric(raw,0))+" cm"):"NO ECHO";
-    ctx.font="bold 12px system-ui";ctx.textAlign=sensor.key==="left"?"left":sensor.key==="right"?"right":"center";
-    let labelX=sensor.x+dx+(sensor.key==="left"?8:sensor.key==="right"?-8:0);
-    let labelY=sensor.y+dy-8;
-    if(sensor.key==="front"){labelX=sensor.x+dx+12;labelY=sensor.y+dy+18;ctx.textAlign="left";}
-    labelX=Math.max(8,Math.min(w-8,labelX));labelY=Math.max(16,Math.min(h-10,labelY));
-    ctx.fillStyle=color;ctx.fillText((sensor.label+" · "+label),labelX,labelY);
+    const measured=valid?Number(raw):null;
+    const distance=valid?Math.min(maxRange,measured):95;
+    const theta=sensor.angle*Math.PI/180,spread=5.5*Math.PI/180;
+    const radius=distance*scale,ex=sensor.x+Math.sin(theta)*radius,ey=sensor.y-Math.cos(theta)*radius;
+    let color=stale?"#75889a":avisRangeColor(raw,threshold,sensor.key);
+    // Soft field-of-view cone behind the measurement ray.
+    if(valid){
+      ctx.save();ctx.globalAlpha=stale?.035:.10;ctx.fillStyle=color;ctx.beginPath();
+      ctx.moveTo(sensor.x,sensor.y);ctx.arc(sensor.x,sensor.y,radius,theta-Math.PI/2-spread,theta-Math.PI/2+spread);ctx.closePath();ctx.fill();ctx.restore();
+    }
+    ctx.save();ctx.strokeStyle=color;ctx.lineWidth=valid?2.5:1.6;ctx.setLineDash(valid?[]:[5,5]);
+    ctx.beginPath();ctx.moveTo(sensor.x,sensor.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=color;ctx.beginPath();ctx.arc(sensor.x,sensor.y,4.2,0,Math.PI*2);ctx.fill();
+    if(valid){
+      ctx.beginPath();ctx.arc(ex,ey,4,0,Math.PI*2);ctx.fill();
+      const label=(stale?"STALE · ":"")+(measured>maxRange?">1500":numeric(measured,0))+" cm";
+      ctx.font="700 11px ui-monospace,Consolas,monospace";
+      const width=ctx.measureText(label).width+16;
+      let lx=Math.max(8,Math.min(w-width-8,ex-width/2));
+      let ly=Math.max(28,Math.min(h-22,ey-27));
+      ctx.fillStyle="#08131ee8";ctx.strokeStyle=color;ctx.lineWidth=1;
+      ctx.beginPath();ctx.roundRect(lx,ly,width,21,7);ctx.fill();ctx.stroke();
+      ctx.fillStyle=stale?"#9aabba":color;ctx.textAlign="center";ctx.fillText(label,lx+width/2,ly+14);
+    }else{
+      ctx.font="700 10px ui-monospace,Consolas,monospace";ctx.fillStyle="#8497a8";ctx.textAlign="center";
+      ctx.fillText("NO ECHO",sensor.x+(sensor.key==="left"?-28:sensor.key==="right"?28:0),sensor.y-16);
+    }
     ctx.restore();
   });
-  // A simple top-down vehicle silhouette anchors the three sensor directions.
+
+  // Vehicle silhouette: body, roof glass, tyres, bumpers and lamps.
   ctx.save();ctx.translate(cx,carY);
-  ctx.fillStyle="#152a3b";ctx.strokeStyle="#73c5ff";ctx.lineWidth=2;
-  ctx.beginPath();ctx.moveTo(-25,38);ctx.lineTo(-27,8);ctx.lineTo(-20,-24);ctx.lineTo(-12,-38);
-  ctx.lineTo(12,-38);ctx.lineTo(20,-24);ctx.lineTo(27,8);ctx.lineTo(25,38);ctx.closePath();ctx.fill();ctx.stroke();
-  ctx.fillStyle="#294b63";ctx.strokeStyle="#45657d";ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(-15,-22);ctx.lineTo(-10,-33);ctx.lineTo(10,-33);ctx.lineTo(15,-22);ctx.closePath();ctx.fill();ctx.stroke();
-  ctx.beginPath();ctx.roundRect(-22,9,8,18,3);ctx.roundRect(14,9,8,18,3);ctx.fillStyle="#05090e";ctx.fill();
-  ctx.fillStyle="#d9efff";ctx.font="10px system-ui";ctx.textAlign="center";ctx.fillText("AVIS",0,3);
+  ctx.shadowColor="#000b";ctx.shadowBlur=22;ctx.shadowOffsetY=8;
+  const body=ctx.createLinearGradient(-35,-70,35,70);
+  body.addColorStop(0,"#9bc4dd");body.addColorStop(.22,"#4b7895");body.addColorStop(.58,"#24435a");body.addColorStop(1,"#172b3d");
+  ctx.fillStyle=body;ctx.strokeStyle="#9dd9f2";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-22,66);ctx.quadraticCurveTo(-34,64,-34,48);ctx.lineTo(-31,-35);
+  ctx.quadraticCurveTo(-29,-62,-17,-72);ctx.quadraticCurveTo(0,-78,17,-72);
+  ctx.quadraticCurveTo(29,-62,31,-35);ctx.lineTo(34,48);ctx.quadraticCurveTo(34,64,22,66);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  // Four tyres with subtle highlights.
+  [[-34,-43],[26,-43],[-34,30],[26,30]].forEach(function(point){
+    ctx.fillStyle="#050a10";ctx.strokeStyle="#506b80";ctx.lineWidth=1;
+    ctx.beginPath();ctx.roundRect(point[0],point[1],8,21,3);ctx.fill();ctx.stroke();
+    ctx.fillStyle="#263c4d";ctx.fillRect(point[0]+2,point[1]+3,4,15);
+  });
+  // Panoramic windscreen and rear glass.
+  ctx.fillStyle="#142b3d";ctx.strokeStyle="#80b4d0";ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(-23,-42);ctx.quadraticCurveTo(-20,-55,-13,-58);ctx.lineTo(13,-58);
+  ctx.quadraticCurveTo(20,-55,23,-42);ctx.lineTo(19,-18);ctx.quadraticCurveTo(0,-12,-19,-18);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.fillStyle="#1c3548";ctx.beginPath();ctx.moveTo(-19,5);ctx.lineTo(19,5);ctx.lineTo(17,31);
+  ctx.quadraticCurveTo(0,37,-17,31);ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.strokeStyle="#789db4";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(-19,-9);ctx.lineTo(19,-9);ctx.stroke();
+  // Lamps and front emblem.
+  ctx.fillStyle="#bfeeff";ctx.shadowColor="#80dfff";ctx.shadowBlur=8;
+  ctx.beginPath();ctx.roundRect(-23,-68,10,4,2);ctx.roundRect(13,-68,10,4,2);ctx.fill();
+  ctx.shadowBlur=0;ctx.fillStyle="#d7efff";ctx.font="800 9px system-ui";ctx.textAlign="center";
+  ctx.fillText("AVIS",0,-1);
   ctx.restore();
-  setText("avis-angle-hint","Side angle: ±"+numeric(sideAngle,0)+"°");
+
+  setText("avis-angle-hint","SIDE ANGLE · ±"+numeric(sideAngle,0)+"°");
 }
 function renderRanges(ranges,frameAgeMs){
   const threshold=Math.max(0,Number(($("obstacle-stop-distance")||{}).value)||0);
@@ -1126,16 +1269,16 @@ function renderRanges(ranges,frameAgeMs){
   drawAvisSensors(ranges,stale);
   if(stale){
     setText("avis-sensor-state","Stale · last sample");$("avis-sensor-state").className="pill";
-    setText("avis-sensor-note","Last sensor sample is "+(Number.isFinite(age)?numeric(age,0)+" ms old":"not timestamped")+". Distances remain visible as last-known values, but the diagram is greyed out and must not be treated as live.");
+    setText("avis-sensor-note","STALE SAMPLE · last reading "+(Number.isFinite(age)?numeric(age,0)+" ms ago":"not timestamped")+" · values are shown for reference only.");
   }else if(valid===0){
     setText("avis-sensor-state","No valid readings");$("avis-sensor-state").className="pill";
-    setText("avis-sensor-note","AVIS returned no usable distance values in this sample. Unknown readings are not interpreted as obstacles.");
+    setText("avis-sensor-note","NO VALID READINGS · unavailable sensors remain marked unknown, never treated as zero.");
   }else if(stopCount){
     setText("avis-sensor-state","Front at threshold");$("avis-sensor-state").className="pill";
-    setText("avis-sensor-note","The FRONT sensor is at/below the configured forward-stop threshold. Side sensors remain monitoring-only in the current autonomous stop rule.");
+    setText("avis-sensor-note","FRONT STOP THRESHOLD · front reading is at or below the configured brake distance.");
   }else{
     setText("avis-sensor-state",valid+"/3 sensors live");$("avis-sensor-state").className="pill live";
-    setText("avis-sensor-note","Nearest valid reading: "+numeric(nearest,0)+" cm. The drawing is schematic: sensor rays communicate measured range, not the position or shape of an object.");
+    setText("avis-sensor-note","LIVE SAMPLE · nearest measured range "+numeric(nearest,0)+" cm · rays indicate range, not object shape.");
   }
 }
 function renderEvents(events){
@@ -1185,17 +1328,6 @@ async function poll(){
     const imageInfo=d.image||{};
     const sensorInfo=d.camera_sensor||{};
     if(caps.simulator_backend==="avis"){
-      const overlay=$("camera-stale-overlay");
-      const responseInfo=sensorInfo.response||{};
-      const age=Number(sensorInfo.last_frame_age_ms);
-      const stale=responseInfo.image_decoded!==true
-        ||(sensorInfo.frame_count>0&&Number.isFinite(age)&&age>1200);
-      if(overlay){
-        overlay.classList.toggle("section-hide",!stale);
-        overlay.textContent=sensorInfo.frame_count>0
-          ?"STALE AVIS FRAME · last decoded frame "+numeric(age,0)+" ms ago · waiting for a new image"
-          :"NO FRESH AVIS IMAGE · displayed picture is not confirmed as a new simulator frame";
-      }
     }
     if($("camera-image-state")){
       const cameraText=imageInfo.width?((imageInfo.looks_black?"BLACK FRAME · ":"LIVE · ")+imageInfo.width+"×"+imageInfo.height+" · "+numeric(imageInfo.mean_intensity,1)+" avg · "+String(imageInfo.source||"camera").toUpperCase()):"Waiting for camera frame";
@@ -1203,46 +1335,54 @@ async function poll(){
       $("camera-image-state").className="pill"+(imageInfo.looks_black?" error":" live");
     }
     const cameraDiagnostic=$("camera-diagnostic");
+    const processing=d.processing||{};
     if(cameraDiagnostic){
       let detail="";
       let diagnosticError=false;
       if(caps.simulator_backend==="avis"){
         const responseInfo=sensorInfo.response||{};
+        const frameCount=Number(sensorInfo.frame_count||0);
+        const frameAge=Number(sensorInfo.last_frame_age_ms);
+        const ageKnown=sensorInfo.last_frame_age_ms!==null&&sensorInfo.last_frame_age_ms!==undefined&&Number.isFinite(frameAge);
         if(!sensorInfo.connected){
-          detail="AVIS TCP disconnected. Reconnect is retrying; autonomous motion remains disarmed.";
+          detail="AVIS LINK OFFLINE · reconnecting · autonomous motion disarmed";
           diagnosticError=true;
-        }else if(responseInfo.image_decoded===true){
-          detail="AVIS camera decoded "+String(sensorInfo.frame_count||0)+" frames · last frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago.";
-          if(imageInfo.looks_black){detail+=" The latest decoded image is black.";diagnosticError=true;}
+        }else if(responseInfo.image_decoded===true&&!imageInfo.looks_black){
+          detail="CAMERA LIVE · "+frameCount.toLocaleString()+" frames · "+(ageKnown?numeric(frameAge,0)+" ms ago":"frame received");
+        }else if(imageInfo.looks_black){
+          detail="CAMERA IMAGE IS BLACK · check the simulator camera output";
+          diagnosticError=true;
+        }else if(frameCount>0){
+          detail="WAITING FOR A VALID FRAME · last good frame "+(ageKnown?numeric(frameAge,0)+" ms ago":"age unknown");
+          diagnosticError=ageKnown&&frameAge>1500;
         }else{
-          detail="AVIS TCP connected, but the latest response contains no decoded image.";
-          detail+=" Response bytes: "+String(responseInfo.response_bytes??"—")+
-            " · image tag: "+String(responseInfo.image_tag===true)+
-            " · sensor tag: "+String(responseInfo.sensor_tag===true)+
-            " · decoded: "+String(responseInfo.image_decoded===true)+".";
-          if(sensorInfo.frame_count>0)detail+=" The dashboard is retaining the last successfully decoded frame on screen ("+numeric(sensorInfo.last_frame_age_ms,0)+" ms old); this response did not contain a fresh frame.";
-          if(sensorInfo.last_error)detail+=" Detail: "+String(sensorInfo.last_error);
+          detail="CONNECTED · waiting for the first decodable camera frame";
           diagnosticError=true;
         }
-        if(sensorInfo.reconnect_attempts)detail+=" Reconnect attempts: "+sensorInfo.reconnect_attempts+".";
+        if(sensorInfo.reconnect_attempts&&!sensorInfo.connected)detail+=" · reconnect attempts "+sensorInfo.reconnect_attempts;
       }else{
-        detail="CARLA camera sensor has not reported a frame yet.";
-        if(sensorInfo.rendering_error){detail="CARLA rendering setup error: "+sensorInfo.rendering_error;diagnosticError=true;}
-        else if(sensorInfo.no_rendering_mode===true){detail="CARLA no_rendering_mode is still enabled; RGB camera rendering is disabled.";diagnosticError=true;}
-        else if(sensorInfo.decode_error){detail="CARLA camera callback could not decode its frame: "+sensorInfo.decode_error;diagnosticError=true;}
-        else if(Number(sensorInfo.callback_count||0)===0&&sensorInfo.sensor_spawned&&sensorInfo.synchronous_mode===true){detail="Camera actor exists, but CARLA is in synchronous mode and no world tick has reached the sensor. This runtime does not take ownership of world.tick().";diagnosticError=true;}
-        else if(Number(sensorInfo.callback_count||0)===0&&sensorInfo.sensor_spawned){detail="Camera actor exists, but its RGB callback has not fired. Check CARLA rendering/server logs and whether the world is advancing.";diagnosticError=true;}
-        else if(Number(sensorInfo.callback_count||0)>0&&imageInfo.looks_black){detail="RGB callbacks are arriving, but the pixels are black. Check the CARLA renderer/GPU and camera mount; no_rendering_mode="+String(sensorInfo.no_rendering_mode)+".";diagnosticError=true;}
-        else if(Number(sensorInfo.callback_count||0)>0)detail="RGB sensor callbacks: "+sensorInfo.callback_count+" · last frame "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago · sequence "+String(sensorInfo.frame_number??"—")+".";
-        if(Number(sensorInfo.callback_count||0)>0)detail+=" Camera "+numeric(sensorInfo.callback_fps,1)+" FPS.";
+        detail="CARLA camera waiting for frames";
+        if(sensorInfo.rendering_error){detail="RENDERER ERROR · "+sensorInfo.rendering_error;diagnosticError=true;}
+        else if(sensorInfo.no_rendering_mode===true){detail="NO-RENDERING MODE · RGB camera output is disabled";diagnosticError=true;}
+        else if(sensorInfo.decode_error){detail="CAMERA DECODE ERROR · "+sensorInfo.decode_error;diagnosticError=true;}
+        else if(Number(sensorInfo.callback_count||0)>0){
+          detail="RGB CAMERA LIVE · "+String(sensorInfo.callback_count)+" callbacks · "+numeric(sensorInfo.last_frame_age_ms,0)+" ms ago";
+        }else if(Number(sensorInfo.callback_count||0)===0&&sensorInfo.sensor_spawned){
+          detail="CAMERA ACTOR READY · waiting for the first RGB callback";
+          diagnosticError=true;
+        }
       }
-      const processing=d.processing||{};
-      if(Number.isFinite(Number(processing.lane_fps)))detail+=" Lane loop "+numeric(processing.lane_fps,1)+" FPS (target "+numeric(processing.target_fps,0)+").";
-      if(Number.isFinite(Number(processing.detection_ms)))detail+=" Detection "+numeric(processing.detection_ms,1)+" ms.";
-      if(Number.isFinite(Number(processing.debug_render_ms)))detail+=" Debug render "+numeric(processing.debug_render_ms,1)+" ms.";
-      if(Number(processing.camera_frames_skipped||0)>0)detail+=" Skipped camera frames "+String(processing.camera_frames_skipped)+".";
       cameraDiagnostic.textContent=detail;
-      cameraDiagnostic.className="status-message"+(diagnosticError?" error":"");
+      cameraDiagnostic.className="status-message camera-diagnostic"+(diagnosticError?" error":"");
+    }
+    const performance=$("camera-performance");
+    if(performance){
+      const perf=[];
+      if(Number.isFinite(Number(processing.lane_fps)))perf.push("LOOP "+numeric(processing.lane_fps,1)+"/"+numeric(processing.target_fps,0)+" FPS");
+      if(Number.isFinite(Number(processing.detection_ms)))perf.push("DETECT "+numeric(processing.detection_ms,1)+" ms");
+      if(Number.isFinite(Number(processing.debug_render_ms)))perf.push("DRAW "+numeric(processing.debug_render_ms,1)+" ms");
+      if(Number(processing.camera_frames_skipped||0)>0)perf.push("SKIPPED "+String(processing.camera_frames_skipped));
+      performance.textContent=perf.length?perf.join("   ·   "):"Loop — FPS   ·   Detect — ms   ·   Draw — ms";
     }
     if($("carla-run-state")){
       const enabled=!!d.run_enabled;
@@ -1262,8 +1402,10 @@ async function poll(){
     setText("encoder-count",String(d.virtual_io.pulses||0));
     setText("encoder-distance",numeric(d.virtual_io.distance_cm,1)+" cm");
     const err=$("runtime-error");
-    if(d.error){err.textContent=d.error;err.classList.remove("section-hide");err.classList.add("error");}
-    else {err.textContent="";err.classList.add("section-hide");}
+    if(err){
+      err.textContent=d.error||"";
+      err.classList.toggle("visible",!!d.error);
+    }
     if(caps.supports_lidar){
       setText("lidar-count",numeric(d.sensors.lidar_point_count,0)+" points");
       setText("lidar-note",d.sensors.lidar_available?"Ray-cast LiDAR active · nearest point "+(d.sensors.lidar_nearest_m===null?"—":numeric(d.sensors.lidar_nearest_m,1)+" m"):"LiDAR has not delivered a packet or is disabled.");
@@ -1273,7 +1415,7 @@ async function poll(){
     renderEvents(d.events||[]);
   }catch(error){
     $("connection-led").className="led error";setText("connection-label","Disconnected / waiting");
-    const box=$("runtime-error");box.textContent=error.message;box.classList.remove("section-hide");
+    const box=$("runtime-error");box.textContent=error.message;box.classList.add("visible");
   }
 }
 $("settings-form").addEventListener("submit",async function(event){
