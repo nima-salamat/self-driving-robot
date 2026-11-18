@@ -32,6 +32,9 @@ class AvisAdapter(SimulatorAdapter):
         self._reconnect_delay_s = 0.5
         self._last_image_stats = {}
         self._missing_image_log_active = False
+        self._missing_image_started_at = None
+        self._missing_image_error_logged = False
+        self._status_log_at = {}
         self._ready_at = 0.0
         self._sensor_angle_applied = False
 
@@ -46,6 +49,13 @@ class AvisAdapter(SimulatorAdapter):
         if not math.isfinite(configured):
             configured = 5.0
         return min(60.0, max(0.1, configured))
+
+    def _log_info_rate_limited(self, key, message, interval_s=30.0):
+        now = time.monotonic()
+        previous = self._status_log_at.get(key)
+        if previous is None or now - previous >= interval_s:
+            logger.info("%s", message)
+            self._status_log_at[key] = now
 
     def connect(self):
         with self._io_lock:
@@ -141,7 +151,10 @@ class AvisAdapter(SimulatorAdapter):
         if not immediate:
             self._reconnect_delay_s = min(5.0, self._reconnect_delay_s * 2.0)
         self._close_transport(car)
-        logger.warning("AVIS reconnect scheduled in %.2fs: %s", delay, self._last_error)
+        self._log_info_rate_limited(
+            "reconnect-scheduled",
+            "AVIS connection lost; scheduling a safe reconnect in %.2fs: %s" % (delay, self._last_error),
+        )
 
     def request_reconnect(self):
         """Force a new TCP socket after the AVIS simulator was reset."""
@@ -168,7 +181,10 @@ class AvisAdapter(SimulatorAdapter):
             self._reconnect_delay_s = min(5.0, self._reconnect_delay_s * 2.0)
             self.connected = False
             self.car = None
-            logger.warning("AVIS reconnect failed; retrying in %.2fs: %s", delay, self._last_error)
+            self._log_info_rate_limited(
+                "reconnect-failed",
+                "AVIS connection attempt failed; retrying in %.2fs: %s" % (delay, self._last_error),
+            )
             return False
 
     def set_sensor_angle(self, angle):
@@ -219,8 +235,16 @@ class AvisAdapter(SimulatorAdapter):
         except Exception as exc:
             self._consecutive_failures += 1
             self._last_error = f"{type(exc).__name__}: {exc}"[:300]
-            logger.warning("AVIS data request failed (%s consecutive): %s", self._consecutive_failures, self._last_error)
+            if self._consecutive_failures == 1:
+                self._log_info_rate_limited(
+                    "data-request-failed",
+                    "AVIS camera request failed; checking the TCP session: " + self._last_error,
+                )
             if self._consecutive_failures >= 2:
+                logger.error(
+                    "AVIS camera request failed twice consecutively; reconnecting: %s",
+                    self._last_error,
+                )
                 self._schedule_reconnect_locked(self._last_error)
             return None
 
@@ -250,22 +274,36 @@ class AvisAdapter(SimulatorAdapter):
                 + ", prefix_hex=" + str(response_info.get("image_payload_prefix_hex", ""))
                 + ", error=" + str(response_info.get("decode_error", "unknown"))[:180]
             )
-            # A missing image tag is not proof that the TCP connection is dead.
-            # Keep the socket alive and request the next sample instead of
-            # entering an endless close/reconnect loop.
-            # Payload lengths/errors fluctuate on every sample; log only the
-            # transition into a missing-frame episode. Diagnostics remain in
-            # camera_diagnostics() without synchronous console I/O each frame.
+            # A missing image is not automatically a dead TCP connection. Keep
+            # the session alive and brake while waiting for a valid camera frame.
+            # Report the transition once at INFO; if decoding remains broken
+            # for several seconds, emit one actionable ERROR (not one warning
+            # per packet). Full, privacy-safe diagnostics remain in the Stream.
+            now = time.monotonic()
             if not self._missing_image_log_active:
-                logger.warning(
-                    "AVIS camera frame unavailable; retaining TCP connection. Latest response: %s",
-                    self._last_error,
+                self._missing_image_started_at = now
+                self._missing_image_error_logged = False
+                logger.info(
+                    "AVIS camera stream has not produced a decodable frame; retaining TCP session and holding the vehicle stopped."
                 )
             self._missing_image_log_active = True
+            outage_age = (
+                max(0.0, now - self._missing_image_started_at)
+                if self._missing_image_started_at is not None else 0.0
+            )
+            if self._missing_images >= 30 and outage_age >= 5.0 and not self._missing_image_error_logged:
+                logger.error(
+                    "AVIS has returned %d consecutive responses without a valid image over %.1fs; "
+                    "the vehicle remains braked. Last response: %s",
+                    self._missing_images, outage_age, self._last_error,
+                )
+                self._missing_image_error_logged = True
             return None
 
         self._missing_images = 0
         self._missing_image_log_active = False
+        self._missing_image_started_at = None
+        self._missing_image_error_logged = False
         self._last_error = ""
 
         image = np.asarray(frame)
@@ -362,6 +400,10 @@ class AvisAdapter(SimulatorAdapter):
                 "reconnect_attempts": int(self._reconnect_attempts),
                 "consecutive_failures": int(self._consecutive_failures),
                 "missing_images": int(self._missing_images),
+                "missing_image_duration_s": (
+                    None if self._missing_image_started_at is None
+                    else round(max(0.0, now - self._missing_image_started_at), 2)
+                ),
                 "last_error": self._last_error or None,
                 "response": dict(getattr(self.car, "last_response_info", {}) or {}) if self.car is not None else {},
             }
@@ -385,7 +427,7 @@ class AvisAdapter(SimulatorAdapter):
                     return True
                 except Exception as exc:
                     self._last_error = f"AVIS stop command failed: {type(exc).__name__}: {exc}"[:300]
-                    logger.warning("%s", self._last_error)
+                    logger.error("%s", self._last_error)
             self._close_transport(car)
             return False
 

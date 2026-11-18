@@ -293,7 +293,7 @@ class SimulationRuntime:
                 try:
                     stopped = bool(stop_vehicle())
                 except Exception:
-                    logger.warning("Explicit AVIS stop command failed; falling back to zero-throttle safety control", exc_info=True)
+                    logger.error("Explicit AVIS stop command failed; falling back to zero-throttle safety control", exc_info=True)
             if stopped:
                 self._last_command = VehicleCommand(
                     steering=0.0, throttle=0.0, brake=1.0,
@@ -305,7 +305,7 @@ class SimulationRuntime:
             else:
                 self._safe_stop(self.backend.upper() + " run stopped; waiting for an explicit Start Run command.")
             self._last_error = None
-            self._record_event("warning", self.backend.upper() + " autonomous run disabled; explicit stop requested.")
+            self._record_event("info", self.backend.upper() + " autonomous run disabled; explicit stop requested.")
         return self._run_enabled
 
     def request_reconnect(self):
@@ -317,7 +317,7 @@ class SimulationRuntime:
         if not callable(callback):
             raise RuntimeError("The active AVIS adapter does not support reconnect requests.")
         result = callback()
-        self._record_event("warning", "AVIS reconnect requested; autonomous run remains STOPPED.")
+        self._record_event("info", "AVIS reconnect requested; autonomous run remains STOPPED.")
         return result
 
     def set_camera_editor_active(self, active):
@@ -330,7 +330,7 @@ class SimulationRuntime:
             self.set_run_enabled(False)
             self._safe_stop("CARLA camera editor is open; holding vehicle stationary.")
             self._last_error = None
-            self._record_event("warning", "Camera placement studio active; CARLA run is disarmed.")
+            self._record_event("info", "Camera placement studio active; CARLA run is disarmed.")
         else:
             self._record_event("info", "Camera placement studio closed; CARLA remains STOPPED until Start Run is pressed.")
 
@@ -345,7 +345,7 @@ class SimulationRuntime:
                 self.set_run_enabled(False)
             self._safe_stop("CARLA scene editor is changing the world, vehicle, or spawn point.")
             self._last_error = None
-            self._record_event("warning", "CARLA scene change started; autonomous throttle is suspended.")
+            self._record_event("info", "CARLA scene change started; autonomous throttle is suspended.")
         else:
             self._record_event("info", "CARLA scene change finished; CARLA remains STOPPED until Start Run is pressed.")
 
@@ -355,14 +355,15 @@ class SimulationRuntime:
         readiness = getattr(self.adapter, "control_ready", None)
         return bool(readiness()) if callable(readiness) else True
 
-    def _safe_stop(self, reason):
-        self._last_error = str(reason)
+    def _safe_stop(self, reason, *, level="warning", set_error=True):
+        if set_error:
+            self._last_error = str(reason)
         now = time.monotonic()
-        # Frame availability can flicker. Keep the event visible, but avoid
-        # synchronous warning I/O on every brief loss/recovery transition.
+        # Expected startup/waiting/STOPPED states remain visible without being
+        # mislabeled as warnings or ordinary runtime errors.
         reason_changed = reason != self._last_safe_stop_reason
         if reason_changed or now - self._last_safe_stop_log_at >= 30.0:
-            self._record_event("warning", reason)
+            self._record_event(level, reason)
             self._last_safe_stop_reason = reason
             self._last_safe_stop_log_at = now
         # Repeated stops are rate-limited, but a new safety reason must issue
@@ -377,8 +378,10 @@ class SimulationRuntime:
         )
         try:
             self.adapter.apply_control(safe)
-        except Exception:
-            logger.debug("Virtual safe-stop command failed", exc_info=True)
+        except Exception as exc:
+            self._last_error = "Virtual safe-stop command failed: " + str(exc)
+            self._record_event("error", self._last_error)
+            logger.error("Virtual safe-stop command failed", exc_info=True)
         self._last_command = safe
 
     def snapshot(self):
@@ -473,35 +476,89 @@ class SimulationRuntime:
 
     def run(self):
         try:
+            connection_retries = 0
+            retry_delay_s = 0.5
+            last_retry_log_at = None
             while not self.shutdown_event.is_set():
                 try:
-                    self.adapter.connect()
+                    connected = self.adapter.connect()
+                    if self.backend == "avis" and connected is False:
+                        detail = getattr(self.adapter, "_last_error", None) or "connection refused"
+                        raise ConnectionError(str(detail))
                     break
                 except Exception as exc:
                     if self.backend != "avis":
                         raise
                     self._last_error = f"{type(exc).__name__}: {exc}"
-                    self._record_event("warning", "AVIS is not available yet; retrying connection: " + str(exc))
-                    logger.warning("AVIS initial connection failed; retrying", exc_info=True)
-                    self.shutdown_event.wait(1.0)
+                    message = "AVIS Engine is not available yet; retrying with backoff: " + str(exc)
+                    self._record_event("info", message, log=False)
+                    now = time.monotonic()
+                    # A simulator that is still starting is a normal transient
+                    # condition. Keep one concise status line, never a traceback
+                    # for each retry; the Stream retains the latest detail.
+                    if last_retry_log_at is None or now - last_retry_log_at >= 30.0:
+                        logger.info("%s", message)
+                        last_retry_log_at = now
+                    connection_retries += 1
+                    if self.shutdown_event.wait(retry_delay_s):
+                        return
+                    retry_delay_s = min(5.0, retry_delay_s * 2.0)
             if self.shutdown_event.is_set():
                 return
+            self._last_error = None
             self._start_visualization_worker()
             self._started_at = time.monotonic()
             self._stop_event_active = False
-            self._record_event("info", f"Connected {self.backend}; {self.vision_profile} vision processor loaded.")
-            self._safe_stop(self.backend.upper() + " connected in STOPPED mode; press Start Run to enable autonomy.")
+            connected_message = f"Connected {self.backend}; {self.vision_profile} vision processor loaded."
+            if connection_retries:
+                connected_message += f" (after {connection_retries} connection retries)"
+            self._record_event("info", connected_message)
+            self._safe_stop(
+                self.backend.upper() + " connected in STOPPED mode; press Start Run to enable autonomy.",
+                level="info", set_error=False,
+            )
             while not self.shutdown_event.is_set():
                 frame = self.adapter.read(timeout=0.25)
                 now = time.monotonic()
                 if frame is None:
-                    if self.backend == "avis" and not bool(getattr(self.adapter, "connected", False)):
-                        if self._run_enabled:
-                            self._run_enabled = False
-                            self._record_event("warning", "AVIS link lost; autonomy disarmed. Press Start after camera frames return.")
-                        self._safe_stop("AVIS camera link is reconnecting; vehicle braked and run disarmed.")
-                    elif self.backend == "avis":
-                        self._safe_stop("AVIS TCP connected, but no fresh image was present in the latest response; braking while waiting for the next image.")
+                    if self.backend == "avis":
+                        camera_diag = {}
+                        camera_diag_fn = getattr(self.adapter, "camera_diagnostics", None)
+                        if callable(camera_diag_fn):
+                            try:
+                                camera_diag = camera_diag_fn() or {}
+                            except Exception:
+                                logger.debug("Could not read AVIS camera diagnostics", exc_info=True)
+                        adapter_error = camera_diag.get("last_error")
+                        if adapter_error:
+                            self._last_error = str(adapter_error)
+                        elif bool(getattr(self.adapter, "connected", False)):
+                            self._last_error = None
+
+                        if not bool(getattr(self.adapter, "connected", False)):
+                            if self._run_enabled:
+                                self._run_enabled = False
+                                self._record_event(
+                                    "info",
+                                    "AVIS link lost; autonomy disarmed. Press Start after camera frames return.",
+                                )
+                            stop_reason = "AVIS camera link is reconnecting; vehicle braked and run disarmed."
+                        else:
+                            stop_reason = (
+                                "AVIS TCP is connected but no decodable camera frame is available; "
+                                "holding the vehicle stopped while waiting for a valid frame."
+                            )
+                            missing_count = int(camera_diag.get("missing_images", 0) or 0)
+                            missing_age = float(camera_diag.get("missing_image_duration_s") or 0.0)
+                            if self._run_enabled and missing_count >= 30 and missing_age >= 5.0:
+                                self._run_enabled = False
+                                self._record_event(
+                                    "error",
+                                    "AVIS camera stream stayed unavailable for at least 5 seconds; "
+                                    "autonomy was disarmed and will require an explicit Start Run.",
+                                    log=False,
+                                )
+                        self._safe_stop(stop_reason, level="info", set_error=False)
                     else:
                         self._safe_stop("No fresh simulator camera frame; braking until frames resume.")
                     self.shutdown_event.wait(0.05)
@@ -634,7 +691,10 @@ class SimulationRuntime:
         finally:
             self._started_at = None
             self._stop_visualization_worker()
-            self._safe_stop("Simulation runtime stopped; virtual vehicle commanded to brake.")
+            self._safe_stop(
+                "Simulation runtime stopped; virtual vehicle commanded to brake.",
+                level="info", set_error=False,
+            )
             try:
                 self.adapter.close()
             finally:

@@ -8,6 +8,7 @@ import base64
 import time
 import socket
 import zlib
+import logging
 import numpy as np
 import avisengine_utils as utils
 
@@ -15,7 +16,10 @@ __author__ = "Amirmohammad Zarif"
 __email__ = "amir@avisengine.com"
 
 
+logger = logging.getLogger(__name__)
+
 _MAX_AVIS_DECOMPRESSED_BYTES = 64 * 1024 * 1024
+_MAX_AVIS_RESPONSE_BYTES = _MAX_AVIS_DECOMPRESSED_BYTES + 8 * 1024 * 1024
 
 
 def _is_zlib_stream(payload):
@@ -245,37 +249,37 @@ class Car():
         try:
             sock.settimeout(float(getattr(self, "timeout", 5.0)))
             sock.connect((server, int(port)))
-            print("connected to ", server, port)
             return True
-        except OSError:
+        except OSError as exc:
             try:
                 sock.close()
             finally:
                 if self.sock is sock:
                     self.sock = None
-            print("Failed to connect to ", server, port)
+            logger.debug("AVIS Engine connection to %s:%s failed: %s", server, port, exc)
             return False
 
   
     def recvall(self, socket):
-        '''
-        Function to receive all the data chunks
-        '''
-        BUFFER_SIZE = 131072  # Increased buffer size for better performance
-        data = bytearray()  # Use a bytearray for better performance
+        """Read one bounded AVIS response without assuming its payload is text."""
+        buffer_size = 131072
+        data = bytearray()
 
         while True:
-            part = socket.recv(BUFFER_SIZE)
+            part = socket.recv(buffer_size)
             if not part:
                 raise ConnectionError("AVIS Engine closed before the <EOF> marker")
             data.extend(part)
-
-            # Use KMP search to find the <EOF>, KMPSearch() returns -1 if the pattern was not found
-            # It is 9 times faster than the simple python search
-            if utils.KMPSearch(b"<EOF>", data) > -1:  # Convert "<EOF>" to bytes              
+            if len(data) > _MAX_AVIS_RESPONSE_BYTES:
+                raise ValueError(
+                    "AVIS response exceeded the {} MiB safety limit".format(
+                        _MAX_AVIS_RESPONSE_BYTES // (1024 * 1024)
+                    )
+                )
+            if utils.KMPSearch(b"<EOF>", data) > -1:
                 break
 
-        return data.decode("utf-8")
+        return bytes(data)
 
         
     def setSteering(self,steering):
@@ -338,32 +342,36 @@ class Car():
         self.sock.sendall(self.data_str.encode("utf-8"))
 
         receive = self.recvall(self.sock)
+        if isinstance(receive, str):
+            receive = receive.encode("utf-8", errors="replace")
+        else:
+            receive = bytes(receive)
         self.last_response_at = time.monotonic()
-        image_match = re.search(r"<image>(.*?)</image>", receive, flags=re.IGNORECASE | re.DOTALL)
-        sensor_match = re.search(r"<sensor>(.*?)</sensor>", receive, flags=re.IGNORECASE | re.DOTALL)
-        speed_match = re.search(r"<speed>(.*?)</speed>", receive, flags=re.IGNORECASE | re.DOTALL)
+        image_match = re.search(rb"<image>(.*?)</image>", receive, flags=re.IGNORECASE | re.DOTALL)
+        sensor_match = re.search(rb"<sensor>(.*?)</sensor>", receive, flags=re.IGNORECASE | re.DOTALL)
+        speed_match = re.search(rb"<speed>(.*?)</speed>", receive, flags=re.IGNORECASE | re.DOTALL)
 
         info = {
-            "response_bytes": len(receive.encode("utf-8", errors="replace")),
+            "response_bytes": len(receive),
             "image_tag": image_match is not None,
             "sensor_tag": sensor_match is not None,
             "speed_tag": speed_match is not None,
             "image_decoded": False,
         }
 
-        # AVIS servers use more than one response format. Newer versions wrap
-        # camera data in <image> tags; legacy versions send a leading Base64
-        # image followed by <sensor>/<speed>/<EOF> metadata. Decode the actual
-        # supported image format rather than assuming every frame is a tagged
-        # JPEG. OpenCV's decoder is the final authority; telemetry-like Base64
-        # is not promoted unless it contains a real decodable image.
+        # Parse the protocol as bytes. Camera payloads may be binary; decoding
+        # the whole TCP response as UTF-8 can corrupt a valid frame or raise
+        # UnicodeDecodeError before the image decoder can inspect it.
         image_bytes = None
         decoded = None
         payload_format = "tagged-base64" if image_match is not None else None
-        encoded_payload = image_match.group(1) if image_match is not None else ""
+        encoded_payload = image_match.group(1) if image_match is not None else b""
 
         if image_match is None:
-            bare_match = re.match(r"\s*([A-Za-z0-9+/=_-]+(?:[ \t\r\n]*[A-Za-z0-9+/=_-]+)*)", receive)
+            bare_match = re.match(
+                rb"\s*([A-Za-z0-9+/=_-]+(?:[ \t\r\n]*[A-Za-z0-9+/=_-]+)*)",
+                receive,
+            )
             if bare_match is not None:
                 encoded_payload = bare_match.group(1)
                 payload_format = "leading-base64"
@@ -372,16 +380,32 @@ class Car():
         decode_info = {}
         if payload_format is not None:
             try:
-                encoded = re.sub(r"\s+", "", encoded_payload)
-                encoded = encoded.rstrip("=")
+                encoded = re.sub(rb"\s+", b"", encoded_payload).rstrip(b"=")
                 if len(encoded) % 4 == 1:
                     raise ValueError("invalid Base64 length")
-                encoded += "=" * ((-len(encoded)) % 4)
+                encoded += b"=" * ((-len(encoded)) % 4)
                 candidate = base64.b64decode(encoded, altchars=b"-_", validate=True)
                 decoded, image_bytes, decode_info, decode_failure = _decode_avis_image_payload(candidate)
                 info.update(decode_info)
             except (ValueError, base64.binascii.Error) as exc:
                 decode_failure = "Base64 image payload could not be decoded: " + str(exc)
+
+        # Some AVIS builds return encoded image bytes directly rather than
+        # Base64 text. Accept only a fully validated image signature; arbitrary
+        # binary telemetry must never be passed to OpenCV as though it were a frame.
+        if decoded is None:
+            raw_payload = image_match.group(1) if image_match is not None else receive
+            raw_frame, raw_bytes, raw_info, raw_error = _decode_avis_image_payload(raw_payload)
+            if raw_frame is not None:
+                decoded = raw_frame
+                image_bytes = raw_bytes
+                decode_info = raw_info
+                payload_format = "tagged-binary" if image_match is not None else "raw-binary"
+                info.update(decode_info)
+            elif payload_format is None:
+                decode_info = raw_info
+                decode_failure = raw_error
+                info.update(decode_info)
 
         if decoded is not None:
             self.image = decoded
@@ -403,10 +427,10 @@ class Car():
         elif payload_format == "leading-base64":
             info["decode_error"] = decode_failure or "Leading Base64 payload did not contain a decodable image"
         else:
-            info["decode_error"] = "AVIS response contained no <image> tag or leading Base64 image payload"
+            info["decode_error"] = decode_failure or "AVIS response contained no recognized image payload"
 
         if sensor_match is not None:
-            sensor_values = re.findall(r"-?\d+", sensor_match.group(1))
+            sensor_values = re.findall(rb"-?\d+", sensor_match.group(1))
             self.sensors = list(map(int, sensor_values))
         else:
             self.sensors = [1500, 1500, 1500]
@@ -420,11 +444,11 @@ class Car():
         else:
             self.current_speed = 0
 
-        # Do not include the base64 image in logs or diagnostics.
+        # Do not include encoded frame bytes in logs or diagnostics.
         if image_match is None:
             prefix = receive[:180].strip()
             info["response_prefix_kind"] = (
-                "base64-like" if re.fullmatch(r"[-A-Za-z0-9+/=_\s]+", prefix)
+                "base64-like" if re.fullmatch(rb"[-A-Za-z0-9+/=_\s]+", prefix)
                 else "mixed-protocol-data" if prefix else "empty"
             )
         self.last_response_info = info

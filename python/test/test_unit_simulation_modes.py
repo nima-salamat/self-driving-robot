@@ -229,6 +229,50 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertIn("Unsupported AVIS image payload signature", car.last_response_info["decode_error"])
         car.sock = None
 
+    def test_get_data_decodes_raw_binary_jpeg_without_utf8_conversion(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((12, 16, 3), 127, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        payload = (
+            b"\x00\xffAVIS" + encoded.tobytes()
+            + b"<sensor>21,30,42</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.image.shape[:2], (12, 16))
+        self.assertEqual(car.last_response_info["image_payload_format"], "raw-binary")
+        self.assertEqual(car.last_response_info["response_bytes"], len(payload))
+        car.sock = None
+
+    def test_get_data_keeps_unrecognized_binary_response_as_a_decode_diagnostic(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        payload = b"\x89\xff\x00\x17binary-data<sensor>10,20,30</sensor><EOF>"
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertFalse(car.getData())
+        self.assertFalse(car.last_response_info["image_decoded"])
+        self.assertIn("Unsupported AVIS image payload signature", car.last_response_info["decode_error"])
+        self.assertEqual(car.last_response_info["response_bytes"], len(payload))
+        car.sock = None
+
     def test_get_data_does_not_treat_sensor_only_response_as_a_fresh_image(self):
         class FakeSocket:
             def __init__(self, payload):
@@ -1468,7 +1512,7 @@ class VirtualControllerTests(unittest.TestCase):
         adapter._sensor_angle_applied = True
         self.assertIsNone(adapter.read())
 
-    def test_avis_missing_frame_warning_is_once_per_outage(self):
+    def test_avis_missing_frame_status_is_info_once_per_outage(self):
         class FakeCar:
             def __init__(self):
                 self.image_sequence = 0
@@ -1499,13 +1543,47 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.connected = True
         adapter._ready_at = 0.0
         adapter._sensor_angle_applied = True
-        with patch("modes.simulation.avis_adapter.logger.warning") as warning:
+        with patch("modes.simulation.avis_adapter.logger.warning") as warning, patch(
+            "modes.simulation.avis_adapter.logger.info"
+        ) as info:
             for _ in range(12):
                 self.assertIsNone(adapter.read())
-        self.assertEqual(warning.call_count, 1)
+        self.assertEqual(warning.call_count, 0)
+        self.assertEqual(info.call_count, 1)
         diagnostics = adapter.camera_diagnostics()["response"]
         self.assertEqual(diagnostics["image_payload_prefix_hex"], "00112233")
         self.assertEqual(adapter.camera_diagnostics()["missing_images"], 12)
+
+    def test_avis_persistent_bad_frames_raise_one_error_without_warning_spam(self):
+        class FakeCar:
+            image_sequence = 0
+            last_response_info = {
+                "response_bytes": 24000,
+                "decode_error": "Unsupported AVIS image payload signature",
+                "image_payload_magic": "unknown",
+                "image_payload_prefix_hex": "00112233",
+            }
+            def getData(self):
+                return False
+            def getImage(self):
+                return None
+
+        adapter = AvisAdapter(SimpleNamespace(SIMULATOR_AVIS_SENSOR_ANGLE=30))
+        adapter.car = FakeCar()
+        adapter.connected = True
+        adapter._ready_at = 0.0
+        adapter._sensor_angle_applied = True
+        adapter._missing_images = 29
+        adapter._missing_image_log_active = True
+        adapter._missing_image_started_at = 0.0
+        with patch("modes.simulation.avis_adapter.time.monotonic", return_value=10.0), patch(
+            "modes.simulation.avis_adapter.logger.warning"
+        ) as warning, patch("modes.simulation.avis_adapter.logger.error") as error:
+            self.assertIsNone(adapter.read())
+            self.assertIsNone(adapter.read())
+        self.assertEqual(warning.call_count, 0)
+        self.assertEqual(error.call_count, 1)
+        self.assertEqual(adapter.camera_diagnostics()["missing_images"], 31)
 
     def test_avis_adapter_keeps_tcp_connection_when_response_has_no_image_tag(self):
         class ConnectedWithoutImages:
@@ -1619,6 +1697,53 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertFalse(empty.sensor_status["lidar_fresh"])
         self.assertEqual(empty.sensor_status["lidar_reason"], "empty or invalid point cloud")
         self.assertIsNone(empty.lidar_points)
+
+    def test_avis_runtime_retries_startup_without_warning_tracebacks(self):
+        import threading
+        from modes.simulation.runtime import SimulationRuntime
+
+        shutdown = threading.Event()
+
+        class RetryingAdapter:
+            connected = False
+            def __init__(self):
+                self.connect_calls = 0
+                self.commands = []
+            def connect(self):
+                self.connect_calls += 1
+                if self.connect_calls < 3:
+                    raise ConnectionError("AVIS Engine is not listening yet")
+                self.connected = True
+                return True
+            def read(self, timeout=0.25):
+                shutdown.set()
+                return None
+            def apply_control(self, command):
+                self.commands.append(command)
+                return True
+            def close(self):
+                self.connected = False
+
+        adapter = RetryingAdapter()
+        config = SimpleNamespace(
+            MODE="avis", SIMULATOR_BACKEND="avis", SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=55, SERVO_CENTER=95, MAX_SERVO_ANGLE=125,
+            SIMULATOR_TARGET_SPEED=25.0, SIMULATOR_THROTTLE_LIMIT=0.35,
+            SIMULATOR_STEERING_LIMIT=1.0, SIMULATOR_STEERING_RATE=2.0,
+            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
+            ENCODER_MAP_ENABLED=False, STREAM=False, debug_frames_list=[None, None],
+            SHUTDOWN_EVENT=shutdown,
+        )
+        with patch("modes.simulation.runtime.create_adapter", return_value=adapter):
+            runtime = SimulationRuntime(config)
+        with patch.object(shutdown, "wait", side_effect=lambda _seconds: False), patch(
+            "modes.simulation.runtime.logger.warning"
+        ) as warning:
+            runtime.run()
+        self.assertEqual(adapter.connect_calls, 3)
+        self.assertEqual(warning.call_count, 0)
+        self.assertTrue(adapter.commands)
+        self.assertTrue(all(command.throttle == 0.0 for command in adapter.commands))
 
     def test_carla_runtime_brakes_when_enabled_lidar_is_stale(self):
         import threading
