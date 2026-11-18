@@ -338,7 +338,7 @@ body.avis-workbench .avis-dock-console{height:calc(100% - 26px);max-height:none;
   {% endif %}
   {% if caps.supports_range_sensors %}<button id="avis-reconnect" type="button">↻ Reconnect AVIS</button>{% endif %}
   <button id="refresh" type="button">Refresh</button>
-</header
+</header>
 {% if caps.simulator_backend == 'avis' %}
 <div id="settings-search-modal" class="settings-search-modal" aria-hidden="true">
  <section class="settings-search-window" role="dialog" aria-modal="true" aria-labelledby="settings-search-title">
@@ -359,7 +359,6 @@ body.avis-workbench .avis-dock-console{height:calc(100% - 26px);max-height:none;
  </section>
 </div>
 {% endif %}
->
 <main class="sim-layout{% if caps.simulator_backend == 'avis' %} avis-layout{% endif %}">
   <div class="stack">
     <section class="panel">
