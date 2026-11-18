@@ -1335,7 +1335,7 @@ async function loadSettings(){
   $("editor-description").textContent=mode+" · "+caps.vision_profile+" vision · settings isolated from physical mode JSON";
   if(data.option_groups){
     const parent=$("option-groups");
-    // AVIS intentionally omits the optional Feature map panel.
+    // This optional panel is not part of the AVIS view.
     if(parent){
       parent.replaceChildren();
       data.option_groups.forEach(function(group){
