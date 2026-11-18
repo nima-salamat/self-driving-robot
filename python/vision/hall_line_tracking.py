@@ -1,9 +1,13 @@
-"""Temporal line association using bipartite maximum matching.
+"""Temporal association of Hough segments using Hall-aware matching.
 
-Line tracks and current-frame detections form a bipartite graph. Geometry-based
-edges prevent implausible associations, and augmenting paths find a maximum
-cardinality matching. Hall's condition describes when every previous track
-can be assigned a unique current detection.
+Each lane ROI supplies image-space Hough segments. Geometry gates create a
+bipartite graph between previous segment tracks and current detections. A
+minimum-cost maximum-cardinality matcher preserves identities; Hall deficiency
+and an alternating-path witness report which previous tracks cannot all be
+assigned uniquely.
+
+This is a segment-association component for the existing City/Race vision
+pipeline. It is not, by itself, a metric lane model or a lane-departure detector.
 """
 from __future__ import annotations
 
