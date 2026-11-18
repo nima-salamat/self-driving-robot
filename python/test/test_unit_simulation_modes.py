@@ -816,6 +816,8 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertIn(mode.upper(), page_text)
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
                     if backend == "carla":
+                        self.assertIn("Feature map", page_text)
+                        self.assertIn("Integration notes", page_text)
                         self.assertIn("Open camera placement studio", page_text)
                         self.assertIn("Autonomous run control", page_text)
                         self.assertIn('id="carla-run-start"', page_text)
@@ -855,10 +857,12 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="carla-reset-spawn"', page_text)
                     else:
                         self.assertNotIn('id="camera-editor-modal"', page_text)
-                        self.assertIn("AVIS Engine · Top-down range sensors", page_text)
+                        self.assertIn("AVIS · Range sensors", page_text)
                         self.assertIn('id="avis-sensor-view"', page_text)
                         self.assertIn('id="avis-sensor-expand"', page_text)
                         self.assertIn("No valid reading", page_text)
+                        self.assertNotIn("Feature map", page_text)
+                        self.assertNotIn("Integration notes", page_text)
 
                     state = client.get("/api/simulation/settings")
                     self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
