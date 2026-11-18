@@ -671,6 +671,9 @@ class SimulatorSettingsApiTests(unittest.TestCase):
                 self.assertEqual(saved["SIMULATOR_TIMEOUT_S"], 5.0)
                 self.assertEqual(saved["SIMULATOR_TARGET_SPEED"], 25.0)
                 self.assertEqual(saved["SIMULATOR_THROTTLE_LIMIT"], 0.35)
+                live_applied = set(response.get_json()["live_applied"])
+                self.assertTrue({"USE_PID", "KP", "OUTPUT_LIMITS"}.issubset(live_applied))
+                self.assertFalse({"USE_PID", "KP"} & set(response.get_json()["restart_required"]))
 
     def test_simulator_editor_does_not_save_before_load_or_coerce_empty_numbers(self):
         from pathlib import Path
@@ -686,6 +689,10 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn("simulatorSettingsReady=false", template)
         self.assertIn('id="save-settings" disabled', template)
         self.assertIn("is empty. Reload saved defaults", template)
+        self.assertIn("function bindSettingsSearch()", template)
+        self.assertIn('querySelectorAll("[name], [id]")', template)
+        self.assertIn("searchableText.includes(query)", template)
+        self.assertIn("settings-search-clear", template)
         decimal_settings = (
             "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
             "SIMULATOR_CAMERA_FOV", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",

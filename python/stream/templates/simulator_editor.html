@@ -666,7 +666,11 @@ function bindSettingsSearch(){
     let visible=0,total=0;
     blocks.forEach(function(block){
       const available=!block.classList.contains("section-hide");
-      const match=!query||block.textContent.toLowerCase().includes(query);
+      const controlTerms=Array.from(block.querySelectorAll("[name], [id]")).map(function(control){
+        return [control.name,control.id].filter(Boolean).join(" ");
+      }).join(" ");
+      const searchableText=(block.textContent+" "+controlTerms).toLowerCase();
+      const match=!query||searchableText.includes(query);
       block.classList.toggle("settings-search-hidden",!!query&&(!available||!match));
       if(available){total++;if(match)visible++;}
       const link=links.find(function(anchor){return anchor.getAttribute("href")==="#"+block.id;});
