@@ -313,12 +313,14 @@ class HallLineTracker:
             matched_track_ids.add(track_id)
             stable_lines.append(detection["line"])
 
+        expired_track_ids = []
         for track_index, (track_id, track) in enumerate(previous):
             if track_index not in matching:
                 track["missed"] += 1
                 track["age"] += 1
                 if track["missed"] > self.max_missed_frames:
                     self._tracks.pop(track_id, None)
+                    expired_track_ids.append(int(track_id))
 
         for detection_index, detection in enumerate(detections):
             if detection_index in detection_to_track:
@@ -429,6 +431,7 @@ class HallLineTracker:
             "unmatched_track_ids": unmatched_track_ids,
             "unmatched_candidate_indices": unmatched_candidate_indices,
             "matched_track_ids": sorted(int(track_id) for track_id in matched_track_ids),
+            "expired_track_ids": sorted(set(expired_track_ids)),
             "missed_frames": missed,
             "candidate_tracks": candidate_tracks,
             "stable_lines": stable_lines,
