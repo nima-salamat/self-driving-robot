@@ -252,7 +252,7 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
           <div id="camera-feed-status" class="msg camera-feed-status" role="status">Connecting to camera frame endpoint…</div>
           <div class="camera-status-meta">
             <div id="camera-diagnostic" class="status-message camera-diagnostic" role="status">Checking {{ caps.simulator_backend|upper }} camera…</div>
-            <div id="camera-performance" class="camera-performance" role="status">Loop — FPS · Detection — ms · Render — ms</div>
+            <div id="camera-performance" class="camera-performance" role="status">Lane loop — FPS · Detection — ms · Render — ms</div>
           </div>
         </div>
         <div class="metrics">
@@ -1196,7 +1196,7 @@ function drawAvisSensors(ranges,stale){
     let color=stale?"#75889a":avisRangeColor(raw,threshold,sensor.key);
     // Soft field-of-view cone behind the measurement ray.
     if(valid){
-      ctx.save();ctx.globalAlpha=stale?.035:.10;ctx.fillStyle=color;ctx.beginPath();
+      ctx.save();ctx.globalAlpha=stale ? 0.035 : 0.10;ctx.fillStyle=color;ctx.beginPath();
       ctx.moveTo(sensor.x,sensor.y);ctx.arc(sensor.x,sensor.y,radius,theta-Math.PI/2-spread,theta-Math.PI/2+spread);ctx.closePath();ctx.fill();ctx.restore();
     }
     ctx.save();ctx.strokeStyle=color;ctx.lineWidth=valid?2.5:1.6;ctx.setLineDash(valid?[]:[5,5]);
@@ -1302,15 +1302,15 @@ function renderEvents(events){
 async function setCarlaRunMode(action){
   const start=$("carla-run-start"),stop=$("carla-run-stop"),message=$("carla-run-message");
   if(start)start.disabled=true;if(stop)stop.disabled=true;
-  if(message){message.textContent=action==="start"?"Starting autonomous run…":"Applying brake and stopping…";message.className="msg";}
+  if(message){message.textContent=action==="start"?"Starting autonomous run…":"Applying brake and stopping…";message.className="sim-run-feedback";}
   try{
     const response=await fetch("/api/simulation/run-mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:action})});
     const data=await response.json();
     if(!response.ok||!data.success)throw new Error(data.message||"Could not change simulator run mode");
-    if(message){message.textContent=data.message||"Run mode updated.";message.className="msg good";}
+    if(message){message.textContent=data.message||"Run mode updated.";message.className="sim-run-feedback good";}
     await poll();
   }catch(error){
-    if(message){message.textContent=error.message||String(error);message.className="msg bad";}
+    if(message){message.textContent=error.message||String(error);message.className="sim-run-feedback bad";}
     if(start)start.disabled=!simRoiControlsEnabled;if(stop)stop.disabled=!simRoiControlsEnabled;
   }
 }

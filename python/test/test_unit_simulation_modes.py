@@ -1435,9 +1435,11 @@ class VirtualControllerTests(unittest.TestCase):
             / "stream" / "templates" / "simulator_editor.html"
         ).read_text(encoding="utf-8")
         self.assertIn('body class="{% if caps.simulator_backend == \'avis\' %}avis-workbench{% endif %}"', template)
-        topbar = template[template.index('<header class="sim-top">'):template.index("</header>")]
-        self.assertLess(topbar.index('id="carla-run-start"'), topbar.index("</header>"))
-        self.assertLess(topbar.index('id="carla-run-stop"'), topbar.index("</header>"))
+        topbar_start = template.index('<header class="sim-top">')
+        topbar_end = template.index("</header>", topbar_start)
+        topbar = template[topbar_start:topbar_end]
+        self.assertIn('id="carla-run-start"', topbar)
+        self.assertIn('id="carla-run-stop"', topbar)
         self.assertIn('class="runtime-error-slot"', template)
         self.assertIn('class="camera-performance"', template)
         self.assertNotIn('id="camera-stale-overlay"', template)
