@@ -1600,6 +1600,60 @@ class VirtualControllerTests(unittest.TestCase):
         adapter._sensor_angle_applied = True
         self.assertIsNone(adapter.read())
 
+    def test_avis_missing_frame_log_is_rate_limited_across_recovery_and_adapters(self):
+        class FlakyCar:
+            def __init__(self):
+                self.image_sequence = 0
+                self.image = None
+                self.last_response_info = {"decode_error": "no decodable frame"}
+                self.calls = 0
+            def getData(self):
+                self.calls += 1
+                if self.calls == 2:
+                    self.image_sequence += 1
+                    self.image = np.zeros((8, 10, 3), dtype=np.uint8)
+                else:
+                    self.image = None
+            def getImage(self):
+                return self.image
+            def getSensors(self):
+                return []
+            def getSpeed(self):
+                return 0.0
+
+        class EmptyCar:
+            image_sequence = 0
+            last_response_info = {"decode_error": "no decodable frame"}
+            def getData(self):
+                return False
+            def getImage(self):
+                return None
+
+        def make_adapter(car):
+            adapter = AvisAdapter(SimpleNamespace(SIMULATOR_AVIS_SENSOR_ANGLE=30))
+            adapter.car = car
+            adapter.connected = True
+            adapter._ready_at = 0.0
+            adapter._sensor_angle_applied = True
+            return adapter
+
+        adapter = make_adapter(FlakyCar())
+        second_adapter = make_adapter(EmptyCar())
+        with patch("modes.simulation.avis_adapter._GLOBAL_STATUS_LOG_AT", {}), patch(
+            "modes.simulation.avis_adapter.logger.info"
+        ) as info:
+            # Missing -> recovered -> missing simulates intermittent decoding.
+            self.assertIsNone(adapter.read())
+            self.assertIsNotNone(adapter.read())
+            self.assertIsNone(adapter.read())
+            # A separately-created adapter must use the same process-wide cooldown.
+            self.assertIsNone(second_adapter.read())
+
+        self.assertEqual(info.call_count, 1)
+        self.assertEqual(adapter.camera_diagnostics()["missing_images"], 1)
+        self.assertTrue(adapter.connected)
+        self.assertTrue(second_adapter.connected)
+
     def test_avis_missing_frame_status_is_info_once_per_outage(self):
         class FakeCar:
             def __init__(self):
@@ -1631,9 +1685,9 @@ class VirtualControllerTests(unittest.TestCase):
         adapter.connected = True
         adapter._ready_at = 0.0
         adapter._sensor_angle_applied = True
-        with patch("modes.simulation.avis_adapter.logger.warning") as warning, patch(
-            "modes.simulation.avis_adapter.logger.info"
-        ) as info:
+        with patch("modes.simulation.avis_adapter._GLOBAL_STATUS_LOG_AT", {}), patch(
+            "modes.simulation.avis_adapter.logger.warning"
+        ) as warning, patch("modes.simulation.avis_adapter.logger.info") as info:
             for _ in range(12):
                 self.assertIsNone(adapter.read())
         self.assertEqual(warning.call_count, 0)

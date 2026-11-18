@@ -10,6 +10,12 @@ from .base_adapter import SensorFrame, SimulatorAdapter
 
 logger = logging.getLogger(__name__)
 
+# Share status-log cooldowns across adapter instances. A camera can recover for
+# one frame and fail again, or the application can recreate an adapter; neither
+# should turn a transient camera outage into a console line on every cycle.
+_GLOBAL_STATUS_LOG_LOCK = threading.Lock()
+_GLOBAL_STATUS_LOG_AT = {}
+
 
 class AvisAdapter(SimulatorAdapter):
     backend = "avis"
@@ -52,10 +58,14 @@ class AvisAdapter(SimulatorAdapter):
 
     def _log_info_rate_limited(self, key, message, interval_s=30.0):
         now = time.monotonic()
-        previous = self._status_log_at.get(key)
-        if previous is None or now - previous >= interval_s:
-            logger.info("%s", message)
+        with _GLOBAL_STATUS_LOG_LOCK:
+            previous = _GLOBAL_STATUS_LOG_AT.get(key)
+            if previous is not None and now - previous < interval_s:
+                return False
+            _GLOBAL_STATUS_LOG_AT[key] = now
             self._status_log_at[key] = now
+        logger.info("%s", message)
+        return True
 
     def connect(self):
         with self._io_lock:
@@ -283,8 +293,10 @@ class AvisAdapter(SimulatorAdapter):
             if not self._missing_image_log_active:
                 self._missing_image_started_at = now
                 self._missing_image_error_logged = False
-                logger.info(
-                    "AVIS camera stream has not produced a decodable frame; retaining TCP session and holding the vehicle stopped."
+                self._log_info_rate_limited(
+                    "camera-no-decodable-frame",
+                    "AVIS camera stream has not produced a decodable frame; retaining TCP session and holding the vehicle stopped.",
+                    interval_s=60.0,
                 )
             self._missing_image_log_active = True
             outage_age = (
