@@ -511,6 +511,40 @@ class SimulatorSettingsTests(unittest.TestCase):
             load_simulator_settings(restarted, "avis", "avis")
             self.assertEqual(restarted.SIMULATOR_TIMEOUT_S, 5.0)
 
+    def test_simulator_pid_settings_are_saved_and_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
+            load_simulator_settings(config, "avis", "avis")
+            self.assertTrue(config.USE_PID)
+            self.assertFalse(config.AUTO_UPDATE_KP)
+            self.assertEqual(config.KP, 0.35)
+            self.assertEqual(config.OUTPUT_LIMITS, [-80.0, 80.0])
+
+            saved = save_simulator_settings(config, "avis", {
+                "USE_PID": False,
+                "AUTO_UPDATE_KP": True,
+                "KP": 0.65, "KI": 0.02, "KD": 0.015, "KT": 0.02,
+                "OUTPUT_LIMITS": [-45, 50],
+                "PID_MIN_DT": 0.002, "PID_MAX_DT": 0.3,
+                "PID_DERIVATIVE_FILTER": 0.4,
+            })
+            self.assertFalse(saved["USE_PID"])
+            self.assertTrue(saved["AUTO_UPDATE_KP"])
+            self.assertEqual(saved["OUTPUT_LIMITS"], [-45.0, 50.0])
+            restarted = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(restarted, "avis", "avis")
+            self.assertFalse(restarted.USE_PID)
+            self.assertEqual(restarted.KP, 0.65)
+            self.assertEqual(restarted.OUTPUT_LIMITS, [-45.0, 50.0])
+            self.assertEqual(restarted.PID_MAX_DT, 0.3)
+
+        with self.assertRaisesRegex(ValueError, "OUTPUT_LIMITS"):
+            _validate_settings({"OUTPUT_LIMITS": [20, -20]})
+        with self.assertRaisesRegex(ValueError, "PID_MAX_DT"):
+            _validate_settings({"PID_MIN_DT": 0.5, "PID_MAX_DT": 0.1})
+        with self.assertRaisesRegex(ValueError, "KP"):
+            _validate_settings({"KP": 101})
+
     def test_settings_reject_unknown_invalid_and_cross_field_values(self):
         with self.assertRaises(ValueError):
             _validate_settings({"SIMULATOR_PASSWORD": "unexpected"})
@@ -584,6 +618,8 @@ class SimulatorSettingsApiTests(unittest.TestCase):
             "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE", "SERVO_DIRECTION",
             "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "ENCODER_PULSE_DISTANCE_CM",
             "SIMULATOR_AVIS_SENSOR_ANGLE",
+            "USE_PID", "AUTO_UPDATE_KP", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS",
+            "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER",
         )
         lane_roi = (
             "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
@@ -750,6 +786,12 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertIn('id="camera-feed-status"', page_text)
                     self.assertIn('id="camera-diagnostic"', page_text)
                     self.assertIn("/video_feed_frame", page_text)
+                    self.assertIn('id="sim-pid-settings"', page_text)
+                    self.assertIn('id="pid-enabled"', page_text)
+                    self.assertIn('id="pid-output-min"', page_text)
+                    if backend == "avis":
+                        self.assertIn('id="settings-search"', page_text)
+                        self.assertIn('href="#sim-pid-settings"', page_text)
                     self.assertIn(mode.upper(), page_text)
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
                     if backend == "carla":
@@ -1206,6 +1248,45 @@ class VirtualControllerTests(unittest.TestCase):
             SIMULATOR_THROTTLE_RISE_RATE=0.12,
             SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
         )
+
+    def test_virtual_controller_uses_city_race_pid_settings(self):
+        self.config.USE_PID = True
+        self.config.AUTO_UPDATE_KP = False
+        self.config.KP = 0.5
+        self.config.KI = 0.0
+        self.config.KD = 0.0
+        self.config.KT = 0.01
+        self.config.OUTPUT_LIMITS = [-10.0, 10.0]
+        self.config.PID_MIN_DT = 0.001
+        self.config.PID_MAX_DT = 0.2
+        self.config.PID_DERIVATIVE_FILTER = 0.25
+        self.config.SIMULATOR_STEERING_LIMIT = 1.0
+        self.config.SIMULATOR_STEERING_RATE = 10.0
+        with patch("modes.simulation.controller.time.monotonic", side_effect=[20.0, 20.1]):
+            controller = VirtualVehicleController(self.config, "avis")
+            command = controller.command_for({
+                "perception_valid": True, "lane_type": "both",
+                "error": 10.0, "steering_angle": 95.0, "kp": 0.2,
+            })
+        self.assertEqual(command.servo_angle, 100.0)
+        self.assertAlmostEqual(command.steering, 5.0 / 35.0, places=4)
+
+    def test_virtual_controller_uses_auto_update_kp_from_vision_estimate(self):
+        self.config.USE_PID = True
+        self.config.AUTO_UPDATE_KP = True
+        self.config.KP = 0.9
+        self.config.KI = 0.0
+        self.config.KD = 0.0
+        self.config.OUTPUT_LIMITS = [-80.0, 80.0]
+        self.config.SIMULATOR_STEERING_LIMIT = 1.0
+        self.config.SIMULATOR_STEERING_RATE = 10.0
+        with patch("modes.simulation.controller.time.monotonic", side_effect=[30.0, 30.1]):
+            controller = VirtualVehicleController(self.config, "avis")
+            command = controller.command_for({
+                "perception_valid": True, "lane_type": "both",
+                "error": 10.0, "steering_angle": 95.0, "kp": 0.25,
+            })
+        self.assertEqual(command.servo_angle, 97.5)
 
     def test_simulator_stream_renders_shared_vision_roi_debug_frame(self):
         import time

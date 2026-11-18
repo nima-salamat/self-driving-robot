@@ -119,6 +119,16 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   border-radius:7px;background:#1b2b3a;color:#c8e4f9;text-decoration:none;font-size:11px;font-weight:650;
 }
 .avis-layout .avis-settings-toolbar nav a:hover{background:#28455e;border-color:#72b8e7;color:#fff}
+.avis-layout .settings-filter-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
+.avis-layout .settings-filter-row label{font-size:11px;font-weight:700;color:#9fb5c8}
+.avis-layout .settings-filter-row input{min-width:0;width:100%;min-height:36px;padding:7px 10px;border:1px solid #38536a;border-radius:7px;background:#0d1722;color:#eaf4ff;font-size:12px}
+.avis-layout .settings-filter-row input:focus{outline:2px solid #4b91bf;outline-offset:1px}
+.avis-layout .settings-filter-row button{min-height:34px;padding:6px 10px;border:1px solid #38536a;border-radius:7px;background:#1b2b3a;color:#c8e4f9;font-size:11px}
+.avis-layout .settings-filter-row button:disabled{opacity:.45;cursor:not-allowed}
+.avis-layout .settings-filter-row span{grid-column:2/4;min-height:14px;font-size:10px;color:#8fa9bf}
+.settings-search-hidden{display:none!important}
+.avis-layout .avis-settings-toolbar nav a.search-hidden{display:none!important}
+@media(max-width:520px){.avis-layout .settings-filter-row{grid-template-columns:1fr auto}.avis-layout .settings-filter-row label{grid-column:1/-1}.avis-layout .settings-filter-row span{grid-column:1/-1}}
 @media(max-width:1020px){
   .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr)}
   .sim-layout.avis-layout .sim-settings-panel{position:static;height:min(76vh,760px);min-height:260px;max-height:calc(100vh - 120px)}
@@ -279,12 +289,20 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           {% if caps.simulator_backend == 'avis' %}
           <div class="avis-settings-toolbar">
             <div><strong>AVIS configuration</strong><span>Mode-specific settings · {{ mode }}.sim.json</span></div>
+            <div class="settings-filter-row">
+              <label for="settings-search">Find a setting</label>
+              <input id="settings-search" type="search" autocomplete="off" placeholder="Search PID, ROI, Hough, speed…">
+              <button type="button" id="settings-search-clear" disabled>Clear</button>
+              <span id="settings-search-status" role="status" aria-live="polite">All settings visible</span>
+            </div>
             <nav aria-label="AVIS settings sections">
               <a href="#sim-connection-settings">Connection</a>
               <a href="#avis-settings">Sensors</a>
               <a href="#sim-vehicle-safety">Motion</a>
               <a href="#sim-vision-settings">Vision</a>
-              <a href="#sim-servo-calibration">Steering</a>
+              <a href="#sim-lane-roi-settings">Lane ROI</a>
+              <a href="#sim-servo-calibration">Calibration</a>
+              <a href="#sim-pid-settings">PID control</a>
             </nav>
           </div>
           {% endif %}
@@ -337,7 +355,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
             <label class="check-field"><input id="steering-inverted" type="checkbox" name="SIMULATOR_STEERING_INVERTED"> Invert simulator steering direction</label>
           </div>
-          <div class="setting-block {% if caps.vision_profile != 'race' %}section-hide{% endif %}">
+          <div class="setting-block {% if caps.vision_profile != 'race' %}section-hide{% endif %}" id="race-vision-settings">
             <h3 class="section-title">Race vision options</h3>
             <label class="check-field"><input id="ml-lane-enabled" type="checkbox" name="USE_ML_LANE_DETECTOR"> Enable ML lane model (requires NCNN model files)</label>
             <div class="field"><label for="ml-lane-model">ML lane model</label><select id="ml-lane-model" name="ML_LANE_MODEL"><option value="unet_depthwise_nano">UNet depthwise nano</option><option value="unet_depthwise_small">UNet depthwise small</option></select></div>
@@ -363,6 +381,24 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
             </div>
             <p class="note">{% if caps.simulator_backend == 'avis' %}These angles normalize the vision processor's steering estimate before it is converted to the AVIS signed command range −100..100. They are not the distance sensor angle.{% else %}Defaults are 55° / 95° / 125°, matching the physical City/Race configuration defaults. Calibrate for the connected model before enabling motion.{% endif %}</p>
+          </div>
+          <div class="setting-block" id="sim-pid-settings">
+            <h3 class="section-title">PID steering controller <span class="pill">Shared City / Race</span></h3>
+            <p class="note">The simulator can use the same PID steering correction as City and Race: the lane-centering error is fed through P, I and D gains before the virtual servo angle is normalized for AVIS or CARLA. Disable PID to use the vision processor's direct steering estimate.</p>
+            <label class="check-field"><input id="pid-enabled" type="checkbox" name="USE_PID"> Enable PID steering correction</label>
+            <label class="check-field"><input id="pid-auto-kp" type="checkbox" name="AUTO_UPDATE_KP"> Use the vision processor's per-frame KP estimate</label>
+            <div class="grid-two">
+              <div class="field"><label for="pid-kp">Proportional gain · KP</label><input id="pid-kp" type="number" min="-100" max="100" step="any" name="KP"></div>
+              <div class="field"><label for="pid-ki">Integral gain · KI</label><input id="pid-ki" type="number" min="-100" max="100" step="any" name="KI"></div>
+              <div class="field"><label for="pid-kd">Derivative gain · KD</label><input id="pid-kd" type="number" min="-100" max="100" step="any" name="KD"></div>
+              <div class="field"><label for="pid-kt">Nominal sample period · KT (seconds)</label><input id="pid-kt" type="number" min="0" max="10" step="any" name="KT"></div>
+              <div class="field"><label for="pid-min-dt">Minimum PID sample interval (s)</label><input id="pid-min-dt" type="number" min=".0001" max="1" step="any" name="PID_MIN_DT"></div>
+              <div class="field"><label for="pid-max-dt">Maximum PID sample interval (s)</label><input id="pid-max-dt" type="number" min=".001" max="5" step="any" name="PID_MAX_DT"></div>
+              <div class="field"><label for="pid-derivative-filter">Derivative smoothing (0–1)</label><input id="pid-derivative-filter" type="number" min="0" max="1" step="any" name="PID_DERIVATIVE_FILTER"></div>
+              <div class="field"><label for="pid-output-min">Minimum PID correction (degrees)</label><input id="pid-output-min" type="number" min="-255" max="255" step="any"></div>
+              <div class="field"><label for="pid-output-max">Maximum PID correction (degrees)</label><input id="pid-output-max" type="number" min="-255" max="255" step="any"></div>
+            </div>
+            <p class="note">Defaults match the City/Race Stream controller: KP 0.35, KI 0, KD 0.01, KT 0.01 s, output limits −80…+80°, minimum/maximum sample interval 0.001/0.2 s and derivative filter 0.25. Changes apply to the virtual controller while the simulator is running and are stored in this mode's .sim.json profile.</p>
           </div>
           <div class="setting-block {% if caps.vision_profile != 'city' %}section-hide{% endif %}" id="city-vision-settings">
             <h3 class="section-title">City vision thresholds & geometry</h3>
@@ -409,7 +445,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             {% endif %}
             <p class="note">{% if caps.simulator_backend == 'avis' %}AVIS target speed is a percentage command (0–100); the command limit caps output as a normalized value (0–1). Steering is transmitted separately as −100 to +100. Increase speed gradually while tuning. These values are stored in this mode's .sim.json profile.{% else %}CARLA starts conservatively at 5 km/h, throttle 0.12 and steering input 0.28. These are editable starting values, not fixed UI caps: speed 0–200 km/h, throttle 0–1, steering 0.05–1. Increase motion values gradually while tuning. Settings stay in this simulator's .sim.json profile and do not modify city.json.{% endif %}</p>
           </div>
-          <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}">
+          <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
             <div class="grid-two">
               <div class="field"><label for="rl-top">Right-lane ROI top</label><input id="rl-top" type="number" min="0" max="1" step="any" name="RL_TOP_ROI"></div>
@@ -552,6 +588,15 @@ function collectSimulatorSettings(){
     values.RL_MIRRORED=!!simRoiMirrors.RL;
     values.LL_MIRRORED=!!simRoiMirrors.LL;
   }
+  const pidLowInput=$("pid-output-min"),pidHighInput=$("pid-output-max");
+  if(!pidLowInput.checkValidity()||!pidHighInput.checkValidity()){
+    if(!pidLowInput.checkValidity())pidLowInput.reportValidity();
+    else pidHighInput.reportValidity();
+    throw new Error("PID output limits must be between -255 and 255.");
+  }
+  const pidLow=readSettingNumber("pid-output-min"),pidHigh=readSettingNumber("pid-output-max");
+  if(pidLow>=pidHigh)throw new Error("Minimum PID correction must be smaller than maximum PID correction.");
+  values.OUTPUT_LIMITS=[pidLow,pidHigh];
   if(!Object.keys(values).length)throw new Error("No active simulator settings are available to save.");
   return values;
 }
@@ -571,6 +616,8 @@ function populate(s){
     "lane-threshold":"LANE_THRESHOLD","hough-threshold":"HOUGH_THRESHOLD",
     "hough-min-line":"HOUGH_MIN_LINE_LENGTH","hough-max-gap":"HOUGH_MAX_LINE_GAP",
     "hough-blur":"HOUGH_BLUR_KERNEL","hall-line-max-missed":"HALL_LINE_TRACKING_MAX_MISSED","crosswalk-threshold":"CROSSWALK_THRESHOLD",
+    "pid-kp":"KP","pid-ki":"KI","pid-kd":"KD","pid-kt":"KT",
+    "pid-min-dt":"PID_MIN_DT","pid-max-dt":"PID_MAX_DT","pid-derivative-filter":"PID_DERIVATIVE_FILTER",
     "crosswalk-min-vertical":"CROSSWALK_VERTICAL_MIN_LINES",
     "crosswalk-min-horizontal":"CROSSWALK_HORIZONTAL_MIN_LINES",
     "lane-roi-mode":"LANE_ROI_MODE","rl-top-factor":"RL_TOP_WIDTH_FACTOR",
@@ -588,11 +635,19 @@ function populate(s){
   };
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
   ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
-   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable","hall-line-tracking"].forEach(function(id){
+   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable","hall-line-tracking",
+   "pid-enabled","pid-auto-kp"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
   });
+  if(Array.isArray(s.OUTPUT_LIMITS)&&s.OUTPUT_LIMITS.length===2){
+    $("pid-output-min").value=s.OUTPUT_LIMITS[0];
+    $("pid-output-max").value=s.OUTPUT_LIMITS[1];
+  }else{
+    $("pid-output-min").value=-80;
+    $("pid-output-max").value=80;
+  }
   simRoiMirrors.RL=!!s.RL_MIRRORED;
   simRoiMirrors.LL=!!s.LL_MIRRORED;
   simRoiUpdateSelection();
@@ -601,6 +656,41 @@ function populate(s){
   if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
 }
+function bindSettingsSearch(){
+  const input=$("settings-search"),clear=$("settings-search-clear"),summary=$("settings-search-status");
+  if(!input||!clear||!summary)return;
+  const blocks=Array.from(document.querySelectorAll("#settings-form > .setting-block"));
+  const links=Array.from(document.querySelectorAll(".avis-settings-toolbar nav a"));
+  function apply(){
+    const query=String(input.value||"").trim().toLowerCase();
+    let visible=0,total=0;
+    blocks.forEach(function(block){
+      const available=!block.classList.contains("section-hide");
+      const match=!query||block.textContent.toLowerCase().includes(query);
+      block.classList.toggle("settings-search-hidden",!!query&&(!available||!match));
+      if(available){total++;if(match)visible++;}
+      const link=links.find(function(anchor){return anchor.getAttribute("href")==="#"+block.id;});
+      if(link)link.classList.toggle("search-hidden",!!query&&(!available||!match));
+    });
+    clear.disabled=!query;
+    summary.textContent=query
+      ? (visible+" of "+total+" sections match")
+      : ("All "+total+" sections visible");
+    if(query&&visible===0)summary.textContent="No matching settings sections";
+  }
+  input.addEventListener("input",apply);
+  clear.addEventListener("click",function(){input.value="";apply();input.focus();});
+  input.addEventListener("keydown",function(event){
+    if(event.key==="Escape"){input.value="";apply();input.blur();}
+  });
+  document.addEventListener("keydown",function(event){
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){
+      event.preventDefault();input.focus();input.select();
+    }
+  });
+  apply();
+}
+bindSettingsSearch();
 const simRoiDefs = [
   {id:"RL",label:"Right lane",color:"#48d7a4",fields:{top:"rl-top",bottom:"rl-bottom",left:"rl-left",right:"rl-right"}},
   {id:"LL",label:"Left lane",color:"#65a8ff",fields:{top:"ll-top",bottom:"ll-bottom",left:"ll-left",right:"ll-right"}},

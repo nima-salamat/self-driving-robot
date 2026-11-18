@@ -35,11 +35,13 @@ SIMULATOR_KEYS = {
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
     "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
+    "USE_PID", "AUTO_UPDATE_KP", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS",
+    "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER",
 }
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
-    "HALL_LINE_TRACKING_ENABLED",
+    "HALL_LINE_TRACKING_ENABLED", "USE_PID", "AUTO_UPDATE_KP",
     "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
     "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD", "ROI_RESIZABLE",
 }
@@ -60,8 +62,9 @@ POSITIVE_KEYS = {
     "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "ENCODER_PULSE_DISTANCE_CM", "CAMERA_HEIGHT", "LANE_WIDTH",
+    "PID_MIN_DT", "PID_MAX_DT",
 }
-NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"}
+NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "KT"}
 ROI_KEYS = {"RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
             "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
             "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"}
@@ -72,6 +75,7 @@ BEV_KEYS = {
 ROI_FACTOR_KEYS = {"RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR"}
 NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS | {
     "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STEERING_LIMIT",
+    "KP", "KI", "KD", "PID_DERIVATIVE_FILTER",
     "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
@@ -155,6 +159,13 @@ def _defaults(mode, backend):
         "SERVO_CENTER": 95.0,
         "MAX_SERVO_ANGLE": 125.0,
         "SERVO_DIRECTION": "ltr",
+        # Match the City/Race Stream PID defaults. The simulator applies this
+        # controller to lane-centering error before virtual steering output.
+        "USE_PID": True, "AUTO_UPDATE_KP": False,
+        "KP": 0.35, "KI": 0.0, "KD": 0.01, "KT": 0.01,
+        "OUTPUT_LIMITS": [-80.0, 80.0],
+        "PID_MIN_DT": 0.001, "PID_MAX_DT": 0.2,
+        "PID_DERIVATIVE_FILTER": 0.25,
         "RL_MIRRORED": False, "LL_MIRRORED": False,
         "RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 1.0, "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
         "LL_TOP_ROI": 0.8, "LL_BOTTOM_ROI": 1.0, "LL_LEFT_ROI": 0.2, "LL_RIGHT_ROI": 0.5,
@@ -171,6 +182,21 @@ def _validate_settings(data, backend=None):
     for key, value in data.items():
         if key not in SIMULATOR_KEYS:
             raise ValueError(f"unsupported simulator setting: {key}")
+        if key == "OUTPUT_LIMITS":
+            if not isinstance(value, (list, tuple)) or len(value) != 2:
+                raise ValueError("OUTPUT_LIMITS must contain two numeric values")
+            if any(
+                isinstance(item, bool)
+                or not isinstance(item, (int, float))
+                or not math.isfinite(float(item))
+                for item in value
+            ):
+                raise ValueError("OUTPUT_LIMITS must contain two finite numbers")
+            low, high = float(value[0]), float(value[1])
+            if not -255.0 <= low < high <= 255.0:
+                raise ValueError("OUTPUT_LIMITS must be ordered and within -255..255")
+            clean[key] = [low, high]
+            continue
         if key in BOOL_KEYS:
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be boolean")
@@ -252,6 +278,16 @@ def _validate_settings(data, backend=None):
                 raise ValueError("SIMULATOR_STEERING_RATE must be at most 10 normalized units per second")
             if key == "SIMULATOR_THROTTLE_RISE_RATE" and value > 1:
                 raise ValueError("SIMULATOR_THROTTLE_RISE_RATE must be at most 1 throttle unit per second")
+            if key in {"KP", "KI", "KD"} and not -100 <= value <= 100:
+                raise ValueError(f"{key} must be between -100 and 100")
+            if key == "KT" and value > 10:
+                raise ValueError("KT must be at most 10 seconds")
+            if key == "PID_DERIVATIVE_FILTER" and not 0 <= value <= 1:
+                raise ValueError("PID_DERIVATIVE_FILTER must be between 0 and 1")
+            if key == "PID_MIN_DT" and value > 1:
+                raise ValueError("PID_MIN_DT must be at most 1 second")
+            if key == "PID_MAX_DT" and value > 5:
+                raise ValueError("PID_MAX_DT must be at most 5 seconds")
             if key in ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS and not 0 <= value <= 1:
                 raise ValueError(f"{key} must be between 0 and 1")
             if key == "CAMERA_PITCH_DEG" and not -90 <= value <= 90:
@@ -277,6 +313,10 @@ def _validate_settings(data, backend=None):
     if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
         if not clean["MIN_SERVO_ANGLE"] < clean["SERVO_CENTER"] < clean["MAX_SERVO_ANGLE"]:
             raise ValueError("MIN_SERVO_ANGLE must be smaller than SERVO_CENTER, which must be smaller than MAX_SERVO_ANGLE")
+    pid_min_dt = clean.get("PID_MIN_DT")
+    pid_max_dt = clean.get("PID_MAX_DT")
+    if pid_min_dt is not None and pid_max_dt is not None and pid_max_dt < pid_min_dt:
+        raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
     return clean
 
 
