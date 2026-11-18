@@ -242,6 +242,7 @@ body.avis-workbench .settings-search-footer span{display:flex;align-items:center
 body.avis-workbench .setting-search-highlight{animation:avis-setting-focus 1.45s ease}
 @keyframes avis-setting-focus{0%,100%{background:transparent}18%,72%{background:#24516a70;box-shadow:0 0 0 2px #69b9e955;border-radius:8px}}
 
+body.avis-workbench .sim-settings-panel{scroll-margin-top:72px}
 body.avis-workbench .sim-layout.avis-layout>.stack:first-child{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;gap:0;padding:0}
 body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{display:flex;flex:1 1 auto;flex-direction:column;height:100%;min-height:0;overflow:hidden}
 body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child>.panel-head{flex:0 0 auto}
@@ -921,10 +922,15 @@ function bindSettingsSearch(){
  }
  function jumpTo(entry){
   closeSearch();
-  const target=entry.target,content=$("sim-settings-panel")&&$("sim-settings-panel").querySelector(".panel-content");
-  if(!target||!content)return;
+  const panel=$("sim-settings-panel");
+  const target=entry.target,content=panel&&panel.querySelector(".panel-content");
+  if(!target||!content||!panel)return;
+  // On narrow screens Settings is below the camera. Bring the whole rail into
+  // view first, then scroll its own content to the selected control.
+  panel.scrollIntoView({behavior:"smooth",block:"start"});
   const top=content.scrollTop+target.getBoundingClientRect().top-content.getBoundingClientRect().top-24;
   content.scrollTo({top:Math.max(0,top),behavior:"smooth"});
+  if(entry.kind==="section")target.setAttribute("tabindex","-1");
   target.classList.add("setting-search-highlight");
   window.setTimeout(function(){target.focus({preventScroll:true});},180);
   window.setTimeout(function(){target.classList.remove("setting-search-highlight");},1500);

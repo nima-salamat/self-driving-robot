@@ -700,6 +700,7 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn('</header>\n{% if caps.simulator_backend == \'avis\' %}\n<div id="settings-search-modal"', template)
         self.assertIn('event.code==="KeyK"', template)
         self.assertIn('launcher.addEventListener("click",openSearch)', template)
+        self.assertIn('panel.scrollIntoView({behavior:"smooth",block:"start"})', template)
         self.assertIn('if(parent){', template)
         self.assertIn('function initAvisBottomDock()', template)
         self.assertIn('setPointerCapture', template)
