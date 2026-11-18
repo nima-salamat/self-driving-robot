@@ -329,6 +329,10 @@ class VisionProcessor:
                 return {key: info[key] for key in (
                     "state", "selected_track_id", "active_tracks", "matched_tracks",
                     "hall_satisfied", "hall_deficiency", "missed_frames",
+                    "hall_applicable", "hall_witness_track_ids",
+                    "hall_witness_candidate_indices", "hall_witness_deficiency",
+                    "association_ratio", "matching_cost", "unmatched_track_ids",
+                    "unmatched_candidate_indices",
                 )}
 
             states = (right_info["state"], left_info["state"])
@@ -341,6 +345,13 @@ class VisionProcessor:
                 "enabled": True,
                 "state": overall,
                 "hall_satisfied": bool(right_info["hall_satisfied"] and left_info["hall_satisfied"]),
+                "hall_applicable": bool(
+                    right_info["hall_applicable"] or left_info["hall_applicable"]
+                ),
+                "hall_deficiency": (
+                    int(right_info["hall_deficiency"])
+                    + int(left_info["hall_deficiency"])
+                ),
                 "right": tracking_side(right_info),
                 "left": tracking_side(left_info),
             }
