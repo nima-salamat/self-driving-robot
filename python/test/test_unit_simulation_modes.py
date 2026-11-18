@@ -700,8 +700,6 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn('addEventListener("click",focusSearch)', template)
         self.assertIn('sim-run-controls-top', template)
         self.assertIn('id="carla-run-start"', template)
-        self.assertNotIn("Feature map", template)
-        self.assertNotIn("Integration notes", template)
         decimal_settings = (
             "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
             "SIMULATOR_CAMERA_FOV", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
@@ -1443,8 +1441,6 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertIn('class="runtime-error-slot"', template)
         self.assertIn('class="camera-performance"', template)
         self.assertNotIn('id="camera-stale-overlay"', template)
-        self.assertNotIn("<h2>Feature map</h2>", template)
-        self.assertNotIn("<h2>Integration notes</h2>", template)
         self.assertIn('window.addEventListener("keydown"', template)
         self.assertIn('},true);', template)
 

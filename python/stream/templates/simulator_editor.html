@@ -568,6 +568,23 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
     </section>
 
 
+    {% if caps.simulator_backend != 'avis' %}
+    <section class="panel">
+      <div class="panel-head"><div><h2>Feature map</h2><p>Options separated by shared vision, active mode and simulator capability</p></div></div>
+      <div class="panel-content"><div class="options" id="option-groups">
+        {% for group in caps.option_groups %}
+        <div class="option-group"><h4>{{ group.title }}</h4><p>{{ group.description }}</p></div>
+        {% endfor %}
+      </div></div>
+    </section>
+    <section class="panel"><div class="panel-head"><div><h2>Integration notes</h2><p>What the adapter abstracts away</p></div></div><div class="panel-content">
+      <p class="note"><strong>Vision:</strong> {{ caps.vision_profile|capitalize }} image processing is reused directly; the camera source changes, not the algorithm.</p>
+      <p class="note"><strong>Actuators:</strong> there is no hardware serial channel here. Structured simulator actuator events are shown in the virtual console. {% if caps.simulator_backend == 'avis' %}Steering uses the legacy signed −100..100 protocol; speed uses 0..100 percent.{% endif %}</p>
+      <p class="note"><strong>Encoder:</strong> pulse count/distance are estimated from simulator movement, not treated as a hardware-grade measurement.</p>
+      <p class="note"><strong>Restart:</strong> {% if caps.simulator_backend == 'avis' %}Host, port and TCP timeout are saved in this AVIS mode's profile; reconnect the AVIS TCP session after changing connection details.{% else %}Host/port, vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.{% endif %}</p>
+    </div></section>
+    {% endif %}
+
   </div>
 
 {% if caps.simulator_backend == 'carla' %}
