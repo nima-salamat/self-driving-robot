@@ -693,11 +693,18 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn('id="save-settings" disabled', template)
         self.assertIn("is empty. Reload saved defaults", template)
         self.assertIn("function bindSettingsSearch()", template)
-        self.assertIn('querySelectorAll("[name], [id]")', template)
-        self.assertIn("searchableText.includes(query)", template)
-        self.assertIn("settings-search-clear", template)
+        self.assertIn('querySelectorAll("input[name],select[name],textarea[name]")', template)
+        self.assertIn('item.searchable.includes(query)', template)
+        self.assertIn('id="settings-search-modal"', template)
+        self.assertIn('id="settings-search-results"', template)
         self.assertIn('event.code==="KeyK"', template)
-        self.assertIn('addEventListener("click",focusSearch)', template)
+        self.assertIn('launcher.addEventListener("click",openSearch)', template)
+        self.assertIn('if(parent){', template)
+        self.assertIn('function initAvisBottomDock()', template)
+        self.assertIn('setPointerCapture', template)
+        self.assertIn('data-dock-tab="sensors"', template)
+        self.assertIn('data-dock-tab="encoder"', template)
+        self.assertIn('data-dock-tab="logs"', template)
         self.assertIn('sim-run-controls-top', template)
         self.assertIn('id="carla-run-start"', template)
         decimal_settings = (
@@ -806,7 +813,13 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertIn('id="pid-output-min"', page_text)
                     if backend == "avis":
                         self.assertIn('id="settings-search"', page_text)
-                        self.assertIn('href="#sim-pid-settings"', page_text)
+                        self.assertIn('id="settings-search-modal"', page_text)
+                        self.assertNotIn('class="settings-filter-row"', page_text)
+                        self.assertNotIn('class="avis-settings-toolbar"', page_text)
+                        self.assertIn('id="avis-bottom-dock"', page_text)
+                        self.assertIn('id="avis-sensor-view"', page_text)
+                        self.assertIn('id="encoder-count"', page_text)
+                        self.assertIn('id="event-console"', page_text)
                         self.assertIn('id="carla-run-start"', page_text)
                         self.assertIn('id="carla-run-stop"', page_text)
                         self.assertIn('sim-run-controls-top', page_text)
@@ -1447,6 +1460,28 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertNotIn('id="camera-stale-overlay"', template)
         self.assertIn('window.addEventListener("keydown"', template)
         self.assertIn('},true);', template)
+
+    def test_avis_command_palette_and_camera_console_dock(self):
+        from pathlib import Path
+
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator_editor.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('const parent=$("option-groups");', template)
+        self.assertIn('if(parent){', template)
+        self.assertIn('parent.replaceChildren();', template)
+        self.assertIn('id="settings-search-modal"', template)
+        self.assertIn('role="dialog"', template)
+        self.assertIn('id="settings-search-results"', template)
+        self.assertNotIn('id="settings-search-clear"', template)
+        self.assertNotIn('class="settings-filter-row"', template)
+        self.assertIn('id="avis-bottom-dock"', template)
+        self.assertIn('role="tablist"', template)
+        self.assertIn('role="separator"', template)
+        self.assertIn('handle.addEventListener("pointermove"', template)
+        self.assertIn('body.avis-workbench .avis-bottom-dock{position:absolute', template)
+        self.assertIn('object-fit:contain', template)
 
     def test_settings_panel_is_bounded_and_scrollable(self):
         template = (

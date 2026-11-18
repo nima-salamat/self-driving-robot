@@ -216,6 +216,104 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
  body.avis-workbench .avis-distance-card .range-number{font-size:15px}
 }
 
+
+body.avis-workbench .avis-settings-toolbar{display:none!important}
+body.avis-workbench .settings-search-modal{position:fixed;inset:0;z-index:1500;display:none;align-items:flex-start;justify-content:center;padding:clamp(32px,9vh,92px) 18px 24px;background:#030811c9;backdrop-filter:blur(12px)}
+body.avis-workbench .settings-search-modal.is-open{display:flex}
+body.avis-workbench .settings-search-window{display:flex;flex-direction:column;width:min(720px,100%);max-height:min(720px,82vh);overflow:hidden;border:1px solid #3b5268;border-radius:16px;background:linear-gradient(155deg,#1a2735,#111923 64%);box-shadow:0 28px 110px #000e}
+body.avis-workbench .settings-search-header{display:flex;align-items:center;gap:12px;padding:17px 19px 12px}
+body.avis-workbench .settings-search-header h2{margin:2px 0 0;font-size:18px}
+body.avis-workbench .settings-search-close{width:34px;height:34px;padding:0;border-radius:9px;font-size:22px;line-height:1}
+body.avis-workbench .settings-search-input-wrap{display:flex;align-items:center;gap:12px;margin:4px 18px 12px;padding:0 13px;height:54px;border:1px solid #52718b;border-radius:11px;background:#0b141e}
+body.avis-workbench .settings-search-input-wrap>span{font-size:23px;color:#84bfe5}
+body.avis-workbench .settings-search-input-wrap input{width:100%;min-width:0;height:100%;border:0;outline:0;background:transparent;color:#edf7ff;font-size:15px}
+body.avis-workbench .settings-search-input-wrap kbd,body.avis-workbench .settings-search-header kbd,body.avis-workbench .settings-search-footer kbd{padding:3px 6px;border:1px solid #344a5f;border-radius:5px;background:#172635;color:#9bb6cb;font:10px ui-monospace,Consolas,monospace;white-space:nowrap}
+body.avis-workbench .settings-search-meta{display:flex;justify-content:space-between;gap:12px;padding:0 20px 9px;color:#849aaf;font-size:10px}
+body.avis-workbench .settings-search-results{overflow:auto;min-height:100px;max-height:min(480px,55vh);padding:3px 10px 12px}
+body.avis-workbench .settings-search-result{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;margin:2px 0;text-align:left;border:1px solid transparent;border-radius:9px;background:transparent}
+body.avis-workbench .settings-search-result:hover,body.avis-workbench .settings-search-result.active{border-color:#3a5a74;background:#1c3142}
+body.avis-workbench .settings-search-result-text{display:grid;gap:3px;min-width:0}
+body.avis-workbench .settings-search-result-text strong{overflow:hidden;color:#e7f2fa;font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+body.avis-workbench .settings-search-result-text small{overflow:hidden;color:#8ea6ba;font:10px ui-monospace,Consolas,monospace;text-overflow:ellipsis;white-space:nowrap}
+body.avis-workbench .settings-search-result-kind{color:#7caacb;font:9px ui-monospace,Consolas,monospace}
+body.avis-workbench .settings-search-empty{padding:27px 18px;text-align:center;color:#8298ac;font-size:12px}
+body.avis-workbench .settings-search-footer{display:flex;justify-content:center;gap:18px;padding:10px 14px;border-top:1px solid #293a4b;color:#8298ac;font-size:10px}
+body.avis-workbench .settings-search-footer span{display:flex;align-items:center;gap:4px}
+body.avis-workbench .setting-search-highlight{animation:avis-setting-focus 1.45s ease}
+@keyframes avis-setting-focus{0%,100%{background:transparent}18%,72%{background:#24516a70;box-shadow:0 0 0 2px #69b9e955;border-radius:8px}}
+
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;gap:0;padding:0}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{display:flex;flex:1 1 auto;flex-direction:column;height:100%;min-height:0;overflow:hidden}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child>.panel-head{flex:0 0 auto}
+body.avis-workbench .sim-layout.avis-layout .camera-wrap{position:relative;display:block;flex:1 1 0;width:100%;height:auto;min-height:220px;overflow:hidden;background:radial-gradient(ellipse at center,#101d2a,#05090e 78%)}
+body.avis-workbench .sim-layout.avis-layout .sim-camera-frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;width:100%;height:100%;max-width:none;overflow:hidden}
+body.avis-workbench .sim-layout.avis-layout .sim-camera-frame img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;background:transparent}
+body.avis-workbench .sim-layout.avis-layout .sim-camera-frame .sim-roi-canvas{z-index:2}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child>.panel-content{flex:0 0 220px;min-height:160px;max-height:240px;overflow:auto;overscroll-behavior:contain}
+body.avis-workbench .sim-layout.avis-layout .camera-status-stack{margin-bottom:8px}
+
+body.avis-workbench .avis-bottom-dock{position:absolute;z-index:8;left:12px;right:12px;bottom:12px;height:var(--avis-dock-height,76px);display:flex;flex-direction:column;overflow:hidden;border:1px solid #486278;border-radius:12px;background:#0a121bef;box-shadow:0 12px 42px #000b;backdrop-filter:blur(14px);transition:height .12s ease}
+body.avis-workbench .avis-dock-handle{flex:0 0 24px;display:flex;align-items:center;gap:10px;padding:3px 9px 1px;cursor:ns-resize;touch-action:none;user-select:none;border-bottom:1px solid #273a4c}
+body.avis-workbench .avis-dock-grip{display:block;width:34px;height:4px;border-radius:9px;background:#5e7d96}
+body.avis-workbench .avis-dock-title{display:flex;align-items:baseline;gap:9px;min-width:0}
+body.avis-workbench .avis-dock-title strong{color:#d9e9f5;font-size:9px;letter-spacing:.13em}
+body.avis-workbench .avis-dock-title small{color:#829bb0;font-size:9px}
+body.avis-workbench .avis-dock-toggle{width:25px;height:22px;min-height:22px;padding:0;border:0;background:transparent;color:#9fc5df;font-size:18px;line-height:1}
+body.avis-workbench .avis-dock-tabs{flex:0 0 38px;display:flex;align-items:stretch;gap:5px;padding:3px 8px;border-bottom:1px solid #273a4c;background:#0c1721}
+body.avis-workbench .avis-dock-tabs button{min-width:98px;padding:5px 12px;border:1px solid transparent;border-radius:7px;background:transparent;color:#8098ab;font-size:11px}
+body.avis-workbench .avis-dock-tabs button.active{border-color:#355a75;background:#1b3448;color:#dcf1ff}
+body.avis-workbench .avis-dock-body{display:none;flex:1 1 auto;min-height:0;overflow:hidden}
+body.avis-workbench .avis-bottom-dock.is-expanded .avis-dock-body{display:block}
+body.avis-workbench .avis-dock-pane{width:100%;height:100%;min-height:0;overflow:auto;padding:9px 11px}
+body.avis-workbench .avis-dock-pane[hidden]{display:none!important}
+body.avis-workbench .avis-dock-sensor-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(230px,1fr);gap:12px;align-items:stretch;min-height:0}
+body.avis-workbench .avis-dock-sensor-visual{min-width:0;overflow:hidden;border:1px solid #263b4e;border-radius:8px;background:#0b1520}
+body.avis-workbench .avis-dock-section-label{height:23px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#7795ad;font:9px ui-monospace,Consolas,monospace}
+body.avis-workbench .avis-dock-sensor-visual .avis-sensor-canvas{display:block;width:100%;height:160px;border:0;border-radius:0;background:transparent}
+body.avis-workbench .avis-dock-sensor-readings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;align-content:center}
+body.avis-workbench .avis-dock-sensor-readings .avis-distance-card{padding:8px;border:1px solid #2e4357;border-radius:8px;background:#152330;min-width:0}
+body.avis-workbench .avis-dock-sensor-readings .eyebrow{font-size:8px;letter-spacing:.07em}
+body.avis-workbench .avis-dock-sensor-readings .range-number{display:flex;align-items:baseline;gap:3px;margin-top:4px;font:700 15px ui-monospace,Consolas,monospace;white-space:nowrap}
+body.avis-workbench .avis-dock-sensor-readings .range-number .unit{font-size:9px}
+body.avis-workbench .avis-dock-sensor-readings .range-track{height:3px;margin-top:7px}
+body.avis-workbench .avis-dock-sensor-readings .unit:last-child{display:block;margin-top:5px;min-height:22px;color:#8297aa;font-size:9px;line-height:1.25}
+body.avis-workbench .avis-dock-foot{display:flex;align-items:center;gap:12px;min-width:0;margin-top:7px;color:#8aa0b3;font-size:9px}
+body.avis-workbench .avis-dock-foot #avis-sensor-note{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+body.avis-workbench .avis-dock-legend{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:#9bb0c1}
+body.avis-workbench .avis-dock-legend i{display:inline-block;width:6px;height:6px;margin-left:5px;border-radius:50%}
+body.avis-workbench .avis-dock-legend .safe{background:#70d8eb}
+body.avis-workbench .avis-dock-legend .near{background:#f6bd64}
+body.avis-workbench .avis-dock-legend .danger{background:#ff7c82}
+body.avis-workbench .avis-dock-legend .unknown{background:#72869a}
+body.avis-workbench .avis-encoder-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:780px;margin:10px auto}
+body.avis-workbench .avis-encoder-card{display:grid;gap:7px;padding:15px 18px;border:1px solid #2e465a;border-radius:10px;background:linear-gradient(145deg,#162a3b,#101c29)}
+body.avis-workbench .avis-encoder-card>strong{color:#e5f4ff;font:750 28px ui-monospace,Consolas,monospace}
+body.avis-workbench .avis-encoder-card>strong small{font-size:13px;color:#9bb4c8}
+body.avis-workbench .avis-encoder-card>small{color:#849db1;font-size:10px}
+body.avis-workbench .avis-dock-log-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+body.avis-workbench .avis-dock-log-head button{padding:4px 9px;font-size:10px}
+body.avis-workbench .avis-dock-console{height:calc(100% - 26px);max-height:none;min-height:100px;border:1px solid #263b4e;background:#070d13}
+@media(max-width:1020px){
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child{height:auto;min-height:0;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{height:calc(100dvh - 90px);min-height:620px}
+ body.avis-workbench .sim-layout.avis-layout .camera-wrap{flex:1 1 auto;min-height:360px}
+ body.avis-workbench .sim-layout.avis-layout .sim-camera-frame{height:100%}
+}
+@media(max-width:650px){
+ body.avis-workbench .settings-search-modal{padding:18px 9px}
+ body.avis-workbench .settings-search-window{max-height:88vh;border-radius:12px}
+ body.avis-workbench .settings-search-meta{font-size:9px}
+ body.avis-workbench .settings-search-footer{gap:8px;font-size:9px}
+ body.avis-workbench .avis-bottom-dock{left:7px;right:7px;bottom:7px}
+ body.avis-workbench .avis-dock-sensor-layout{grid-template-columns:minmax(0,1fr)}
+ body.avis-workbench .avis-dock-sensor-visual .avis-sensor-canvas{height:115px}
+ body.avis-workbench .avis-dock-sensor-readings{gap:5px}
+ body.avis-workbench .avis-dock-sensor-readings .avis-distance-card{padding:6px}
+ body.avis-workbench .avis-dock-sensor-readings .range-number{font-size:13px}
+ body.avis-workbench .avis-dock-foot{gap:5px}
+ body.avis-workbench .avis-dock-legend{display:none}
+}
+
 </style>
 {% if auth_enabled %}
 <script>(function(){const f=window.fetch.bind(window);window.fetch=function(i,o){return f(i,o).then(function(r){if(r.status===401&&location.pathname!=="/login")location.replace("/login");return r;});};})();</script>
@@ -230,7 +328,7 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
   <span class="sim-spacer"></span>
   <div class="sim-status"><span id="connection-led" class="led"></span><span id="connection-label">Connecting…</span></div>
   {% if caps.simulator_backend == 'avis' %}
-  <button id="settings-search-open" class="topbar-search" type="button" title="Search settings · Ctrl+K" aria-controls="settings-search">⌕ Search <kbd>Ctrl K</kbd></button>
+  <button id="settings-search-open" class="topbar-search" type="button" title="Search settings · Ctrl+K" aria-haspopup="dialog" aria-controls="settings-search-modal">⌕ Search <kbd>Ctrl K</kbd></button>
   <div class="sim-run-controls sim-run-controls-top" role="group" aria-label="AVIS autonomous run controls">
     <span class="pill carla-run-state stopped" id="carla-run-state">STOPPED</span>
     <button type="button" id="carla-run-start" class="carla-run-start" disabled>▶ START</button>
@@ -240,12 +338,78 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
   {% endif %}
   {% if caps.supports_range_sensors %}<button id="avis-reconnect" type="button">↻ Reconnect AVIS</button>{% endif %}
   <button id="refresh" type="button">Refresh</button>
-</header>
+</header
+{% if caps.simulator_backend == 'avis' %}
+<div id="settings-search-modal" class="settings-search-modal" aria-hidden="true">
+ <section class="settings-search-window" role="dialog" aria-modal="true" aria-labelledby="settings-search-title">
+  <header class="settings-search-header">
+   <div><div class="eyebrow">QUICK NAVIGATION</div><h2 id="settings-search-title">Find a setting</h2></div>
+   <span class="sim-spacer"></span><kbd>ESC</kbd>
+   <button type="button" id="settings-search-close" class="settings-search-close" aria-label="Close settings search">×</button>
+  </header>
+  <div class="settings-search-input-wrap"><span aria-hidden="true">⌕</span>
+   <input id="settings-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search by setting name, key or category…" aria-label="Search simulator settings">
+   <kbd>CTRL K</kbd>
+  </div>
+  <div class="settings-search-meta"><span id="settings-search-count">Search settings by name or key</span><span>Click a result to jump to it</span></div>
+  <div id="settings-search-results" class="settings-search-results" role="listbox" aria-label="Matching settings">
+   <div class="settings-search-empty">Start typing to find connection, sensors, motion, vision, ROI, calibration or PID settings.</div>
+  </div>
+  <footer class="settings-search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open setting</span><span><kbd>ESC</kbd> Close</span></footer>
+ </section>
+</div>
+{% endif %}
+>
 <main class="sim-layout{% if caps.simulator_backend == 'avis' %} avis-layout{% endif %}">
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
-      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
+      <div class="camera-wrap" id="camera-stage">
+ <span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span>
+ <div class="sim-camera-frame" id="sim-camera-frame">
+  <img id="camera" alt="Simulator camera frame">
+  <canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas>
+ </div>
+ {% if caps.simulator_backend == 'avis' %}
+ <section id="avis-bottom-dock" class="avis-bottom-dock" aria-label="Live simulator console">
+  <div id="avis-dock-handle" class="avis-dock-handle" role="separator" aria-label="Drag to resize live console" aria-orientation="horizontal" aria-valuemin="76" aria-valuemax="420" aria-valuenow="76" tabindex="0">
+   <span class="avis-dock-grip" aria-hidden="true"></span><span class="avis-dock-title"><strong>LIVE CONSOLE</strong><small>Sensor · encoder · runtime logs</small></span>
+   <span class="sim-spacer"></span><button id="avis-dock-toggle" type="button" class="avis-dock-toggle" aria-label="Expand live console">⌃</button>
+  </div>
+  <div class="avis-dock-tabs" role="tablist" aria-label="Live console sections">
+   <button type="button" class="active" data-dock-tab="sensors" role="tab" aria-selected="true" aria-controls="avis-dock-sensors">◉ Sensors</button>
+   <button type="button" data-dock-tab="encoder" role="tab" aria-selected="false" aria-controls="avis-dock-encoder">◎ Encoder</button>
+   <button type="button" data-dock-tab="logs" role="tab" aria-selected="false" aria-controls="avis-dock-logs">≡ Logs</button>
+  </div>
+  <div class="avis-dock-body">
+   <section id="avis-dock-sensors" class="avis-dock-pane active" data-dock-pane="sensors" role="tabpanel">
+    <div class="avis-dock-sensor-layout">
+     <div class="avis-dock-sensor-visual">
+      <div class="avis-dock-section-label"><span>TOP-DOWN RANGE VIEW</span><span id="avis-angle-hint">SIDE ANGLE · —</span></div>
+      <canvas id="avis-sensor-view" class="avis-sensor-canvas" width="900" height="420" aria-label="Top-down diagram of AVIS left, front and right distance sensors"></canvas>
+     </div>
+     <div class="avis-dock-sensor-readings">
+      <div class="avis-distance-card"><div class="eyebrow">LEFT</div><div id="range-left" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-left" class="range-fill"></div></div><div id="range-left-state" class="unit">Waiting</div></div>
+      <div class="avis-distance-card"><div class="eyebrow">FRONT / MIDDLE</div><div id="range-front" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-front" class="range-fill"></div></div><div id="range-front-state" class="unit">Waiting</div></div>
+      <div class="avis-distance-card"><div class="eyebrow">RIGHT</div><div id="range-right" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-right" class="range-fill"></div></div><div id="range-right-state" class="unit">Waiting</div></div>
+     </div>
+    </div>
+    <div class="avis-dock-foot"><span id="avis-sensor-state" class="pill">Waiting for sensors</span><span class="avis-dock-legend"><i class="safe"></i> Clear <i class="near"></i> Near <i class="danger"></i> Stop <i class="unknown"></i> Unknown</span><span id="avis-sensor-note">Waiting for the latest AVIS sensor sample.</span></div>
+   </section>
+   <section id="avis-dock-encoder" class="avis-dock-pane" data-dock-pane="encoder" role="tabpanel" hidden>
+    <div class="avis-encoder-grid">
+     <article class="avis-encoder-card"><span class="eyebrow">VIRTUAL PULSE COUNT</span><strong id="encoder-count">0</strong><small>Estimated pulses from simulator movement</small></article>
+     <article class="avis-encoder-card"><span class="eyebrow">ESTIMATED DISTANCE</span><strong id="encoder-distance">0 <small>cm</small></strong><small>Motion-derived telemetry · not a hardware encoder</small></article>
+    </div>
+   </section>
+   <section id="avis-dock-logs" class="avis-dock-pane" data-dock-pane="logs" role="tabpanel" hidden>
+    <div class="avis-dock-log-head"><span class="eyebrow">RUNTIME EVENTS · LATEST 100</span><button id="clear-events" type="button">Clear logs</button></div>
+    <div class="console avis-dock-console" id="event-console" aria-live="polite"><div class="muted">Waiting for runtime events…</div></div>
+   </section>
+  </div>
+ </section>
+ {% endif %}
+</div>
       <div class="panel-content">
         <div class="camera-status-stack" aria-live="polite">
           <div id="runtime-error" class="runtime-error-slot" role="alert" aria-live="assertive"></div>
@@ -291,29 +455,9 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
       <div class="panel-content"><canvas id="lidar-view" class="lidar-canvas" width="720" height="290"></canvas><div class="note" id="lidar-note">LiDAR uses CARLA's ray-cast point cloud. It is separate from camera-based lane processing.</div></div>
     </section>
 
-    <section class="panel avis-sensor-panel {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="range-panel">
-      <div class="panel-head">
-        <div><h2>AVIS · Range sensors</h2><p>Measured distances · left, front and right</p></div>
-        <span class="sim-spacer"></span><span id="avis-sensor-state" class="pill">Waiting for sensors</span>
-        <button type="button" id="avis-sensor-expand">Expand</button>
-      </div>
-      <div class="panel-content">
-        <div class="avis-sensor-stage">
-          <div class="avis-sensor-stage-head"><span>TOP-DOWN SENSOR VIEW</span><span id="avis-angle-hint">SIDE ANGLE · —</span></div>
-          <canvas id="avis-sensor-view" class="avis-sensor-canvas" width="900" height="420" aria-label="Top-down diagram of AVIS left, front and right distance sensors"></canvas>
-        </div>
-        <div class="avis-sensor-legend">
-          <span><i class="safe"></i>Clear</span><span><i class="near"></i>Near threshold</span><span><i class="danger"></i>Stop threshold</span><span><i class="unknown"></i>No reading</span>
-        </div>
-        <div class="sensor-columns">
-          <div class="avis-distance-card"><div class="eyebrow">LEFT</div><div id="range-left" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-left" class="range-fill"></div></div><div id="range-left-state" class="unit">Waiting</div></div>
-          <div class="avis-distance-card"><div class="eyebrow">FRONT / MIDDLE</div><div id="range-front" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-front" class="range-fill"></div></div><div id="range-front-state" class="unit">Waiting</div></div>
-          <div class="avis-distance-card"><div class="eyebrow">RIGHT</div><div id="range-right" class="range-number">— <span class="unit">cm</span></div><div class="range-track"><div id="bar-right" class="range-fill"></div></div><div id="range-right-state" class="unit">Waiting</div></div>
-        </div>
-        <p class="note avis-sensor-note" id="avis-sensor-note">Waiting for the latest AVIS sensor sample.</p>
-      </div>
-    </section>
 
+
+    {% if caps.simulator_backend != 'avis' %}
     <section class="panel">
       <div class="panel-head"><div><h2>Virtual I/O</h2><p>Software equivalents for hardware features not present in the simulator</p></div><span class="pill live">SIMULATED</span></div>
       <div class="panel-content">
@@ -324,11 +468,14 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
         <p class="note">These values are simulated telemetry, not physical encoder measurements. CARLA distance is estimated from vehicle movement; AVIS distance is estimated from reported speed.</p>
       </div>
     </section>
+    {% endif %}
 
+    {% if caps.simulator_backend != 'avis' %}
     <section class="panel">
       <div class="panel-head"><div><h2>Virtual actuator console</h2><p>Structured steering, speed, brake and safety events replacing the physical Arduino serial console</p></div><span class="sim-spacer"></span><button id="clear-events" type="button">Clear view</button></div>
       <div class="panel-content"><div class="console" id="event-console" aria-live="polite"><div class="muted">Waiting for runtime events…</div></div></div>
     </section>
+    {% endif %}
   </div>
 
   <div class="stack">
@@ -386,26 +533,7 @@ body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28p
       <div class="panel-content">
         <div id="save-message" class="msg" role="status"></div>
         <form id="settings-form">
-          {% if caps.simulator_backend == 'avis' %}
-          <div class="avis-settings-toolbar">
-            <div><strong>AVIS configuration</strong><span>Mode-specific settings · {{ mode }}.sim.json</span></div>
-            <div class="settings-filter-row">
-              <label for="settings-search">Find a setting</label>
-              <input id="settings-search" type="search" autocomplete="off" placeholder="Search PID, ROI, Hough, speed…">
-              <button type="button" id="settings-search-clear" disabled>Clear</button>
-              <span id="settings-search-status" role="status" aria-live="polite">All settings visible</span>
-            </div>
-            <nav aria-label="AVIS settings sections">
-              <a href="#sim-connection-settings">Connection</a>
-              <a href="#avis-settings">Sensors</a>
-              <a href="#sim-vehicle-safety">Motion</a>
-              <a href="#sim-vision-settings">Vision</a>
-              <a href="#sim-lane-roi-settings">Lane ROI</a>
-              <a href="#sim-servo-calibration">Calibration</a>
-              <a href="#sim-pid-settings">PID control</a>
-            </nav>
-          </div>
-          {% endif %}
+
           <div class="setting-block" id="sim-connection-settings">
             <h3 class="section-title">Simulator connection</h3>
             <div class="grid-two">
@@ -761,55 +889,151 @@ function populate(s){
   drawSimRoiOverlay();
 }
 function bindSettingsSearch(){
-  const input=$("settings-search"),clear=$("settings-search-clear"),summary=$("settings-search-status");
-  if(!input||!clear||!summary)return;
-  const blocks=Array.from(document.querySelectorAll("#settings-form > .setting-block"));
-  const links=Array.from(document.querySelectorAll(".avis-settings-toolbar nav a"));
-  function apply(){
-    const query=String(input.value||"").trim().toLowerCase();
-    let visible=0,total=0;
-    blocks.forEach(function(block){
-      const available=!block.classList.contains("section-hide");
-      const controlTerms=Array.from(block.querySelectorAll("[name], [id]")).map(function(control){
-        return [control.name,control.id].filter(Boolean).join(" ");
-      }).join(" ");
-      const searchableText=(block.textContent+" "+controlTerms).toLowerCase();
-      const match=!query||searchableText.includes(query);
-      block.classList.toggle("settings-search-hidden",!!query&&(!available||!match));
-      if(available){total++;if(match)visible++;}
-      const link=links.find(function(anchor){return anchor.getAttribute("href")==="#"+block.id;});
-      if(link)link.classList.toggle("search-hidden",!!query&&(!available||!match));
-    });
-    clear.disabled=!query;
-    summary.textContent=query?(visible+" of "+total+" sections match"):("All "+total+" sections visible");
-    if(query&&visible===0)summary.textContent="No matching settings sections";
-  }
-  function focusSearch(){
-    const content=$("sim-settings-panel")&&$("sim-settings-panel").querySelector(".panel-content");
-    if(content)content.scrollTop=0;
-    input.focus({preventScroll:true});
-    input.select();
-  }
-  input.addEventListener("input",apply);
-  clear.addEventListener("click",function(){input.value="";apply();focusSearch();});
-  input.addEventListener("keydown",function(event){
-    if(event.key==="Escape"){event.preventDefault();input.value="";apply();input.blur();}
+ const modal=$("settings-search-modal"),input=$("settings-search"),results=$("settings-search-results");
+ const count=$("settings-search-count"),launcher=$("settings-search-open"),closeButton=$("settings-search-close");
+ if(!modal||!input||!results||!launcher||!closeButton)return;
+ let entries=[],activeIndex=-1,returnFocus=null;
+ function buildIndex(){
+  entries=[];
+  document.querySelectorAll("#settings-form > .setting-block").forEach(function(block){
+   if(block.classList.contains("section-hide"))return;
+   const heading=block.querySelector(".section-title"),section=heading?heading.textContent.trim():"Settings";
+   block.querySelectorAll("input[name],select[name],textarea[name]").forEach(function(control){
+    if(control.closest(".section-hide"))return;
+    const labels=control.labels?Array.from(control.labels):[];
+    const label=labels.map(function(node){return node.textContent.trim();}).filter(Boolean).join(" ");
+    const field=control.closest(".field,.check-field")||control.parentElement;
+    const context=field?field.textContent.trim().replace(/\s+/g," ").slice(0,150):"";
+    const title=label||control.getAttribute("aria-label")||control.name||control.id||section;
+    const detail=section+" · "+(control.name||control.id||"setting");
+    entries.push({title:title,detail:detail,searchable:[title,detail,control.name,control.id,context].join(" ").toLowerCase(),target:control,kind:"field"});
+   });
+   if(heading)entries.push({title:section,detail:"Open section",searchable:(section+" "+block.textContent).toLowerCase(),target:block,kind:"section"});
   });
-  const launcher=$("settings-search-open");
-  if(launcher)launcher.addEventListener("click",focusSearch);
-  // Capture before browser/editor shortcuts so Ctrl/Cmd+K consistently opens AVIS search.
-  window.addEventListener("keydown",function(event){
-    if((event.ctrlKey||event.metaKey)&&!event.altKey&&
-       (String(event.key||"").toLowerCase()==="k"||event.code==="KeyK")){
-      event.preventDefault();
-      event.stopPropagation();
-      if(typeof event.stopImmediatePropagation==="function")event.stopImmediatePropagation();
-      focusSearch();
-    }
-  },true);
-  apply();
+ }
+ function closeSearch(){
+  modal.classList.remove("is-open");modal.setAttribute("aria-hidden","true");activeIndex=-1;
+  if(returnFocus&&typeof returnFocus.focus==="function")returnFocus.focus({preventScroll:true});
+ }
+ function openSearch(){
+  returnFocus=document.activeElement;input.value="";
+  modal.classList.add("is-open");modal.setAttribute("aria-hidden","false");
+  renderResults();window.setTimeout(function(){input.focus();},0);
+ }
+ function jumpTo(entry){
+  closeSearch();
+  const target=entry.target,content=$("sim-settings-panel")&&$("sim-settings-panel").querySelector(".panel-content");
+  if(!target||!content)return;
+  const top=content.scrollTop+target.getBoundingClientRect().top-content.getBoundingClientRect().top-24;
+  content.scrollTo({top:Math.max(0,top),behavior:"smooth"});
+  target.classList.add("setting-search-highlight");
+  window.setTimeout(function(){target.focus({preventScroll:true});},180);
+  window.setTimeout(function(){target.classList.remove("setting-search-highlight");},1500);
+ }
+ function renderResults(){
+  const query=String(input.value||"").trim().toLowerCase();
+  results.replaceChildren();activeIndex=-1;
+  if(!query){
+   const empty=document.createElement("div");empty.className="settings-search-empty";
+   empty.textContent="Start typing to find connection, sensors, motion, vision, ROI, calibration or PID settings.";
+   results.append(empty);count.textContent=entries.filter(function(item){return item.kind==="field";}).length+" settings indexed";return;
+  }
+  const matches=entries.map(function(item){
+   const title=item.title.toLowerCase(),detail=item.detail.toLowerCase();let score=0;
+   if(title===query)score=100;else if(title.startsWith(query))score=55;else if(detail.includes(query))score=35;else if(title.includes(query))score=25;else if(item.searchable.includes(query))score=10;
+   return {item:item,score:score};
+  }).filter(function(result){return result.score>0;}).sort(function(a,b){return b.score-a.score;}).slice(0,30);
+  count.textContent=matches.length?matches.length+" matching results":"No matching settings";
+  if(!matches.length){
+   const empty=document.createElement("div");empty.className="settings-search-empty";
+   empty.textContent="No results. Try KP, PID, ROI, threshold, speed or a configuration key.";
+   results.append(empty);return;
+  }
+  matches.forEach(function(match,index){
+   const item=match.item,button=document.createElement("button");
+   button.type="button";button.className="settings-search-result";button.setAttribute("role","option");
+   button.setAttribute("aria-selected","false");button.dataset.resultIndex=String(index);
+   const wrap=document.createElement("span");wrap.className="settings-search-result-text";
+   const title=document.createElement("strong");title.textContent=item.title;
+   const detail=document.createElement("small");detail.textContent=item.detail;
+   wrap.append(title,detail);
+   const kind=document.createElement("span");kind.className="settings-search-result-kind";kind.textContent=item.kind==="section"?"SECTION":"SETTING";
+   button.append(wrap,kind);button.addEventListener("click",function(){jumpTo(item);});
+   results.append(button);
+  });
+ }
+ function setActive(next){
+  const buttons=Array.from(results.querySelectorAll(".settings-search-result"));if(!buttons.length)return;
+  activeIndex=(next+buttons.length)%buttons.length;
+  buttons.forEach(function(button,index){
+   const selected=index===activeIndex;button.classList.toggle("active",selected);button.setAttribute("aria-selected",String(selected));
+  });
+  buttons[activeIndex].scrollIntoView({block:"nearest"});
+ }
+ input.addEventListener("input",renderResults);
+ input.addEventListener("keydown",function(event){
+  if(event.key==="Escape"){event.preventDefault();closeSearch();}
+  else if(event.key==="ArrowDown"){event.preventDefault();setActive(activeIndex+1);}
+  else if(event.key==="ArrowUp"){event.preventDefault();setActive(activeIndex<0?0:activeIndex-1);}
+  else if(event.key==="Enter"&&activeIndex>=0){
+   event.preventDefault();const selected=results.querySelector('[data-result-index="'+activeIndex+'"]');if(selected)selected.click();
+  }
+ });
+ closeButton.addEventListener("click",closeSearch);
+ modal.addEventListener("click",function(event){if(event.target===modal)closeSearch();});
+ launcher.addEventListener("click",openSearch);
+ window.addEventListener("keydown",function(event){
+  if((event.ctrlKey||event.metaKey)&&!event.altKey&&(String(event.key||"").toLowerCase()==="k"||event.code==="KeyK")){
+   event.preventDefault();event.stopPropagation();
+   if(typeof event.stopImmediatePropagation==="function")event.stopImmediatePropagation();
+   if(modal.classList.contains("is-open"))input.focus();else openSearch();
+  }
+  if(event.key==="Escape"&&modal.classList.contains("is-open")){event.preventDefault();closeSearch();}
+ },true);
+ buildIndex();renderResults();
 }
 bindSettingsSearch();
+
+function initAvisBottomDock(){
+ const dock=$("avis-bottom-dock"),handle=$("avis-dock-handle");if(!dock||!handle)return;
+ const tabs=Array.from(dock.querySelectorAll("[data-dock-tab]")),panes=Array.from(dock.querySelectorAll("[data-dock-pane]"));
+ const toggle=$("avis-dock-toggle");let drag=null;
+ function maxHeight(){return Math.min(420,Math.max(220,Math.round(window.innerHeight*.62)));}
+ function setHeight(value){
+  const height=Math.max(76,Math.min(maxHeight(),Math.round(value)));
+  dock.style.setProperty("--avis-dock-height",height+"px");dock.classList.toggle("is-expanded",height>110);
+  handle.setAttribute("aria-valuenow",String(height));
+  if(toggle){toggle.textContent=height>110?"⌄":"⌃";toggle.setAttribute("aria-label",height>110?"Collapse live console":"Expand live console");}
+ }
+ function expand(){setHeight(Math.min(310,maxHeight()));}
+ function toggleDock(){if(dock.classList.contains("is-expanded"))setHeight(76);else expand();}
+ function selectTab(name){
+  tabs.forEach(function(tab){const active=tab.dataset.dockTab===name;tab.classList.toggle("active",active);tab.setAttribute("aria-selected",String(active));});
+  panes.forEach(function(pane){const active=pane.dataset.dockPane===name;pane.classList.toggle("active",active);pane.hidden=!active;});
+  if(!dock.classList.contains("is-expanded"))expand();
+ }
+ tabs.forEach(function(tab){tab.addEventListener("click",function(){selectTab(tab.dataset.dockTab);});});
+ if(toggle)toggle.addEventListener("click",toggleDock);
+ handle.addEventListener("pointerdown",function(event){
+  if(event.target.closest("button"))return;
+  drag={y:event.clientY,height:dock.getBoundingClientRect().height,moved:false};
+  if(handle.setPointerCapture)handle.setPointerCapture(event.pointerId);
+  event.preventDefault();
+ });
+ handle.addEventListener("pointermove",function(event){
+  if(!drag)return;const delta=drag.y-event.clientY;if(Math.abs(delta)>4)drag.moved=true;
+  if(drag.moved)setHeight(drag.height+delta);
+ });
+ function finish(){if(!drag)return;const moved=drag.moved;drag=null;if(!moved)toggleDock();}
+ handle.addEventListener("pointerup",finish);handle.addEventListener("pointercancel",finish);
+ handle.addEventListener("keydown",function(event){
+  if(event.key==="ArrowUp"){event.preventDefault();setHeight(dock.getBoundingClientRect().height+28);}
+  else if(event.key==="ArrowDown"){event.preventDefault();setHeight(dock.getBoundingClientRect().height-28);}
+  else if(event.key==="Enter"||event.key===" "){event.preventDefault();toggleDock();}
+ });
+ selectTab("sensors");setHeight(76);
+}
+initAvisBottomDock();
 const simRoiDefs = [
   {id:"RL",label:"Right lane",color:"#48d7a4",fields:{top:"rl-top",bottom:"rl-bottom",left:"rl-left",right:"rl-right"}},
   {id:"LL",label:"Left lane",color:"#65a8ff",fields:{top:"ll-top",bottom:"ll-bottom",left:"ll-left",right:"ll-right"}},
@@ -864,7 +1088,12 @@ function simRoiUpdateSelection(){
 }
 function fitSimulatorCameraFrame(){
   const frame=$("sim-camera-frame"),wrap=frame&&frame.parentElement;
-  if(!frame||!wrap||!camera.naturalWidth||!camera.naturalHeight)return;
+  if(!frame||!wrap)return;
+  if(caps.simulator_backend==="avis"){
+    frame.style.width="100%";frame.style.height="100%";
+    drawSimRoiOverlay();return;
+  }
+  if(!camera.naturalWidth||!camera.naturalHeight)return;
   const ratio=camera.naturalWidth/camera.naturalHeight;
   if(!Number.isFinite(ratio)||ratio<=0)return;
   const maxWidth=Math.max(1,wrap.clientWidth);
@@ -1105,13 +1334,17 @@ async function loadSettings(){
   $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
   $("editor-description").textContent=mode+" · "+caps.vision_profile+" vision · settings isolated from physical mode JSON";
   if(data.option_groups){
-    const parent=$("option-groups"); parent.replaceChildren();
-    data.option_groups.forEach(function(group){
-      const card=document.createElement("div"); card.className="option-group";
-      const h=document.createElement("h4"); h.textContent=group.title;
-      const p=document.createElement("p"); p.textContent=group.description;
-      card.append(h,p); parent.append(card);
-    });
+    const parent=$("option-groups");
+    // AVIS intentionally omits the optional Feature map panel.
+    if(parent){
+      parent.replaceChildren();
+      data.option_groups.forEach(function(group){
+        const card=document.createElement("div"); card.className="option-group";
+        const h=document.createElement("h4"); h.textContent=group.title;
+        const p=document.createElement("p"); p.textContent=group.description;
+        card.append(h,p); parent.append(card);
+      });
+    }
   }
   simulatorSettingsReady=true;
   }catch(error){
@@ -1451,7 +1684,11 @@ $("settings-form").addEventListener("submit",async function(event){
 });
 $("reload-settings").addEventListener("click",function(){loadSettings().then(function(){status("Loaded saved settings.",true);}).catch(function(e){status(e.message,false);});});
 $("refresh").addEventListener("click",function(){poll();});
-$("clear-events").addEventListener("click",function(){$("event-console").replaceChildren();eventKeys=[];seenEvents.clear();});
+const clearEventsButton=$("clear-events");
+if(clearEventsButton)clearEventsButton.addEventListener("click",function(){
+ const consoleEl=$("event-console");if(consoleEl)consoleEl.replaceChildren();
+ eventKeys=[];seenEvents.clear();
+});
 camera.addEventListener("error",function(){camera.alt="The latest simulator camera JPEG could not be decoded.";});
 camera.addEventListener("load",fitSimulatorCameraFrame);
 window.addEventListener("resize",fitSimulatorCameraFrame);
