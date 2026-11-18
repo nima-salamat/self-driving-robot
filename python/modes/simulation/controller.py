@@ -45,9 +45,10 @@ class VirtualVehicleController:
         now = time.monotonic()
         dt = max(0.0, min(0.25, now - self._last_control_at))
         self._last_control_at = now
-        if self.backend == "carla":
-            # A vision servo angle is not a CARLA road-wheel angle. Full [-1, 1]
-            # is maximum steering authority, so cap and slew the normalized input.
+        if self.backend in {"carla", "avis"}:
+            # Both simulator backends need a normalized steering envelope.
+            # AVIS previously received raw frame-to-frame vision changes, which
+            # made small lane-detection fluctuations appear as steering jitter.
             steering_limit = min(1.0, max(0.05, float(getattr(self.config, "SIMULATOR_STEERING_LIMIT", 0.28))))
             steering_rate = min(10.0, max(0.10, float(getattr(self.config, "SIMULATOR_STEERING_RATE", 0.80))))
             target_steering = max(-steering_limit, min(steering_limit, steering))

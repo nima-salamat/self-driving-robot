@@ -330,6 +330,8 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertFalse((Path(directory) / "race.json").exists())
             avis_path = load_simulator_settings(config, "avis", "avis")
             self.assertEqual(config.SIMULATOR_PORT, 25001)
+            self.assertEqual(config.SIMULATOR_STEERING_LIMIT, 1.0)
+            self.assertEqual(config.SIMULATOR_STEERING_RATE, 2.0)
             self.assertTrue(config.SIMULATOR_LIDAR_ENABLED is False)
             self.assertNotEqual(carla_path, avis_path)
 
@@ -1261,6 +1263,35 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertAlmostEqual(first.throttle, 0.012, places=3)
         self.assertAlmostEqual(second.throttle, 0.024, places=3)
         self.assertLessEqual(abs(second.steering), 0.28)
+
+    def test_avis_steering_is_slew_limited_against_alternating_vision_noise(self):
+        self.config.SIMULATOR_STEERING_LIMIT = 1.0
+        self.config.SIMULATOR_STEERING_RATE = 2.0
+        with patch("modes.simulation.controller.time.monotonic", side_effect=[10.0, 10.1, 10.2, 10.3]):
+            controller = VirtualVehicleController(self.config, "avis")
+            right = controller.command_for({"perception_valid": True, "steering_angle": 130})
+            left = controller.command_for({"perception_valid": True, "steering_angle": 50})
+            right_again = controller.command_for({"perception_valid": True, "steering_angle": 130})
+
+        # A raw vision estimate flips between +/-1.0, but the actuator command
+        # moves by at most 0.2 per 100 ms tick instead of snapping across lanes.
+        self.assertAlmostEqual(right.steering, 0.2, places=3)
+        self.assertAlmostEqual(left.steering, 0.0, places=3)
+        self.assertAlmostEqual(right_again.steering, 0.2, places=3)
+
+    def test_settings_panel_is_bounded_and_scrollable(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator_editor.html"
+        ).read_text(encoding="utf-8")
+        scroll_styles = template[
+            template.index(".sim-settings-panel{"):
+            template.index("camera-stale-overlay")
+        ]
+        self.assertIn("height:min(82vh,820px)", scroll_styles)
+        self.assertIn("overflow-y:auto", scroll_styles)
+        self.assertNotIn("overflow-y:visible", scroll_styles)
+        self.assertNotIn("overflow:visible", scroll_styles)
 
     def test_carla_honors_user_configured_values_above_old_ui_caps(self):
         self.config.SIMULATOR_TARGET_SPEED = 20.0

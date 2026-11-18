@@ -112,7 +112,7 @@ def _defaults(mode, backend):
         "SIMULATOR_TARGET_SPEED": 25.0 if avis else 5.0,
         "SIMULATOR_THROTTLE_LIMIT": 0.35 if avis else 0.12,
         "SIMULATOR_STEERING_LIMIT": 1.0 if avis else 0.28,
-        "SIMULATOR_STEERING_RATE": 5.0 if avis else 0.80,
+        "SIMULATOR_STEERING_RATE": 2.0 if avis else 0.80,
         "SIMULATOR_THROTTLE_RISE_RATE": 1.0 if avis else 0.12,
         # Simulator City vision starts in the raw camera frame. BEV can be
         # enabled and tuned explicitly after checking the camera perspective.
