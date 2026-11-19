@@ -184,9 +184,28 @@ class VisionProcessor:
         ll_top, ll_bottom = int(conf.LL_TOP_ROI * height), int(conf.LL_BOTTOM_ROI * height)
         ll_left, ll_right = int(conf.LL_LEFT_ROI * width), int(conf.LL_RIGHT_ROI * width)
         
-        if ROI_RESIZABLE:
-            rl_right_ = rl_right + int((1 - conf.RL_RIGHT_ROI) * width * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
-            ll_left_ = ll_left + int((0 - conf.LL_LEFT_ROI) * width * 1 / self.max_unseen_counter * self.lroi_unseen_counter)
+        hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
+        sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
+        simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
+        simulator_joint_tracking = (
+            hall_requested
+            and sobel_hough_active
+            and simulator_backend in ("carla", "avis")
+        )
+
+        # Keep the user-configured rectangle as the primary simulator ROI.
+        # Legacy edge-growth remains available outside simulator Hall tracking;
+        # prediction-centred recovery is handled separately by the tracker.
+        legacy_roi_resizing = bool(getattr(conf, "ROI_RESIZABLE", ROI_RESIZABLE)) and not simulator_joint_tracking
+        if legacy_roi_resizing:
+            rl_right_ = rl_right + int(
+                (1 - conf.RL_RIGHT_ROI) * width
+                / self.max_unseen_counter * self.rroi_unseen_counter
+            )
+            ll_left_ = ll_left + int(
+                (0 - conf.LL_LEFT_ROI) * width
+                / self.max_unseen_counter * self.lroi_unseen_counter
+            )
         else:
             rl_right_ = rl_right
             ll_left_ = ll_left
@@ -313,17 +332,23 @@ class VisionProcessor:
         tracking_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
         tracking_left_lines, tracking_right_lines = ll_lines, rl_lines
         perception_valid = False
-        hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
-        sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
+        configured_roi_bounds = None
         if hall_requested and sobel_hough_active:
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
             self._lane_boundary_tracker.max_missed_frames = max_missed
             self._lane_boundary_tracker.reacquire_frames = max(
                 2, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 3))
             )
-            base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
-            base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
-            simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
+            if simulator_joint_tracking:
+                base_left_roi = (ll_left, ll_top, ll_right, ll_bottom)
+                base_right_roi = (rl_left, rl_top, rl_right, rl_bottom)
+                configured_roi_bounds = {
+                    "LL": base_left_roi,
+                    "RL": base_right_roi,
+                }
+            else:
+                base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
+                base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
             if simulator_backend in ("carla", "avis"):
                 recovery = self._lane_boundary_tracker.recovery_rois(
                     base_left_roi, base_right_roi, frame.shape
@@ -464,6 +489,12 @@ class VisionProcessor:
                 "frame_width": int(width),
                 "frame_height": int(height),
                 "roi_bounds": {
+                    "RL": tracking_right_roi,
+                    "LL": tracking_left_roi,
+                },
+                "configured_roi_bounds": configured_roi_bounds,
+                "legacy_roi_resizable_applied": bool(legacy_roi_resizing),
+                "search_roi_bounds": {
                     "RL": tracking_right_roi,
                     "LL": tracking_left_roi,
                 },
