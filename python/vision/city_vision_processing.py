@@ -9,7 +9,7 @@ import math
 import cv2
 import numpy as np
 
-from vision.hall_line_tracking import HallLineTracker
+from vision.lane_boundary_tracking import LaneBoundaryTracker
 
 class VisionProcessor:
     def __init__(self):
@@ -22,8 +22,7 @@ class VisionProcessor:
         self._bev_matrix = None
         self._morph_kernel = np.ones((3, 3), np.uint8)
         self._lsd = cv2.createLineSegmentDetector(0)
-        self._right_line_tracker = HallLineTracker()
-        self._left_line_tracker = HallLineTracker()
+        self._lane_boundary_tracker = LaneBoundaryTracker()
 
     @staticmethod
     def _extract_line(line):
@@ -185,7 +184,7 @@ class VisionProcessor:
                 self._bev_cache_key = cache_key
             frame = cv2.warpPerspective(frame, self._bev_matrix, (width, height), flags=cv2.INTER_LINEAR)
             
-        debug_frame = frame.copy() if conf.DEBUG or conf.STREAM else None
+        debug_frame = frame.copy() if (conf.DEBUG or getattr(conf, "STREAM", False) or bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))) else None
 
         rl_top, rl_bottom = int(conf.RL_TOP_ROI * height), int(conf.RL_BOTTOM_ROI * height)
         rl_left, rl_right = int(conf.RL_LEFT_ROI * width), int(conf.RL_RIGHT_ROI * width)
@@ -404,92 +403,79 @@ class VisionProcessor:
             ll_lines = self._restore_lane_roi_lines(ll_lines, ll_current_w, True)
 
         line_tracking = {"enabled": False, "state": "DISABLED"}
+        lane_tracking_result = None
+        perception_valid = False
         if bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False)):
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
-            self._right_line_tracker.max_missed_frames = max_missed
-            self._left_line_tracker.max_missed_frames = max_missed
-            right_info = self._right_line_tracker.update(
-                rl_lines, rl_current_w,
-                max(1, int(height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI))),
-                preferred_index=self._line_index_for_midpoint(rl_lines, rl_x_mid),
+            self._lane_boundary_tracker.max_missed_frames = max_missed
+            lane_tracking_result = self._lane_boundary_tracker.update(
+                left_lines=ll_lines,
+                right_lines=rl_lines,
+                frame_shape=frame.shape,
+                left_roi=(ll_left_, ll_top, ll_right, ll_bottom),
+                right_roi=(rl_left, rl_top, rl_right_, rl_bottom),
+                reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
+                left_preferred_index=self._line_index_for_midpoint(ll_lines, ll_x_mid),
+                right_preferred_index=self._line_index_for_midpoint(rl_lines, rl_x_mid),
             )
-            left_info = self._left_line_tracker.update(
-                ll_lines, ll_current_w,
-                max(1, int(height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI))),
-                preferred_index=self._line_index_for_midpoint(ll_lines, ll_x_mid),
+            line_tracking = lane_tracking_result
+            perception_valid = bool(lane_tracking_result["perception_valid"])
+            lane_type = str(lane_tracking_result["lane_type"])
+            rl_x_mid = (
+                lane_tracking_result["right"]["x_px"] - rl_left
+                if lane_tracking_result["right"]["observed"] else None
             )
-            rl_x_mid = right_info["selected_midpoint"]
-            ll_x_mid = left_info["selected_midpoint"]
-
-            def tracking_side(info):
-                return {key: info[key] for key in (
-                    "state", "selected_track_id", "active_tracks", "matched_tracks",
-                    "hall_satisfied", "hall_deficiency", "missed_frames",
-                    "hall_applicable", "hall_witness_track_ids",
-                    "hall_witness_candidate_indices", "hall_witness_deficiency",
-                    "association_ratio", "matching_cost", "unmatched_track_ids",
-                    "unmatched_candidate_indices",
-                )}
-
-            states = (right_info["state"], left_info["state"])
-            overall = "COASTING" if "COASTING" in states else (
-                "REACQUIRING" if "REACQUIRING" in states else (
-                    "TRACKING" if "TRACKING" in states else "LOST"
-                )
+            ll_x_mid = (
+                lane_tracking_result["left"]["x_px"] - ll_left_
+                if lane_tracking_result["left"]["observed"] else None
             )
-            line_tracking = {
-                "enabled": True,
-                "state": overall,
-                "hall_satisfied": bool(right_info["hall_satisfied"] and left_info["hall_satisfied"]),
-                "hall_applicable": bool(
-                    right_info["hall_applicable"] or left_info["hall_applicable"]
-                ),
-                "hall_deficiency": (
-                    int(right_info["hall_deficiency"])
-                    + int(left_info["hall_deficiency"])
-                ),
-                "right": tracking_side(right_info),
-                "left": tracking_side(left_info),
-            }
+            self.rroi_unseen_counter += -1 if lane_tracking_result["right"]["observed"] else 2
+            self.lroi_unseen_counter += -1 if lane_tracking_result["left"]["observed"] else 2
         else:
-            self._right_line_tracker.reset()
-            self._left_line_tracker.reset()
+            self._lane_boundary_tracker.reset()
+            rl_x_mid_full = rl_x_mid
+            ll_x_mid_full = ll_x_mid
+            if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):
+                lane_type = "both"
+                self.rroi_unseen_counter -= 1
+                self.lroi_unseen_counter -= 1
+            elif (rl_x_mid_full is None) and (ll_x_mid_full is not None):
+                lane_type = "only_left"
+                self.rroi_unseen_counter += 2
+            elif (rl_x_mid_full is not None) and (ll_x_mid_full is None):
+                lane_type = "only_right"
+                self.lroi_unseen_counter += 2
+            else:
+                lane_type = "none"
+                self.rroi_unseen_counter += 2
+                self.lroi_unseen_counter += 2
 
-        rl_x_mid_full = rl_x_mid
-        ll_x_mid_full = ll_x_mid
-
-        frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2
-
-        if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):
-            lane_type = "both"
-            self.rroi_unseen_counter -= 1
-            self.lroi_unseen_counter -= 1
-        elif (rl_x_mid_full is None) and (ll_x_mid_full is not None):
-            lane_type = "only_left"
-            self.rroi_unseen_counter += 2
-        elif (rl_x_mid_full is not None) and (ll_x_mid_full is None):
-            lane_type = "only_right"
-            self.lroi_unseen_counter += 2
-        else:
-            lane_type = "none"
-            self.rroi_unseen_counter += 2
-            self.lroi_unseen_counter += 2  
-        
         self.rroi_unseen_counter = max(0, min(self.max_unseen_counter, self.rroi_unseen_counter))
         self.lroi_unseen_counter = max(0, min(self.max_unseen_counter, self.lroi_unseen_counter))
 
-        rl_roi_center = abs(rl_left - rl_right_) / 2.0
-        ll_roi_center = abs(ll_left_ - ll_right) / 2.0
+        frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
 
-        if rl_x_mid_full is None and ll_x_mid_full is not None:
-            rl_x_mid_full = ll_x_mid_full
-        if ll_x_mid_full is None and rl_x_mid_full is not None:
-            ll_x_mid_full = rl_x_mid_full
-
-        if lane_type in ("both", "only_right", "only_left"):
-            lane_center = (rl_roi_center - rl_x_mid_full + ll_roi_center - ll_x_mid_full) / 2.0
+        if lane_tracking_result is not None:
+            lane_center_px = lane_tracking_result["lane_center_px"]
+            lane_center = (
+                frame_center - float(lane_center_px)
+                if perception_valid and lane_center_px is not None
+                else 0.0
+            )
         else:
-            lane_center = frame_center
+            rl_x_mid_full = rl_x_mid
+            ll_x_mid_full = ll_x_mid
+            rl_roi_center = abs(rl_left - rl_right_) / 2.0
+            ll_roi_center = abs(ll_left_ - ll_right) / 2.0
+            if rl_x_mid_full is None and ll_x_mid_full is not None:
+                rl_x_mid_full = ll_x_mid_full
+            if ll_x_mid_full is None and rl_x_mid_full is not None:
+                ll_x_mid_full = rl_x_mid_full
+            if lane_type in ("both", "only_right", "only_left"):
+                lane_center = (rl_roi_center - rl_x_mid_full + ll_roi_center - ll_x_mid_full) / 2.0
+            else:
+                lane_center = frame_center
+            perception_valid = lane_type != "none"
             
         min_error = frame_center - (ll_right + rl_right) / 2
         max_error = frame_center - (ll_left + rl_left) / 2 
@@ -547,6 +533,7 @@ class VisionProcessor:
                 "midpoints": {"RL": rl_x_mid, "LL": ll_x_mid},
                 "frame_center_x": float(frame_center),
                 "lane_center_offset_px": float(lane_center),
+                "lane_tracking": lane_tracking_result,
             }
             debug = {
                 "combined": debug_frame,
@@ -563,11 +550,11 @@ class VisionProcessor:
             "steering_angle": steering_angle,
             "error": error,
             "lane_type": lane_type,
-            "perception_valid": lane_type != "none",
+            "perception_valid": bool(perception_valid),
             "crosswalk": crosswalk,
             "debug": debug,
             "kp": kp
-            ,"perception_quality": min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0))
-            ,"observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0
+            ,"perception_quality": (float(lane_tracking_result["perception_quality"]) if lane_tracking_result is not None else min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0)))
+            ,"observed_lane_boundaries": (int(lane_tracking_result["left"]["observed"]) + int(lane_tracking_result["right"]["observed"]) if lane_tracking_result is not None else (2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0))
             ,"line_tracking": line_tracking
         }

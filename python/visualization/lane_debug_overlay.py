@@ -119,6 +119,136 @@ def _draw_segment_list(canvas, segments, offset, sx, sy, color, thickness):
         cv2.line(canvas, p1, p2, color, thickness, cv2.LINE_AA)
 
 
+def _draw_dashed_line(canvas, p1, p2, color, thickness=2, dash=10, gap=7):
+    x1, y1 = map(float, p1)
+    x2, y2 = map(float, p2)
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length < 1.0:
+        return
+    ux = (x2 - x1) / length
+    uy = (y2 - y1) / length
+    position = 0.0
+    while position < length:
+        end = min(length, position + dash)
+        start_point = (
+            int(round(x1 + ux * position)),
+            int(round(y1 + uy * position)),
+        )
+        end_point = (
+            int(round(x1 + ux * end)),
+            int(round(y1 + uy * end)),
+        )
+        cv2.line(canvas, start_point, end_point, color, thickness, cv2.LINE_AA)
+        position = end + gap
+
+
+def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
+    if not isinstance(tracking, dict) or not tracking.get("enabled"):
+        return
+    height, width = canvas.shape[:2]
+    y_ref = _finite_number(tracking.get("y_ref_px"))
+    if y_ref is not None:
+        y = int(round(y_ref * sy))
+        cv2.line(canvas, (0, y), (width - 1, y), (115, 115, 115), 1, cv2.LINE_AA)
+
+    side_specs = (
+        ("left", "LL", (80, 235, 150), (0, 185, 255)),
+        ("right", "RL", (255, 220, 80), (0, 185, 255)),
+    )
+    for side_name, roi_name, observed_color, inferred_color in side_specs:
+        side = tracking.get(side_name) or {}
+        line = side.get("line") if side.get("observed") else None
+        predicted = side.get("predicted_line")
+        if isinstance(line, (list, tuple)) and len(line) >= 4:
+            x1, y1, x2, y2 = map(float, line[:4])
+            cv2.line(
+                canvas,
+                _scaled_point(x1, y1, sx, sy),
+                _scaled_point(x2, y2, sx, sy),
+                observed_color,
+                max(2, thickness + 1),
+                cv2.LINE_AA,
+            )
+        elif isinstance(predicted, (list, tuple)) and len(predicted) >= 4:
+            x1, y1, x2, y2 = map(float, predicted[:4])
+            _draw_dashed_line(
+                canvas,
+                _scaled_point(x1, y1, sx, sy),
+                _scaled_point(x2, y2, sx, sy),
+                inferred_color,
+                max(2, thickness + 1),
+            )
+
+        status = str(side.get("status") or "UNKNOWN").upper()
+        track_id = side.get("track_id")
+        if status == "TRACKING":
+            label = f"{side_name.upper()} TRACKING"
+            if track_id is not None:
+                label += f" #{int(track_id)}"
+            color = observed_color
+        elif status == "REACQUIRING":
+            label = "REACQUIRING {}/{}".format(
+                int(side.get("pending_hits", 0)),
+                int(side.get("pending_required", 3)),
+            )
+            color = (0, 220, 255)
+        elif "INFERRED" in status:
+            label = f"{side_name.upper()} LOST - INFERRED"
+            color = inferred_color
+        elif status == "COASTING":
+            label = "{} COASTING {}f".format(
+                side_name.upper(), int(side.get("missed_frames", 0))
+            )
+            color = inferred_color
+        else:
+            label = f"{side_name.upper()} LOST"
+            color = (60, 70, 255)
+
+        box = boxes.get(roi_name)
+        if box:
+            left, top, right, bottom = _scaled_box(box, sx, sy)
+            text_x = max(4, min(width - 4, left + 4))
+            text_y = max(14, min(height - 4, top + 17))
+        else:
+            text_x = 6 if side_name == "left" else max(6, width // 2)
+            text_y = 18
+        cv2.putText(
+            canvas, label, (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+            (0, 0, 0), max(2, thickness + 2), cv2.LINE_AA,
+        )
+        cv2.putText(
+            canvas, label, (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+            color, thickness, cv2.LINE_AA,
+        )
+
+    lane_center = _finite_number(tracking.get("lane_center_px"))
+    if lane_center is not None and y_ref is not None:
+        point = _scaled_point(lane_center, y_ref, sx, sy)
+        cv2.circle(canvas, point, max(4, int(round(5 * min(sx, sy)))),
+                   (255, 255, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, point, max(5, int(round(7 * min(sx, sy)))),
+                   (0, 210, 255), 2, cv2.LINE_AA)
+
+    state = str(tracking.get("state") or "UNKNOWN").upper()
+    lane_width = _finite_number(tracking.get("lane_width_px"))
+    summary = f"LANE TRACK: {state}"
+    if lane_width is not None:
+        summary += f" | WIDTH {lane_width:.0f}px"
+    summary_scale = max(0.30, min(0.48, font_scale + 0.05))
+    cv2.putText(
+        canvas, summary, (7, max(16, int(20 * sy))),
+        cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
+        (0, 0, 0), max(2, thickness + 2), cv2.LINE_AA,
+    )
+    cv2.putText(
+        canvas, summary, (7, max(16, int(20 * sy))),
+        cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
+        (255, 255, 255), thickness, cv2.LINE_AA,
+    )
+
+
 def _scaled_box(box, sx, sy):
     left, top, right, bottom = box
     return (
@@ -204,6 +334,16 @@ def _draw_classical(canvas, data, config):
         local_x = left + mid_x
         point = _scaled_point(local_x, (top + bottom) / 2.0, sx, sy)
         cv2.circle(canvas, point, max(3, int(round(4 * min(sx, sy)))), color, -1)
+
+    _draw_lane_tracking(
+        canvas,
+        data.get("lane_tracking"),
+        boxes,
+        sx,
+        sy,
+        max(0.30, min(0.48, height / 1200.0)),
+        max(1, int(round(height / 720.0))),
+    )
 
     font_scale = max(0.24, min(0.38, height / 1400.0))
     thickness = max(1, int(round(height / 720.0)))

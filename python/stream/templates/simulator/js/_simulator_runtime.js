@@ -92,6 +92,34 @@ async function poll(){
     }
     setText("lane-value",d.lane_type||"none");
     setText("lane-valid",d.perception_valid?"Perception valid":"Invalid lane estimate · safety policy applies");
+    const tracking=d.line_tracking||{};
+    const trackingState=$("line-tracking-state");
+    const trackingDetail=$("line-tracking-detail");
+    if(trackingState){
+      const state=String(tracking.state||"DISABLED").toUpperCase();
+      trackingState.textContent=state;
+      trackingState.classList.toggle("tracking-degraded",state!=="TRACKING");
+      trackingState.classList.toggle("tracking-lost",state==="LOST"||state==="ACQUIRING_PAIR");
+    }
+    if(trackingDetail){
+      if(tracking.enabled){
+        const sideLabel=side=>{
+          if(!side)return "—";
+          const status=String(side.status||"UNKNOWN").replace("LOST · INFERRED","INFERRED");
+          const id=side.track_id===null||side.track_id===undefined?"":" #"+side.track_id;
+          const pending=Number(side.pending_hits||0);
+          const confirm=pending>0?" "+pending+"/"+Number(side.pending_required||3):"";
+          return status+id+confirm;
+        };
+        const width=Number.isFinite(Number(tracking.lane_width_px))?
+          " · width "+numeric(tracking.lane_width_px,0)+" px":"";
+        trackingDetail.textContent="L "+sideLabel(tracking.left)+" · R "+sideLabel(tracking.right)+width;
+      }else if(tracking.state==="UNSUPPORTED_ML"){
+        trackingDetail.textContent=tracking.reason||"Tracking is unsupported by the active ML lane detector.";
+      }else{
+        trackingDetail.textContent="Temporal lane tracking is disabled";
+      }
+    }
     setText("speed-value",numeric(d.speed_kmh,1)+" km/h");
     setText("steer-value",caps.simulator_backend==="avis"
       ? numeric(d.steering_normalized*100,0)+"% ("+numeric(d.steering_angle,1)+"° vision)"
