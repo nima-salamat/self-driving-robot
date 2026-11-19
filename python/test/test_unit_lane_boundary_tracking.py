@@ -274,6 +274,50 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertNotEqual(inferred["center_points"][0][0],
                             inferred["center_points"][-1][0])
 
+    def test_uninitialized_tracker_never_expands_roi_from_its_midpoint(self):
+        self.tracker.update(
+            None, None, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+        )
+
+        recovery = self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE
+        )
+
+        self.assertFalse(recovery["left"]["expanded"])
+        self.assertFalse(recovery["right"]["expanded"])
+        self.assertEqual(recovery["left"]["roi"], self.LEFT_ROI)
+        self.assertEqual(recovery["right"]["roi"], self.RIGHT_ROI)
+        self.assertEqual(
+            recovery["left"]["reason"],
+            "no_confirmed_geometric_prediction",
+        )
+
+    def test_recovery_window_never_shrinks_a_wide_configured_roi(self):
+        left_roi = (20, 300, 260, 440)
+        right_roi = (380, 300, 620, 440)
+        self.tracker.update(
+            self.line_for_global_x(left_roi, 140.0, dx=-8.0),
+            self.line_for_global_x(right_roi, 500.0, dx=8.0),
+            self.FRAME_SHAPE, left_roi, right_roi,
+            reference_center_x=320.0,
+        )
+        self.tracker.update(
+            None,
+            self.line_for_global_x(right_roi, 500.0, dx=8.0),
+            self.FRAME_SHAPE, left_roi, right_roi,
+            reference_center_x=320.0,
+        )
+
+        search = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE
+        )["left"]["roi"]
+
+        self.assertLessEqual(search[0], left_roi[0])
+        self.assertGreaterEqual(search[2], left_roi[2])
+        self.assertGreaterEqual(search[2] - search[0], left_roi[2] - left_roi[0])
+
 
 if __name__ == "__main__":
     unittest.main()
