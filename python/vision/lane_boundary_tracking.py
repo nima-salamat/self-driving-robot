@@ -585,61 +585,176 @@ class LaneBoundaryTracker:
         }
 
     def recovery_rois(self, left_roi, right_roi, frame_shape,
-                     max_expansion_fraction=0.24):
-        """Build bounded prediction-centred ROIs for sides that are missing.
+                     max_expansion_fraction=None):
+        """Return configured ROIs plus bounded recovery windows for known tracks.
 
-        The returned rectangle includes the configured ROI and a corridor around
-        the predicted line at three vertical samples. This lets recovery move
-        inward toward the inter-ROI gap while keeping each side's observations
-        separate at the caller.
+        A configured ROI is never clipped, shifted, or replaced by a guessed
+        window. Recovery is only allowed when there is a real temporal track
+        or a learned lane-width relationship from the opposite observed side.
+        The extra search area is proportional to the configured ROI dimensions,
+        not to an unrelated fixed percentage of the whole camera frame.
         """
         frame_height, frame_width = map(int, frame_shape[:2])
-        max_fraction = min(0.30, max(0.05, float(max_expansion_fraction)))
-        boxes = {"left": self._roi_tuple(left_roi), "right": self._roi_tuple(right_roi)}
+        frame_height = max(1, frame_height)
+        frame_width = max(1, frame_width)
+        boxes = {
+            "left": self._roi_tuple(left_roi),
+            "right": self._roi_tuple(right_roi),
+        }
         results = {}
+
         for side in ("left", "right"):
             box = boxes[side]
             state = self._sides[side]
             other = self._sides["right" if side == "left" else "left"]
+            base_width = max(1, box[2] - box[0])
+
             if state.missed_frames == 0 and state.pending is None:
-                results[side] = {"roi": box, "expanded": False,
-                                 "expected_x": state.x_px,
-                                 "missed_frames": 0}
+                results[side] = {
+                    "roi": box,
+                    "configured_roi": box,
+                    "expanded": False,
+                    "expected_x": state.x_px,
+                    "missed_frames": 0,
+                    "reason": "tracking",
+                }
                 continue
-            if self._lane_width_px is not None and other.observed and other.x_px is not None:
-                expected = other.x_px + (self._lane_width_px if side == "right"
-                                         else -self._lane_width_px)
-            elif state.x_px is not None:
+
+            # Never synthesize a search centre from the ROI midpoint. That
+            # creates an arbitrary, hard-coded-looking ROI before any lane
+            # geometry has actually been observed.
+            expected = None
+            reference_angle = None
+            if (
+                self._lane_width_px is not None
+                and other.observed
+                and other.x_px is not None
+            ):
+                y_ref = 0.5 * (box[1] + box[3])
+                lane_width = self._width_at(y_ref, frame_height) or self._lane_width_px
+                expected = other.x_px + (
+                    lane_width if side == "right" else -lane_width
+                )
+                if other.line_global is not None:
+                    ox1, oy1, ox2, oy2 = other.line_global
+                    reference_angle = math.degrees(
+                        math.atan2(ox2 - ox1, oy2 - oy1)
+                    )
+            elif state.track_id is not None and state.x_px is not None:
                 expected = state.x_px + state.velocity_px
-            else:
-                expected = 0.5 * (box[0] + box[2])
-            miss_uncertainty = frame_width * min(
-                max_fraction,
-                0.10 + 0.025 * max(0, state.missed_frames - 1),
+                reference_angle = state.angle_deg
+
+            if expected is None or not math.isfinite(float(expected)):
+                results[side] = {
+                    "roi": box,
+                    "configured_roi": box,
+                    "expanded": False,
+                    "expected_x": None,
+                    "missed_frames": int(state.missed_frames),
+                    "reason": "no_confirmed_geometric_prediction",
+                }
+                continue
+
+            expected = float(expected)
+            miss_count = max(1, int(state.missed_frames))
+            slope = (
+                math.tan(math.radians(float(reference_angle)))
+                if reference_angle is not None else 0.0
             )
-            motion_uncertainty = min(frame_width * 0.06, abs(state.velocity_px) * 0.8)
-            margin = min(frame_width * max_fraction,
-                         miss_uncertainty + motion_uncertainty)
-            slope = math.tan(math.radians(state.angle_deg)) if state.x_px is not None else 0.0
-            sample_y = (box[1] + 0.2 * (box[3] - box[1]),
-                        box[1] + 0.6 * (box[3] - box[1]),
-                        box[1] + 1.0 * (box[3] - box[1]))
-            sample_x = [expected + slope * (y - (box[1] + box[3]) * 0.5)
-                        for y in sample_y]
-            cap = frame_width * max_fraction
-            search_left = max(0, int(math.floor(min(box[0], min(sample_x) - margin))))
-            search_right = min(frame_width, int(math.ceil(max(box[2], max(sample_x) + margin))) )
-            if search_right - search_left > cap:
-                center = min(max(expected, cap * 0.5), frame_width - cap * 0.5)
-                search_left = max(0, int(center - cap * 0.5))
-                search_right = min(frame_width, int(search_left + cap))
-            search_top = max(0, int(box[1] - min(frame_height * 0.12,
-                                                frame_height * 0.02 * max(1, state.missed_frames))))
+            y_ref = 0.5 * (box[1] + box[3])
+            sample_y = (
+                box[1] + 0.20 * (box[3] - box[1]),
+                box[1] + 0.60 * (box[3] - box[1]),
+                box[1] + 1.00 * (box[3] - box[1]),
+            )
+            sample_x = [
+                expected + slope * (y - y_ref) for y in sample_y
+            ]
+
+            # Search uncertainty scales with the user's ROI width and elapsed
+            # misses. Vehicle/image motion can add uncertainty, but cannot
+            # force the search outside the frame or shrink the configured ROI.
+            miss_ratio = min(0.75, 0.18 + 0.10 * (miss_count - 1))
+            miss_margin = base_width * miss_ratio
+            motion_margin = min(base_width * 0.40, abs(state.velocity_px) * 0.80)
+            margin = max(2.0, miss_margin + motion_margin)
+
+            desired_left = max(
+                0, int(math.floor(min(box[0], min(sample_x) - margin)))
+            )
+            desired_right = min(
+                frame_width,
+                int(math.ceil(max(box[2], max(sample_x) + margin))),
+            )
+
+            # The cap is a scale of the configured ROI, not a fraction of the
+            # full frame. It is always >= the original ROI width, so user input
+            # is never clipped even for unusually wide/narrow configurations.
+            recovery_scale = min(3.0, 1.25 + 0.25 * (miss_count - 1))
+            max_width = min(
+                frame_width,
+                max(base_width, int(math.ceil(base_width * recovery_scale))),
+            )
+            desired_width = desired_right - desired_left
+            if desired_width > max_width:
+                extra_left = max(0, box[0] - desired_left)
+                extra_right = max(0, desired_right - box[2])
+                available_extra = max(0, max_width - base_width)
+
+                if expected < box[0]:
+                    keep_left = min(extra_left, available_extra)
+                    keep_right = min(extra_right, available_extra - keep_left)
+                elif expected > box[2]:
+                    keep_right = min(extra_right, available_extra)
+                    keep_left = min(extra_left, available_extra - keep_right)
+                else:
+                    total_extra = extra_left + extra_right
+                    if total_extra:
+                        keep_left = min(
+                            extra_left,
+                            int(round(available_extra * extra_left / total_extra)),
+                        )
+                    else:
+                        keep_left = 0
+                    keep_right = min(
+                        extra_right, available_extra - keep_left
+                    )
+                    # Use any rounding remainder without reducing the base.
+                    remainder = available_extra - keep_left - keep_right
+                    if remainder > 0:
+                        add_left = min(extra_left - keep_left, remainder)
+                        keep_left += add_left
+                        keep_right += min(
+                            extra_right - keep_right, remainder - add_left
+                        )
+
+                search_left = max(0, box[0] - keep_left)
+                search_right = min(frame_width, box[2] + keep_right)
+            else:
+                search_left, search_right = desired_left, desired_right
+
+            search_roi = (
+                int(search_left),
+                int(max(0, min(box[1], box[3] - 1))),
+                int(max(search_left + 1, search_right)),
+                int(box[3]),
+            )
+            # Defensive invariant: recovery always contains the full configured
+            # ROI. If clipping or rounding violates it, fail closed to the base.
+            if (
+                search_roi[0] > box[0]
+                or search_roi[2] < box[2]
+                or search_roi[2] <= search_roi[0]
+            ):
+                search_roi = box
+
             results[side] = {
-                "roi": (search_left, search_top, max(search_left + 1, search_right), box[3]),
-                "expanded": True,
-                "expected_x": float(expected),
+                "roi": search_roi,
+                "configured_roi": box,
+                "expanded": search_roi != box,
+                "expected_x": expected,
                 "missed_frames": int(state.missed_frames),
+                "reason": "predicted_track_recovery",
             }
         return results
 
