@@ -1139,7 +1139,7 @@ function initAvisBottomDock(){
  const dock=$("avis-bottom-dock"),handle=$("avis-dock-handle");if(!dock||!handle)return;
  const tabs=Array.from(dock.querySelectorAll("[data-dock-tab]")),panes=Array.from(dock.querySelectorAll("[data-dock-pane]"));
  const toggle=$("avis-dock-toggle");let drag=null;
- function maxHeight(){return Math.min(420,Math.max(220,Math.round(window.innerHeight*.62)));}
+ function maxHeight(){return Math.min(460,Math.max(220,Math.round(window.innerHeight*.62)));}
  function setHeight(value){
   const height=Math.max(76,Math.min(460,Math.min(maxHeight(),Math.round(value))));
   const expanded=height>110;
