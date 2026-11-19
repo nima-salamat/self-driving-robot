@@ -72,6 +72,23 @@ class RaceVisionDebugOverlayTests(unittest.TestCase):
         self.assertIn("lane_center_offset_px", overlay_source)
         self.assertIn("steering_marker_x", overlay_source)
 
+    def test_hall_tracking_forces_debug_payload_for_simulator_stream(self):
+        import modes.race.config_race as race_config
+        from unittest.mock import patch
+
+        processor = VisionProcessor()
+        processor.ml_lane_detector = None
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        with patch.object(race_config, "HALL_LINE_TRACKING_ENABLED", True), patch.object(
+            race_config, "DEBUG", False
+        ), patch.object(race_config, "STREAM", False):
+            result = processor.detect(frame)
+
+        self.assertFalse(result["perception_valid"])
+        self.assertTrue(result["line_tracking"]["enabled"])
+        self.assertIsNotNone(result["debug"])
+        self.assertIn("lane_tracking", result["debug"]["draw_data"])
+
     def test_debug_payload_is_none_when_debug_and_stream_are_disabled(self):
         import modes.race.config_race as race_config
         from unittest.mock import patch

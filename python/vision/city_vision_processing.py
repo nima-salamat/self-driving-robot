@@ -405,7 +405,9 @@ class VisionProcessor:
         line_tracking = {"enabled": False, "state": "DISABLED"}
         lane_tracking_result = None
         perception_valid = False
-        if bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False)):
+        hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
+        sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
+        if hall_requested and sobel_hough_active:
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
             self._lane_boundary_tracker.max_missed_frames = max_missed
             lane_tracking_result = self._lane_boundary_tracker.update(
@@ -433,6 +435,12 @@ class VisionProcessor:
             self.lroi_unseen_counter += -1 if lane_tracking_result["left"]["observed"] else 2
         else:
             self._lane_boundary_tracker.reset()
+            if hall_requested:
+                line_tracking = {
+                    "enabled": False,
+                    "state": "UNSUPPORTED_LEGACY",
+                    "reason": "Joint lane tracking is available only with the Sobel + Hough detector (OLD_METHOD=False).",
+                }
             rl_x_mid_full = rl_x_mid
             ll_x_mid_full = ll_x_mid
             if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):

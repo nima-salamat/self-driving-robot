@@ -49,12 +49,32 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             right_preferred_index=0 if right_lines is not None else None,
         )
 
+    def test_candidate_limit_preserves_preferred_index_and_original_hough_index(self):
+        tracker = LaneBoundaryTracker(max_candidates=8)
+        lines = [
+            np.asarray([index * 10.0, 0.0, index * 10.0 + 5.0, 140.0])
+            for index in range(10)
+        ]
+
+        candidates = tracker._candidates(
+            lines,
+            self.LEFT_ROI,
+            frame_width=640,
+            y_ref=370.0,
+            preferred_index=9,
+        )
+
+        candidate_indices = {item["index"] for item in candidates}
+        self.assertIn(9, candidate_indices)
+        self.assertNotIn(8, candidate_indices)
+
     def test_initial_pair_establishes_lane_width_and_center(self):
         result = self.update(left_x=220.0, right_x=420.0)
 
         self.assertTrue(result["perception_valid"])
         self.assertEqual(result["lane_type"], "both")
         self.assertEqual(result["state"], "TRACKING")
+        self.assertAlmostEqual(result["speed_factor"], 1.0)
         self.assertAlmostEqual(result["lane_width_px"], 200.0, delta=2.0)
         self.assertAlmostEqual(result["lane_center_px"], 320.0, delta=2.0)
         self.assertTrue(result["hall_satisfied"])
@@ -69,6 +89,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["lane_type"], "only_right")
         self.assertEqual(result["state"], "SINGLE_SIDE_RIGHT")
         self.assertEqual(result["inferred_side"], "left")
+        self.assertAlmostEqual(result["speed_factor"], 0.55)
         self.assertTrue(result["right"]["observed"])
         self.assertFalse(result["left"]["observed"])
         self.assertIn("INFERRED", result["left"]["status"])
@@ -82,6 +103,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.assertTrue(result["perception_valid"])
             self.assertEqual(result["lane_type"], "only_right")
             self.assertEqual(result["inferred_side"], "left")
+            self.assertAlmostEqual(result["speed_factor"], 0.55)
             last_center = result["lane_center_px"]
         self.assertIsNotNone(last_center)
 
@@ -144,6 +166,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             result = self.update(left_x=None, right_x=None)
             self.assertTrue(result["perception_valid"])
             self.assertEqual(result["state"], "COASTING")
+            self.assertEqual(result["speed_factor"], 0.25)
 
         lost = self.update(left_x=None, right_x=None)
         self.assertFalse(lost["perception_valid"])

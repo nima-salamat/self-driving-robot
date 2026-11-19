@@ -193,7 +193,8 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             )
             color = (0, 220, 255)
         elif "INFERRED" in status:
-            label = f"{side_name.upper()} LOST - INFERRED"
+            missed = int(side.get("missed_frames", 0))
+            label = "{} INFERRED {}f".format(side_name.upper(), missed)
             color = inferred_color
         elif status == "COASTING":
             label = "{} COASTING {}f".format(

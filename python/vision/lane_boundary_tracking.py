@@ -90,14 +90,22 @@ class LaneBoundaryTracker:
             raise ValueError("ROI must have positive width and height")
         return left, top, right, bottom
 
-    def _candidates(self, lines, roi, frame_width, y_ref):
+    def _candidates(self, lines, roi, frame_width, y_ref, preferred_index=None):
         left, top, right, bottom = roi
         roi_height = max(1.0, float(bottom - top))
-        source = [] if lines is None else list(lines)
-        if len(source) > self.max_candidates:
-            source = source[:self.max_candidates]
+        raw_source = [] if lines is None else list(lines)
+        if len(raw_source) > self.max_candidates:
+            selected = set(range(self.max_candidates))
+            if preferred_index is not None and 0 <= int(preferred_index) < len(raw_source):
+                preferred = int(preferred_index)
+                if preferred not in selected:
+                    selected.add(preferred)
+                    selected.discard(self.max_candidates - 1)
+            source = [(index, raw_source[index]) for index in sorted(selected)]
+        else:
+            source = list(enumerate(raw_source))
         candidates = []
-        for index, line in enumerate(source):
+        for index, line in source:
             try:
                 values = np.asarray(line, dtype=np.float64).reshape(-1)
                 if values.size < 4 or not np.isfinite(values[:4]).all():
@@ -122,7 +130,13 @@ class LaneBoundaryTracker:
             if y_gap > roi_height * 0.35:
                 continue
             x_ref = gx1 + slope * (y_ref - gy1)
-            if not math.isfinite(x_ref) or not 0 <= x_ref < frame_width:
+            horizontal_margin = max(4.0, (right - left) * 0.15)
+            if (
+                not math.isfinite(x_ref)
+                or not 0 <= x_ref < frame_width
+                or x_ref < left - horizontal_margin
+                or x_ref > right + horizontal_margin
+            ):
                 continue
 
             y_span = min(1.0, abs(dy) / roi_height)
@@ -214,13 +228,23 @@ class LaneBoundaryTracker:
         return ranked
 
     @staticmethod
-    def _pair_is_plausible(left, right, frame_width, prior_width=None):
+    def _pair_is_plausible(left, right, frame_width, prior_width=None,
+                           reference_center_x=None):
         width = right["x_px"] - left["x_px"]
         center = (right["x_px"] + left["x_px"]) * 0.5
-        if width < frame_width * 0.12 or width > frame_width * 0.88:
+        if width < frame_width * 0.12 or width > frame_width * 0.72:
             return False, width
-        if not frame_width * 0.12 <= center <= frame_width * 0.88:
+        if not frame_width * 0.15 <= center <= frame_width * 0.85:
             return False, width
+        if reference_center_x is not None:
+            # The lane should ordinarily straddle the camera's expected lane
+            # reference. Allow a generous margin for camera offset and curves,
+            # but reject a pair that is wholly remote on one side of the image.
+            margin = frame_width * 0.10
+            if left["x_px"] > reference_center_x + margin:
+                return False, width
+            if right["x_px"] < reference_center_x - margin:
+                return False, width
         if prior_width is not None:
             tolerance = max(
                 frame_width * 0.045,
@@ -230,12 +254,13 @@ class LaneBoundaryTracker:
                 return False, width
         return True, width
 
-    def _initial_pair(self, left_ranked, right_ranked, frame_width):
+    def _initial_pair(self, left_ranked, right_ranked, frame_width, reference_center_x):
         best = None
         for left_cost, left in left_ranked[:32]:
             for right_cost, right in right_ranked[:32]:
                 valid, width = self._pair_is_plausible(
-                    left, right, frame_width, prior_width=None
+                    left, right, frame_width, prior_width=None,
+                    reference_center_x=reference_center_x,
                 )
                 if not valid:
                     continue
@@ -243,18 +268,22 @@ class LaneBoundaryTracker:
                     1.0,
                     self._angle_delta(left["angle_deg"], right["angle_deg"]) / 80.0,
                 )
-                score = left_cost + right_cost + 0.08 * angle_penalty
+                center_penalty = abs(
+                    0.5 * (left["x_px"] + right["x_px"]) - reference_center_x
+                ) / max(1.0, frame_width)
+                score = left_cost + right_cost + 0.08 * angle_penalty + 0.20 * center_penalty
                 if best is None or score < best[0]:
                     best = (score, left, right, width)
         return best
 
-    def _best_pair(self, left_ranked, right_ranked, frame_width):
+    def _best_pair(self, left_ranked, right_ranked, frame_width, reference_center_x):
         best = None
         prior = self._lane_width_px
         for left_cost, left in left_ranked[:32]:
             for right_cost, right in right_ranked[:32]:
                 valid, width = self._pair_is_plausible(
-                    left, right, frame_width, prior_width=prior
+                    left, right, frame_width, prior_width=prior,
+                    reference_center_x=reference_center_x,
                 )
                 if not valid:
                     continue
@@ -263,7 +292,10 @@ class LaneBoundaryTracker:
                     min(frame_width * 0.12, prior * 0.18),
                 )
                 width_cost = abs(width - prior) / max(1.0, tolerance)
-                score = left_cost + right_cost + 0.28 * width_cost
+                center_penalty = abs(
+                    0.5 * (left["x_px"] + right["x_px"]) - reference_center_x
+                ) / max(1.0, frame_width)
+                score = left_cost + right_cost + 0.28 * width_cost + 0.20 * center_penalty
                 if best is None or score < best[0]:
                     best = (score, left, right, width)
         return best
@@ -374,13 +406,6 @@ class LaneBoundaryTracker:
             self._confirm_reacquisition("right", right, expected_right, tolerance)
         left_visible = left_state.observed
         right_visible = right_state.observed
-        if left_visible and right_visible:
-            measured_width = right_state.x_px - left_state.x_px
-            if measured_width > frame_width * 0.12:
-                if self._lane_width_px is None:
-                    self._lane_width_px = measured_width
-                else:
-                    self._lane_width_px = 0.88 * self._lane_width_px + 0.12 * measured_width
         return left_visible, right_visible
 
     def _attempt_missing_side(self, side, candidates, expected_x,
@@ -498,6 +523,11 @@ class LaneBoundaryTracker:
             y_ref = 0.25 * (
                 left_box[1] + left_box[3] + right_box[1] + right_box[3]
             )
+        reference_x = (
+            float(reference_center_x)
+            if reference_center_x is not None
+            else frame_width * 0.5
+        )
 
         self._frame_index += 1
         left_hall, left_hall_selected = self._hall_update(
@@ -506,8 +536,12 @@ class LaneBoundaryTracker:
         right_hall, right_hall_selected = self._hall_update(
             "right", right_lines, right_box, right_preferred_index
         )
-        left_candidates = self._candidates(left_lines, left_box, frame_width, y_ref)
-        right_candidates = self._candidates(right_lines, right_box, frame_width, y_ref)
+        left_candidates = self._candidates(
+            left_lines, left_box, frame_width, y_ref, left_preferred_index
+        )
+        right_candidates = self._candidates(
+            right_lines, right_box, frame_width, y_ref, right_preferred_index
+        )
         left_hall["candidate_count"] = len(left_candidates)
         right_hall["candidate_count"] = len(right_candidates)
         left_ranked = self._ranked(
@@ -527,7 +561,9 @@ class LaneBoundaryTracker:
         rejected_right = len(right_candidates)
 
         if self._lane_width_px is None:
-            pair = self._initial_pair(left_ranked, right_ranked, frame_width)
+            pair = self._initial_pair(
+                left_ranked, right_ranked, frame_width, reference_x
+            )
             if pair is not None:
                 _score, left, right, _width = pair
                 left_observed, right_observed = self._accept_pair(
@@ -542,7 +578,9 @@ class LaneBoundaryTracker:
                 if right_ranked and self._sides["right"].x_px is None:
                     right_observed = self._mark_observed("right", right_ranked[0][1])
         else:
-            pair = self._best_pair(left_ranked, right_ranked, frame_width)
+            pair = self._best_pair(
+                left_ranked, right_ranked, frame_width, reference_x
+            )
             if pair is not None:
                 _score, left, right, _width = pair
                 before_left_missed = self._sides["left"].missed_frames
@@ -619,6 +657,7 @@ class LaneBoundaryTracker:
             state_name = "REACQUIRING" if reacquired else "TRACKING"
             perception_valid = True
             quality = 0.88
+            speed_factor = 1.0
             inferred_side = None
             previous_center = self._last_lane_center_px
             if previous_center is not None:
@@ -650,6 +689,7 @@ class LaneBoundaryTracker:
                 )
             perception_valid = True
             quality = 0.58
+            speed_factor = 0.55
             if self._last_lane_center_px is not None:
                 self._last_lane_center_velocity_px = (
                     0.75 * self._last_lane_center_velocity_px
@@ -677,12 +717,14 @@ class LaneBoundaryTracker:
                     0.10,
                     0.35 * (1.0 - max_missed / (self.max_missed_frames + 1)),
                 )
+                speed_factor = 0.25
             else:
                 lane_center_x = None
                 state_name = "LOST" if self._lane_width_px is not None else "ACQUIRING_PAIR"
                 lane_type = "none"
                 perception_valid = False
                 quality = 0.0
+                speed_factor = 0.0
 
         reference_x = (
             float(reference_center_x)
@@ -730,6 +772,7 @@ class LaneBoundaryTracker:
             "lane_type": lane_type,
             "perception_valid": bool(perception_valid),
             "perception_quality": float(quality),
+            "speed_factor": float(speed_factor),
             "lane_center_px": float(lane_center_x) if lane_center_x is not None else None,
             "lane_error_px": lane_error_px,
             "reference_center_x": float(reference_x),

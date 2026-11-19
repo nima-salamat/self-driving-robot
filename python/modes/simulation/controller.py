@@ -128,6 +128,19 @@ class VirtualVehicleController:
         if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
             steering = -steering
         target = min(200.0, max(0.0, float(getattr(self.config, "SIMULATOR_TARGET_SPEED", 20.0))))
+        tracking = perception.get("line_tracking")
+        if valid and isinstance(tracking, dict) and tracking.get("enabled"):
+            # A single observed boundary is enough to continue safely using the
+            # learned lane width, but lower speed while geometry is inferred.
+            # If both boundaries disappear, the tracker enters a short coast
+            # window with a more conservative speed factor before invalidating
+            # perception and allowing the existing lost-lane brake policy.
+            try:
+                speed_factor = float(tracking.get("speed_factor", 1.0))
+            except (TypeError, ValueError, OverflowError):
+                speed_factor = 0.25
+            if math.isfinite(speed_factor):
+                target *= max(0.0, min(1.0, speed_factor))
         limit = max(0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35))))
         if self.backend in {"carla", "avis"}:
             # Both simulator backends need a normalized steering envelope.
