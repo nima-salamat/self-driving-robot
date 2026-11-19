@@ -513,7 +513,7 @@ class VisionProcessor:
         
         # Package geometry only; the optional visualization layer draws it later.
         debug = None
-        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:
+        if (conf.DEBUG or getattr(conf, "STREAM", False) or bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))) and debug_frame is not None:
             frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
             draw_data = {
                 "kind": "classical",
