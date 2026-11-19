@@ -141,6 +141,15 @@ def _draw_dashed_line(canvas, p1, p2, color, thickness=2, dash=10, gap=7):
         cv2.line(canvas, start_point, end_point, color, thickness, cv2.LINE_AA)
         position = end + gap
 
+def _draw_dashed_rectangle(canvas, box, sx, sy, color, thickness=1):
+    """Show an adaptive recovery window without replacing the configured ROI."""
+    left, top, right, bottom = _scaled_box(box, sx, sy)
+    _draw_dashed_line(canvas, (left, top), (right, top), color, thickness, 7, 5)
+    _draw_dashed_line(canvas, (right, top), (right, bottom), color, thickness, 7, 5)
+    _draw_dashed_line(canvas, (right, bottom), (left, bottom), color, thickness, 7, 5)
+    _draw_dashed_line(canvas, (left, bottom), (left, top), color, thickness, 7, 5)
+
+
 
 def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
     if not isinstance(tracking, dict) or not tracking.get("enabled"):
@@ -215,15 +224,28 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             label = f"{side_name.upper()} LOST"
             color = (60, 70, 255)
 
-        box = side.get("search_roi") or boxes.get(roi_name)
-        if box:
-            left, top, right, bottom = _scaled_box(box, sx, sy)
-            cv2.rectangle(canvas, (left, top), (right, bottom), inferred_color, 1, cv2.LINE_AA)
+        configured_box = boxes.get(roi_name)
+        search_box = side.get("search_roi") or configured_box
+        if configured_box:
+            left, top, _right, _bottom = _scaled_box(configured_box, sx, sy)
+            text_x = max(4, min(width - 4, left + 4))
+            text_y = max(14, min(height - 4, top + 17))
+        elif search_box:
+            left, top, _right, _bottom = _scaled_box(search_box, sx, sy)
             text_x = max(4, min(width - 4, left + 4))
             text_y = max(14, min(height - 4, top + 17))
         else:
             text_x = 6 if side_name == "left" else max(6, width // 2)
             text_y = 18
+
+        # The solid rectangle is always the exact configured ROI. An expanded
+        # temporal search corridor is shown separately with a dashed outline.
+        if search_box and configured_box:
+            if tuple(map(int, search_box)) != tuple(map(int, configured_box)):
+                _draw_dashed_rectangle(
+                    canvas, search_box, sx, sy, inferred_color, 1
+                )
+                label += " · RECOVERY SEARCH"
         expected_x = _finite_number(side.get("expected_x"))
         if expected_x is not None and y_ref is not None:
             expected_point = _scaled_point(expected_x, y_ref, sx, sy)
@@ -303,7 +325,14 @@ def _draw_classical(canvas, data, config):
     source_width = max(1, int(data.get("frame_width", width)))
     source_height = max(1, int(data.get("frame_height", height)))
     sx, sy = width / source_width, height / source_height
+    # roi_bounds describes the actual detector crop (which can be a
+    # temporary recovery window); configured_roi_bounds is the user's exact
+    # persisted rectangle and remains the solid ROI outline.
     boxes = data.get("roi_bounds") or {}
+    configured = data.get("configured_roi_bounds")
+    display_boxes = dict(boxes)
+    if isinstance(configured, dict):
+        display_boxes.update(configured)
     if config is None:
         return
 
@@ -314,9 +343,9 @@ def _draw_classical(canvas, data, config):
     lane_is_trapezoid = lane_mode == "trapezoid"
     cw_is_trapezoid = bool(getattr(config, "CW_TRAPEZOID_MODE", False))
 
-    rl_box = boxes.get("RL")
-    ll_box = boxes.get("LL")
-    cw_box = boxes.get("CW")
+    rl_box = display_boxes.get("RL")
+    ll_box = display_boxes.get("LL")
+    cw_box = display_boxes.get("CW")
     if rl_box:
         left, top, right, bottom = _scaled_box(rl_box, sx, sy)
         if lane_is_trapezoid:
@@ -366,7 +395,7 @@ def _draw_classical(canvas, data, config):
 
     for key, color in (("RL", rl_color), ("LL", ll_color)):
         mid_x = _finite_number((data.get("midpoints") or {}).get(key))
-        box = boxes.get(key)
+        box = boxes.get(key) or display_boxes.get(key)
         if mid_x is None or not box:
             continue
         left, top, right, bottom = box
@@ -377,7 +406,7 @@ def _draw_classical(canvas, data, config):
     _draw_lane_tracking(
         canvas,
         data.get("lane_tracking"),
-        boxes,
+        display_boxes,
         sx,
         sy,
         max(0.30, min(0.48, height / 1200.0)),
@@ -393,7 +422,7 @@ def _draw_classical(canvas, data, config):
     (_, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
     candidate_label_items = (("RL", rl_color), ("LL", ll_color)) if show_candidate_labels else ()
     for key, color in candidate_label_items:
-        box = boxes.get(key)
+        box = display_boxes.get(key)
         if not box:
             continue
         left, top, _, _ = _scaled_box(box, sx, sy)
