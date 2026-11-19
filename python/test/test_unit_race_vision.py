@@ -23,6 +23,36 @@ class RaceVisionLaneLossTests(unittest.TestCase):
         self.assertFalse(result["perception_valid"])
         self.assertEqual(result["steering_angle"], 116)
 
+    def test_hall_sobel_hough_pipeline_tracks_synthetic_race_lane_pair(self):
+        import modes.race.config_race as config
+        from unittest.mock import patch
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        import cv2
+        cv2.line(frame, (250, 240), (205, 479), (255, 255, 255), 4)
+        cv2.line(frame, (390, 240), (435, 479), (255, 255, 255), 4)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True, "HALL_LINE_TRACKING_MAX_MISSED": 4,
+            "SIMULATOR_BACKEND": "avis",
+            "USE_ML_LANE_DETECTOR": False, "USE_BEV": False, "OLD_METHOD": False,
+            "LANE_THRESHOLD": 70, "HOUGH_THRESHOLD": 10,
+            "HOUGH_MIN_LINE_LENGTH": 20, "HOUGH_MAX_LINE_GAP": 10,
+            "HOUGH_BLUR_KERNEL": 3, "HOUGH_MORPH_CLOSE": True,
+            "DEBUG": False, "STREAM": False, "LANE_ROI_MODE": "rectangle",
+            "RL_TOP_ROI": .5, "RL_BOTTOM_ROI": 1., "RL_LEFT_ROI": .55,
+            "RL_RIGHT_ROI": .9, "LL_TOP_ROI": .5, "LL_BOTTOM_ROI": 1.,
+            "LL_LEFT_ROI": .1, "LL_RIGHT_ROI": .45,
+        }
+        with patch.multiple(config, create=True, **values):
+            processor = VisionProcessor()
+            processor.ml_lane_detector = None
+            result = processor.detect(frame)
+
+        self.assertTrue(result["line_tracking"]["enabled"])
+        self.assertEqual(result["lane_type"], "both")
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["observed_lane_boundaries"], 2)
+
 
 class RaceVisionLineExtractionTests(unittest.TestCase):
     def test_extract_line_accepts_flat_opencv_segment(self):

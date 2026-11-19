@@ -159,6 +159,7 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
         side = tracking.get(side_name) or {}
         line = side.get("line") if side.get("observed") else None
         predicted = side.get("predicted_line")
+        pending = side.get("reacquiring_line")
         if isinstance(line, (list, tuple)) and len(line) >= 4:
             x1, y1, x2, y2 = map(float, line[:4])
             cv2.line(
@@ -178,26 +179,35 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
                 inferred_color,
                 max(2, thickness + 1),
             )
+        if isinstance(pending, (list, tuple)) and len(pending) >= 4:
+            x1, y1, x2, y2 = map(float, pending[:4])
+            _draw_dashed_line(canvas, _scaled_point(x1, y1, sx, sy),
+                              _scaled_point(x2, y2, sx, sy), (0, 220, 255),
+                              max(2, thickness + 1), dash=5, gap=4)
 
         status = str(side.get("status") or "UNKNOWN").upper()
         track_id = side.get("track_id")
-        if status == "TRACKING":
-            label = f"{side_name.upper()} TRACKING"
+        if status == "DETECTED":
+            label = f"{side_name.upper()} DETECTED"
             if track_id is not None:
                 label += f" #{int(track_id)}"
             color = observed_color
         elif status == "REACQUIRING":
-            label = "REACQUIRING {}/{}".format(
+            reacquiring_label = "REACQUIRING {}/{}".format(
                 int(side.get("pending_hits", 0)),
                 int(side.get("pending_required", 3)),
+            )
+            label = (
+                f"{side_name.upper()} INFERRED · {reacquiring_label}"
+                if side.get("inferred") else f"{side_name.upper()} {reacquiring_label}"
             )
             color = (0, 220, 255)
         elif "INFERRED" in status:
             missed = int(side.get("missed_frames", 0))
             label = "{} INFERRED {}f".format(side_name.upper(), missed)
             color = inferred_color
-        elif status == "COASTING":
-            label = "{} COASTING {}f".format(
+        elif status == "PREDICTED":
+            label = "{} PREDICTED {}f".format(
                 side_name.upper(), int(side.get("missed_frames", 0))
             )
             color = inferred_color
@@ -205,14 +215,21 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             label = f"{side_name.upper()} LOST"
             color = (60, 70, 255)
 
-        box = boxes.get(roi_name)
+        box = side.get("search_roi") or boxes.get(roi_name)
         if box:
             left, top, right, bottom = _scaled_box(box, sx, sy)
+            cv2.rectangle(canvas, (left, top), (right, bottom), inferred_color, 1, cv2.LINE_AA)
             text_x = max(4, min(width - 4, left + 4))
             text_y = max(14, min(height - 4, top + 17))
         else:
             text_x = 6 if side_name == "left" else max(6, width // 2)
             text_y = 18
+        expected_x = _finite_number(side.get("expected_x"))
+        if expected_x is not None and y_ref is not None:
+            expected_point = _scaled_point(expected_x, y_ref, sx, sy)
+            cv2.drawMarker(canvas, expected_point, (0, 220, 255),
+                           cv2.MARKER_CROSS, max(7, int(10 * min(sx, sy))),
+                           max(1, thickness), cv2.LINE_AA)
         cv2.putText(
             canvas, label, (text_x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
@@ -232,11 +249,32 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
         cv2.circle(canvas, point, max(5, int(round(7 * min(sx, sy)))),
                    (0, 210, 255), 2, cv2.LINE_AA)
 
+    center_points = tracking.get("center_points") or ()
+    scaled_centers = [
+        _scaled_point(float(point[0]), float(point[1]), sx, sy)
+        for point in center_points
+        if isinstance(point, (list, tuple)) and len(point) >= 2
+    ]
+    if len(scaled_centers) >= 2:
+        cv2.polylines(canvas, [np.asarray(scaled_centers, dtype=np.int32)],
+                      False, (255, 255, 255), max(1, thickness), cv2.LINE_AA)
+        for point in scaled_centers:
+            cv2.circle(canvas, point, max(3, thickness + 1), (0, 210, 255), -1, cv2.LINE_AA)
+
+    steering_center = _finite_number(tracking.get("steering_center_px"))
+    if steering_center is not None and y_ref is not None:
+        control_point = _scaled_point(steering_center, y_ref, sx, sy)
+        cv2.drawMarker(canvas, control_point, (255, 255, 255), cv2.MARKER_TILTED_CROSS,
+                       max(9, int(13 * min(sx, sy))), max(2, thickness), cv2.LINE_AA)
+
     state = str(tracking.get("state") or "UNKNOWN").upper()
     lane_width = _finite_number(tracking.get("lane_width_px"))
     summary = f"LANE TRACK: {state}"
+    confidence = _finite_number(tracking.get("perception_quality"))
     if lane_width is not None:
         summary += f" | WIDTH {lane_width:.0f}px"
+    if confidence is not None:
+        summary += f" | CONF {confidence:.2f}"
     summary_scale = max(0.30, min(0.48, font_scale + 0.05))
     cv2.putText(
         canvas, summary, (7, max(16, int(20 * sy))),

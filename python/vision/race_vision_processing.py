@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from vision.lane_boundary_tracking import LaneBoundaryTracker
+from vision.lane_recovery_detection import detect_recovery_lines
 
 class VisionProcessor:
     def __init__(self):
@@ -308,31 +309,61 @@ class VisionProcessor:
         ll_x_mid = self._best_mid_x(ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
         line_tracking = {"enabled": False, "state": "DISABLED"}
         lane_tracking_result = None
+        tracking_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
+        tracking_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
+        tracking_left_lines, tracking_right_lines = ll_lines, rl_lines
         perception_valid = False
         hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
         sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
         if hall_requested and sobel_hough_active:
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
             self._lane_boundary_tracker.max_missed_frames = max_missed
+            self._lane_boundary_tracker.reacquire_frames = max(
+                2, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 3))
+            )
+            base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
+            base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
+            simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
+            if simulator_backend in ("carla", "avis"):
+                recovery = self._lane_boundary_tracker.recovery_rois(
+                    base_left_roi, base_right_roi, frame.shape
+                )
+            else:
+                recovery = {
+                    "left": {"roi": base_left_roi, "expanded": False},
+                    "right": {"roi": base_right_roi, "expanded": False},
+                }
+            tracking_left_roi = recovery["left"]["roi"]
+            tracking_right_roi = recovery["right"]["roi"]
+            tracking_left_lines = ll_lines
+            tracking_right_lines = rl_lines
+            if recovery["left"]["expanded"]:
+                _left_edges, tracking_left_lines = detect_recovery_lines(
+                    frame, tracking_left_roi, conf, self._morph_kernel
+                )
+            if recovery["right"]["expanded"]:
+                _right_edges, tracking_right_lines = detect_recovery_lines(
+                    frame, tracking_right_roi, conf, self._morph_kernel
+                )
             lane_tracking_result = self._lane_boundary_tracker.update(
-                left_lines=ll_lines,
-                right_lines=rl_lines,
+                left_lines=tracking_left_lines,
+                right_lines=tracking_right_lines,
                 frame_shape=frame.shape,
-                left_roi=(ll_left_, ll_top, ll_right, ll_bottom),
-                right_roi=(rl_left, rl_top, rl_right_, rl_bottom),
+                left_roi=tracking_left_roi,
+                right_roi=tracking_right_roi,
                 reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
-                left_preferred_index=self._line_index_for_midpoint(ll_lines, ll_x_mid),
-                right_preferred_index=self._line_index_for_midpoint(rl_lines, rl_x_mid),
+                left_preferred_index=None if recovery["left"]["expanded"] else self._line_index_for_midpoint(ll_lines, ll_x_mid),
+                right_preferred_index=None if recovery["right"]["expanded"] else self._line_index_for_midpoint(rl_lines, rl_x_mid),
             )
             line_tracking = lane_tracking_result
             perception_valid = bool(lane_tracking_result["perception_valid"])
             lane_type = str(lane_tracking_result["lane_type"])
             rl_x_mid = (
-                lane_tracking_result["right"]["x_px"] - rl_left
+                lane_tracking_result["right"]["x_px"] - tracking_right_roi[0]
                 if lane_tracking_result["right"]["observed"] else None
             )
             ll_x_mid = (
-                lane_tracking_result["left"]["x_px"] - ll_left_
+                lane_tracking_result["left"]["x_px"] - tracking_left_roi[0]
                 if lane_tracking_result["left"]["observed"] else None
             )
             self.rroi_unseen_counter += -1 if lane_tracking_result["right"]["observed"] else 2
@@ -368,7 +399,9 @@ class VisionProcessor:
         frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
 
         if lane_tracking_result is not None:
-            lane_center_px = lane_tracking_result["lane_center_px"]
+            lane_center_px = lane_tracking_result.get("steering_center_px")
+            if lane_center_px is None:
+                lane_center_px = lane_tracking_result["lane_center_px"]
             lane_center = (
                 frame_center - float(lane_center_px)
                 if perception_valid and lane_center_px is not None
@@ -431,14 +464,14 @@ class VisionProcessor:
                 "frame_width": int(width),
                 "frame_height": int(height),
                 "roi_bounds": {
-                    "RL": (rl_left, rl_top, rl_right_, rl_bottom),
-                    "LL": (ll_left_, ll_top, ll_right, ll_bottom),
+                    "RL": tracking_right_roi,
+                    "LL": tracking_left_roi,
                 },
                 "line_offsets": {
-                    "RL": (rl_left, rl_top),
-                    "LL": (ll_left_, ll_top),
+                    "RL": tracking_right_roi[:2],
+                    "LL": tracking_left_roi[:2],
                 },
-                "lines": {"RL": rl_lines, "LL": ll_lines},
+                "lines": {"RL": tracking_right_lines, "LL": tracking_left_lines},
                 "midpoints": {"RL": rl_x_mid, "LL": ll_x_mid},
                 "frame_center_x": float(frame_center),
                 "lane_center_offset_px": float(lane_center),
@@ -449,18 +482,18 @@ class VisionProcessor:
                 "draw_data": draw_data,
                 "rl_edges": rl_edge,
                 "ll_edges": ll_edge,
-                "rl_lines": rl_lines,
-                "ll_lines": ll_lines,
-                "rl_offset": (rl_left, rl_top),
-                "ll_offset": (ll_left_, ll_top),
+                "rl_lines": tracking_right_lines,
+                "ll_lines": tracking_left_lines,
+                "rl_offset": tracking_right_roi[:2],
+                "ll_offset": tracking_left_roi[:2],
             }
 
         # Preserve actual Hough segment geometry in frame coordinates for
         # consumers that can justify camera-local obstacle relationships.
         lane_segments_px = []
         for lines, x_offset, y_offset in (
-            (rl_lines, rl_left, rl_top),
-            (ll_lines, ll_left_, ll_top),
+            (tracking_right_lines, tracking_right_roi[0], tracking_right_roi[1]),
+            (tracking_left_lines, tracking_left_roi[0], tracking_left_roi[1]),
         ):
             if lines is None:
                 continue

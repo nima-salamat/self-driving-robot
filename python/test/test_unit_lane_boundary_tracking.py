@@ -18,8 +18,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
 
     @staticmethod
     def line_for_global_x(roi, global_x, dx=0.0):
-        left, _top, _right, bottom = roi
-        height = bottom - 300
+        left, top, _right, bottom = roi
+        height = bottom - top
         local_x = float(global_x - left)
         return np.asarray(
             [[[local_x - dx * 0.5, 0.0, local_x + dx * 0.5, float(height)]]],
@@ -149,6 +149,21 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.assertFalse(result["left"]["observed"])
             self.assertEqual(result["left"]["pending_hits"], 0)
 
+    def test_nearby_candidate_with_incompatible_tangent_is_rejected(self):
+        self.update(left_x=220.0, right_x=420.0)
+        self.update(left_x=None, right_x=420.0)
+        misleading = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=180.0)
+        result = self.tracker.update(
+            misleading,
+            self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=0.0),
+            self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+        )
+
+        self.assertFalse(result["left"]["observed"])
+        self.assertEqual(result["left"]["pending_hits"], 0)
+        self.assertEqual(result["inferred_side"], "left")
+
     def test_left_boundary_can_be_the_single_reliable_anchor(self):
         self.update(left_x=220.0, right_x=420.0)
         result = self.update(left_x=230.0, right_x=None)
@@ -179,6 +194,85 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(result["perception_valid"])
         self.assertEqual(result["state"], "ACQUIRING_PAIR")
         self.assertEqual(result["lane_type"], "none")
+
+    def test_returning_anchor_reacquires_after_both_sides_miss_without_losing_identity(self):
+        self.update(left_x=220.0, right_x=420.0)
+        original_id = self.tracker._sides["left"].track_id
+        self.update()
+        self.update()
+
+        for hit in range(3):
+            result = self.update(left_x=221.0, right_x=None)
+            if hit < 2:
+                self.assertFalse(result["left"]["observed"])
+                self.assertEqual(result["left"]["status"], "REACQUIRING")
+
+        self.assertTrue(result["left"]["observed"])
+        self.assertEqual(result["left"]["track_id"], original_id)
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["inferred_side"], "right")
+
+    def test_recovery_roi_expands_inward_around_predicted_boundary(self):
+        left_roi = (90, 300, 228, 440)
+        right_roi = (432, 300, 570, 440)
+        left_lines = self.line_for_global_x(left_roi, 190.0, dx=-12.0)
+        right_lines = self.line_for_global_x(right_roi, 500.0, dx=12.0)
+        self.tracker.update(
+            left_lines, right_lines, self.FRAME_SHAPE,
+            left_roi, right_roi, reference_center_x=320.0,
+        )
+        self.tracker.update(None, right_lines, self.FRAME_SHAPE,
+                            left_roi, right_roi, reference_center_x=320.0)
+
+        search = self.tracker.recovery_rois(left_roi, right_roi, self.FRAME_SHAPE)
+        self.assertTrue(search["left"]["expanded"])
+        self.assertGreater(search["left"]["roi"][2], left_roi[2])
+        self.assertLessEqual(search["left"]["roi"][2] - search["left"]["roi"][0],
+                             int(self.FRAME_SHAPE[1] * 0.30) + 2)
+
+    def test_inferred_geometry_uses_visible_boundary_tangent_and_lookahead(self):
+        self.update(left_x=220.0, right_x=420.0)
+        left = self.line_for_global_x(self.LEFT_ROI, 230.0, dx=-28.0)
+        result = self.tracker.update(
+            left, None, self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+        )
+        inferred = result["right"]["predicted_line"]
+        observed = result["left"]["line"]
+        self.assertAlmostEqual(
+            (inferred[2] - inferred[0]) / (inferred[3] - inferred[1]),
+            (observed[2] - observed[0]) / (observed[3] - observed[1]),
+            delta=0.03,
+        )
+        self.assertGreaterEqual(len(result["center_points"]), 2)
+        self.assertAlmostEqual(
+            result["steering_center_px"],
+            0.2 * result["center_points"][0][0]
+            + 0.5 * result["center_points"][1][0]
+            + 0.3 * result["center_points"][-1][0],
+            delta=0.1,
+        )
+
+    def test_perspective_width_profile_is_learned_from_two_real_boundaries(self):
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-14.0)
+        right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=21.0)
+        learned = self.tracker.update(
+            left, right, self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+        )
+        profile = learned["lane_width_profile"]
+        self.assertEqual(len(profile), 3)
+        self.assertGreater(max(width for _row, width in profile)
+                           - min(width for _row, width in profile), 5.0)
+
+        inferred = self.tracker.update(
+            self.line_for_global_x(self.LEFT_ROI, 225.0, dx=-18.0), None,
+            self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+        )
+        self.assertEqual(inferred["inferred_side"], "right")
+        self.assertNotEqual(inferred["center_points"][0][0],
+                            inferred["center_points"][-1][0])
 
 
 if __name__ == "__main__":

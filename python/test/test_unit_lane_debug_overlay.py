@@ -237,7 +237,7 @@ class LaneDebugOverlayTests(unittest.TestCase):
                     "predicted_line": [35.0, 30.0, 38.0, 110.0],
                 },
                 "right": {
-                    "status": "TRACKING",
+                    "status": "DETECTED",
                     "observed": True,
                     "inferred": False,
                     "track_id": 2,
@@ -252,7 +252,7 @@ class LaneDebugOverlayTests(unittest.TestCase):
 
         labels = [str(call.args[1]) for call in put_text.call_args_list]
         self.assertTrue(any("LEFT INFERRED 7f" in label for label in labels))
-        self.assertTrue(any("RIGHT TRACKING #2" in label for label in labels))
+        self.assertTrue(any("RIGHT DETECTED #2" in label for label in labels))
         self.assertTrue(any("LANE TRACK: SINGLE_SIDE_RIGHT" in label for label in labels))
 
     def test_renderer_handles_missing_frame(self):
