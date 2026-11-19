@@ -1,0 +1,57 @@
+{% if caps.simulator_backend == 'carla' %}
+<div id="camera-editor-modal" class="camera-editor-modal" aria-hidden="true">
+  <section class="camera-editor-window" role="dialog" aria-modal="true" aria-labelledby="camera-editor-title">
+    <header class="camera-editor-header">
+      <div><h2 id="camera-editor-title">CARLA · Camera Placement Studio</h2><p>Free-fly through the map, then apply the view as the vehicle's live camera mount.</p></div>
+      <span class="sim-spacer"></span><span class="pill" id="camera-editor-mode" data-mode="free" title="Keyboard movement and mouse-look control the independent free camera in CARLA world coordinates.">FREE-FLY · WORLD ROTATION</span>
+      <button type="button" class="camera-modal-close" id="close-camera-editor" aria-label="Close camera placement studio">×</button>
+    </header>
+    <div class="camera-editor-main">
+      <div class="camera-editor-viewport" id="camera-editor-viewport">
+        <img id="camera-editor-preview" alt="Live CARLA world camera preview">
+        <div class="camera-editor-overlay">
+          <div class="camera-hint"><strong>Explore the world</strong><br><span class="camera-keycap">W</span> forward · <span class="camera-keycap">S</span> back · <span class="camera-keycap">A</span>/<span class="camera-keycap">D</span> strafe · <span class="camera-keycap">Q</span>/<span class="camera-keycap">E</span> down/up<br><span class="camera-keycap">←</span>/<span class="camera-keycap">→</span> yaw · <span class="camera-keycap">↑</span>/<span class="camera-keycap">↓</span> pitch · hold <span class="camera-keycap">Shift</span> to move faster · drag the view to look around</div>
+          <div class="camera-coordinate-readouts">
+            <div class="camera-mount-readout" id="camera-mount-readout">Vehicle-relative mount: waiting…</div>
+            <div class="camera-world-readout" id="camera-stream-readout">Stream RGB sensor (world): waiting…</div>
+            <div class="camera-world-readout" id="camera-world-readout">Free preview (world): waiting…</div>
+          </div>
+        </div>
+      </div>
+      <aside class="camera-editor-controls">
+        <div class="camera-control">
+          <h3>Vehicle-mounted camera transform</h3>
+          <p class="note">X/Y/Z are offsets from the vehicle origin (vehicle-local coordinates). The editor shows the free-preview camera and the actual Stream sensor's absolute CARLA world coordinates separately. Slider changes affect this preview only. Save mount recreates the Stream RGB sensor attached to the vehicle with the selected relative transform; no server restart is needed.</p>
+          <div class="camera-axis"><label for="cam-x">X · forward/back (m)</label><output id="cam-x-value">1.45</output><input type="range" id="cam-x" min="-20" max="20" step="0.05" value="1.45"></div>
+          <div class="camera-axis"><label for="cam-y">Y · lateral (m)</label><output id="cam-y-value">0.00</output><input type="range" id="cam-y" min="-20" max="20" step="0.05" value="0"></div>
+          <div class="camera-axis"><label for="cam-z">Z · height (m)</label><output id="cam-z-value">1.80</output><input type="range" id="cam-z" min="-5" max="15" step="0.05" value="1.8"></div>
+          <div class="camera-axis"><label for="cam-pitch">Pitch · tilt (°)</label><output id="cam-pitch-value">−8.00</output><input type="range" id="cam-pitch" min="-90" max="90" step="0.5" value="-8"></div>
+          <div class="camera-axis"><label for="cam-yaw">Yaw · rotate (°)</label><output id="cam-yaw-value">0.00</output><input type="range" id="cam-yaw" min="-180" max="180" step="0.5" value="0"></div>
+          <div class="camera-axis"><label for="cam-roll">Roll · bank (°)</label><output id="cam-roll-value">0.00</output><input type="range" id="cam-roll" min="-180" max="180" step="0.5" value="0"></div>
+        </div>
+        <div class="camera-control">
+          <h3>Align and place</h3>
+          <div class="camera-button-grid">
+            <button type="button" id="camera-snap-mount">Snap view to vehicle camera</button>
+            <button type="button" id="camera-level-mount">Level mount (pitch/roll 0°)</button>
+            <button type="button" id="camera-level-view">Level free view</button>
+            <button type="button" id="camera-restore-saved">Reload saved mount</button>
+            <button type="button" id="camera-reset-mount">Reset mount defaults</button>
+            <button type="button" class="primary" id="camera-use-view">Use current world view as mount</button>
+          </div>
+          <p class="note" style="margin-top:9px">Use “Snap view” to start from the car, make fine adjustments, then use “Use current world view” to transfer that pose onto the vehicle.</p>
+        </div>
+        <div class="camera-control">
+          <h3>Movement speed</h3>
+          <div class="field"><label for="camera-move-speed">Fly camera speed</label><select id="camera-move-speed"><option value="0.08">Fine · 0.08 m/tick</option><option value="0.18" selected>Normal · 0.18 m/tick</option><option value="0.45">Fast · 0.45 m/tick</option><option value="1.0">Very fast · 1.0 m/tick</option></select></div>
+        </div>
+      </aside>
+    </div>
+    <footer class="camera-editor-footer">
+      <div id="camera-editor-status" class="msg">Opening live camera feed…</div>
+      <button type="button" id="camera-discard">Discard preview</button>
+      <button type="button" class="save-camera" id="camera-save-mount">Save mount</button>
+    </footer>
+  </section>
+</div>
+{% endif %}

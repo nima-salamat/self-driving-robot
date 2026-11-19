@@ -1,0 +1,86 @@
+<div id="ext_frame_compare" style="display:none;position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.82);align-items:center;justify-content:center;padding:18px">
+  <div style="width:min(1000px,96vw);max-height:92vh;overflow:auto;background:#0b1420;border:1px solid var(--border);border-radius:8px;padding:12px">
+    <div style="display:flex;gap:10px;align-items:center"><strong id="ext_frame_compare_title">Frame comparison</strong><span style="flex:1"></span><button type="button" class="ghost" id="ext_frame_compare_close">Close</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><div><div class="small-muted">Saved snapshot</div><img id="ext_compare_old" alt="Saved frame" style="width:100%;background:#02070c"></div><div><div class="small-muted">Current frame</div><img id="ext_compare_live" alt="Current frame" style="width:100%;background:#02070c"></div></div>
+  </div>
+</div>
+
+<div id="ext_maneuver_settings_dialog" class="settings-modal maneuver-config-modal" aria-hidden="true">
+  <section class="settings-card maneuver-config-card" role="dialog" aria-modal="true" aria-labelledby="ext_maneuver_title" aria-describedby="ext_maneuver_description">
+    <header class="settings-header"><div><h2 id="ext_maneuver_title">Maneuver Sequence Editor</h2><p id="ext_maneuver_description">Edit and validate the Arduino motion sequences used by this mode.</p></div><button type="button" class="ghost" id="ext_maneuver_settings_close" aria-label="Close maneuver editor">×</button></header>
+    <div class="maneuver-warning"><strong>Hardware safety:</strong> these edits are persisted immediately to the active mode JSON, but startup lane-change sequences reach Arduino only at the next robot initialization. Stop the robot or lift the wheels before testing changes.</div>
+    <div class="settings-section">
+      <h3>Obstacle Avoidance · Arduino Lane Sequences</h3>
+      <p class="settings-note">Available in both City and Race. These are loaded by the Python controller when it starts and configured on Arduino; they are not the City pedestrian-turn routes below.</p>
+      <div class="maneuver-grid maneuver-grid-two">
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M19 19V10a5 5 0 0 0-5-5H5"/><path d="m9 1-4 4 4 4"/></svg><span>Lane sequence · LEFT</span></span><textarea id="maneuver_obstacle_left" rows="3" spellcheck="false" aria-label="Arduino left lane-change sequence"></textarea><span class="small-muted">Used for the configured left-side lane maneuver.</span></label>
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M5 19V10a5 5 0 0 1 5-5h9"/><path d="m15 1 4 4-4 4"/></svg><span>Lane sequence · RIGHT</span></span><textarea id="maneuver_obstacle_right" rows="3" spellcheck="false" aria-label="Arduino right lane-change sequence"></textarea><span class="small-muted">Used for the configured right-side / return lane maneuver.</span></label>
+      </div>
+    </div>
+    {% if mode == 'city' %}
+    <div class="settings-section">
+      <h3>City · Pedestrian / Crosswalk Routes</h3>
+      <p class="settings-note">These routes are selected from the detected direction tag in City mode. This section is intentionally absent in Race mode.</p>
+      <div class="maneuver-grid">
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M19 20V12a7 7 0 0 0-7-7H5"/><path d="m10 1-5 4 5 4"/></svg><span>Turn LEFT</span></span><textarea id="maneuver_city_left" rows="3" spellcheck="false" aria-label="City pedestrian left-turn sequence"></textarea><span class="small-muted">Sequence used for TURN LEFT.</span></label>
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M12 22V3"/><path d="m5 10 7-7 7 7"/></svg><span>Go STRAIGHT</span></span><textarea id="maneuver_city_straight" rows="3" spellcheck="false" aria-label="City pedestrian straight sequence"></textarea><span class="small-muted">Sequence used for STRAIGHT and the fallback route.</span></label>
+        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M5 20V12a7 7 0 0 1 7-7h7"/><path d="m14 1 5 4-5 4"/></svg><span>Turn RIGHT</span></span><textarea id="maneuver_city_right" rows="3" spellcheck="false" aria-label="City pedestrian right-turn sequence"></textarea><span class="small-muted">Sequence used for TURN RIGHT.</span></label>
+      </div>
+      <h3 style="margin-top:18px">Crosswalk Line-count Thresholds</h3>
+      <p class="settings-note">The detector checks how many vertical and horizontal line segments appear in the crosswalk region, then performs its existing lowest-horizontal-line position check. Defaults preserve the current condition: at least 6 vertical and 3 horizontal lines.</p>
+      <div class="pid-grid pid-grid-two"><label>Minimum vertical lines<input id="maneuver_crosswalk_vertical_min" type="number" min="1" max="1000" step="1"></label><label>Minimum horizontal lines<input id="maneuver_crosswalk_horizontal_min" type="number" min="1" max="1000" step="1"></label></div>
+    </div>
+    {% endif %}
+    <div class="settings-section"><h3>Command Format Help</h3><div class="sequence-help">
+      <p><code>f</code> = forward, <code>b</code> = reverse. Then give <strong>PWM</strong> (0–255), <strong>encoder pulse count</strong> (1–10000), and <strong>servo angle</strong> (0–180°).</p>
+      <p>Every motion command has four whitespace-separated tokens. Append another group to continue. Example: <code>f 220 80 95 f 220 80 120</code>.</p>
+      <p>Saving validates token groups, directions and numeric ranges. It cannot determine whether a maneuver is physically safe, so test in a clear controlled area with wheels lifted when appropriate.</p>
+    </div></div>
+    <footer class="settings-footer"><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="ext_maneuver_settings_cancel">Cancel</button><button type="button" class="btn" id="ext_maneuver_settings_apply">Validate &amp; Save</button></footer>
+  </section>
+</div>
+
+<div id="ext_pid_settings_dialog" class="settings-modal pid-config-modal" aria-hidden="true">
+  <section class="settings-card pid-config-card" role="dialog" aria-modal="true" aria-labelledby="ext_pid_title" aria-describedby="ext_pid_description">
+    <header class="settings-header"><div><h2 id="ext_pid_title">{{ mode|capitalize }} · PID Tuning</h2><p id="ext_pid_description">Tune the active mode’s steering correction gains and timing safeguards.</p></div><button type="button" class="ghost" id="ext_pid_settings_close" aria-label="Close PID tuning">×</button></header>
+    <div class="maneuver-warning"><strong>Driving safety:</strong> PID edits are applied to the live controller and reset its accumulated PID state. Adjust while stationary or with the wheels safely lifted, and tune gradually.</div>
+    <div class="settings-section">
+      <label class="settings-check"><input type="checkbox" id="pid_use_enabled"> Enable PID steering correction (USE_PID)</label>
+      <div class="pid-grid">
+        <label>Proportional gain · KP<input id="pid_kp" type="number" min="-100" max="100" step="0.001"></label>
+        <label>Integral gain · KI<input id="pid_ki" type="number" min="-100" max="100" step="0.001"></label>
+        <label>Derivative gain · KD<input id="pid_kd" type="number" min="-100" max="100" step="0.001"></label>
+        <label>Nominal sample period · KT (seconds)<input id="pid_kt" type="number" min="0" max="10" step="0.001"></label>
+        <label>Minimum dt (seconds)<input id="pid_min_dt" type="number" min="0.0001" max="1" step="0.0001"></label>
+        <label>Maximum dt (seconds)<input id="pid_max_dt" type="number" min="0.001" max="5" step="0.001"></label>
+        <label>Derivative smoothing (0–1)<input id="pid_derivative_filter" type="number" min="0" max="1" step="0.01"></label>
+        <div class="pid-limits-group"><div class="sequence-title">Output correction limits</div><div class="pid-limit-inputs"><label>Minimum<input id="pid_output_min" type="number" min="-255" max="255" step="1"></label><label>Maximum<input id="pid_output_max" type="number" min="-255" max="255" step="1"></label></div></div>
+      </div>
+      <label class="settings-check pid-legacy-control"><input type="checkbox" id="pid_auto_update_kp" disabled> AUTO_UPDATE_KP (legacy setting; the current PID controller does not consume it)</label>
+      <p class="settings-note">KP/KI/KD are P/I/D gains. KT is the nominal controller sample period. Minimum/maximum dt protect calculations when frames stall or arrive too quickly. Derivative smoothing controls how much of the new derivative is used. Output limits cap the correction before servo-angle clamping. Each mode stores its own PID settings in its JSON file.</p>
+    </div>
+    <footer class="settings-footer"><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="ext_pid_settings_cancel">Cancel</button><button type="button" class="btn" id="ext_pid_settings_apply">Apply PID Settings</button></footer>
+  </section>
+</div>
+
+<div id="ext_command_palette" aria-hidden="true">
+  <div class="palette-box" role="dialog" aria-modal="true" aria-labelledby="ext_palette_title">
+    <header class="palette-header">
+      <div><strong id="ext_palette_title">Quick Find</strong><span class="small-muted">Search actions and settings</span></div>
+      <kbd>Ctrl K</kbd><kbd>Esc</kbd>
+    </header>
+    <input type="search" id="ext_command_search" placeholder="Search commands, settings, or panel options…" autocomplete="off" aria-label="Search commands, settings, and panel options">
+    <div class="palette-results-grid">
+      <section class="palette-results-section commands-results" aria-labelledby="ext_command_heading">
+        <div class="palette-section-title"><span id="ext_command_heading">Commands</span><span class="palette-result-count" id="ext_command_count">0</span></div>
+        <p class="palette-section-help">Run an action immediately.</p>
+        <div id="ext_command_list"></div>
+      </section>
+      <section class="palette-results-section settings-results" aria-labelledby="ext_settings_heading">
+        <div class="palette-section-title"><span id="ext_settings_heading">Settings &amp; Panels</span><span class="palette-result-count" id="ext_settings_count">Search</span></div>
+        <p class="palette-section-help">Jump to a setting, open its panel, and highlight the control.</p>
+        <div id="ext_settings_results"><div class="palette-empty">Type to search settings and panel options.</div></div>
+      </section>
+    </div>
+  </div>
+</div>

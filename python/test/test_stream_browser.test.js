@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const {spawn}=require('node:child_process');
 const {setTimeout:delay}=require('node:timers/promises');
 const {chromium}=require('playwright');
+const vm=require('node:vm');
 
 const port=Number(process.env.STREAM_BROWSER_TEST_PORT||41982);
 const baseURL='http://127.0.0.1:'+port;
@@ -34,18 +35,45 @@ async function waitForServer(child){
   let browser=null;
   try{
     await waitForServer(server);
+    for(const backend of ['avis','carla']){
+      const profile=backend==='avis'?'city':'race';
+      const response=await fetch(baseURL+'/__test/simulator-editor?backend='+backend+'&profile='+profile);
+      assert.equal(response.status,200,backend+' simulator template should render');
+      const html=await response.text();
+      assert.ok(!html.includes('{% include'),'Jinja partials must be expanded before serving '+backend);
+      assert.ok(html.includes('simulator-editor--'+backend));
+      assert.ok(html.includes('simulator-profile--'+profile));
+      const scriptStart=html.indexOf('<script>');
+      const scriptEnd=html.indexOf('</script>',scriptStart);
+      assert.ok(scriptStart>=0&&scriptEnd>scriptStart,backend+' runtime script should render');
+      const runtimeScript=html.slice(scriptStart+8,scriptEnd);
+      new vm.Script(runtimeScript,{filename:'simulator-'+backend+'.inline.js'});
+      assert.ok(html.includes('simulator-base.css'));
+      assert.ok(html.includes('simulator-'+backend+'.css'));
+      if(backend==='carla'){
+        assert.ok(runtimeScript.includes('function initCarlaScene('),'CARLA scene module must be included');
+        assert.ok(runtimeScript.includes('function initCameraEditor('),'CARLA camera module must be included');
+      }else{
+        assert.ok(!runtimeScript.includes('function initCarlaScene('),'AVIS must not include CARLA scene code');
+      }
+    }
     browser=await chromium.launch({headless:true,args:['--no-sandbox']});
     const page=await browser.newPage({viewport:{width:1365,height:900}});
     // Regression-test the simulator editor with its real Stream stylesheet.
     // The right-hand settings stack must terminate at the content edge with no
     // sticky overlap or horizontal overflow at desktop, tablet and mobile sizes.
     const simulatorTemplate=fs.readFileSync('python/stream/templates/simulator_editor.html','utf8');
-    const sharedStreamCss=fs.readFileSync('python/stream/static/stream.css','utf8');
-    const simulatorInlineCss=(simulatorTemplate.match(/<style>([\s\S]*?)<\/style>/i)||[])[1];
-    assert.ok(simulatorInlineCss,'Simulator editor inline stylesheet should exist');
+    const streamCssFiles=['stream-base.css','stream-workspace.css','stream-responsive.css','stream-panels.css','stream-vision.css'];
+    const simulatorCssFiles=['simulator-base.css','simulator-avis.css','simulator-carla.css'];
+    const readStyles=files=>files.map(file=>fs.readFileSync('python/stream/static/css/'+file,'utf8')).join(String.fromCharCode(10));
+    const sharedStreamCss=readStyles(streamCssFiles);
+    const simulatorEditorCss=readStyles(simulatorCssFiles);
+    assert.doesNotMatch(simulatorTemplate,/<style>/i,'Simulator styles must be external CSS assets');
+    assert.ok(simulatorTemplate.includes('simulator-avis.css'),'AVIS must have a dedicated stylesheet');
+    assert.ok(simulatorTemplate.includes('simulator-carla.css'),'CARLA must have a dedicated stylesheet');
     const layoutPage=await browser.newPage({viewport:{width:1365,height:900}});
     const layoutHtml='<!doctype html><html><head><style>'+sharedStreamCss+
-      '</style><style>'+simulatorInlineCss+'</style></head><body>'+
+      '</style><style>'+simulatorEditorCss+'</style></head><body>'+
       '<header class="sim-top">AVIS Stream</header><main class="sim-layout avis-layout">'+
       '<div class="stack"><section class="panel"><div class="panel-content" style="height:420px">Camera</div></section></div>'+
       '<div class="stack"><section class="panel" style="height:60px">Run controls</section>'+

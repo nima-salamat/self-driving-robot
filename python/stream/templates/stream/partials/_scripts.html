@@ -1,0 +1,13 @@
+{% if auth_enabled %}<script src="{{ url_for('static', filename='stream-auth.js') }}"></script>{% endif %}
+{% for filename in ['stream-state.js', 'stream-core.js', 'stream-camera.js', 'stream-overlays.js', 'stream-controls.js', 'stream-runtime.js'] %}
+<script src="{{ url_for('static', filename=filename) }}"></script>
+{% endfor %}
+<script>
+{% include "stream/js/_editor_tools.js" %}
+{% include "stream/js/_workspace_data.js" %}
+{% include "stream/js/_runtime_panels.js" %}
+{% include "stream/js/_command_palette.js" %}
+{% include "stream/js/_docks.js" %}
+{% include "stream/js/_config_dialogs.js" %}
+</script>
+<script src="{{ url_for('static', filename='stream-workbench.js') }}"></script>

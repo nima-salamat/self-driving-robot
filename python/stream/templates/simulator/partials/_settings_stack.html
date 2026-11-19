@@ -1,0 +1,236 @@
+  <div class="stack">
+    {% if caps.simulator_backend != 'avis' %}
+    <section class="panel carla-run-panel" id="carla-run-panel">
+      <div class="panel-head"><div><h2>Autonomous run control</h2><p>{{ caps.simulator_backend|upper }} starts STOPPED after launch, reset or reconnect. Press Start Run to arm autonomous motion.</p></div><span class="sim-spacer"></span><span class="pill carla-run-state stopped" id="carla-run-state">STOPPED</span></div>
+      <div class="panel-content">
+        <div class="carla-run-controls">
+          <button type="button" id="carla-run-start" class="carla-run-start">▶ Start Run</button>
+          <button type="button" id="carla-run-stop" class="carla-run-stop">■ Stop / Brake</button>
+          <span id="carla-run-message" class="msg" role="status" aria-live="polite"></span>
+        </div>
+        <p class="carla-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake disarms it immediately. Reconnection never resumes motion automatically.</p>
+      </div>
+    </section>
+    {% endif %}
+    {% if caps.simulator_backend == 'carla' %}
+    <section class="panel" id="carla-scene-panel">
+      <div class="panel-head">
+        <div><h2>CARLA · World & Spawn Studio</h2><p>Choose a map, vehicle blueprint and exact spawn location</p></div>
+        <span class="sim-spacer"></span><span id="carla-scene-state" class="pill">Loading scene…</span>
+      </div>
+      <div class="panel-content">
+        <div class="carla-scene-summary">
+          <div class="carla-scene-stat"><div class="eyebrow">Active world</div><div class="value carla-selected-world" id="carla-current-map">Waiting for CARLA…</div></div>
+          <div class="carla-scene-stat"><div class="eyebrow">Active vehicle</div><div class="value" id="carla-current-vehicle">Waiting for vehicle…</div></div>
+        </div>
+        <div class="carla-scene-section">
+          <div class="carla-scene-section-head"><h3>01 · Select world / map</h3><span class="pill">Reloads world</span></div>
+          <div class="carla-scene-toolbar">
+            <div class="field"><label for="carla-map-select">Available CARLA maps</label><select id="carla-map-select"><option value="">Connect to CARLA to load map list…</option></select></div>
+            <button type="button" class="primary" id="carla-load-map">Load world</button>
+          </div>
+          <p class="carla-scene-note">Loading a map replaces the active world. The vehicle and sensors are recreated, and the selected spawn index is retained when the new map supports it.</p>
+        </div>
+        <div class="carla-scene-section">
+          <div class="carla-scene-section-head"><h3>02 · Choose vehicle</h3><span class="pill" id="carla-vehicle-count">0 vehicles</span></div>
+          <div class="field"><label for="carla-vehicle-search">Search by make, model, category or blueprint id</label><input type="search" id="carla-vehicle-search" placeholder="e.g. Tesla, SUV, motorcycle…" autocomplete="off"></div>
+          <div id="carla-vehicle-grid" class="carla-vehicle-grid" style="margin-top:9px"><div class="status-message">Waiting for CARLA blueprint library…</div></div>
+          <p class="carla-scene-note">Selecting a vehicle respawns it at the currently selected spawn point and saves the blueprint for this simulator mode.</p>
+        </div>
+        <div class="carla-scene-section">
+          <div class="carla-scene-section-head"><h3>03 · Spawn locations</h3><button type="button" id="carla-reset-spawn" class="carla-scene-reset">↺ Reset to spawn</button></div>
+          <p class="carla-scene-note" style="margin-top:0;margin-bottom:9px">Click a point on the map or choose a coordinate card. The selected location becomes this vehicle's reset target.</p>
+          <canvas id="carla-spawn-map" class="carla-spawn-map" width="760" height="255" aria-label="Interactive top-down map of CARLA vehicle spawn points"></canvas>
+          <div class="field" style="margin-top:9px"><label for="carla-spawn-search">Find spawn point by index or coordinates</label><input type="search" id="carla-spawn-search" placeholder="e.g. 12 or X 45.0" autocomplete="off"></div>
+          <div id="carla-spawn-list" class="carla-spawn-list" style="margin-top:8px"><div class="status-message">Waiting for CARLA map spawn points…</div></div>
+        </div>
+        <div id="carla-scene-message" class="msg carla-scene-message" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+    {% endif %}
+    <section class="panel sim-settings-panel" id="sim-settings-panel">
+      <div class="panel-head"><div><h2>Settings</h2><p id="editor-description">{{ mode|upper }} profile · live simulator configuration</p></div></div>
+      <div class="panel-content">
+        <div id="save-message" class="msg" role="status"></div>
+        <form id="settings-form">
+
+          <div class="setting-block" id="sim-connection-settings">
+            <h3 class="section-title">Simulator connection</h3>
+            <div class="grid-two">
+              <div class="field"><label for="sim-host">Host / IP</label><input id="sim-host" name="SIMULATOR_HOST" autocomplete="off" required></div>
+              <div class="field"><label for="sim-port">Port</label><input id="sim-port" name="SIMULATOR_PORT" type="number" min="1" max="65535" step="1" required></div>
+              <div class="field"><label for="sim-timeout">{% if caps.simulator_backend == 'avis' %}AVIS TCP response timeout (s){% else %}CARLA client timeout (s){% endif %}</label><input id="sim-timeout" name="SIMULATOR_TIMEOUT_S" type="number" min=".1" max="60" step="any" required><span class="note">{% if caps.simulator_backend == 'avis' %}Allow enough time for the full camera JPEG and sensor metadata; valid range 0.1–60 seconds (default 5).{% else %}Maximum 60 seconds.{% endif %}</span></div>
+              <div class="field {% if caps.simulator_backend != 'carla' %}section-hide{% endif %}" id="vehicle-filter-field"><label for="vehicle-filter">CARLA vehicle blueprint filter</label><input id="vehicle-filter" name="SIMULATOR_VEHICLE_FILTER"></div>
+            </div>
+          </div>
+          <div class="setting-block {% if not caps.supports_lidar %}section-hide{% endif %}" id="lidar-settings">
+            <h3 class="section-title">CARLA sensor configuration <span class="pill">Restart required</span></h3>
+            <label class="check-field"><input id="lidar-enabled" type="checkbox" name="SIMULATOR_LIDAR_ENABLED"> Enable ray-cast LiDAR</label>
+            <div class="grid-two">
+              <div class="field"><label for="lidar-range">LiDAR range (m)</label><input id="lidar-range" type="number" min="1" max="500" step="any" name="SIMULATOR_LIDAR_RANGE_M"></div>
+              <div class="field"><label for="lidar-channels">Channels</label><input id="lidar-channels" type="number" min="1" max="256" step="1" name="SIMULATOR_LIDAR_CHANNELS"></div>
+              <div class="field"><label for="lidar-pps">Points / second</label><input id="lidar-pps" type="number" min="100" max="2000000" step="100" name="SIMULATOR_LIDAR_POINTS_PER_SECOND"></div>
+              <div class="field"><label for="lidar-rotation">LiDAR rotation frequency (Hz)</label><input id="lidar-rotation" type="number" min="1" max="50" step="any" name="SIMULATOR_LIDAR_ROTATION_FREQUENCY"></div>
+              <div class="field"><label for="camera-fov">Camera FOV (degrees)</label><input id="camera-fov" type="number" min="10" max="150" step="any" name="SIMULATOR_CAMERA_FOV"></div>
+            </div>
+            <div class="camera-studio-launch"><button type="button" class="primary" id="open-camera-editor">Open camera placement studio ↗</button><p class="note">Explore the CARLA world with a free-fly camera, tune the vehicle-mounted sensor live, and save its position and rotation without restarting.</p></div>
+          </div>
+          <div class="setting-block {% if not caps.supports_range_sensors %}section-hide{% endif %}" id="avis-settings">
+            <h3 class="section-title">AVIS sensor setup</h3>
+            <div class="grid-two">
+              <div class="field"><label for="avis-angle">Distance sensor side-ray angle (degrees)</label><input id="avis-angle" type="number" min="0" max="90" step="1" name="SIMULATOR_AVIS_SENSOR_ANGLE"></div>
+            </div>
+            <div class="option-group avis-control-map">
+              <h4>Legacy AVIS actuator mapping</h4>
+              <p>Steering is sent as a signed percentage: <strong>−100</strong> full left · <strong>0</strong> straight · <strong>+100</strong> full right. The sensor angle above changes distance-ray spread only; it does not change steering.</p>
+              <p>Target speed is an AVIS percentage from 0 to 100. The throttle limit below is a normalized cap from 0 to 1.</p>
+            </div>
+          </div>
+          <div class="setting-block" id="sim-vehicle-safety">
+            <h3 class="section-title">Virtual vehicle safety</h3>
+            <div class="grid-two">
+              <div class="field"><label for="target-speed" id="target-speed-label">{% if caps.simulator_backend == 'avis' %}Target speed command (%){% else %}Target speed (km/h){% endif %}</label><input id="target-speed" type="number" min="0" max="{% if caps.simulator_backend == 'carla' %}200{% else %}100{% endif %}" step="any" name="SIMULATOR_TARGET_SPEED" required></div>
+              <div class="field"><label for="throttle-limit">{% if caps.simulator_backend == 'avis' %}Maximum command limit (0–1){% else %}Throttle limit (0–1){% endif %}</label><input id="throttle-limit" type="number" min="0" max="1" step="any" name="SIMULATOR_THROTTLE_LIMIT" required></div>
+              <div class="field"><label for="steering-authority">Maximum steering input (normalized)</label><input id="steering-authority" type="number" min=".05" max="1" step="any" name="SIMULATOR_STEERING_LIMIT"></div>
+              <div class="field"><label for="steering-rate">Steering slew rate (normalized / s)</label><input id="steering-rate" type="number" min=".1" max="10" step="any" name="SIMULATOR_STEERING_RATE"></div>
+              {% if caps.simulator_backend == 'carla' %}
+              <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max="1" step="any" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
+              {% endif %}
+              <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step="any" name="ENCODER_PULSE_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="any" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
+            </div>
+            <label class="check-field"><input id="stop-lost-lane" type="checkbox" name="SIMULATOR_STOP_ON_LOST_LANE"> Brake when no valid lane is detected</label>
+            <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
+            <label class="check-field"><input id="steering-inverted" type="checkbox" name="SIMULATOR_STEERING_INVERTED"> Invert simulator steering direction</label>
+          </div>
+          <div class="setting-block {% if caps.vision_profile != 'race' %}section-hide{% endif %}" id="race-vision-settings">
+            <h3 class="section-title">Race vision options</h3>
+            <label class="check-field"><input id="ml-lane-enabled" type="checkbox" name="USE_ML_LANE_DETECTOR"> Enable ML lane model (requires NCNN model files)</label>
+            <div class="field"><label for="ml-lane-model">ML lane model</label><select id="ml-lane-model" name="ML_LANE_MODEL"><option value="unet_depthwise_nano">UNet depthwise nano</option><option value="unet_depthwise_small">UNet depthwise small</option></select></div>
+            <p class="note">Changing the Race lane model requires a restart because the vision processor is initialized once per runtime.</p>
+          </div>
+          <div class="setting-block" id="sim-vision-settings">
+            <h3 class="section-title">Shared vision processing <span class="pill">{{ caps.vision_profile|upper }} profile</span></h3>
+            <label class="check-field {% if not caps.supports_bev %}section-hide{% endif %}"><input id="use-bev" type="checkbox" name="USE_BEV"> Bird's-eye perspective transform (BEV)</label>
+            <label class="check-field"><input id="debug-overlay" type="checkbox" name="DEBUG"> Debug overlays</label>
+            <div class="field {% if caps.vision_profile != 'city' %}section-hide{% endif %}"><label for="city-lane-detector">City lane detector</label><select id="city-lane-detector" name="CITY_LANE_DETECTOR"><option value="default">Default City processor</option><option value="blsf-beta">BLSF beta</option></select></div>
+            <div class="section-title" style="margin-top:12px">Temporal line identity · Hall matching</div>
+            <label class="check-field"><input id="hall-line-tracking" type="checkbox" name="HALL_LINE_TRACKING_ENABLED"> Enable line tracking across camera frames</label>
+            <div class="field"><label for="hall-line-max-missed">Missed frames before LOST (1–12)</label><input id="hall-line-max-missed" type="number" min="1" max="12" step="1" name="HALL_LINE_TRACKING_MAX_MISSED"></div>
+            <p class="note">Uses bipartite maximum matching to preserve line identities across frames. Works with classical Hough in City/Race and BLSF in City; Race ML lane-mask mode reports it as unsupported.</p>
+            <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
+          </div>
+          <div class="setting-block" id="sim-servo-calibration">
+            <h3 class="section-title">{% if caps.simulator_backend == 'avis' %}Vision-to-AVIS steering calibration{% else %}Shared steering calibration{% endif %}</h3>
+            <div class="grid-two">
+              <div class="field"><label for="min-servo">Minimum virtual servo angle</label><input id="min-servo" type="number" min="0" max="180" step="any" name="MIN_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-center">Center virtual servo angle</label><input id="servo-center" type="number" min="0" max="180" step="any" name="SERVO_CENTER"></div>
+              <div class="field"><label for="max-servo">Maximum virtual servo angle</label><input id="max-servo" type="number" min="0" max="180" step="any" name="MAX_SERVO_ANGLE"></div>
+              <div class="field"><label for="servo-direction">Servo direction</label><select id="servo-direction" name="SERVO_DIRECTION"><option value="ltr">Left-to-right</option><option value="rtl">Right-to-left</option></select></div>
+            </div>
+            <p class="note">{% if caps.simulator_backend == 'avis' %}These angles normalize the vision processor's steering estimate before it is converted to the AVIS signed command range −100..100. They are not the distance sensor angle.{% else %}Defaults are 55° / 95° / 125°, matching the physical City/Race configuration defaults. Calibrate for the connected model before enabling motion.{% endif %}</p>
+          </div>
+          <div class="setting-block" id="sim-pid-settings">
+            <h3 class="section-title">PID steering controller <span class="pill">Shared City / Race</span></h3>
+            <p class="note">The simulator can use the same PID steering correction as City and Race: the lane-centering error is fed through P, I and D gains before the virtual servo angle is normalized for AVIS or CARLA. Disable PID to use the vision processor's direct steering estimate.</p>
+            <label class="check-field"><input id="pid-enabled" type="checkbox" name="USE_PID"> Enable PID steering correction</label>
+            <label class="check-field"><input id="pid-auto-kp" type="checkbox" name="AUTO_UPDATE_KP"> Use the vision processor's per-frame KP estimate</label>
+            <div class="grid-two">
+              <div class="field"><label for="pid-kp">Proportional gain · KP</label><input id="pid-kp" type="number" min="-100" max="100" step="any" name="KP"></div>
+              <div class="field"><label for="pid-ki">Integral gain · KI</label><input id="pid-ki" type="number" min="-100" max="100" step="any" name="KI"></div>
+              <div class="field"><label for="pid-kd">Derivative gain · KD</label><input id="pid-kd" type="number" min="-100" max="100" step="any" name="KD"></div>
+              <div class="field"><label for="pid-kt">Nominal sample period · KT (seconds)</label><input id="pid-kt" type="number" min="0" max="10" step="any" name="KT"></div>
+              <div class="field"><label for="pid-min-dt">Minimum PID sample interval (s)</label><input id="pid-min-dt" type="number" min=".0001" max="1" step="any" name="PID_MIN_DT"></div>
+              <div class="field"><label for="pid-max-dt">Maximum PID sample interval (s)</label><input id="pid-max-dt" type="number" min=".001" max="5" step="any" name="PID_MAX_DT"></div>
+              <div class="field"><label for="pid-derivative-filter">Derivative smoothing (0–1)</label><input id="pid-derivative-filter" type="number" min="0" max="1" step="any" name="PID_DERIVATIVE_FILTER"></div>
+              <div class="field"><label for="pid-output-min">Minimum PID correction (degrees)</label><input id="pid-output-min" type="number" min="-255" max="255" step="any"></div>
+              <div class="field"><label for="pid-output-max">Maximum PID correction (degrees)</label><input id="pid-output-max" type="number" min="-255" max="255" step="any"></div>
+            </div>
+            <p class="note">Defaults match the City/Race Stream controller: KP 0.35, KI 0, KD 0.01, KT 0.01 s, output limits −80…+80°, minimum/maximum sample interval 0.001/0.2 s and derivative filter 0.25. Changes apply to the virtual controller while the simulator is running and are stored in this mode's .sim.json profile.</p>
+          </div>
+          <div class="setting-block {% if caps.vision_profile != 'city' %}section-hide{% endif %}" id="city-vision-settings">
+            <h3 class="section-title">City vision thresholds & geometry</h3>
+            <div class="grid-two">
+              <div class="field"><label for="lane-threshold">Lane pixel threshold (0–255)</label><input id="lane-threshold" type="number" min="0" max="255" step="1" name="LANE_THRESHOLD"></div>
+              <div class="field"><label for="hough-threshold">Hough vote threshold</label><input id="hough-threshold" type="number" min="1" max="255" step="1" name="HOUGH_THRESHOLD"></div>
+              <div class="field"><label for="hough-min-line">Minimum lane segment length (px)</label><input id="hough-min-line" type="number" min="1" max="500" step="1" name="HOUGH_MIN_LINE_LENGTH"></div>
+              <div class="field"><label for="hough-max-gap">Maximum segment gap (px)</label><input id="hough-max-gap" type="number" min="0" max="100" step="1" name="HOUGH_MAX_LINE_GAP"></div>
+              <div class="field"><label for="hough-blur">Blur kernel (1 or odd 3–15)</label><input id="hough-blur" type="number" min="1" max="15" step="2" name="HOUGH_BLUR_KERNEL"></div>
+              <div class="field"><label for="lane-roi-mode">Lane ROI shape</label><select id="lane-roi-mode" name="LANE_ROI_MODE"><option value="rectangle">Rectangle</option><option value="trapezoid">Trapezoid</option></select></div>
+              <div class="field"><label for="camera-pitch-deg">Vision camera pitch (degrees)</label><input id="camera-pitch-deg" type="number" min="-90" max="90" step="any" name="CAMERA_PITCH_DEG"></div>
+              <div class="field"><label for="camera-height">Vision camera height (cm)</label><input id="camera-height" type="number" min=".1" max="1000" step="any" name="CAMERA_HEIGHT"></div>
+              <div class="field"><label for="lane-width">Expected lane width (cm)</label><input id="lane-width" type="number" min=".1" max="1000" step="any" name="LANE_WIDTH"></div>
+              <div class="field"><label for="rl-top-factor">Right lane trapezoid top width (0–1)</label><input id="rl-top-factor" type="number" min="0" max="1" step="any" name="RL_TOP_WIDTH_FACTOR"></div>
+              <div class="field"><label for="ll-top-factor">Left lane trapezoid top width (0–1)</label><input id="ll-top-factor" type="number" min="0" max="1" step="any" name="LL_TOP_WIDTH_FACTOR"></div>
+            </div>
+            <label class="check-field"><input id="hough-morph-close" type="checkbox" name="HOUGH_MORPH_CLOSE"> Close small gaps in lane edges (morphological close)</label>
+            <label class="check-field"><input id="old-method" type="checkbox" name="OLD_METHOD"> Use legacy Hough/Canny lane detector</label>
+            <label class="check-field"><input id="roi-resizable" type="checkbox" name="ROI_RESIZABLE"> Allow lane ROI to expand temporarily when lane markings are lost</label>
+            {% if caps.supports_crosswalk %}
+            <div class="grid-two" style="margin-top:10px">
+              <div class="field"><label for="crosswalk-threshold">Crosswalk pixel threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
+              <div class="field"><label for="crosswalk-min-vertical">Minimum vertical crosswalk lines</label><input id="crosswalk-min-vertical" type="number" min="1" max="1000" step="1" name="CROSSWALK_VERTICAL_MIN_LINES"></div>
+              <div class="field"><label for="crosswalk-min-horizontal">Minimum horizontal crosswalk lines</label><input id="crosswalk-min-horizontal" type="number" min="1" max="1000" step="1" name="CROSSWALK_HORIZONTAL_MIN_LINES"></div>
+              <div class="field"><label for="cw-top-factor">Crosswalk trapezoid top width (0–1)</label><input id="cw-top-factor" type="number" min="0" max="1" step="any" name="CW_TOP_WIDTH_FACTOR"></div>
+            </div>
+            <label class="check-field"><input id="cw-trapezoid" type="checkbox" name="CW_TRAPEZOID_MODE"> Use trapezoid crosswalk ROI mask</label>
+            <label class="check-field"><input id="cw-old-method" type="checkbox" name="CW_OLD_METHOD"> Use legacy LSD crosswalk detector</label>
+            {% endif %}
+            {% if caps.supports_bev %}
+            <details style="margin-top:10px">
+              <summary class="section-title">BEV source corners · normalized 0–1</summary>
+              <div class="grid-two">
+                <div class="field"><label for="bev-tl-x">Top-left X</label><input id="bev-tl-x" type="number" min="0" max="1" step="any" name="BEV_SRC_TL_X"></div>
+                <div class="field"><label for="bev-tl-y">Top-left Y</label><input id="bev-tl-y" type="number" min="0" max="1" step="any" name="BEV_SRC_TL_Y"></div>
+                <div class="field"><label for="bev-tr-x">Top-right X</label><input id="bev-tr-x" type="number" min="0" max="1" step="any" name="BEV_SRC_TR_X"></div>
+                <div class="field"><label for="bev-tr-y">Top-right Y</label><input id="bev-tr-y" type="number" min="0" max="1" step="any" name="BEV_SRC_TR_Y"></div>
+                <div class="field"><label for="bev-br-x">Bottom-right X</label><input id="bev-br-x" type="number" min="0" max="1" step="any" name="BEV_SRC_BR_X"></div>
+                <div class="field"><label for="bev-br-y">Bottom-right Y</label><input id="bev-br-y" type="number" min="0" max="1" step="any" name="BEV_SRC_BR_Y"></div>
+                <div class="field"><label for="bev-bl-x">Bottom-left X</label><input id="bev-bl-x" type="number" min="0" max="1" step="any" name="BEV_SRC_BL_X"></div>
+                <div class="field"><label for="bev-bl-y">Bottom-left Y</label><input id="bev-bl-y" type="number" min="0" max="1" step="any" name="BEV_SRC_BL_Y"></div>
+              </div>
+            </details>
+            {% endif %}
+            <p class="note">{% if caps.simulator_backend == 'avis' %}AVIS target speed is a percentage command (0–100); the command limit caps output as a normalized value (0–1). Steering is transmitted separately as −100 to +100. Increase speed gradually while tuning. These values are stored in this mode's .sim.json profile.{% else %}CARLA starts conservatively at 5 km/h, throttle 0.12 and steering input 0.28. These are editable starting values, not fixed UI caps: speed 0–200 km/h, throttle 0–1, steering 0.05–1. Increase motion values gradually while tuning. Settings stay in this simulator's .sim.json profile and do not modify city.json.{% endif %}</p>
+          </div>
+          <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
+            <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
+            <div class="grid-two">
+              <div class="field"><label for="rl-top">Right-lane ROI top</label><input id="rl-top" type="number" min="0" max="1" step="any" name="RL_TOP_ROI"></div>
+              <div class="field"><label for="rl-bottom">Right-lane ROI bottom</label><input id="rl-bottom" type="number" min="0" max="1" step="any" name="RL_BOTTOM_ROI"></div>
+              <div class="field"><label for="rl-left">Right-lane ROI left</label><input id="rl-left" type="number" min="0" max="1" step="any" name="RL_LEFT_ROI"></div>
+              <div class="field"><label for="rl-right">Right-lane ROI right</label><input id="rl-right" type="number" min="0" max="1" step="any" name="RL_RIGHT_ROI"></div>
+              <div class="field"><label for="ll-top">Left-lane ROI top</label><input id="ll-top" type="number" min="0" max="1" step="any" name="LL_TOP_ROI"></div>
+              <div class="field"><label for="ll-bottom">Left-lane ROI bottom</label><input id="ll-bottom" type="number" min="0" max="1" step="any" name="LL_BOTTOM_ROI"></div>
+              <div class="field"><label for="ll-left">Left-lane ROI left</label><input id="ll-left" type="number" min="0" max="1" step="any" name="LL_LEFT_ROI"></div>
+              <div class="field"><label for="ll-right">Left-lane ROI right</label><input id="ll-right" type="number" min="0" max="1" step="any" name="LL_RIGHT_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-top">Crosswalk ROI top</label><input id="cw-top" type="number" min="0" max="1" step="any" name="CW_TOP_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-bottom">Crosswalk ROI bottom</label><input id="cw-bottom" type="number" min="0" max="1" step="any" name="CW_BOTTOM_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-left">Crosswalk ROI left</label><input id="cw-left" type="number" min="0" max="1" step="any" name="CW_LEFT_ROI"></div>
+              <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min="0" max="1" step="any" name="CW_RIGHT_ROI"></div>
+            </div>
+          </div>
+          <div class="actions"><button type="button" id="reload-settings" disabled>Reload saved</button><button class="primary" type="submit" id="save-settings" disabled>Save settings</button></div>
+        </form>
+      </div>
+    </section>
+
+
+    {% if caps.simulator_backend != 'avis' %}
+    <section class="panel">
+      <div class="panel-head"><div><h2>Feature map</h2><p>Options separated by shared vision, active mode and simulator capability</p></div></div>
+      <div class="panel-content"><div class="options" id="option-groups">
+        {% for group in caps.option_groups %}
+        <div class="option-group"><h4>{{ group.title }}</h4><p>{{ group.description }}</p></div>
+        {% endfor %}
+      </div></div>
+    </section>
+    <section class="panel"><div class="panel-head"><div><h2>Integration notes</h2><p>What the adapter abstracts away</p></div></div><div class="panel-content">
+      <p class="note"><strong>Vision:</strong> {{ caps.vision_profile|capitalize }} image processing is reused directly; the camera source changes, not the algorithm.</p>
+      <p class="note"><strong>Actuators:</strong> there is no hardware serial channel here. Structured simulator actuator events are shown in the virtual console. {% if caps.simulator_backend == 'avis' %}Steering uses the legacy signed −100..100 protocol; speed uses 0..100 percent.{% endif %}</p>
+      <p class="note"><strong>Encoder:</strong> pulse count/distance are estimated from simulator movement, not treated as a hardware-grade measurement.</p>
+      <p class="note"><strong>Restart:</strong> {% if caps.simulator_backend == 'avis' %}Host, port and TCP timeout are saved in this AVIS mode's profile; reconnect the AVIS TCP session after changing connection details.{% else %}Host/port, vehicle blueprint and sensor geometry changes are persisted in a mode-specific file, but require a restart to reconnect/recreate actors.{% endif %}</p>
+    </div></section>
+    {% endif %}
+
+  </div>
