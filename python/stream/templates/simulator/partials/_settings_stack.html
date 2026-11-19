@@ -116,11 +116,8 @@
             <div class="field {% if caps.vision_profile != 'city' %}section-hide{% endif %}"><label for="city-lane-detector">City lane detector</label><select id="city-lane-detector" name="CITY_LANE_DETECTOR"><option value="default">Default City processor</option><option value="blsf-beta">BLSF beta</option></select></div>
             <div class="section-title" style="margin-top:12px">Temporal line identity · Hall matching</div>
             <label class="check-field"><input id="hall-line-tracking" type="checkbox" name="HALL_LINE_TRACKING_ENABLED"> Enable line tracking across camera frames</label>
-            <div class="grid-two">
-              <div class="field"><label for="hall-line-max-missed">Short occlusion tolerance (frames)</label><input id="hall-line-max-missed" type="number" min="1" max="12" step="1" name="HALL_LINE_TRACKING_MAX_MISSED"></div>
-              <div class="field"><label for="hall-line-reacquire-margin">Maximum recovery search expansion (fraction of frame width, 0.05–0.45)</label><input id="hall-line-reacquire-margin" type="number" min="0.05" max="0.45" step="0.01" name="HALL_LINE_TRACKING_REACQUIRE_MARGIN"></div>
-            </div>
-            <p id="hall-compatibility-note" class="note">Uses joint left/right lane geometry and Hall matching. When a side is lost, Sobel + Hough searches a gradually expanding region around the predicted boundary and requires consistent multi-frame reacquisition. If both sides are lost, the last lane centre and learned width guide the search. Available only with the classical Sobel + Hough path.</p>
+            <div class="field"><label for="hall-line-max-missed">Missed frames before LOST (1–12)</label><input id="hall-line-max-missed" type="number" min="1" max="12" step="1" name="HALL_LINE_TRACKING_MAX_MISSED"></div>
+            <p class="note">Uses bipartite maximum matching to preserve line identities across frames. Works with classical Hough in City/Race and BLSF in City; Race ML lane-mask mode reports it as unsupported.</p>
             <p class="note">Lane ROI and vision flags are saved in this simulator mode's own .sim.json file. They do not overwrite city.json or race.json.</p>
           </div>
           <div class="setting-block" id="sim-servo-calibration">

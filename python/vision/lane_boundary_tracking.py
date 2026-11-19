@@ -413,15 +413,10 @@ class LaneBoundaryTracker:
         state = self._sides[side]
         if self._lane_width_px is None:
             return False
-        base_tolerance = max(
+        tolerance = max(
             frame_width * 0.045,
             min(frame_width * 0.12, self._lane_width_px * 0.18),
         )
-        missed_growth = min(
-            frame_width * 0.10,
-            frame_width * 0.018 * max(0, state.missed_frames - 1),
-        )
-        tolerance = base_tolerance + missed_growth
         options = []
         for candidate in candidates:
             dx = abs(candidate["x_px"] - expected_x)
@@ -501,111 +496,7 @@ class LaneBoundaryTracker:
             "matched_tracks": int(hall_result.get("matched_tracks", 0)),
             "hall_satisfied": bool(hall_result.get("hall_satisfied", True)),
             "hall_deficiency": int(hall_result.get("hall_deficiency", 0)),
-            "search_roi": [int(value) for value in roi],
         }
-
-    def recovery_rois(
-        self,
-        left_roi,
-        right_roi,
-        frame_shape,
-        max_expansion_fraction=0.28,
-    ):
-        """Return bounded, prediction-centred search ROIs for missing boundaries.
-
-        The healthy side anchors the missing boundary through the learned lane
-        width. If both sides are missing, the last lane centre is the prior.
-        Search expands progressively with missed frames and remains centred on
-        a successfully reacquired boundary if it lies outside the original ROI.
-        """
-        frame_height, frame_width = map(int, frame_shape[:2])
-        frame_height = max(1, frame_height)
-        frame_width = max(1, frame_width)
-        try:
-            max_expansion = float(max_expansion_fraction)
-        except (TypeError, ValueError, OverflowError):
-            max_expansion = 0.28
-        if not math.isfinite(max_expansion):
-            max_expansion = 0.28
-        max_expansion = max(0.05, min(0.45, max_expansion))
-
-        base_rois = {
-            "left": self._roi_tuple(left_roi),
-            "right": self._roi_tuple(right_roi),
-        }
-        results = {}
-        for side in ("left", "right"):
-            base = base_rois[side]
-            left, top, right, bottom = base
-            base_width = max(1, right - left)
-            state = self._sides[side]
-            other = self._sides["right" if side == "left" else "left"]
-            missed = max(0, int(state.missed_frames))
-            tracked_x = state.x_px
-            outside_base = (
-                tracked_x is not None
-                and (
-                    tracked_x < left + base_width * 0.10
-                    or tracked_x > right - base_width * 0.10
-                )
-            )
-            needs_search = missed > 0 or state.pending is not None or outside_base
-            if not needs_search:
-                results[side] = {
-                    "roi": base,
-                    "expected_x": tracked_x,
-                    "missed_frames": missed,
-                    "expanded": False,
-                }
-                continue
-
-            if (
-                self._lane_width_px is not None
-                and other.x_px is not None
-                and other.missed_frames == 0
-            ):
-                expected_x = (
-                    other.x_px - self._lane_width_px
-                    if side == "left"
-                    else other.x_px + self._lane_width_px
-                )
-            elif self._lane_width_px is not None and self._last_lane_center_px is not None:
-                expected_x = (
-                    self._last_lane_center_px - self._lane_width_px * 0.5
-                    if side == "left"
-                    else self._last_lane_center_px + self._lane_width_px * 0.5
-                )
-            elif tracked_x is not None:
-                expected_x = tracked_x + state.velocity_px
-            else:
-                expected_x = (left + right) * 0.5
-
-            growth = max_expansion * min(1.0, 0.20 + 0.12 * max(0, missed - 1))
-            half_width = max(
-                base_width * 0.50,
-                self._lane_width_px * 0.28 if self._lane_width_px is not None else 0.0,
-            ) + frame_width * growth
-            search_left = max(0, min(left, int(math.floor(expected_x - half_width))))
-            search_right = min(
-                frame_width,
-                max(right, int(math.ceil(expected_x + half_width))),
-            )
-            vertical_growth = min(0.14, 0.018 * max(1, missed))
-            search_top = max(0, top - int(round(frame_height * vertical_growth)))
-            search_bottom = bottom
-            search_roi = (
-                search_left,
-                search_top,
-                max(search_left + 1, search_right),
-                max(search_top + 1, search_bottom),
-            )
-            results[side] = {
-                "roi": search_roi,
-                "expected_x": float(expected_x),
-                "missed_frames": missed,
-                "expanded": search_roi != base,
-            }
-        return results
 
     def update(
         self,
@@ -617,8 +508,6 @@ class LaneBoundaryTracker:
         reference_center_x=None,
         left_preferred_index=None,
         right_preferred_index=None,
-        left_recovery=False,
-        right_recovery=False,
     ):
         """Update the joint lane model using two full-frame ROI definitions."""
         frame_height, frame_width = map(int, frame_shape[:2])
@@ -641,30 +530,12 @@ class LaneBoundaryTracker:
         )
 
         self._frame_index += 1
-        if left_recovery:
-            self._hall["left"].reset()
-            left_hall, left_hall_selected = (
-                {"state": "RECOVERY_SEARCH", "candidate_count": 0,
-                 "matched_tracks": 0, "hall_satisfied": True,
-                 "hall_applicable": False, "hall_deficiency": 0},
-                None,
-            )
-        else:
-            left_hall, left_hall_selected = self._hall_update(
-                "left", left_lines, left_box, left_preferred_index
-            )
-        if right_recovery:
-            self._hall["right"].reset()
-            right_hall, right_hall_selected = (
-                {"state": "RECOVERY_SEARCH", "candidate_count": 0,
-                 "matched_tracks": 0, "hall_satisfied": True,
-                 "hall_applicable": False, "hall_deficiency": 0},
-                None,
-            )
-        else:
-            right_hall, right_hall_selected = self._hall_update(
-                "right", right_lines, right_box, right_preferred_index
-            )
+        left_hall, left_hall_selected = self._hall_update(
+            "left", left_lines, left_box, left_preferred_index
+        )
+        right_hall, right_hall_selected = self._hall_update(
+            "right", right_lines, right_box, right_preferred_index
+        )
         left_candidates = self._candidates(
             left_lines, left_box, frame_width, y_ref, left_preferred_index
         )
@@ -763,26 +634,6 @@ class LaneBoundaryTracker:
                     left_observed = bool(confirmed)
                     reacquired = left_observed
                     inferred_side = None if left_observed else "left"
-                elif self._last_lane_center_px is not None:
-                    # Both identities may be LOST. Reacquire either side from
-                    # the last lane-centre/width prior; do not require a live
-                    # opposite-side anchor to restart tracking.
-                    predicted_center = self._last_lane_center_px
-                    expected_left = predicted_center - self._lane_width_px * 0.5
-                    expected_right = predicted_center + self._lane_width_px * 0.5
-                    left_observed = self._attempt_missing_side(
-                        "left", left_candidates, expected_left,
-                        frame_width, left_preferred_index, left_hall_selected,
-                    )
-                    right_observed = self._attempt_missing_side(
-                        "right", right_candidates, expected_right,
-                        frame_width, right_preferred_index, right_hall_selected,
-                    )
-                    reacquired = left_observed or right_observed
-                    if left_observed and not right_observed:
-                        inferred_side = "right"
-                    elif right_observed and not left_observed:
-                        inferred_side = "left"
 
         for side, observed in (("left", left_observed), ("right", right_observed)):
             if not observed:

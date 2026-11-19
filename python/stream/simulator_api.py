@@ -177,26 +177,6 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message="City lane/crosswalk settings are available only for the City vision profile"), 400
         if profile != "race" and ({"USE_ML_LANE_DETECTOR", "ML_LANE_MODEL"} & set(patch)):
             return jsonify(success=False, message="ML lane settings are available only for the Race vision profile"), 400
-        hall_enabled = bool(patch.get(
-            "HALL_LINE_TRACKING_ENABLED",
-            getattr(streamer.config, "HALL_LINE_TRACKING_ENABLED", False),
-        ))
-        if hall_enabled:
-            old_method = bool(patch.get("OLD_METHOD", getattr(streamer.config, "OLD_METHOD", False)))
-            city_detector = str(patch.get(
-                "CITY_LANE_DETECTOR",
-                getattr(streamer.config, "CITY_LANE_DETECTOR", "default"),
-            )).lower()
-            ml_enabled = bool(patch.get(
-                "USE_ML_LANE_DETECTOR",
-                getattr(streamer.config, "USE_ML_LANE_DETECTOR", False),
-            ))
-            if old_method:
-                return jsonify(success=False, message="Hall lane tracking requires the Sobel + Hough detector; OLD_METHOD must be false"), 400
-            if profile == "city" and city_detector == "blsf-beta":
-                return jsonify(success=False, message="Hall lane tracking is not enabled for BLSF beta; choose the default Sobel + Hough City detector"), 400
-            if profile == "race" and ml_enabled:
-                return jsonify(success=False, message="Hall lane tracking is not enabled for the Race ML lane-mask detector; disable ML to use Sobel + Hough tracking"), 400
         if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
             return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
         if patch.get("WITH_SIGN") and patch.get("WITH_APRILTAG"):

@@ -34,7 +34,7 @@ SIMULATOR_KEYS = {
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI", "RL_MIRRORED",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
-    "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED", "HALL_LINE_TRACKING_REACQUIRE_MARGIN",
+    "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
     "USE_PID", "AUTO_UPDATE_KP", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS",
     "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER",
 }
@@ -80,7 +80,6 @@ NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACT
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
     "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "CAMERA_PITCH_DEG",
-    "HALL_LINE_TRACKING_REACQUIRE_MARGIN",
 }
 
 
@@ -124,7 +123,6 @@ def _defaults(mode, backend):
         "USE_BEV": False,
         "HALL_LINE_TRACKING_ENABLED": False,
         "HALL_LINE_TRACKING_MAX_MISSED": 4,
-        "HALL_LINE_TRACKING_REACQUIRE_MARGIN": 0.28,
         "DEBUG": False,
         "LANE_THRESHOLD": 180,
         "HOUGH_THRESHOLD": 15,
@@ -257,8 +255,6 @@ def _validate_settings(data, backend=None):
                 raise ValueError(f"{key} must be non-negative")
             if key == "SIMULATOR_TIMEOUT_S" and value > 60:
                 raise ValueError("SIMULATOR_TIMEOUT_S must be at most 60 seconds")
-            if key == "HALL_LINE_TRACKING_REACQUIRE_MARGIN" and not 0.05 <= value <= 0.45:
-                raise ValueError("HALL_LINE_TRACKING_REACQUIRE_MARGIN must be between 0.05 and 0.45")
             if key == "SIMULATOR_CAMERA_FOV" and not 10 <= value <= 150:
                 raise ValueError("SIMULATOR_CAMERA_FOV must be between 10 and 150 degrees")
             if key == "SIMULATOR_LIDAR_ROTATION_FREQUENCY" and value > 50:
