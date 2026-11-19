@@ -159,6 +159,25 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
         side = tracking.get(side_name) or {}
         line = side.get("line") if side.get("observed") else None
         predicted = side.get("predicted_line")
+        search_roi = side.get("search_roi")
+        base_roi = boxes.get(roi_name)
+        expanded_search = (
+            isinstance(search_roi, (list, tuple))
+            and len(search_roi) >= 4
+            and isinstance(base_roi, (list, tuple))
+            and len(base_roi) >= 4
+            and tuple(int(v) for v in search_roi[:4])
+            != tuple(int(v) for v in base_roi[:4])
+        )
+        if expanded_search:
+            search_box = _scaled_box(search_roi, sx, sy)
+            sl, st, sr, sb = search_box
+            search_color = (0, 205, 255)
+            _draw_dashed_line(canvas, (sl, st), (sr, st), search_color, max(1, thickness))
+            _draw_dashed_line(canvas, (sr, st), (sr, sb), search_color, max(1, thickness))
+            _draw_dashed_line(canvas, (sr, sb), (sl, sb), search_color, max(1, thickness))
+            _draw_dashed_line(canvas, (sl, sb), (sl, st), search_color, max(1, thickness))
+
         if isinstance(line, (list, tuple)) and len(line) >= 4:
             x1, y1, x2, y2 = map(float, line[:4])
             cv2.line(
@@ -187,7 +206,8 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
                 label += f" #{int(track_id)}"
             color = observed_color
         elif status == "REACQUIRING":
-            label = "REACQUIRING {}/{}".format(
+            label = "{} REACQUIRING {}/{}".format(
+                side_name.upper(),
                 int(side.get("pending_hits", 0)),
                 int(side.get("pending_required", 3)),
             )
@@ -205,6 +225,8 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             label = f"{side_name.upper()} LOST"
             color = (60, 70, 255)
 
+        if expanded_search:
+            label += " · SEARCH"
         box = boxes.get(roi_name)
         if box:
             left, top, right, bottom = _scaled_box(box, sx, sy)

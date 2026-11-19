@@ -24,6 +24,10 @@ function collectSimulatorSettings(){
     else if(control.type==="number")values[name]=readSettingNumber(control.id);
     else values[name]=String(control.value??"").trim();
   });
+  const hallUnsupported=(caps.vision_profile==="city"&&$("city-lane-detector")&&$("city-lane-detector").value==="blsf-beta")
+    ||(caps.vision_profile==="race"&&$("ml-lane-enabled")&&$("ml-lane-enabled").checked)
+    ||($("old-method")&&$("old-method").checked);
+  if(hallUnsupported)values.HALL_LINE_TRACKING_ENABLED=false;
   if(values.SIMULATOR_VEHICLE_FILTER!==undefined&&!values.SIMULATOR_VEHICLE_FILTER){
     values.SIMULATOR_VEHICLE_FILTER="vehicle.*";
   }
@@ -43,6 +47,36 @@ function collectSimulatorSettings(){
   if(!Object.keys(values).length)throw new Error("No active simulator settings are available to save.");
   return values;
 }
+function syncHallTrackingAvailability(){
+  const hall=$("hall-line-tracking");
+  if(!hall)return;
+  const cityDetector=$("city-lane-detector");
+  const mlEnabled=$("ml-lane-enabled");
+  const oldMethod=$("old-method");
+  const unsupported=(caps.vision_profile==="city"&&cityDetector&&cityDetector.value==="blsf-beta")
+    ||(caps.vision_profile==="race"&&mlEnabled&&mlEnabled.checked)
+    ||(oldMethod&&oldMethod.checked);
+  const note=$("hall-compatibility-note");
+  if(unsupported){
+    hall.checked=false;
+    hall.disabled=true;
+    if(note){
+      if(caps.vision_profile==="city"&&cityDetector&&cityDetector.value==="blsf-beta"){
+        note.textContent="Hall tracking is unavailable while the BLSF beta detector is selected. Choose the default Sobel + Hough City detector to enable it.";
+      }else if(caps.vision_profile==="race"&&mlEnabled&&mlEnabled.checked){
+        note.textContent="Hall tracking is unavailable while the Race ML lane-mask detector is enabled. Disable ML to use Sobel + Hough temporal lane tracking.";
+      }else{
+        note.textContent="Hall tracking requires the Sobel + Hough detector. Disable the legacy Canny-based detector to enable it.";
+      }
+    }
+  }else{
+    hall.disabled=false;
+    if(note)note.textContent="Uses joint left/right lane geometry and Hall matching. When a side is lost, Sobel + Hough searches a gradually expanding region around the predicted boundary and requires consistent multi-frame reacquisition. If both sides are lost, the last lane centre and learned width guide the search.";
+  }
+}
+if($("city-lane-detector"))$("city-lane-detector").addEventListener("change",syncHallTrackingAvailability);
+if($("ml-lane-enabled"))$("ml-lane-enabled").addEventListener("change",syncHallTrackingAvailability);
+if($("old-method"))$("old-method").addEventListener("change",syncHallTrackingAvailability);
 function populate(s){
   const fields = {
     "sim-host":"SIMULATOR_HOST","sim-port":"SIMULATOR_PORT","sim-timeout":"SIMULATOR_TIMEOUT_S",
@@ -58,7 +92,8 @@ function populate(s){
     "city-lane-detector":"CITY_LANE_DETECTOR",
     "lane-threshold":"LANE_THRESHOLD","hough-threshold":"HOUGH_THRESHOLD",
     "hough-min-line":"HOUGH_MIN_LINE_LENGTH","hough-max-gap":"HOUGH_MAX_LINE_GAP",
-    "hough-blur":"HOUGH_BLUR_KERNEL","hall-line-max-missed":"HALL_LINE_TRACKING_MAX_MISSED","crosswalk-threshold":"CROSSWALK_THRESHOLD",
+    "hough-blur":"HOUGH_BLUR_KERNEL","hall-line-max-missed":"HALL_LINE_TRACKING_MAX_MISSED",
+    "hall-line-reacquire-margin":"HALL_LINE_TRACKING_REACQUIRE_MARGIN","crosswalk-threshold":"CROSSWALK_THRESHOLD",
     "pid-kp":"KP","pid-ki":"KI","pid-kd":"KD","pid-kt":"KT",
     "pid-min-dt":"PID_MIN_DT","pid-max-dt":"PID_MAX_DT","pid-derivative-filter":"PID_DERIVATIVE_FILTER",
     "crosswalk-min-vertical":"CROSSWALK_VERTICAL_MIN_LINES",
@@ -98,4 +133,5 @@ function populate(s){
   if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
+  syncHallTrackingAvailability();
 }

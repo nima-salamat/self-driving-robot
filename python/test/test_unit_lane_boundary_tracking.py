@@ -18,8 +18,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
 
     @staticmethod
     def line_for_global_x(roi, global_x, dx=0.0):
-        left, _top, _right, bottom = roi
-        height = bottom - 300
+        left, top, _right, bottom = roi
+        height = bottom - top
         local_x = float(global_x - left)
         return np.asarray(
             [[[local_x - dx * 0.5, 0.0, local_x + dx * 0.5, float(height)]]],
@@ -172,6 +172,80 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(lost["perception_valid"])
         self.assertEqual(lost["state"], "LOST")
         self.assertIsNone(lost["lane_center_px"])
+
+    def test_recovery_search_expands_and_follows_a_shifted_boundary_outside_base_roi(self):
+        self.update(left_x=220.0, right_x=420.0)
+        self.update(left_x=None, right_x=430.0)
+        self.update(left_x=None, right_x=460.0)
+
+        search = self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            max_expansion_fraction=0.28,
+        )
+        self.assertTrue(search["left"]["expanded"])
+        self.assertGreater(search["left"]["roi"][2], self.LEFT_ROI[2])
+        self.assertAlmostEqual(search["left"]["expected_x"], 260.0, delta=15.0)
+
+        for index in range(3):
+            left_search_roi = search["left"]["roi"]
+            left_lines = self.line_for_global_x(left_search_roi, 280.0, dx=-8.0)
+            right_lines = self.line_for_global_x(self.RIGHT_ROI, 480.0, dx=8.0)
+            result = self.tracker.update(
+                left_lines=left_lines,
+                right_lines=right_lines,
+                frame_shape=self.FRAME_SHAPE,
+                left_roi=left_search_roi,
+                right_roi=self.RIGHT_ROI,
+                reference_center_x=320.0,
+                left_recovery=True,
+            )
+            if index < 2:
+                self.assertFalse(result["left"]["observed"])
+                self.assertEqual(result["left"]["pending_hits"], index + 1)
+
+        self.assertTrue(result["left"]["observed"])
+        self.assertEqual(result["lane_type"], "both")
+        sticky = self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            max_expansion_fraction=0.28,
+        )
+        self.assertTrue(sticky["left"]["expanded"])
+        self.assertGreater(sticky["left"]["roi"][2], self.LEFT_ROI[2])
+
+    def test_single_side_can_reacquire_after_both_boundaries_were_lost(self):
+        self.update(left_x=220.0, right_x=420.0)
+        for _ in range(6):
+            result = self.update(left_x=None, right_x=None)
+        self.assertEqual(result["state"], "LOST")
+        self.assertFalse(result["perception_valid"])
+
+        for index in range(3):
+            search = self.tracker.recovery_rois(
+                self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+                max_expansion_fraction=0.28,
+            )
+            self.assertTrue(search["left"]["expanded"])
+            self.assertTrue(search["right"]["expanded"])
+            left_lines = self.line_for_global_x(search["left"]["roi"], 220.0, dx=-8.0)
+            result = self.tracker.update(
+                left_lines=left_lines,
+                right_lines=None,
+                frame_shape=self.FRAME_SHAPE,
+                left_roi=search["left"]["roi"],
+                right_roi=search["right"]["roi"],
+                reference_center_x=320.0,
+                left_recovery=True,
+                right_recovery=True,
+            )
+            if index < 2:
+                self.assertFalse(result["perception_valid"])
+
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["lane_type"], "only_left")
+        self.assertEqual(result["inferred_side"], "right")
+        self.assertTrue(result["left"]["observed"])
+        self.assertFalse(result["right"]["observed"])
+        self.assertAlmostEqual(result["speed_factor"], 0.55)
 
     def test_single_boundary_without_a_learned_lane_width_is_not_trusted(self):
         result = self.update(left_x=220.0, right_x=None)

@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from vision.lane_boundary_tracking import LaneBoundaryTracker
+from vision.lane_recovery_detection import detect_recovery_lines
 
 class VisionProcessor:
     def __init__(self):
@@ -410,15 +411,48 @@ class VisionProcessor:
         if hall_requested and sobel_hough_active:
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
             self._lane_boundary_tracker.max_missed_frames = max_missed
+            base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
+            base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
+            recovery_margin = float(getattr(
+                conf, "HALL_LINE_TRACKING_REACQUIRE_MARGIN", 0.28
+            ))
+            search = self._lane_boundary_tracker.recovery_rois(
+                base_left_roi,
+                base_right_roi,
+                frame.shape,
+                max_expansion_fraction=recovery_margin,
+            )
+            tracking_left_roi = search["left"]["roi"]
+            tracking_right_roi = search["right"]["roi"]
+            tracking_left_lines = ll_lines
+            tracking_right_lines = rl_lines
+            tracking_left_preferred = self._line_index_for_midpoint(ll_lines, ll_x_mid)
+            tracking_right_preferred = self._line_index_for_midpoint(rl_lines, rl_x_mid)
+
+            if search["left"]["expanded"]:
+                _recovery_edges, recovery_lines = detect_recovery_lines(
+                    frame, tracking_left_roi, conf, self._morph_kernel
+                )
+                tracking_left_lines = recovery_lines
+                tracking_left_preferred = None
+            if search["right"]["expanded"]:
+                _recovery_edges, recovery_lines = detect_recovery_lines(
+                    frame, tracking_right_roi, conf, self._morph_kernel
+                )
+                tracking_right_lines = recovery_lines
+                tracking_right_preferred = None
+
             lane_tracking_result = self._lane_boundary_tracker.update(
-                left_lines=ll_lines,
-                right_lines=rl_lines,
+                left_lines=tracking_left_lines,
+                right_lines=tracking_right_lines,
                 frame_shape=frame.shape,
-                left_roi=(ll_left_, ll_top, ll_right, ll_bottom),
-                right_roi=(rl_left, rl_top, rl_right_, rl_bottom),
+                left_roi=tracking_left_roi,
+                right_roi=tracking_right_roi,
                 reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
-                left_preferred_index=self._line_index_for_midpoint(ll_lines, ll_x_mid),
-                right_preferred_index=self._line_index_for_midpoint(rl_lines, rl_x_mid),
+                left_preferred_index=tracking_left_preferred,
+                right_preferred_index=tracking_right_preferred,
+                left_recovery=bool(search["left"]["expanded"]),
+                right_recovery=bool(search["right"]["expanded"]),
             )
             line_tracking = lane_tracking_result
             perception_valid = bool(lane_tracking_result["perception_valid"])
