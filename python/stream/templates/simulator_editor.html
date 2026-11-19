@@ -1239,19 +1239,42 @@ function simRoiUpdateSelection(){
 function fitSimulatorCameraFrame(){
   const frame=$("sim-camera-frame"),wrap=frame&&frame.parentElement;
   if(!frame||!wrap)return;
-  if(caps.simulator_backend==="avis"){
-    frame.style.width="100%";frame.style.height="100%";
-    drawSimRoiOverlay();return;
+  const isAvis=caps.simulator_backend==="avis";
+  // AVIS used to stretch the overlay canvas across the whole camera stage while
+  // the image itself was letterboxed by object-fit:contain. That made normalized
+  // ROI coordinates refer to a different rectangle than the visible image.
+  if(!camera.naturalWidth||!camera.naturalHeight){
+    if(isAvis&&simRoiCanvas){
+      simRoiCanvas.style.visibility="hidden";
+      simRoiCanvas.style.pointerEvents="none";
+    }
+    return;
   }
-  if(!camera.naturalWidth||!camera.naturalHeight)return;
   const ratio=camera.naturalWidth/camera.naturalHeight;
   if(!Number.isFinite(ratio)||ratio<=0)return;
   const maxWidth=Math.max(1,wrap.clientWidth);
-  const maxHeight=Math.max(180,window.innerHeight*0.68);
+  const maxHeight=isAvis
+    ? Math.max(1,wrap.clientHeight)
+    : Math.max(180,window.innerHeight*0.68);
   let width=maxWidth,height=width/ratio;
   if(height>maxHeight){height=maxHeight;width=height*ratio;}
-  frame.style.width=Math.floor(width)+"px";
-  frame.style.height=Math.floor(height)+"px";
+  if(isAvis){
+    // Size the image frame itself to the decoded camera aspect ratio. The image
+    // and ROI canvas now share exactly the same content rectangle (no letterbox
+    // offset), so drawing and pointer hit-testing use identical coordinates.
+    frame.style.position="absolute";
+    frame.style.left="50%";
+    frame.style.top="50%";
+    frame.style.right="auto";
+    frame.style.bottom="auto";
+    frame.style.transform="translate(-50%, -50%)";
+  }
+  frame.style.width=width+"px";
+  frame.style.height=height+"px";
+  if(isAvis&&simRoiCanvas){
+    simRoiCanvas.style.visibility="visible";
+    simRoiUpdateSelection();
+  }
   drawSimRoiOverlay();
 }
 function setCameraFeedStatus(message,kind){
@@ -1839,9 +1862,24 @@ if(clearEventsButton)clearEventsButton.addEventListener("click",function(){
  const consoleEl=$("event-console");if(consoleEl)consoleEl.replaceChildren();
  eventKeys=[];seenEvents.clear();
 });
-camera.addEventListener("error",function(){camera.alt="The latest simulator camera JPEG could not be decoded.";});
+camera.addEventListener("error",function(){
+  camera.alt="The latest simulator camera JPEG could not be decoded.";
+  if(caps.simulator_backend==="avis"&&simRoiCanvas){
+    simRoiCanvas.style.visibility="hidden";
+    simRoiCanvas.style.pointerEvents="none";
+  }
+});
 camera.addEventListener("load",fitSimulatorCameraFrame);
 window.addEventListener("resize",fitSimulatorCameraFrame);
+// The camera stage height also changes when the bottom workbench dock is resized.
+// Observe the stage itself so the decoded image and ROI overlay are refitted together.
+let cameraStageResizeObserver=null;
+const cameraStageForResize=$("camera-stage");
+if(typeof ResizeObserver!=="undefined"&&cameraStageForResize){
+  cameraStageResizeObserver=new ResizeObserver(function(){fitSimulatorCameraFrame();});
+  cameraStageResizeObserver.observe(cameraStageForResize);
+}
+fitSimulatorCameraFrame();
 
 let carlaSceneState=null;
 let carlaSceneControlsEnabled=false;
