@@ -553,6 +553,7 @@ class LaneBoundaryTracker:
                 "angle_deg": candidate["angle_deg"],
                 "expected_x": expected_x,
                 "hits": 1,
+                "missed_frames": 0,
             }
             pending = state.pending
         else:
@@ -571,12 +572,14 @@ class LaneBoundaryTracker:
                 pending["x_px"] = candidate["x_px"]
                 pending["angle_deg"] = candidate["angle_deg"]
                 pending["expected_x"] = expected_x
+                pending["missed_frames"] = 0
             else:
                 state.pending = {
                     "x_px": candidate["x_px"],
                     "angle_deg": candidate["angle_deg"],
                     "expected_x": expected_x,
                     "hits": 1,
+                    "missed_frames": 0,
                 }
                 pending = state.pending
 
@@ -606,6 +609,15 @@ class LaneBoundaryTracker:
         state.missed_frames += 1
         state.age += 1
         state.velocity_px *= 0.86
+        if state.pending is not None:
+            state.pending["missed_frames"] = (
+                int(state.pending.get("missed_frames", 0)) + 1
+            )
+            # Hough may drop a dashed paint fragment for a frame between two
+            # valid observations. Keep the confirmation hypothesis briefly;
+            # discard it only after a bounded gap, never indefinitely.
+            if state.pending["missed_frames"] > max(1, self.reacquire_frames):
+                state.pending = None
 
     def _mark_observed(self, side, candidate):
         status = self._apply(side, candidate)
@@ -687,7 +699,11 @@ class LaneBoundaryTracker:
                 score -= 0.12
             options.append((score, candidate))
         if not options:
-            state.pending = None
+            # Preserve a pending hypothesis when Hough found no segment at all.
+            # A non-empty but geometrically incompatible candidate set is
+            # evidence against the hypothesis and must clear it.
+            if candidates:
+                state.pending = None
             return False
         options.sort(key=lambda item: item[0])
         candidate = options[0][1]
