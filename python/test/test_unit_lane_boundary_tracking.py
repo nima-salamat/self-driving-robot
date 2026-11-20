@@ -177,6 +177,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(first_hit["right"]["status"], "REACQUIRING")
         first_diagnostics = first_hit["right"]["reacquisition_diagnostics"]
         self.assertTrue(first_diagnostics["attempted"])
+        self.assertEqual(first_diagnostics["route"], "joint_pair")
         self.assertEqual(first_diagnostics["candidate_count"], 1)
         self.assertEqual(first_diagnostics["pending_hits"], 1)
 
@@ -186,7 +187,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(second_hit["lane_type"], "both")
         self.assertEqual(
             second_hit["right"]["reacquisition_diagnostics"]["reason"],
-            "confirmed_by_lane_width_profile",
+            "confirmed_by_joint_pair",
         )
 
     def test_simulator_single_segment_reacquisition_requires_two_consistent_frames(self):
