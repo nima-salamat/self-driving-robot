@@ -39,4 +39,8 @@ def detect_recovery_lines(frame, roi, config, morph_kernel=None):
         minLineLength=max(1, int(getattr(config, "HOUGH_MIN_LINE_LENGTH", 5))),
         maxLineGap=max(0, int(getattr(config, "HOUGH_MAX_LINE_GAP", 20))),
     )
+    # OpenCV may return an empty (0, 4) array instead of None. Normalize both
+    # representations so downstream tracking and diagnostics see no candidates.
+    if lines is not None and len(lines) == 0:
+        lines = None
     return edges, lines
