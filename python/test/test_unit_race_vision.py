@@ -54,6 +54,57 @@ class RaceVisionLaneLossTests(unittest.TestCase):
         self.assertEqual(result["observed_lane_boundaries"], 2)
 
 
+    def test_simulator_hall_uses_exact_configured_rois_when_legacy_resizing_is_enabled(self):
+        import modes.race.config_race as config
+        from unittest.mock import patch
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True,
+            "HALL_LINE_TRACKING_MAX_MISSED": 4,
+            "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 3,
+            "SIMULATOR_BACKEND": "avis",
+            "USE_ML_LANE_DETECTOR": False,
+            "USE_BEV": False,
+            "OLD_METHOD": False,
+            "ROI_RESIZABLE": True,
+            "LANE_THRESHOLD": 70,
+            "HOUGH_THRESHOLD": 10,
+            "HOUGH_MIN_LINE_LENGTH": 20,
+            "HOUGH_MAX_LINE_GAP": 10,
+            "HOUGH_BLUR_KERNEL": 3,
+            "HOUGH_MORPH_CLOSE": True,
+            "DEBUG": False,
+            "STREAM": False,
+            "LANE_ROI_MODE": "rectangle",
+            "RL_TOP_ROI": .5,
+            "RL_BOTTOM_ROI": 1.0,
+            "RL_LEFT_ROI": .55,
+            "RL_RIGHT_ROI": .90,
+            "LL_TOP_ROI": .5,
+            "LL_BOTTOM_ROI": 1.0,
+            "LL_LEFT_ROI": .12,
+            "LL_RIGHT_ROI": .45,
+        }
+        with patch.multiple(config, create=True, **values):
+            processor = VisionProcessor()
+            processor.ml_lane_detector = None
+            processor.lroi_unseen_counter = 10
+            processor.rroi_unseen_counter = 10
+            result = processor.detect(frame)
+
+        draw = result["debug"]["draw_data"]
+        expected_left = (int(.12 * 640), int(.5 * 480), int(.45 * 640), 480)
+        expected_right = (int(.55 * 640), int(.5 * 480), int(.90 * 640), 480)
+        self.assertEqual(draw["configured_roi_bounds"]["LL"], expected_left)
+        self.assertEqual(draw["configured_roi_bounds"]["RL"], expected_right)
+        self.assertEqual(draw["roi_bounds"]["LL"], expected_left)
+        self.assertEqual(draw["roi_bounds"]["RL"], expected_right)
+        self.assertFalse(draw["legacy_roi_resizable_applied"])
+        self.assertEqual(result["line_tracking"]["left"]["search_roi"], list(expected_left))
+        self.assertEqual(result["line_tracking"]["right"]["search_roi"], list(expected_right))
+
+
 class RaceVisionLineExtractionTests(unittest.TestCase):
     def test_extract_line_accepts_flat_opencv_segment(self):
         line = np.array([10, 20, 30, 40], dtype=np.int32)
