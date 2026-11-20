@@ -306,6 +306,10 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
 
     def test_changing_configured_roi_resets_old_lane_geometry(self):
+        # Production calls this with persisted ROIs before every recovery pass.
+        self.tracker.set_roi_configuration(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE
+        )
         self.update(left_x=220.0, right_x=420.0)
         self.assertIsNotNone(self.tracker._lane_width_px)
         shifted_left_roi = (90, 300, 270, 440)
