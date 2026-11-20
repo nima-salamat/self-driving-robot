@@ -46,6 +46,7 @@ class RaceVisionLaneLossTests(unittest.TestCase):
         with patch.multiple(config, create=True, **values):
             processor = VisionProcessor()
             processor.ml_lane_detector = None
+            processor.detect(frame)  # First consistent frame is only pending.
             result = processor.detect(frame)
 
         self.assertTrue(result["line_tracking"]["enabled"])
