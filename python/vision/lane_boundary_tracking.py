@@ -381,6 +381,15 @@ class LaneBoundaryTracker:
                            reference_center_x=None):
         width = right["x_px"] - left["x_px"]
         center = (right["x_px"] + left["x_px"]) * 0.5
+        # A lane pair must have compatible boundary tangents. Without this
+        # joint gate, a sharp diagonal edge in the missing ROI can be paired
+        # with the visible line solely because their x-distance looks right.
+        angle_difference = abs(
+            float(left.get("angle_deg", 0.0))
+            - float(right.get("angle_deg", 0.0))
+        )
+        if angle_difference > 42.0:
+            return False, width
         if width < frame_width * 0.12 or width > frame_width * 0.72:
             return False, width
         if not frame_width * 0.15 <= center <= frame_width * 0.85:
