@@ -324,6 +324,8 @@ class VisionProcessor:
         rl_current_w = rl_right_ - rl_left
         ll_current_w = ll_right - ll_left_
 
+        rl_mirrored = bool(getattr(conf, "RL_MIRRORED", False))
+        ll_mirrored = bool(getattr(conf, "LL_MIRRORED", False))
         rl_x_mid = self._best_mid_x(rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
         ll_x_mid = self._best_mid_x(ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
         geometry_mode = (
