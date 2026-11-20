@@ -1436,6 +1436,40 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertEqual(command.throttle, 0.0)
         self.assertEqual(command.servo_angle, before)
 
+    def test_brief_invalid_perception_after_tracking_does_not_toggle_full_brake(self):
+        self.config.SIMULATOR_PERCEPTION_LOSS_GRACE_FRAMES = 3
+        with patch(
+            "modes.simulation.controller.time.monotonic",
+            side_effect=[10.0, 10.1, 10.2, 10.3, 10.4, 10.5],
+        ):
+            controller = VirtualVehicleController(self.config, "carla")
+            good = controller.command_for(
+                {"perception_valid": True, "steering_angle": 101.0},
+                speed_kmh=0.0,
+            )
+            first_gap = controller.command_for(
+                {"perception_valid": False}, speed_kmh=0.0
+            )
+            second_gap = controller.command_for(
+                {"perception_valid": False}, speed_kmh=0.0
+            )
+            third_gap = controller.command_for(
+                {"perception_valid": False}, speed_kmh=0.0
+            )
+            expired = controller.command_for(
+                {"perception_valid": False}, speed_kmh=0.0
+            )
+
+        self.assertGreater(good.throttle, 0.0)
+        self.assertEqual(good.brake, 0.0)
+        for command in (first_gap, second_gap, third_gap):
+            self.assertGreater(command.throttle, 0.0)
+            self.assertEqual(command.brake, 0.0)
+            self.assertIn("perception dropout grace", command.reason)
+        self.assertEqual(expired.brake, 1.0)
+        self.assertEqual(expired.throttle, 0.0)
+        self.assertEqual(expired.servo_angle, good.servo_angle)
+
     def test_carla_steering_and_throttle_are_slew_limited(self):
         with patch("modes.simulation.controller.time.monotonic", side_effect=[10.0, 10.1, 10.2]):
             controller = VirtualVehicleController(self.config, "carla")
