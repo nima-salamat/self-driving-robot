@@ -729,21 +729,19 @@ class LaneBoundaryTracker:
         state.observed = True
         return True
 
-    def _miss(self, side):
+    def _miss(self, side, preserve_pending=False):
         state = self._sides[side]
         state.observed = False
         state.missed_frames += 1
         state.age += 1
         state.velocity_px *= 0.86
         if state.pending is not None:
-            # A never-confirmed startup hypothesis must be consecutive. A
-            # one-frame false edge should not survive a blank frame and later
-            # combine with a second isolated hit to create a fake track.
-            if state.track_id is None:
+            # For a never-confirmed track, keep the hypothesis only when this
+            # ROI still produced a candidate in the current frame. A blank ROI
+            # must break the consecutive-hit startup confirmation.
+            if state.track_id is None and not preserve_pending:
                 state.pending = None
             else:
-                # For a previously confirmed track, tolerate a brief Hough
-                # dropout while its own ROI is reacquiring the boundary.
                 state.pending["missed_frames"] = (
                     int(state.pending.get("missed_frames", 0)) + 1
                 )
@@ -816,6 +814,18 @@ class LaneBoundaryTracker:
             # width or line angle.
             expected_x = float(state.x_px + state.velocity_px)
             missed = max(1, int(state.missed_frames))
+            max_local_shift = frame_width * (
+                0.085 if self._geometry_mode == "bev" else 0.10
+            )
+            local_shift = abs(float(candidate["x_px"]) - expected_x)
+            if local_shift > max_local_shift:
+                diagnostics.update({
+                    "reason": "candidate_exceeds_local_track_displacement",
+                    "expected_x_px": expected_x,
+                    "local_displacement_px": float(local_shift),
+                    "max_local_displacement_px": float(max_local_shift),
+                })
+                return False
             tolerance = min(
                 frame_width * 0.08,
                 max(frame_width * 0.03, frame_width * (0.035 + 0.004 * missed)),
@@ -1589,9 +1599,12 @@ class LaneBoundaryTracker:
             rejected_left = max(0, len(left_candidates) - (1 if left_observed else 0))
             rejected_right = max(0, len(right_candidates) - (1 if right_observed else 0))
 
-        for side, observed in (("left", left_observed), ("right", right_observed)):
+        for side, observed, ranked in (
+            ("left", left_observed, left_ranked),
+            ("right", right_observed, right_ranked),
+        ):
             if not observed:
-                self._miss(side)
+                self._miss(side, preserve_pending=bool(ranked))
         if left_observed:
             self._sides["left"].observed = True
         if right_observed:
