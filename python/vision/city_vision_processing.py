@@ -449,9 +449,15 @@ class VisionProcessor:
             else:
                 base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
                 base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
+            geometry_mode = (
+                "bev" if bool(getattr(conf, "USE_BEV", False))
+                else "perspective"
+            )
+            self._lane_boundary_tracker.set_geometry_mode(geometry_mode)
             if simulator_backend in ("carla", "avis"):
                 recovery = self._lane_boundary_tracker.recovery_rois(
-                    base_left_roi, base_right_roi, frame.shape
+                    base_left_roi, base_right_roi, frame.shape,
+                    geometry_mode=geometry_mode,
                 )
             else:
                 recovery = {
@@ -477,6 +483,7 @@ class VisionProcessor:
                 left_roi=tracking_left_roi,
                 right_roi=tracking_right_roi,
                 reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
+                geometry_mode=geometry_mode,
                 left_preferred_index=None if recovery["left"]["expanded"] else self._line_index_for_midpoint(ll_lines, ll_x_mid),
                 right_preferred_index=None if recovery["right"]["expanded"] else self._line_index_for_midpoint(rl_lines, rl_x_mid),
             )
@@ -595,6 +602,7 @@ class VisionProcessor:
                     "CW": (cw_left, cw_top, cw_right, cw_bottom),
                 },
                 "configured_roi_bounds": configured_roi_bounds,
+                "geometry_mode": geometry_mode,
                 "legacy_roi_resizable_applied": bool(legacy_roi_resizing),
                 "search_roi_bounds": {
                     "RL": tracking_right_roi,
