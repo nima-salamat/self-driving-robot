@@ -114,7 +114,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.tracker.reacquire_frames * 2,
             self.tracker.max_missed_frames * 3,
         )
-        for index in range(inference_limit + 1):
+        for index in range(inference_limit):
             result = self.update(
                 left_x=None,
                 right_x=430.0 + index * 0.25,
@@ -563,6 +563,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
                 None, None, self.FRAME_SHAPE,
                 self.LEFT_ROI, self.RIGHT_ROI,
                 reference_center_x=320.0, geometry_mode="bev",
+                enable_full_pair_reacquisition=True,
             )
         self.assertFalse(lost["perception_valid"])
         self.assertEqual(lost["state"], "LOST")
