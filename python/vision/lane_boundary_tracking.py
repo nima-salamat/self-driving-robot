@@ -37,7 +37,7 @@ class LaneBoundaryTracker:
     one valid Hough segment is sufficient to restore the observation.
     """
 
-    def __init__(self, max_missed_frames=4, reacquire_frames=1, max_candidates=128):
+    def __init__(self, max_missed_frames=4, reacquire_frames=3, max_candidates=128):
         self.max_missed_frames = max(1, int(max_missed_frames))
         self.reacquire_frames = max(1, int(reacquire_frames))
         self.max_candidates = max(8, int(max_candidates))
