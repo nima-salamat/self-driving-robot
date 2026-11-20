@@ -897,11 +897,11 @@ class LaneBoundaryTracker:
                 float(box[1]), float(max(box[1], box[3] - 1)), 7
             )
 
-            # Hysteresis: when a line was recovered outside (or very near the
-            # edge of) the configured ROI, keep detecting it in a bounded
-            # corridor on following frames. Shrinking to the user's base crop
-            # immediately after one successful frame creates a deterministic
-            # one-frame TRACKING / next-frame LOST oscillation.
+            # Hysteresis: keep the detector in a stable, bounded corridor
+            # around a confirmed track. A temporary Hough dropout must not
+            # switch immediately to a differently-shaped prediction from the
+            # opposite boundary; that is a common source of DETECTED/INFERRED
+            # flicker in perspective and on partially occluded lane paint.
             if (
                 state.observed
                 and state.track_id is not None
@@ -985,6 +985,7 @@ class LaneBoundaryTracker:
                     "roi": box,
                     "configured_roi": box,
                     "expanded": False,
+                    "recheck": False,
                     "expected_x": state.x_px,
                     "expected_points": [],
                     "prediction_valid": True,
@@ -999,13 +1000,39 @@ class LaneBoundaryTracker:
 
             sample_x = []
             expected = None
+            missed = int(state.missed_frames)
+            grace_frames = min(2, self.max_missed_frames)
+            # For the first short dropout, predict from this boundary's own
+            # last confirmed line. Only after the grace window do we hand
+            # geometry over to the opposite-side lane-width model.
+            use_own_track_grace = (
+                state.track_id is not None
+                and state.x_px is not None
+                and state.line_global is not None
+                and 0 < missed <= grace_frames
+                and state.pending is None
+            )
             has_anchor_prediction = (
-                self._lane_width_px is not None
+                not use_own_track_grace
+                and self._lane_width_px is not None
                 and anchor.observed
                 and anchor.x_px is not None
             )
 
-            if has_anchor_prediction:
+            if use_own_track_grace:
+                slope = 0.0
+                if state.line_global is not None:
+                    x1, y1, x2, y2 = state.line_global
+                    if abs(y2 - y1) > 1e-6:
+                        slope = (x2 - x1) / (y2 - y1)
+                expected = float(
+                    state.x_px + state.velocity_px * min(missed, grace_frames)
+                )
+                sample_x = [
+                    expected + slope * (float(y) - y_ref)
+                    for y in sample_y
+                ]
+            elif has_anchor_prediction:
                 for y in sample_y:
                     value = self._boundary_x_from_anchor(
                         anchor_side, side, float(y), y_ref, frame_height,
@@ -1042,6 +1069,7 @@ class LaneBoundaryTracker:
                     "expected_points": [],
                     "prediction_valid": False,
                     "pair_reacquire": False,
+                    "recheck": bool(state.missed_frames > 0),
                     "missed_frames": int(state.missed_frames),
                     "max_expansion_px": float(max_extra),
                     "edge_distances_px": None,
@@ -1127,7 +1155,9 @@ class LaneBoundaryTracker:
                 reason = "predicted_boundary_not_contained"
             else:
                 reason = (
-                    "predicted_track_recovery"
+                    "recent_track_grace"
+                    if use_own_track_grace
+                    else "predicted_track_recovery"
                     if search_roi != box else "prediction_inside_configured_roi"
                 )
 
@@ -1142,6 +1172,7 @@ class LaneBoundaryTracker:
                 ],
                 "prediction_valid": bool(prediction_valid),
                 "pair_reacquire": False,
+                "recheck": bool(state.missed_frames > 0),
                 "missed_frames": int(state.missed_frames),
                 "max_expansion_px": float(max_extra),
                 "edge_distances_px": edge_distances,
