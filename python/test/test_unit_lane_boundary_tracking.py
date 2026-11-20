@@ -37,6 +37,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         max_inferred_frames=None,
         enable_full_pair_reacquisition=False,
         coast_frames=0,
+        left_prediction_valid=True,
+        right_prediction_valid=True,
     ):
         left_lines = (
             self.line_for_global_x(self.LEFT_ROI, left_x, dx=-8.0)
@@ -58,6 +60,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             max_inferred_frames=max_inferred_frames,
             enable_full_pair_reacquisition=enable_full_pair_reacquisition,
             coast_frames=coast_frames,
+            left_prediction_valid=left_prediction_valid,
+            right_prediction_valid=right_prediction_valid,
         )
 
     def test_candidate_limit_preserves_preferred_index_and_original_hough_index(self):
@@ -110,13 +114,15 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertGreaterEqual(result["left"]["roi_edge_distances_px"]["left_px"], 0)
         self.assertGreaterEqual(result["left"]["roi_edge_distances_px"]["right_px"], 0)
 
-    def test_single_side_inference_expires_after_a_bounded_number_of_frames(self):
+    def test_single_side_inference_remains_valid_while_anchor_is_observed(self):
         self.update(left_x=220.0, right_x=420.0)
         inference_limit = max(
             self.tracker.reacquire_frames * 2,
             self.tracker.max_missed_frames * 3,
         )
-        for index in range(inference_limit):
+        # Deliberately exceed the old inference timeout: the right boundary is
+        # fresh in every frame, so the learned lane width remains usable.
+        for index in range(48):
             result = self.update(
                 left_x=None,
                 right_x=430.0 + index * 0.25,
@@ -125,17 +131,21 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.assertTrue(result["perception_valid"])
             self.assertEqual(result["lane_type"], "only_right")
             self.assertEqual(result["inferred_side"], "left")
+            self.assertEqual(result["anchor_side"], "right")
             self.assertAlmostEqual(result["speed_factor"], 0.55)
 
-        expired = self.update(
-            left_x=None, right_x=433.5,
-            max_inferred_frames=inference_limit,
-        )
-        self.assertFalse(expired["perception_valid"])
-        self.assertEqual(expired["lane_type"], "none")
-        self.assertEqual(expired["state"], "LOST")
-        self.assertIsNone(expired["inferred_side"])
-        self.assertFalse(expired["left"]["inferred"])
+    def test_visible_anchor_remains_valid_when_missing_roi_prediction_is_invalid(self):
+        self.update(left_x=220.0, right_x=420.0)
+        for index in range(24):
+            result = self.update(
+                left_x=None,
+                right_x=420.0 + index * 0.1,
+                max_inferred_frames=4,
+                left_prediction_valid=False,
+            )
+            self.assertTrue(result["perception_valid"])
+            self.assertEqual(result["lane_type"], "only_right")
+            self.assertTrue(result["right"]["observed"])
 
     def test_one_geometrically_valid_returning_line_is_accepted_immediately(self):
         self.update(left_x=220.0, right_x=420.0)
@@ -411,6 +421,48 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["candidate_count"], {"left": 1, "right": 1})
         self.assertEqual(result["state"], "REACQUIRING")
         self.assertFalse(result["pair_reacquire_required"])
+
+    def test_single_roi_candidate_reacquires_after_stale_position_gate(self):
+        left_roi = (80, 300, 320, 440)
+        right_roi = (380, 300, 560, 440)
+        shape = self.FRAME_SHAPE
+        self.tracker.set_geometry_mode("bev")
+        left = self.line_for_global_x(left_roi, 220.0, dx=-8.0)
+        right = self.line_for_global_x(right_roi, 420.0, dx=8.0)
+        first = self.tracker.update(
+            left, right, shape, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
+        self.assertTrue(first["perception_valid"])
+
+        # A single real segment is present in the left ROI, but it has moved
+        # too far for the old temporal gate. It must be confirmed, not ignored.
+        shifted = self.line_for_global_x(left_roi, 285.0, dx=-8.0)
+        first_hit = self.tracker.update(
+            shifted, None, shape, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
+        self.assertFalse(first_hit["left"]["observed"])
+        self.assertGreaterEqual(first_hit["left"]["pending_hits"], 1)
+
+        second_hit = self.tracker.update(
+            shifted, None, shape, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
+        self.assertTrue(second_hit["left"]["observed"])
+        self.assertTrue(second_hit["perception_valid"])
+        self.assertEqual(second_hit["lane_type"], "only_left")
+        self.assertEqual(second_hit["candidate_count"]["left"], 1)
+        self.assertEqual(second_hit["left"]["status"], "DETECTED")
+
+    def test_perspective_mode_uses_reference_width_when_profile_is_unavailable(self):
+        tracker = LaneBoundaryTracker()
+        tracker.set_geometry_mode("perspective")
+        tracker._lane_width_px = 184.0
+        tracker._lane_width_profile = None
+        self.assertAlmostEqual(
+            tracker._width_at(370.0, self.FRAME_SHAPE[0]), 184.0
+        )
 
     def test_wrong_opposite_line_is_rejected_instead_of_stealing_the_track(self):
         self.update(left_x=220.0, right_x=420.0)
