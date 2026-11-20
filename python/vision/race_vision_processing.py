@@ -326,6 +326,10 @@ class VisionProcessor:
 
         rl_x_mid = self._best_mid_x(rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI), "right")
         ll_x_mid = self._best_mid_x(ll_lines, ll_current_w, height * abs(conf.LL_BOTTOM_ROI - conf.LL_TOP_ROI), "left")
+        geometry_mode = (
+            "bev" if bool(getattr(conf, "USE_BEV", False))
+            else "perspective"
+        )
         line_tracking = {"enabled": False, "state": "DISABLED"}
         lane_tracking_result = None
         tracking_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
@@ -349,10 +353,6 @@ class VisionProcessor:
             else:
                 base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
                 base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
-            geometry_mode = (
-                "bev" if bool(getattr(conf, "USE_BEV", False))
-                else "perspective"
-            )
             self._lane_boundary_tracker.set_geometry_mode(geometry_mode)
             if simulator_backend in ("carla", "avis"):
                 recovery = self._lane_boundary_tracker.recovery_rois(
