@@ -724,6 +724,7 @@ class LaneBoundaryTracker:
         state = self._sides[side]
         diagnostics = {
             "attempted": True,
+            "route": "single_missing_side",
             "expected_x_px": (
                 float(expected_x)
                 if expected_x is not None and math.isfinite(float(expected_x))
@@ -1809,6 +1810,38 @@ class LaneBoundaryTracker:
                 left_observed, right_observed = self._accept_pair(
                     left, right, frame_width
                 )
+                for side, candidate, missed_before, observed, count in (
+                    (
+                        "left", left, before_left_missed,
+                        left_observed, len(left_candidates),
+                    ),
+                    (
+                        "right", right, before_right_missed,
+                        right_observed, len(right_candidates),
+                    ),
+                ):
+                    if missed_before > 0:
+                        state = self._sides[side]
+                        self._reacquisition_diagnostics[side] = {
+                            "attempted": True,
+                            "route": "joint_pair",
+                            "reason": (
+                                "confirmed_by_joint_pair"
+                                if observed else "awaiting_joint_pair_confirmation"
+                            ),
+                            "expected_x_px": float(candidate["x_px"]),
+                            "missed_frames_before": int(missed_before),
+                            "candidate_count": int(count),
+                            "selected_candidate": {
+                                "index": int(candidate["index"]),
+                                "x_px": float(candidate["x_px"]),
+                                "angle_deg": float(candidate["angle_deg"]),
+                                "quality": float(candidate["quality"]),
+                            },
+                            "pending_hits": (
+                                int(state.pending["hits"]) if state.pending else 0
+                            ),
+                        }
                 reacquired = (
                     (before_left_missed > 0 and left_observed)
                     or (before_right_missed > 0 and right_observed)
