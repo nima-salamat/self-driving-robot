@@ -229,23 +229,37 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         search = self.tracker.recovery_rois(left_roi, right_roi, self.FRAME_SHAPE)
         self.assertTrue(search["left"]["expanded"])
         self.assertGreater(search["left"]["roi"][2], left_roi[2])
-        self.assertLessEqual(search["left"]["roi"][2] - search["left"]["roi"][0],
-                             int(self.FRAME_SHAPE[1] * 0.30) + 2)
+        search_left, _top, search_right, _bottom = search["left"]["roi"]
+        self.assertTrue(search["left"]["expected_points"])
+        for expected_x, _expected_y in search["left"]["expected_points"]:
+            self.assertGreaterEqual(expected_x, search_left)
+            self.assertLessEqual(expected_x, search_right)
 
-    def test_inferred_geometry_uses_visible_boundary_tangent_and_lookahead(self):
-        self.update(left_x=220.0, right_x=420.0)
-        left = self.line_for_global_x(self.LEFT_ROI, 230.0, dx=-28.0)
+    def test_bev_inferred_boundary_uses_constant_offset_in_rectified_coordinates(self):
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-28.0)
+        right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=-28.0)
+        self.tracker.update(
+            left, right, self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
         result = self.tracker.update(
             left, None, self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
-            reference_center_x=320.0,
+            reference_center_x=320.0, geometry_mode="bev",
         )
-        inferred = result["right"]["predicted_line"]
-        observed = result["left"]["line"]
-        self.assertAlmostEqual(
-            (inferred[2] - inferred[0]) / (inferred[3] - inferred[1]),
-            (observed[2] - observed[0]) / (observed[3] - observed[1]),
-            delta=0.03,
-        )
+
+        self.assertEqual(result["geometry_mode"], "bev")
+        self.assertEqual(result["lane_width_model"], "constant_bev")
+        points = result["right"]["predicted_points"]
+        self.assertGreaterEqual(len(points), 2)
+
+        left_state = self.tracker._sides["left"]
+        y_ref = result["y_ref_px"]
+        x_deltas = []
+        slope = -28.0 / (self.LEFT_ROI[3] - self.LEFT_ROI[1])
+        for x, y in points:
+            anchor_x = left_state.x_px + slope * (y - y_ref)
+            x_deltas.append(x - anchor_x)
+        self.assertAlmostEqual(max(x_deltas), min(x_deltas), delta=0.1)
         self.assertGreaterEqual(len(result["center_points"]), 2)
         self.assertAlmostEqual(
             result["steering_center_px"],
@@ -254,6 +268,52 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             + 0.3 * result["center_points"][-1][0],
             delta=0.1,
         )
+
+    def test_perspective_inference_follows_row_dependent_width_not_parallel_shift(self):
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-14.0)
+        right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=21.0)
+        learned = self.tracker.update(
+            left, right, self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="perspective",
+        )
+        self.assertEqual(learned["geometry_mode"], "perspective")
+        self.assertEqual(learned["lane_width_model"], "perspective_profile")
+        self.assertGreaterEqual(len(learned["lane_width_profile"]), 2)
+
+        result = self.tracker.update(
+            left, None, self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="perspective",
+        )
+        self.assertEqual(result["inferred_side"], "right")
+        points = result["right"]["predicted_points"]
+        self.assertGreaterEqual(len(points), 5)
+
+        left_state = self.tracker._sides["left"]
+        y_ref = result["y_ref_px"]
+        slope = -14.0 / (self.LEFT_ROI[3] - self.LEFT_ROI[1])
+        offsets = []
+        for x, y in points:
+            anchor_x = left_state.x_px + slope * (y - y_ref)
+            offsets.append(x - anchor_x)
+
+        # The lane opens with image-row depth in this synthetic perspective
+        # geometry, so a constant parallel offset would be demonstrably wrong.
+        self.assertGreater(max(offsets) - min(offsets), 10.0)
+        self.assertAlmostEqual(
+            offsets[len(offsets) // 2],
+            self.tracker._width_at(y_ref, self.FRAME_SHAPE[0]),
+            delta=2.0,
+        )
+
+    def test_switching_bev_mode_discards_perspective_width_profile(self):
+        self.update(left_x=220.0, right_x=420.0)
+        self.assertIsNotNone(self.tracker._lane_width_px)
+        self.tracker.set_geometry_mode("bev")
+
+        self.assertIsNone(self.tracker._lane_width_px)
+        self.assertIsNone(self.tracker._lane_width_profile)
+        self.assertIsNone(self.tracker._sides["left"].track_id)
+        self.assertEqual(self.tracker._geometry_mode, "bev")
 
     def test_perspective_width_profile_is_learned_from_two_real_boundaries(self):
         left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-14.0)
@@ -275,6 +335,34 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(inferred["inferred_side"], "right")
         self.assertNotEqual(inferred["center_points"][0][0],
                             inferred["center_points"][-1][0])
+
+    def test_perspective_recovery_roi_contains_the_inferred_curve_at_every_sample(self):
+        left_roi = (80, 300, 260, 440)
+        right_roi = (380, 300, 560, 440)
+        left = self.line_for_global_x(left_roi, 220.0, dx=-18.0)
+        right = self.line_for_global_x(right_roi, 420.0, dx=20.0)
+        self.tracker.update(
+            left, right, self.FRAME_SHAPE, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="perspective",
+        )
+        self.tracker.update(
+            None, right, self.FRAME_SHAPE, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="perspective",
+        )
+
+        recovery = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE,
+            geometry_mode="perspective",
+        )["left"]
+        search_left, search_top, search_right, search_bottom = recovery["roi"]
+
+        self.assertEqual(recovery["geometry_mode"], "perspective")
+        self.assertGreaterEqual(len(recovery["expected_points"]), 5)
+        for x, y in recovery["expected_points"]:
+            self.assertGreaterEqual(x, search_left)
+            self.assertLessEqual(x, search_right)
+            self.assertGreaterEqual(y, search_top)
+            self.assertLessEqual(y, search_bottom)
 
     def test_uninitialized_tracker_never_expands_roi_from_its_midpoint(self):
         self.tracker.update(
