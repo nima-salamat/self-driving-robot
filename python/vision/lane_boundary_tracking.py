@@ -731,6 +731,29 @@ class LaneBoundaryTracker:
             predicted_points = self._inferred_boundary_points(
                 side, anchor_side, roi, y_ref, frame_height
             )
+            roi_left, roi_top, roi_right, roi_bottom = roi
+            points_inside = (
+                len(predicted_points) >= 2
+                and all(
+                    roi_left <= point[0] < roi_right
+                    and roi_top <= point[1] < roi_bottom
+                    for point in predicted_points
+                )
+            )
+            # Never emit an INFERRED boundary whose displayed/search geometry is
+            # outside the actual detector crop. Fall back to the ordinary
+            # missing/predicted state and let the caller coast or stop safely.
+            if not points_inside:
+                inferred = False
+                inferred_x = None
+                x_px = state.x_px
+                status = (
+                    "PREDICTED"
+                    if state.x_px is not None
+                    and state.missed_frames <= self.max_missed_frames
+                    else "LOST" if state.x_px is not None else "UNINITIALIZED"
+                )
+                predicted_points = []
         predicted_line = self._points_to_line(predicted_points)
         if predicted_line is None and x_px is not None and (
             not inferred and state.missed_frames <= self.max_missed_frames
@@ -738,6 +761,19 @@ class LaneBoundaryTracker:
             predicted_line = self._predicted_line(
                 state, x_px, y_ref, roi, state.angle_deg
             )
+        roi_left, roi_top, roi_right, roi_bottom = roi
+        inside_search_roi = bool(
+            x_px is not None
+            and roi_left <= x_px < roi_right
+            and roi_top <= y_ref < roi_bottom
+        )
+        roi_edge_distances = (
+            {
+                "left_px": float(x_px - roi_left),
+                "right_px": float((roi_right - 1) - x_px),
+            }
+            if x_px is not None else None
+        )
         hall_result = hall_result or {}
         return {
             "side": side,
@@ -750,6 +786,9 @@ class LaneBoundaryTracker:
             "predicted_line": predicted_line,
             "predicted_points": predicted_points,
             "search_roi": [int(value) for value in roi],
+            "inside_search_roi": inside_search_roi,
+            "roi_edge_distances_px": roi_edge_distances,
+            "inference_valid": bool(inferred),
             "expected_x": float(inferred_x) if inferred_x is not None else None,
             "reacquiring_line": (
                 self._predicted_line(state, state.pending["x_px"], y_ref, roi,
