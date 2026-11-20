@@ -725,7 +725,7 @@ class LaneBoundaryTracker:
         # movement, but never beyond a fraction of the learned lane width/frame.
         relaxed_tolerance = min(
             max(base_tolerance, self._lane_width_px * 0.40),
-            base_tolerance + frame_width * min(0.10, 0.008 * missed),
+            base_tolerance + frame_width * min(0.02, 0.003 * missed),
         )
         allow_relaxed = state.missed_frames > 0 or state.pending is not None
         options = []
@@ -846,10 +846,10 @@ class LaneBoundaryTracker:
                     relative_width_error = abs(
                         candidate_width - self._lane_width_px
                     ) / max(1.0, self._lane_width_px)
-                    allowed_width_change = min(
-                        0.40,
-                        0.20 + 0.04 * min(missed, 7),
-                    )
+                    # Keep this generous but finite: 24% accommodates
+                    # imperfect perspective estimates without allowing a
+                    # nearby parallel road marking to redefine the lane.
+                    allowed_width_change = 0.24
                     if relative_width_error > allowed_width_change:
                         continue
 
