@@ -305,6 +305,19 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             delta=2.0,
         )
 
+    def test_changing_configured_roi_resets_old_lane_geometry(self):
+        self.update(left_x=220.0, right_x=420.0)
+        self.assertIsNotNone(self.tracker._lane_width_px)
+        shifted_left_roi = (90, 300, 270, 440)
+        self.tracker.set_roi_configuration(
+            shifted_left_roi, self.RIGHT_ROI, self.FRAME_SHAPE
+        )
+
+        self.assertIsNone(self.tracker._lane_width_px)
+        self.assertIsNone(self.tracker._lane_width_profile)
+        self.assertIsNone(self.tracker._sides["left"].track_id)
+        self.assertIsNone(self.tracker._sides["right"].track_id)
+
     def test_switching_bev_mode_discards_perspective_width_profile(self):
         self.update(left_x=220.0, right_x=420.0)
         self.assertIsNotNone(self.tracker._lane_width_px)
