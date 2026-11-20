@@ -160,7 +160,10 @@ class LaneBoundaryTracker:
             # Very short Hough fragments are usually texture/shadow edges, not
             # stable lane boundaries. Require one sufficiently long segment;
             # this does not require multiple lines or multiple candidates.
-            if length < max(12.0, roi_height * 0.10):
+            # HoughLinesP already applies the user-configured minLineLength.
+            # Do not silently replace it with 10% of the ROI height here: AVIS
+            # dashed markings often arrive as a single shorter segment.
+            if length < max(5.0, roi_height * 0.025):
                 continue
 
             gx1, gx2 = x1 + left, x2 + left
@@ -169,10 +172,14 @@ class LaneBoundaryTracker:
             segment_min_y = min(gy1, gy2)
             segment_max_y = max(gy1, gy2)
             y_gap = max(0.0, segment_min_y - y_ref, y_ref - segment_max_y)
-            # A lane candidate must intersect, or nearly intersect, the
-            # shared look-ahead row. Large extrapolations manufacture false
-            # boundaries from unrelated fragments elsewhere in the ROI.
-            if y_gap > roi_height * 0.12:
+            # Hough fragments on dashed or partially occluded paint do not
+            # always cross the look-ahead row. Permit bounded extrapolation,
+            # scaled by the actual segment length, and penalize it in quality.
+            max_y_gap = min(
+                roi_height * 0.35,
+                max(roi_height * 0.12, length * 0.75),
+            )
+            if y_gap > max_y_gap:
                 continue
             x_ref = gx1 + slope * (y_ref - gy1)
             # Hough endpoints are local to the crop, but extrapolating a short
@@ -190,11 +197,14 @@ class LaneBoundaryTracker:
             length_quality = min(1.0, length / max(1.0, roi_height * 0.60))
             angle = math.degrees(math.atan(slope))
             angle_quality = max(0.0, 1.0 - abs(angle) / 75.0)
+            extrapolation_quality = 1.0 - 0.30 * min(
+                1.0, y_gap / max(1.0, max_y_gap)
+            )
             quality = (
                 0.45 * length_quality
                 + 0.35 * y_span
                 + 0.20 * angle_quality
-            )
+            ) * extrapolation_quality
             candidates.append({
                 "index": int(index),
                 "x_px": float(x_ref),
@@ -272,7 +282,10 @@ class LaneBoundaryTracker:
                 min(frame_width * 0.15,
                     frame_width * 0.045 + abs(state.velocity_px) * 0.65),
             ) + missed_growth
-            if dx > gate or angle_delta > (34.0 if state.missed_frames == 0 else 42.0):
+            # Lane orientation can change quickly in tight AVIS bends. Position
+            # and shared-width gates remain strict; angle is a soft association
+            # cue rather than a reason to drop an otherwise local boundary.
+            if dx > gate or angle_delta > (48.0 if state.missed_frames == 0 else 58.0):
                 # A returning track may move farther while occluded, but the
                 # gate remains bounded and its angle must still be plausible.
                 return None
@@ -644,7 +657,7 @@ class LaneBoundaryTracker:
                     ax1, ay1, ax2, ay2 = anchor.line_global
                     anchor_angle = math.degrees(math.atan2(ax2 - ax1, ay2 - ay1))
                 angle_delta = self._angle_delta(candidate["angle_deg"], anchor_angle)
-                if angle_delta > 42.0:
+                if angle_delta > 55.0:
                     continue
             else:
                 angle_delta = 0.0
