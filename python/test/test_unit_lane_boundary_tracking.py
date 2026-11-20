@@ -569,8 +569,11 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.update(left_x=220.0, right_x=420.0)
         self.update(left_x=None, right_x=430.0)
 
+        # This candidate would imply a lane width more than 40% away
+        # from the previously measured width, so it is not a plausible
+        # returning boundary even after the temporal gate opens.
         for _ in range(5):
-            result = self.update(left_x=180.0, right_x=430.0)
+            result = self.update(left_x=145.0, right_x=430.0)
             self.assertEqual(result["lane_type"], "only_right")
             self.assertFalse(result["left"]["observed"])
             self.assertEqual(result["left"]["pending_hits"], 0)
