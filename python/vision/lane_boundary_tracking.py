@@ -54,6 +54,7 @@ class LaneBoundaryTracker:
         self._lane_width_px = None
         self._lane_width_profile = None
         self._geometry_mode = None
+        self._roi_signature = None
         self._last_lane_center_px = None
         self._last_lane_center_velocity_px = 0.0
         self._frame_index = 0
@@ -75,6 +76,7 @@ class LaneBoundaryTracker:
         self._next_track_id = 1
         self._lane_width_px = None
         self._lane_width_profile = None
+        self._roi_signature = None
         self._last_lane_center_px = None
         self._last_lane_center_velocity_px = 0.0
         self._frame_index = 0
@@ -89,6 +91,22 @@ class LaneBoundaryTracker:
             self.reset()
         self._geometry_mode = normalized
         return normalized
+
+    def set_roi_configuration(self, left_roi, right_roi, frame_shape):
+        """Invalidate old tracks if the user's ROI geometry or frame size changes."""
+        height, width = map(int, frame_shape[:2])
+        signature = (
+            self._roi_tuple(left_roi),
+            self._roi_tuple(right_roi),
+            width,
+            height,
+        )
+        if self._roi_signature is not None and signature != self._roi_signature:
+            geometry_mode = self._geometry_mode
+            self.reset()
+            self._geometry_mode = geometry_mode
+        self._roi_signature = signature
+        return signature
 
     @staticmethod
     def _angle_delta(a, b):
@@ -694,6 +712,7 @@ class LaneBoundaryTracker:
         frame_height, frame_width = map(int, frame_shape[:2])
         frame_height = max(1, frame_height)
         frame_width = max(1, frame_width)
+        self.set_roi_configuration(left_roi, right_roi, frame_shape)
         boxes = {
             "left": self._roi_tuple(left_roi),
             "right": self._roi_tuple(right_roi),
