@@ -848,7 +848,7 @@ class LaneBoundaryTracker:
                     ) / max(1.0, self._lane_width_px)
                     allowed_width_change = min(
                         0.40,
-                        0.18 + 0.035 * min(missed, 7),
+                        0.20 + 0.04 * min(missed, 7),
                     )
                     if relative_width_error > allowed_width_change:
                         continue
