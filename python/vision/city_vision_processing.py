@@ -440,9 +440,16 @@ class VisionProcessor:
         if hall_requested and sobel_hough_active:
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
             self._lane_boundary_tracker.max_missed_frames = max_missed
-            self._lane_boundary_tracker.reacquire_frames = max(
-                1, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 1))
-            )
+            if simulator_joint_tracking:
+                # Simulator lane edges are already gated by the shared lane
+                # width, side-of-road ROI, and tangent checks. One geometrically
+                # valid Hough segment is enough; requiring repeated hits makes
+                # a perfectly visible boundary flicker between LOST/REACQUIRING.
+                self._lane_boundary_tracker.reacquire_frames = 1
+            else:
+                self._lane_boundary_tracker.reacquire_frames = max(
+                    2, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 3))
+                )
             if simulator_joint_tracking:
                 base_left_roi = (ll_left, ll_top, ll_right, ll_bottom)
                 base_right_roi = (rl_left, rl_top, rl_right, rl_bottom)
