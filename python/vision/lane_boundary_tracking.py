@@ -1316,18 +1316,48 @@ class LaneBoundaryTracker:
                 elif pair is None:
                     self._pair_pending = None
             elif pair is not None:
-                _score, left, right, _width = pair
-                left_observed, right_observed = self._accept_pair(
-                    left, right, frame_width
+                # Simulator startup uses the same temporal consistency gate as
+                # full-pair reacquisition. A single-frame shadow pair must not
+                # create two tracks and then immediately turn into INFERRED.
+                pair_confirmed = (
+                    self._confirm_pair_reacquisition(pair, frame_width)
+                    if enable_full_pair_reacquisition else True
                 )
-                rejected_left = max(0, len(left_candidates) - 1)
-                rejected_right = max(0, len(right_candidates) - 1)
+                if pair_confirmed:
+                    _score, left, right, _width = pair
+                    left_observed, right_observed = self._accept_pair(
+                        left, right, frame_width
+                    )
+                    self._pair_pending = None
+                    rejected_left = max(0, len(left_candidates) - 1)
+                    rejected_right = max(0, len(right_candidates) - 1)
             else:
-                # One boundary alone cannot establish lane width safely.
+                # One boundary alone cannot establish lane width. In simulator
+                # mode retain it only as a pending single-candidate hypothesis
+                # until the same segment geometry survives the next frame.
+                self._pair_pending = None
                 if left_ranked and self._sides["left"].x_px is None:
-                    left_observed = self._mark_observed("left", left_ranked[0][1])
+                    left_candidate = left_ranked[0][1]
+                    if enable_full_pair_reacquisition:
+                        left_observed = self._confirm_reacquisition(
+                            "left", left_candidate, left_candidate["x_px"],
+                            max(frame_width * 0.03, 2.0),
+                        )
+                    else:
+                        left_observed = self._mark_observed("left", left_candidate)
+                elif self._sides["left"].x_px is None:
+                    self._sides["left"].pending = None
                 if right_ranked and self._sides["right"].x_px is None:
-                    right_observed = self._mark_observed("right", right_ranked[0][1])
+                    right_candidate = right_ranked[0][1]
+                    if enable_full_pair_reacquisition:
+                        right_observed = self._confirm_reacquisition(
+                            "right", right_candidate, right_candidate["x_px"],
+                            max(frame_width * 0.03, 2.0),
+                        )
+                    else:
+                        right_observed = self._mark_observed("right", right_candidate)
+                elif self._sides["right"].x_px is None:
+                    self._sides["right"].pending = None
         else:
             pair = self._best_pair(
                 left_ranked, right_ranked, frame_width, reference_x
