@@ -707,7 +707,7 @@ class LaneBoundaryTracker:
 
     def _attempt_missing_side(self, side, candidates, expected_x,
                               frame_width, preferred_index, hall_selected_index,
-                              frame_height):
+                              frame_height, reference_center_x=None):
         state = self._sides[side]
         if self._lane_width_px is None or expected_x is None:
             return False
@@ -724,8 +724,8 @@ class LaneBoundaryTracker:
         # prediction ages, widen it to cover curvature and camera-relative
         # movement, but never beyond a fraction of the learned lane width/frame.
         relaxed_tolerance = min(
-            max(base_tolerance, self._lane_width_px * 0.60),
-            base_tolerance + frame_width * min(0.18, 0.025 * missed),
+            max(base_tolerance, self._lane_width_px * 0.40),
+            base_tolerance + frame_width * min(0.10, 0.008 * missed),
         )
         allow_relaxed = state.missed_frames > 0 or state.pending is not None
         options = []
@@ -778,8 +778,8 @@ class LaneBoundaryTracker:
                 base_tolerance * 1.6, frame_width * 0.08
             )
             relaxed_profile_limit = min(
-                frame_width * 0.25,
-                max(strict_profile_limit, relaxed_tolerance * 1.25),
+                frame_width * 0.18,
+                max(strict_profile_limit, relaxed_tolerance),
             )
             profile_limit = (
                 strict_profile_limit
@@ -810,17 +810,127 @@ class LaneBoundaryTracker:
             options.append((score, candidate))
 
         if not options:
-            # Keep an existing pending hypothesis through a true Hough miss;
-            # clear it only when the ROI contains candidates that fail even
-            # the broadened geometry gate.
+            # The lane-width model can become stale on sharp curves, camera
+            # movement, or a temporary association error. Before declaring the
+            # side lost, inspect every valid Hough segment in this side's own
+            # ROI against the *currently observed* opposite boundary.
+            #
+            # This is deliberately independent of the old predicted x. We
+            # still require a correct left/right ordering, globally plausible
+            # lane width and center, compatible tangent, acceptable line
+            # quality, and two-frame temporal confirmation.
+            alternate_options = []
+            if state.missed_frames > 0 or state.pending is not None:
+                for candidate in candidates:
+                    if side == "left":
+                        pair_left, pair_right = candidate, {
+                            "x_px": float(anchor.x_px),
+                            "quality": 1.0,
+                            "angle_deg": float(anchor_angle),
+                        }
+                    else:
+                        pair_left, pair_right = {
+                            "x_px": float(anchor.x_px),
+                            "quality": 1.0,
+                            "angle_deg": float(anchor_angle),
+                        }, candidate
+
+                    plausible, candidate_width = self._pair_is_plausible(
+                        pair_left, pair_right, frame_width,
+                        prior_width=None,
+                        reference_center_x=reference_center_x,
+                    )
+                    if not plausible:
+                        continue
+
+                    relative_width_error = abs(
+                        candidate_width - self._lane_width_px
+                    ) / max(1.0, self._lane_width_px)
+                    allowed_width_change = min(
+                        0.40,
+                        0.18 + 0.035 * min(missed, 7),
+                    )
+                    if relative_width_error > allowed_width_change:
+                        continue
+
+                    angle_delta = self._angle_delta(
+                        candidate["angle_deg"], anchor_angle
+                    )
+                    angle_limit = min(62.0, 48.0 + 2.0 * missed)
+                    if angle_delta > angle_limit or candidate["quality"] < 0.12:
+                        continue
+
+                    profile_residual = 0.0
+                    if anchor.line_global is not None:
+                        x1, y1, x2, y2 = candidate["line_global"]
+                        rows = [
+                            y1 + (y2 - y1) * fraction
+                            for fraction in (0.2, 0.5, 0.8)
+                        ]
+                        residuals = []
+                        for row in rows:
+                            anchor_x = self._line_x_at(anchor.line_global, row)
+                            candidate_x = self._line_x_at(
+                                candidate["line_global"], row
+                            )
+                            width_here = (
+                                self._width_at(row, frame_height)
+                                or self._lane_width_px
+                            )
+                            expected_here = anchor_x + (
+                                width_here if side == "right" else -width_here
+                            )
+                            residuals.append(abs(candidate_x - expected_here))
+                        profile_residual = sum(residuals) / max(
+                            1, len(residuals)
+                        )
+
+                    # A broad but bounded residual remains useful as a soft
+                    # ranking signal; it is no longer an absolute rejection
+                    # when the row-width profile itself is known to be stale.
+                    residual_scale = max(
+                        frame_width * 0.18,
+                        self._lane_width_px * 0.40,
+                        1.0,
+                    )
+                    score = (
+                        0.48 * relative_width_error
+                        / max(0.01, allowed_width_change)
+                        + 0.24 * angle_delta / max(1.0, angle_limit)
+                        + 0.18 * min(1.5, profile_residual / residual_scale)
+                        + 0.10 * (1.0 - candidate["quality"])
+                    )
+                    if hall_selected_index is not None and candidate["index"] == hall_selected_index:
+                        score -= 0.08
+                    alternate_options.append((float(score), candidate))
+
+            if alternate_options:
+                alternate_options.sort(
+                    key=lambda item: (
+                        item[0], -item[1]["quality"], item[1]["index"]
+                    )
+                )
+                candidate = alternate_options[0][1]
+                # Use the candidate's own measured position as the pending
+                # reference. A stale lane model must not drag the new line
+                # back toward the obsolete prediction during confirmation.
+                confirmation_tolerance = max(
+                    frame_width * 0.03, base_tolerance * 0.65
+                )
+                return self._confirm_reacquisition(
+                    side, candidate, candidate["x_px"],
+                    confirmation_tolerance,
+                )
+
+            # Preserve pending through a one-frame detector miss. Clear it
+            # only if actual candidates appeared but violated both the strict
+            # lane model and the independent pair-geometry test.
             if candidates:
                 state.pending = None
             return False
 
         options.sort(key=lambda item: item[0])
         candidate = options[0][1]
-        # Confirmation tolerance stays tight even when the spatial search gate
-        # has expanded; the same physical marking must persist across frames.
         return self._confirm_reacquisition(
             side, candidate, expected_x, base_tolerance
         )
@@ -1617,7 +1727,7 @@ class LaneBoundaryTracker:
                         self._attempt_missing_side(
                             "right", right_candidates, expected_right,
                             frame_width, right_preferred_index, right_hall_selected,
-                            frame_height,
+                            frame_height, reference_x,
                         )
                         if expected_right is not None else False
                     )
@@ -1646,7 +1756,7 @@ class LaneBoundaryTracker:
                         self._attempt_missing_side(
                             "left", left_candidates, expected_left,
                             frame_width, left_preferred_index, left_hall_selected,
-                            frame_height,
+                            frame_height, reference_x,
                         )
                         if expected_left is not None else False
                     )
@@ -1669,8 +1779,26 @@ class LaneBoundaryTracker:
             if measured_width > frame_width * 0.12:
                 if self._lane_width_px is None:
                     self._lane_width_px = measured_width
+                elif reacquired:
+                    previous_width = self._lane_width_px
+                    width_change = abs(measured_width - previous_width)
+                    if width_change > max(frame_width * 0.035, previous_width * 0.12):
+                        # The missing side has just passed independent
+                        # geometric + temporal confirmation. Retire its stale
+                        # perspective profile and blend strongly enough that
+                        # the same valid pair is accepted on the next frame.
+                        self._lane_width_px = (
+                            0.45 * previous_width + 0.55 * measured_width
+                        )
+                        self._lane_width_profile = None
+                    else:
+                        self._lane_width_px = (
+                            0.75 * previous_width + 0.25 * measured_width
+                        )
                 else:
-                    self._lane_width_px = 0.88 * self._lane_width_px + 0.12 * measured_width
+                    self._lane_width_px = (
+                        0.88 * self._lane_width_px + 0.12 * measured_width
+                    )
             lane_center_x = (left_x + right_x) * 0.5
             lane_type = "both"
             state_name = "REACQUIRING" if reacquired else "TRACKING"
