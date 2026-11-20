@@ -285,7 +285,7 @@ class LaneBoundaryTracker:
             # Lane orientation can change quickly in tight AVIS bends. Position
             # and shared-width gates remain strict; angle is a soft association
             # cue rather than a reason to drop an otherwise local boundary.
-            if dx > gate or angle_delta > (48.0 if state.missed_frames == 0 else 58.0):
+            if dx > gate or angle_delta > (34.0 if state.missed_frames == 0 else 42.0):
                 # A returning track may move farther while occluded, but the
                 # gate remains bounded and its angle must still be plausible.
                 return None
