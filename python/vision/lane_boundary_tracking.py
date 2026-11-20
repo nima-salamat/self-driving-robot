@@ -588,15 +588,10 @@ class LaneBoundaryTracker:
         if not math.isfinite(float(expected_x)):
             return False
         anchor = self._sides["right" if side == "left" else "left"]
-        base_tolerance = max(
+        tolerance = max(
             frame_width * 0.045,
             min(frame_width * 0.12, self._lane_width_px * 0.18),
         )
-        missed_growth = min(
-            frame_width * 0.10,
-            frame_width * 0.018 * max(0, state.missed_frames - 1),
-        )
-        tolerance = base_tolerance + missed_growth
         options = []
         for candidate in candidates:
             dx = abs(candidate["x_px"] - expected_x)
@@ -893,6 +888,93 @@ class LaneBoundaryTracker:
                 max(base_width * 0.75, frame_width * 0.05),
             )
 
+            sample_y = np.linspace(
+                float(box[1]), float(max(box[1], box[3] - 1)), 7
+            )
+
+            # Hysteresis: when a line was recovered outside (or very near the
+            # edge of) the configured ROI, keep detecting it in a bounded
+            # corridor on following frames. Shrinking to the user's base crop
+            # immediately after one successful frame creates a deterministic
+            # one-frame TRACKING / next-frame LOST oscillation.
+            if (
+                state.observed
+                and state.track_id is not None
+                and state.line_global is not None
+                and state.pending is None
+            ):
+                track_x = []
+                for y in sample_y:
+                    value = self._line_x_at(state.line_global, float(y))
+                    if value is not None and math.isfinite(value):
+                        track_x.append(
+                            float(value + state.velocity_px)
+                        )
+                if len(track_x) == len(sample_y):
+                    hold_margin = max(3.0, base_width * 0.08)
+                    desired_left = min(float(box[0]), min(track_x) - hold_margin)
+                    desired_right = max(float(box[2]), max(track_x) + hold_margin)
+                    search_left = max(
+                        0,
+                        int(math.floor(max(float(box[0]) - max_extra, desired_left))),
+                    )
+                    search_right = min(
+                        frame_width,
+                        int(math.ceil(min(float(box[2]) + max_extra, desired_right))),
+                    )
+                    search_roi = (
+                        search_left, int(box[1]),
+                        max(search_left + 1, search_right), int(box[3]),
+                    )
+                    corridor_inside = (
+                        all(0.0 <= x < float(frame_width) for x in track_x)
+                        and all(
+                            search_roi[0] <= x < search_roi[2]
+                            and search_roi[1] <= y < search_roi[3]
+                            for x, y in zip(track_x, sample_y)
+                        )
+                    )
+                    if corridor_inside:
+                        expanded = search_roi != box
+                        results[side] = {
+                            "roi": search_roi,
+                            "configured_roi": box,
+                            "expanded": expanded,
+                            "expected_x": float(state.x_px + state.velocity_px),
+                            "expected_points": [
+                                [float(x), float(y)]
+                                for x, y in zip(track_x, sample_y)
+                            ],
+                            "prediction_valid": True,
+                            "pair_reacquire": False,
+                            "missed_frames": 0,
+                            "max_expansion_px": float(max_extra),
+                            "edge_distances_px": {
+                                "to_outer_edge_px": (
+                                    float(state.x_px - box[0])
+                                    if side == "left"
+                                    else float((box[2] - 1) - state.x_px)
+                                ),
+                                "to_inner_edge_px": (
+                                    float((box[2] - 1) - state.x_px)
+                                    if side == "left"
+                                    else float(state.x_px - box[0])
+                                ),
+                                "outside_left_px": max(
+                                    0.0, float(box[0]) - min(track_x)
+                                ),
+                                "outside_right_px": max(
+                                    0.0, max(track_x) - float(box[2] - 1)
+                                ),
+                            },
+                            "reason": (
+                                "observed_track_hysteresis"
+                                if expanded else "tracking"
+                            ),
+                            "geometry_mode": self._geometry_mode,
+                        }
+                        continue
+
             if state.missed_frames == 0 and state.pending is None:
                 results[side] = {
                     "roi": box,
@@ -910,7 +992,6 @@ class LaneBoundaryTracker:
                 }
                 continue
 
-            sample_y = np.linspace(
                 float(box[1]), float(max(box[1], box[3] - 1)), 7
             )
             sample_x = []
