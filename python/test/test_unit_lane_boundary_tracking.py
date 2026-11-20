@@ -152,6 +152,10 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["left"]["pending_hits"], 0)
         self.assertEqual(result["reacquire_frames"], 1)
 
+    def test_tracker_default_accepts_one_valid_candidate_frame(self):
+        tracker = LaneBoundaryTracker()
+        self.assertEqual(tracker.reacquire_frames, 1)
+
     def test_single_pair_reacquisition_accepts_one_candidate_per_side(self):
         self.tracker.reacquire_frames = 1
         self.tracker.recovery_rois(
@@ -203,6 +207,9 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertAlmostEqual(result["lane_width_px"], 200.0, delta=3.0)
 
     def test_reacquisition_requires_three_geometrically_consistent_frames(self):
+        # Multi-frame confirmation remains available when explicitly requested;
+        # it is no longer the simulator default.
+        self.tracker.reacquire_frames = 3
         self.update(left_x=220.0, right_x=420.0)
         self.update(left_x=None, right_x=430.0)
 
