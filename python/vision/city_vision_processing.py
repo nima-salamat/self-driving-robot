@@ -426,6 +426,10 @@ class VisionProcessor:
                 ll_edge = cv2.flip(ll_edge, 1)
             ll_lines = self._restore_lane_roi_lines(ll_lines, ll_current_w, True)
 
+        geometry_mode = (
+            "bev" if bool(getattr(conf, "USE_BEV", False))
+            else "perspective"
+        )
         line_tracking = {"enabled": False, "state": "DISABLED"}
         lane_tracking_result = None
         tracking_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
@@ -449,10 +453,6 @@ class VisionProcessor:
             else:
                 base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
                 base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
-            geometry_mode = (
-                "bev" if bool(getattr(conf, "USE_BEV", False))
-                else "perspective"
-            )
             self._lane_boundary_tracker.set_geometry_mode(geometry_mode)
             if simulator_backend in ("carla", "avis"):
                 recovery = self._lane_boundary_tracker.recovery_rois(
