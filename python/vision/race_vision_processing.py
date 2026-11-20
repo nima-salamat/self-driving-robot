@@ -386,7 +386,13 @@ class VisionProcessor:
                 geometry_mode=geometry_mode,
                 left_preferred_index=None if recovery["left"]["expanded"] else self._line_index_for_midpoint(ll_lines, ll_x_mid),
                 right_preferred_index=None if recovery["right"]["expanded"] else self._line_index_for_midpoint(rl_lines, rl_x_mid),
+                left_prediction_valid=bool(recovery["left"].get("prediction_valid", True)),
+                right_prediction_valid=bool(recovery["right"].get("prediction_valid", True)),
             )
+            # Keep the configured-vs-search ROI geometry and signed edge
+            # distances attached to the live diagnostics for each side.
+            for side_name in ("left", "right"):
+                lane_tracking_result[side_name]["recovery"] = recovery[side_name]
             line_tracking = lane_tracking_result
             perception_valid = bool(lane_tracking_result["perception_valid"])
             lane_type = str(lane_tracking_result["lane_type"])
