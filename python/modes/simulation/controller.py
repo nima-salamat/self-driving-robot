@@ -25,6 +25,8 @@ class VirtualVehicleController:
         self._last_throttle = 0.0
         self._last_control_at = time.monotonic()
         self.last_command = VehicleCommand(0.0, 0.0, 1.0, self.center, 0.0, "initial safe stop")
+        self._has_valid_perception = False
+        self._perception_invalid_frames = 0
 
     def _sync_pid_settings(self):
         """Rebuild the virtual PID only when its live settings have changed."""
@@ -98,12 +100,26 @@ class VirtualVehicleController:
 
     def command_for(self, perception, speed_kmh=0.0):
         perception = perception or {}
-        valid = bool(perception.get("perception_valid", False))
+        raw_valid = bool(perception.get("perception_valid", False))
+        if raw_valid:
+            self._has_valid_perception = True
+            self._perception_invalid_frames = 0
+        else:
+            self._perception_invalid_frames += 1
+        grace_frames = max(
+            0, int(getattr(self.config, "SIMULATOR_PERCEPTION_LOSS_GRACE_FRAMES", 3))
+        )
+        grace_active = bool(
+            not raw_valid
+            and self._has_valid_perception
+            and self._perception_invalid_frames <= grace_frames
+        )
+        valid = raw_valid or grace_active
         self._sync_pid_settings()
         now = time.monotonic()
         dt = max(0.0, min(0.25, now - self._last_control_at))
         self._last_control_at = now
-        if valid:
+        if raw_valid:
             try:
                 angle = float(perception.get("steering_angle", self.last_servo))
             except (TypeError, ValueError, OverflowError):
@@ -114,8 +130,8 @@ class VirtualVehicleController:
             if pid_angle is not None:
                 angle = pid_angle
             self.last_servo = max(self.minimum, min(self.maximum, angle))
-        elif self._pid_controller is not None:
-            # Reset derivative history while lane data is invalid; the next
+        elif not grace_active and self._pid_controller is not None:
+            # Reset derivative history after the bounded dropout grace; the next
             # fresh measurement starts clean instead of producing a D spike.
             self._pid_controller.reset()
         # On missing perception, keep the previous steering estimate; braking
@@ -129,7 +145,7 @@ class VirtualVehicleController:
             steering = -steering
         target = min(200.0, max(0.0, float(getattr(self.config, "SIMULATOR_TARGET_SPEED", 20.0))))
         tracking = perception.get("line_tracking")
-        if valid and isinstance(tracking, dict) and tracking.get("enabled"):
+        if raw_valid and isinstance(tracking, dict) and tracking.get("enabled"):
             # A single observed boundary is enough to continue safely using the
             # learned lane width, but lower speed while geometry is inferred.
             # If both boundaries disappear, the tracker enters a short coast
@@ -141,6 +157,11 @@ class VirtualVehicleController:
                 speed_factor = 0.25
             if math.isfinite(speed_factor):
                 target *= max(0.0, min(1.0, speed_factor))
+        if grace_active:
+            # A single missing camera/Hough frame must not alternate full
+            # throttle and full brake. Continue briefly on the last steering
+            # estimate at reduced speed, then apply the configured lost-lane stop.
+            target *= 0.55
         limit = max(0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35))))
         if self.backend in {"carla", "avis"}:
             # Both simulator backends need a normalized steering envelope.
@@ -155,7 +176,13 @@ class VirtualVehicleController:
             # Settings validation provides physical normalized bounds (0..1);
             # the conservative defaults remain low but are user-adjustable.
         brake = 0.0
-        reason = "lane estimate accepted" if valid else "lane estimate unavailable"
+        reason = (
+            "lane estimate accepted" if raw_valid
+            else "brief perception dropout grace ({}/{}); holding last steering".format(
+                self._perception_invalid_frames, grace_frames
+            ) if grace_active
+            else "lane estimate unavailable"
+        )
         if not valid and bool(getattr(self.config, "SIMULATOR_STOP_ON_LOST_LANE", True)):
             throttle, brake, reason = 0.0, 1.0, "no valid lane; simulator braking"
         elif self.backend == "avis":
