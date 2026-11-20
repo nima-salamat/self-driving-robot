@@ -1379,6 +1379,12 @@ class LaneBoundaryTracker:
                 quality = 0.0
                 speed_factor = 0.0
 
+        # An anchor can remain observable after its opposite-side inference has
+        # expired. Do not keep publishing the stale inferred coordinate as if
+        # it were still a valid boundary.
+        if lane_type not in ("only_left", "only_right"):
+            inferred_side = None
+
         reference_x = (
             float(reference_center_x)
             if reference_center_x is not None
