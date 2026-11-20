@@ -335,6 +335,7 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(config.SIMULATOR_STEERING_RATE, 0.80)
             self.assertEqual(config.SIMULATOR_THROTTLE_RISE_RATE, 0.12)
             self.assertFalse(config.USE_BEV)
+            self.assertEqual(config.HALL_LINE_TRACKING_REACQUIRE_FRAMES, 1)
             self.assertEqual(config.LANE_THRESHOLD, 180)
             self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 6)
             self.assertFalse(config.ROI_RESIZABLE)
@@ -485,6 +486,20 @@ class SimulatorSettingsTests(unittest.TestCase):
                 self.assertEqual(saved["SIMULATOR_THROTTLE_LIMIT"], 0.35)
                 self.assertNotIn("RL_MIRRORED", saved)
                 self.assertNotIn("LL_MIRRORED", saved)
+
+    def test_lane_reacquire_setting_accepts_one_frame_and_rejects_zero(self):
+        self.assertEqual(
+            _validate_settings(
+                {"HALL_LINE_TRACKING_REACQUIRE_FRAMES": 1}, backend="carla"
+            )["HALL_LINE_TRACKING_REACQUIRE_FRAMES"],
+            1,
+        )
+        with self.assertRaisesRegex(
+            ValueError, "HALL_LINE_TRACKING_REACQUIRE_FRAMES"
+        ):
+            _validate_settings(
+                {"HALL_LINE_TRACKING_REACQUIRE_FRAMES": 0}, backend="avis"
+            )
 
     def test_backend_aware_target_speed_validation_uses_aviss_percentage_range(self):
         self.assertEqual(
