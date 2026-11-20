@@ -1004,10 +1004,26 @@ class LaneBoundaryTracker:
                 confirmation_tolerance = max(
                     frame_width * 0.03, base_tolerance * 0.65
                 )
-                return self._confirm_reacquisition(
+                confirmed = self._confirm_reacquisition(
                     side, candidate, candidate["x_px"],
                     confirmation_tolerance,
                 )
+                diagnostics.update({
+                    "reason": (
+                        "confirmed_by_independent_pair_geometry"
+                        if confirmed else "awaiting_independent_pair_confirmation"
+                    ),
+                    "selected_candidate": {
+                        "index": int(candidate["index"]),
+                        "x_px": float(candidate["x_px"]),
+                        "angle_deg": float(candidate["angle_deg"]),
+                        "quality": float(candidate["quality"]),
+                    },
+                    "pending_hits": (
+                        int(state.pending["hits"]) if state.pending else 0
+                    ),
+                })
+                return confirmed
 
             # Preserve pending through a one-frame detector miss. Clear it
             # only if actual candidates appeared but violated both the strict
@@ -1025,9 +1041,25 @@ class LaneBoundaryTracker:
 
         options.sort(key=lambda item: item[0])
         candidate = options[0][1]
-        return self._confirm_reacquisition(
+        confirmed = self._confirm_reacquisition(
             side, candidate, expected_x, base_tolerance
         )
+        diagnostics.update({
+            "reason": (
+                "confirmed_by_lane_width_profile"
+                if confirmed else "awaiting_lane_width_profile_confirmation"
+            ),
+            "selected_candidate": {
+                "index": int(candidate["index"]),
+                "x_px": float(candidate["x_px"]),
+                "angle_deg": float(candidate["angle_deg"]),
+                "quality": float(candidate["quality"]),
+            },
+            "pending_hits": (
+                int(state.pending["hits"]) if state.pending else 0
+            ),
+        })
+        return confirmed
 
     def _boundary_x_from_anchor(self, anchor_side, target_side, y, y_ref,
                                 frame_height, predict_next_frame=False):
