@@ -157,7 +157,10 @@ class LaneBoundaryTracker:
             if abs(dy) < 2.0:
                 continue
             length = math.hypot(dx, dy)
-            if length < max(5.0, roi_height * 0.035):
+            # Very short Hough fragments are usually texture/shadow edges, not
+            # stable lane boundaries. Require one sufficiently long segment;
+            # this does not require multiple lines or multiple candidates.
+            if length < max(12.0, roi_height * 0.10):
                 continue
 
             gx1, gx2 = x1 + left, x2 + left
@@ -166,7 +169,10 @@ class LaneBoundaryTracker:
             segment_min_y = min(gy1, gy2)
             segment_max_y = max(gy1, gy2)
             y_gap = max(0.0, segment_min_y - y_ref, y_ref - segment_max_y)
-            if y_gap > roi_height * 0.35:
+            # A lane candidate must intersect, or nearly intersect, the
+            # shared look-ahead row. Large extrapolations manufacture false
+            # boundaries from unrelated fragments elsewhere in the ROI.
+            if y_gap > roi_height * 0.12:
                 continue
             x_ref = gx1 + slope * (y_ref - gy1)
             # Hough endpoints are local to the crop, but extrapolating a short
@@ -198,6 +204,9 @@ class LaneBoundaryTracker:
                 "line_global": (
                     float(gx1), float(gy1), float(gx2), float(gy2),
                 ),
+                "reference_y_px": float(y_ref),
+                "roi_top_px": float(top),
+                "roi_bottom_px": float(bottom),
             })
         return candidates
 
@@ -468,6 +477,20 @@ class LaneBoundaryTracker:
         self._pair_pending = current
         return current["hits"] >= self.reacquire_frames
 
+    @staticmethod
+    def _stable_line_from_candidate(candidate, x_ref, angle_deg):
+        """Build a temporally filtered full-ROI boundary, not a raw Hough fragment."""
+        y_ref = float(candidate.get("reference_y_px", 0.0))
+        top = float(candidate.get("roi_top_px", candidate["line_global"][1]))
+        bottom = float(candidate.get("roi_bottom_px", candidate["line_global"][3]))
+        slope = math.tan(math.radians(float(angle_deg)))
+        return (
+            float(x_ref + slope * (top - y_ref)),
+            float(top),
+            float(x_ref + slope * (bottom - y_ref)),
+            float(bottom),
+        )
+
     def _apply(self, side, candidate):
         state = self._sides[side]
         if state.x_px is None:
@@ -476,7 +499,9 @@ class LaneBoundaryTracker:
             state.x_px = candidate["x_px"]
             state.velocity_px = 0.0
             state.angle_deg = candidate["angle_deg"]
-            state.line_global = candidate["line_global"]
+            state.line_global = self._stable_line_from_candidate(
+                candidate, state.x_px, state.angle_deg
+            )
             state.age = 1
             state.missed_frames = 0
             state.pending = None
@@ -488,10 +513,17 @@ class LaneBoundaryTracker:
 
         predicted = state.x_px + state.velocity_px
         innovation = candidate["x_px"] - predicted
-        state.x_px = predicted + 0.68 * innovation
-        state.velocity_px = 0.62 * state.velocity_px + 0.38 * innovation
-        state.angle_deg = 0.68 * state.angle_deg + 0.32 * candidate["angle_deg"]
-        state.line_global = candidate["line_global"]
+        # Smooth the reference position and tangent independently. Raw
+        # Hough fragments move a few pixels between frames; replacing the whole
+        # line with each fragment makes the overlay and inferred counterpart
+        # oscillate even when the physical lane marking is stationary.
+        state.x_px = predicted + 0.28 * innovation
+        state.velocity_px = 0.78 * state.velocity_px + 0.22 * innovation
+        angle_delta = candidate["angle_deg"] - state.angle_deg
+        state.angle_deg += 0.22 * angle_delta
+        state.line_global = self._stable_line_from_candidate(
+            candidate, state.x_px, state.angle_deg
+        )
         state.age += 1
         state.missed_frames = 0
         state.pending = None
@@ -546,7 +578,9 @@ class LaneBoundaryTracker:
         state.x_px = candidate["x_px"]
         state.velocity_px = 0.0
         state.angle_deg = candidate["angle_deg"]
-        state.line_global = candidate["line_global"]
+        state.line_global = self._stable_line_from_candidate(
+            candidate, state.x_px, state.angle_deg
+        )
         state.age = 1
         state.missed_frames = 0
         state.pending = None
@@ -1259,8 +1293,6 @@ class LaneBoundaryTracker:
         right_observed = False
         inferred_side = None
         reacquired = False
-        held_side = None
-        held_frames = 0
         rejected_left = len(left_candidates)
         rejected_right = len(right_candidates)
 
@@ -1456,48 +1488,24 @@ class LaneBoundaryTracker:
                 inferred_right_x = visible_x + self._width_at(y_ref, frame_height)
                 lane_center_x = 0.5 * (visible_x + inferred_right_x)
                 lane_type = "only_left"
-                missing_state = self._sides["right"]
-                grace_frames = min(2, self.max_missed_frames)
-                if (
-                    missing_state.track_id is not None
-                    and 0 < missing_state.missed_frames <= grace_frames
-                ):
-                    # One or two missed Hough frames are treated as a coast
-                    # of the last confirmed line, not a new inferred boundary.
-                    held_side = "right"
-                    held_frames = int(missing_state.missed_frames)
-                    inferred_side = None
-                    state_name = "COASTING_RIGHT"
-                else:
-                    inferred_side = "right"
-                    state_name = (
-                        "REACQUIRING_RIGHT"
-                        if missing_state.pending else "SINGLE_SIDE_LEFT"
-                    )
+                inferred_side = "right"
+                state_name = (
+                    "REACQUIRING_RIGHT"
+                    if self._sides["right"].pending else "SINGLE_SIDE_LEFT"
+                )
             else:
                 visible_x = self._sides["right"].x_px
                 inferred_left_x = visible_x - self._width_at(y_ref, frame_height)
                 lane_center_x = 0.5 * (inferred_left_x + visible_x)
                 lane_type = "only_right"
-                missing_state = self._sides["left"]
-                grace_frames = min(2, self.max_missed_frames)
-                if (
-                    missing_state.track_id is not None
-                    and 0 < missing_state.missed_frames <= grace_frames
-                ):
-                    held_side = "left"
-                    held_frames = int(missing_state.missed_frames)
-                    inferred_side = None
-                    state_name = "COASTING_LEFT"
-                else:
-                    inferred_side = "left"
-                    state_name = (
-                        "REACQUIRING_LEFT"
-                        if missing_state.pending else "SINGLE_SIDE_RIGHT"
-                    )
+                inferred_side = "left"
+                state_name = (
+                    "REACQUIRING_LEFT"
+                    if self._sides["left"].pending else "SINGLE_SIDE_RIGHT"
+                )
             perception_valid = True
-            quality = 0.48 if held_side is not None else 0.58
-            speed_factor = 0.38 if held_side is not None else 0.55
+            quality = 0.58
+            speed_factor = 0.55
             if self._last_lane_center_px is not None:
                 self._last_lane_center_velocity_px = (
                     0.75 * self._last_lane_center_velocity_px
@@ -1644,8 +1652,6 @@ class LaneBoundaryTracker:
                 for y, width in sorted((self._lane_width_profile or {}).items())
             ],
             "inferred_side": inferred_side,
-            "held_side": held_side,
-            "held_frames": int(held_frames),
             "reacquire_frames": int(self.reacquire_frames),
             "pair_reacquire_required": bool(self._reacquiring_pair),
             "pair_pending_hits": (
