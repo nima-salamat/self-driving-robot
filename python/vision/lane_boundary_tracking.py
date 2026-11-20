@@ -509,25 +509,31 @@ class LaneBoundaryTracker:
                 "expected_x": expected_x,
                 "hits": 1,
             }
-            return False
-
-        expected_shift = expected_x - pending["expected_x"]
-        predicted_pending_x = pending["x_px"] + expected_shift
-        position_ok = abs(candidate["x_px"] - predicted_pending_x) <= consistency_tolerance
-        angle_ok = self._angle_delta(candidate["angle_deg"], pending["angle_deg"]) <= 18.0
-        if position_ok and angle_ok:
-            pending["hits"] += 1
-            pending["x_px"] = candidate["x_px"]
-            pending["angle_deg"] = candidate["angle_deg"]
-            pending["expected_x"] = expected_x
-        else:
-            state.pending = {
-                "x_px": candidate["x_px"],
-                "angle_deg": candidate["angle_deg"],
-                "expected_x": expected_x,
-                "hits": 1,
-            }
             pending = state.pending
+        else:
+            expected_shift = expected_x - pending["expected_x"]
+            predicted_pending_x = pending["x_px"] + expected_shift
+            position_ok = (
+                abs(candidate["x_px"] - predicted_pending_x)
+                <= consistency_tolerance
+            )
+            angle_ok = (
+                self._angle_delta(candidate["angle_deg"], pending["angle_deg"])
+                <= 18.0
+            )
+            if position_ok and angle_ok:
+                pending["hits"] += 1
+                pending["x_px"] = candidate["x_px"]
+                pending["angle_deg"] = candidate["angle_deg"]
+                pending["expected_x"] = expected_x
+            else:
+                state.pending = {
+                    "x_px": candidate["x_px"],
+                    "angle_deg": candidate["angle_deg"],
+                    "expected_x": expected_x,
+                    "hits": 1,
+                }
+                pending = state.pending
 
         if pending["hits"] < self.reacquire_frames:
             return False
