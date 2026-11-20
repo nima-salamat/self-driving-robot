@@ -288,9 +288,14 @@ class LaneBoundaryTracker:
             # Lane orientation can change quickly in tight AVIS bends. Position
             # and shared-width gates remain strict; angle is a soft association
             # cue rather than a reason to drop an otherwise local boundary.
-            if dx > gate or angle_delta > (34.0 if state.missed_frames == 0 else 42.0):
-                # A returning track may move farther while occluded, but the
-                # gate remains bounded and its angle must still be plausible.
+            angle_limit = (
+                (34.0 if state.missed_frames == 0 else 42.0)
+                if self._geometry_mode == "bev"
+                else (52.0 if state.missed_frames == 0 else 68.0)
+            )
+            if dx > gate or angle_delta > angle_limit:
+                # Compare against this boundary's own history. Perspective
+                # allows a larger tangent change than rectified BEV.
                 return None
         position_scale = max(frame_width * 0.06, 1.0)
         position_cost = min(1.5, dx / position_scale)
@@ -346,7 +351,12 @@ class LaneBoundaryTracker:
         )
         position_scale = max(frame_width * 0.18, 1.0)
         consistency_scale = max(frame_width * 0.06, 1.0)
-        angle_limit = min(68.0, 52.0 + 2.0 * state.missed_frames)
+        angle_limit = (
+            min(58.0, 42.0 + 2.0 * state.missed_frames)
+            if self._geometry_mode == "bev"
+            else min(78.0, 64.0 + 2.0 * state.missed_frames)
+        )
+        max_displacement = frame_width * 0.11
         ranked = []
         for candidate in candidates:
             angle_delta = self._angle_delta(
@@ -355,6 +365,11 @@ class LaneBoundaryTracker:
             if angle_delta > angle_limit:
                 continue
             displacement = abs(candidate["x_px"] - expected_x)
+            # Do not let a stale track jump to an unrelated edge elsewhere
+            # in the same ROI. A larger scene-wide change is handled by the
+            # explicit full-pair reacquisition state.
+            if displacement > max_displacement:
+                continue
             consistency_cost = 0.0
             if state.pending is not None:
                 consistency_cost = min(
@@ -794,11 +809,7 @@ class LaneBoundaryTracker:
             # The prediction and confirmation are based on this side's own
             # last confirmed position and velocity, not the other ROI's lane
             # width or line angle.
-            expected_x = (
-                float(state.pending["x_px"])
-                if state.pending is not None
-                else float(state.x_px + state.velocity_px)
-            )
+            expected_x = float(state.x_px + state.velocity_px)
             missed = max(1, int(state.missed_frames))
             tolerance = min(
                 frame_width * 0.08,
@@ -1575,6 +1586,7 @@ class LaneBoundaryTracker:
             self._sides["right"].observed = True
 
         pair_geometry_valid = False
+        pair_geometry_anchor_side = None
         measured_pair_width = None
         if left_observed and right_observed:
             left_state = self._sides["left"]
@@ -1636,11 +1648,11 @@ class LaneBoundaryTracker:
                 # fails the active projection's lane geometry. Keep both
                 # observations visible while steering from the last trusted
                 # lane-width model and the more temporally stable anchor.
-                anchor_side = (
+                pair_geometry_anchor_side = (
                     "left" if self._sides["left"].age >= self._sides["right"].age
                     else "right"
                 )
-                anchor = self._sides[anchor_side]
+                anchor = self._sides[pair_geometry_anchor_side]
                 width_here = self._width_at(y_ref, frame_height)
                 if width_here is not None:
                     lane_center_x = (
@@ -1783,8 +1795,22 @@ class LaneBoundaryTracker:
         if lane_center_x is not None:
             for y in (y_ref - 0.10 * frame_height, y_ref, y_ref + 0.10 * frame_height):
                 y = min(frame_height - 1.0, max(0.0, y))
-                lx = self._line_x_at(self._sides["left"].line_global, y) if left_observed else None
-                rx = self._line_x_at(self._sides["right"].line_global, y) if right_observed else None
+                use_left = left_observed and (
+                    pair_geometry_valid or not right_observed
+                    or pair_geometry_anchor_side == "left"
+                )
+                use_right = right_observed and (
+                    pair_geometry_valid or not left_observed
+                    or pair_geometry_anchor_side == "right"
+                )
+                lx = (
+                    self._line_x_at(self._sides["left"].line_global, y)
+                    if use_left else None
+                )
+                rx = (
+                    self._line_x_at(self._sides["right"].line_global, y)
+                    if use_right else None
+                )
                 width_here = self._width_at(y, frame_height)
                 if lx is not None and rx is not None:
                     center_x = (lx + rx) * 0.5
