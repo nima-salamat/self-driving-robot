@@ -604,7 +604,9 @@ class LaneBoundaryTracker:
                                   frame_height, samples=7):
         """Sample inferred boundary points from the learned geometry model."""
         _left, top, _right, bottom = roi
-        rows = np.linspace(float(top), float(bottom), max(2, int(samples)))
+        # ROI bottom is exclusive (NumPy slice semantics); keep samples on
+        # the final valid image row rather than one pixel outside the crop.
+        rows = np.linspace(float(top), float(max(top, bottom - 1)), max(2, int(samples)))
         points = []
         for y in rows:
             x = self._boundary_x_from_anchor(
@@ -739,7 +741,7 @@ class LaneBoundaryTracker:
                 }
                 continue
 
-            sample_y = np.linspace(float(box[1]), float(box[3]), 7)
+            sample_y = np.linspace(float(box[1]), float(max(box[1], box[3] - 1)), 7)
             sample_x = []
             expected = None
             reference_angle = state.angle_deg
