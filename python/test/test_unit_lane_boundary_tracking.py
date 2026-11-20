@@ -29,7 +29,14 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
     def setUp(self):
         self.tracker = LaneBoundaryTracker(max_missed_frames=4, reacquire_frames=3)
 
-    def update(self, left_x=None, right_x=None):
+    def update(
+        self,
+        left_x=None,
+        right_x=None,
+        *,
+        max_inferred_frames=None,
+        enable_full_pair_reacquisition=False,
+    ):
         left_lines = (
             self.line_for_global_x(self.LEFT_ROI, left_x, dx=-8.0)
             if left_x is not None else None
@@ -47,6 +54,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             reference_center_x=320.0,
             left_preferred_index=0 if left_lines is not None else None,
             right_preferred_index=0 if right_lines is not None else None,
+            max_inferred_frames=max_inferred_frames,
+            enable_full_pair_reacquisition=enable_full_pair_reacquisition,
         )
 
     def test_candidate_limit_preserves_preferred_index_and_original_hough_index(self):
@@ -106,13 +115,20 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.tracker.max_missed_frames * 3,
         )
         for index in range(inference_limit + 1):
-            result = self.update(left_x=None, right_x=430.0 + index * 0.25)
+            result = self.update(
+                left_x=None,
+                right_x=430.0 + index * 0.25,
+                max_inferred_frames=inference_limit,
+            )
             self.assertTrue(result["perception_valid"])
             self.assertEqual(result["lane_type"], "only_right")
             self.assertEqual(result["inferred_side"], "left")
             self.assertAlmostEqual(result["speed_factor"], 0.55)
 
-        expired = self.update(left_x=None, right_x=433.5)
+        expired = self.update(
+            left_x=None, right_x=433.5,
+            max_inferred_frames=inference_limit,
+        )
         self.assertFalse(expired["perception_valid"])
         self.assertEqual(expired["lane_type"], "none")
         self.assertEqual(expired["state"], "LOST")
