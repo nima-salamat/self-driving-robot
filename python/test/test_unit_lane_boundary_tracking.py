@@ -140,9 +140,9 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.update(left_x=None, right_x=430.0)
         self.tracker.reacquire_frames = 1
 
-        # Exactly one Hough segment per ROI on this frame. The returning left
-        # segment is accepted immediately because lane width, side, position,
-        # and tangent all agree with the right-side anchor.
+        # Exactly one Hough segment per ROI on this frame. With the explicit
+        # one-frame setting, a geometrically valid segment is accepted
+        # immediately; simulator processors use two-frame temporal stability.
         result = self.update(left_x=230.0, right_x=430.0)
 
         self.assertTrue(result["perception_valid"])
@@ -152,23 +152,50 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["left"]["pending_hits"], 0)
         self.assertEqual(result["reacquire_frames"], 1)
 
-    def test_one_frame_dropout_is_coasted_instead_of_flapping_to_inferred(self):
-        self.tracker.reacquire_frames = 1
+    def test_simulator_single_segment_reacquisition_requires_two_consistent_frames(self):
+        # One Hough segment per ROI per frame is sufficient. The same geometry
+        # must persist for two frames so a one-frame shadow/texture edge does
+        # not flip the side back to DETECTED.
+        self.tracker.reacquire_frames = 2
         self.update(left_x=220.0, right_x=420.0)
+        self.update(left_x=None, right_x=420.0)
 
-        dropped = self.update(left_x=None, right_x=420.0)
-        self.assertEqual(dropped["held_side"], "left")
-        self.assertEqual(dropped["held_frames"], 1)
-        self.assertEqual(dropped["state"], "COASTING_LEFT")
-        self.assertEqual(dropped["left"]["status"], "PREDICTED")
-        self.assertFalse(dropped["left"]["inferred"])
-        self.assertTrue(dropped["perception_valid"])
+        first = self.update(left_x=220.0, right_x=420.0)
+        self.assertEqual(first["lane_type"], "only_right")
+        self.assertFalse(first["left"]["observed"])
+        self.assertEqual(first["left"]["pending_hits"], 1)
 
-        returned = self.update(left_x=220.0, right_x=420.0)
-        self.assertEqual(returned["lane_type"], "both")
-        self.assertTrue(returned["left"]["observed"])
-        self.assertEqual(returned["left"]["status"], "DETECTED")
-        self.assertEqual(returned["held_side"], None)
+        second = self.update(left_x=220.0, right_x=420.0)
+        self.assertEqual(second["lane_type"], "both")
+        self.assertTrue(second["left"]["observed"])
+        self.assertEqual(second["left"]["pending_hits"], 0)
+
+    def test_smoothed_boundary_geometry_does_not_follow_raw_hough_jitter(self):
+        self.update(left_x=220.0, right_x=420.0)
+        before = self.tracker._sides["left"].x_px
+        changed = self.update(left_x=232.0, right_x=420.0)
+        after = self.tracker._sides["left"].x_px
+
+        self.assertTrue(changed["left"]["observed"])
+        self.assertGreater(after, before)
+        self.assertLess(after, 232.0)
+        y_ref = changed["y_ref_px"]
+        self.assertAlmostEqual(
+            self.tracker._line_x_at(
+                self.tracker._sides["left"].line_global, y_ref
+            ),
+            after,
+            delta=0.1,
+        )
+
+    def test_short_hough_fragment_is_not_a_lane_boundary_candidate(self):
+        # Tiny fragments from shadows and road texture must not be extrapolated
+        # to the shared look-ahead row and promoted into a lane track.
+        fragment = np.asarray([[[30.0, 58.0, 34.0, 65.0]]], dtype=np.float32)
+        candidates = self.tracker._candidates(
+            fragment, self.LEFT_ROI, frame_width=640, y_ref=370.0
+        )
+        self.assertEqual(candidates, [])
 
     def test_recent_missing_track_uses_own_geometry_and_requests_recheck(self):
         left_roi = (80, 300, 260, 440)
@@ -199,9 +226,9 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertAlmostEqual(recovery["expected_x"], 270.0, delta=2.0)
         self.assertGreater(recovery["roi"][2], left_roi[2])
 
-    def test_tracker_default_accepts_one_valid_candidate_frame(self):
+    def test_generic_tracker_keeps_three_frame_confirmation_by_default(self):
         tracker = LaneBoundaryTracker()
-        self.assertEqual(tracker.reacquire_frames, 1)
+        self.assertEqual(tracker.reacquire_frames, 3)
 
     def test_single_pair_reacquisition_accepts_one_candidate_per_side(self):
         self.tracker.reacquire_frames = 1
