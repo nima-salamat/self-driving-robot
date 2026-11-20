@@ -445,7 +445,10 @@ class VisionProcessor:
                 # width, side-of-road ROI, and tangent checks. One geometrically
                 # valid Hough segment is enough; requiring repeated hits makes
                 # a perfectly visible boundary flicker between LOST/REACQUIRING.
-                self._lane_boundary_tracker.reacquire_frames = 1
+                # One Hough segment per ROI is enough; require the same
+                # geometry on two consecutive frames to reject single-frame
+                # texture and shadow detections without demanding three hits.
+                self._lane_boundary_tracker.reacquire_frames = 2
             else:
                 self._lane_boundary_tracker.reacquire_frames = max(
                     1, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 1))
