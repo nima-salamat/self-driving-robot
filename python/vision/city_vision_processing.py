@@ -448,7 +448,7 @@ class VisionProcessor:
                 self._lane_boundary_tracker.reacquire_frames = 1
             else:
                 self._lane_boundary_tracker.reacquire_frames = max(
-                    2, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 3))
+                    1, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 1))
                 )
             if simulator_joint_tracking:
                 base_left_roi = (ll_left, ll_top, ll_right, ll_bottom)
