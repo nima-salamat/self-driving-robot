@@ -1657,7 +1657,7 @@ class LaneBoundaryTracker:
                 if width_here is not None:
                     lane_center_x = (
                         anchor.x_px + width_here * 0.5
-                        if anchor_side == "left"
+                        if pair_geometry_anchor_side == "left"
                         else anchor.x_px - width_here * 0.5
                     )
                     state_name = "PAIR_GEOMETRY_REJECTED"
