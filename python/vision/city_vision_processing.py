@@ -592,6 +592,7 @@ class VisionProcessor:
                 "roi_bounds": {
                     "RL": tracking_right_roi,
                     "LL": tracking_left_roi,
+                    "CW": (cw_left, cw_top, cw_right, cw_bottom),
                 },
                 "configured_roi_bounds": configured_roi_bounds,
                 "legacy_roi_resizable_applied": bool(legacy_roi_resizing),
