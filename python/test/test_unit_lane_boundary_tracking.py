@@ -164,6 +164,31 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["left"]["pending_hits"], 0)
         self.assertEqual(result["reacquire_frames"], 1)
 
+    def test_right_boundary_reacquires_from_visible_left_anchor(self):
+        self.tracker.reacquire_frames = 2
+        self.update(left_x=220.0, right_x=420.0)
+
+        missing = self.update(left_x=220.0, right_x=None)
+        self.assertEqual(missing["lane_type"], "only_left")
+        self.assertFalse(missing["right"]["observed"])
+
+        first_hit = self.update(left_x=220.0, right_x=420.0)
+        self.assertFalse(first_hit["right"]["observed"])
+        self.assertEqual(first_hit["right"]["status"], "REACQUIRING")
+        first_diagnostics = first_hit["right"]["reacquisition_diagnostics"]
+        self.assertTrue(first_diagnostics["attempted"])
+        self.assertEqual(first_diagnostics["candidate_count"], 1)
+        self.assertEqual(first_diagnostics["pending_hits"], 1)
+
+        second_hit = self.update(left_x=220.0, right_x=420.0)
+        self.assertTrue(second_hit["right"]["observed"])
+        self.assertTrue(second_hit["left"]["observed"])
+        self.assertEqual(second_hit["lane_type"], "both")
+        self.assertEqual(
+            second_hit["right"]["reacquisition_diagnostics"]["reason"],
+            "confirmed_by_lane_width_profile",
+        )
+
     def test_simulator_single_segment_reacquisition_requires_two_consistent_frames(self):
         # One Hough segment per ROI per frame is sufficient. The same geometry
         # must persist for two frames so a one-frame shadow/texture edge does
