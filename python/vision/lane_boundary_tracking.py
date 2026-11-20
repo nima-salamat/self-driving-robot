@@ -59,6 +59,10 @@ class LaneBoundaryTracker:
         self._frame_index = 0
         self._reacquiring_pair = False
         self._pair_pending = None
+        self._reacquisition_diagnostics = {
+            side: {"attempted": False, "reason": "not_started"}
+            for side in ("left", "right")
+        }
 
     def _clear_lane_model(self):
         """Clear stale geometry while preserving the active ROI and transform mode."""
@@ -718,9 +722,23 @@ class LaneBoundaryTracker:
                               frame_width, preferred_index, hall_selected_index,
                               frame_height, reference_center_x=None):
         state = self._sides[side]
+        diagnostics = {
+            "attempted": True,
+            "expected_x_px": (
+                float(expected_x)
+                if expected_x is not None and math.isfinite(float(expected_x))
+                else None
+            ),
+            "missed_frames": int(state.missed_frames),
+            "candidate_count": len(candidates),
+            "candidate_metrics": [],
+        }
+        self._reacquisition_diagnostics[side] = diagnostics
         if self._lane_width_px is None or expected_x is None:
+            diagnostics["reason"] = "missing_lane_width_or_expected_position"
             return False
         if not math.isfinite(float(expected_x)):
+            diagnostics["reason"] = "invalid_expected_position"
             return False
 
         anchor = self._sides["right" if side == "left" else "left"]
@@ -744,11 +762,48 @@ class LaneBoundaryTracker:
             ax1, ay1, ax2, ay2 = anchor.line_global
             anchor_angle = math.degrees(math.atan2(ax2 - ax1, ay2 - ay1))
 
+        diagnostics.update({
+            "anchor_side": "right" if side == "left" else "left",
+            "anchor_angle_deg": float(anchor_angle),
+            "lane_width_px": float(self._lane_width_px),
+            "base_position_tolerance_px": float(base_tolerance),
+            "relaxed_position_tolerance_px": float(relaxed_tolerance),
+            "angle_metrics": {
+                "strict_limit_deg": 42.0,
+                "relaxed_limit_deg": float(min(64.0, 48.0 + 2.0 * missed)),
+                "alternate_limit_deg": 42.0,
+            },
+            "rejections": {
+                "position": 0,
+                "angle": 0,
+                "profile": 0,
+            },
+            "alternate_rejections": {
+                "pair_geometry": 0,
+                "width": 0,
+                "angle": 0,
+                "quality": 0,
+            },
+        })
+
         for candidate in candidates:
             dx = abs(candidate["x_px"] - expected_x)
             strict_position = dx <= base_tolerance
             relaxed_position = allow_relaxed and dx <= relaxed_tolerance
+            metric = {
+                "index": int(candidate["index"]),
+                "x_px": float(candidate["x_px"]),
+                "dx_from_expected_px": float(dx),
+                "strict_position_ok": bool(strict_position),
+                "relaxed_position_ok": bool(relaxed_position),
+                "angle_deg": float(candidate["angle_deg"]),
+                "quality": float(candidate["quality"]),
+            }
             if not strict_position and not relaxed_position:
+                diagnostics["rejections"]["position"] += 1
+                metric["rejected_by"] = "position"
+                if len(diagnostics["candidate_metrics"]) < 12:
+                    diagnostics["candidate_metrics"].append(metric)
                 continue
 
             angle_delta = self._angle_delta(
@@ -757,7 +812,13 @@ class LaneBoundaryTracker:
             angle_limit = 42.0 if strict_position else min(
                 64.0, 48.0 + 2.0 * missed
             )
+            metric["angle_delta_deg"] = float(angle_delta)
+            metric["angle_limit_deg"] = float(angle_limit)
             if angle_delta > angle_limit:
+                diagnostics["rejections"]["angle"] += 1
+                metric["rejected_by"] = "angle"
+                if len(diagnostics["candidate_metrics"]) < 12:
+                    diagnostics["candidate_metrics"].append(metric)
                 continue
 
             profile_residual = 0.0
@@ -796,8 +857,18 @@ class LaneBoundaryTracker:
                 if strict_position and angle_delta <= 42.0
                 else relaxed_profile_limit
             )
+            metric["profile_residual_px"] = float(profile_residual)
+            metric["profile_limit_px"] = float(profile_limit)
             if profile_residual > profile_limit:
+                diagnostics["rejections"]["profile"] += 1
+                metric["rejected_by"] = "profile"
+                if len(diagnostics["candidate_metrics"]) < 12:
+                    diagnostics["candidate_metrics"].append(metric)
                 continue
+
+            metric["rejected_by"] = None
+            if len(diagnostics["candidate_metrics"]) < 12:
+                diagnostics["candidate_metrics"].append(metric)
 
             used_tolerance = (
                 base_tolerance
@@ -851,6 +922,7 @@ class LaneBoundaryTracker:
                         reference_center_x=reference_center_x,
                     )
                     if not plausible:
+                        diagnostics["alternate_rejections"]["pair_geometry"] += 1
                         continue
 
                     relative_width_error = abs(
@@ -861,13 +933,18 @@ class LaneBoundaryTracker:
                     # nearby parallel road marking to redefine the lane.
                     allowed_width_change = 0.24
                     if relative_width_error > allowed_width_change:
+                        diagnostics["alternate_rejections"]["width"] += 1
                         continue
 
                     angle_delta = self._angle_delta(
                         candidate["angle_deg"], anchor_angle
                     )
                     angle_limit = 42.0
-                    if angle_delta > angle_limit or candidate["quality"] < 0.12:
+                    if angle_delta > angle_limit:
+                        diagnostics["alternate_rejections"]["angle"] += 1
+                        continue
+                    if candidate["quality"] < 0.12:
+                        diagnostics["alternate_rejections"]["quality"] += 1
                         continue
 
                     profile_residual = 0.0
@@ -937,6 +1014,13 @@ class LaneBoundaryTracker:
             # lane model and the independent pair-geometry test.
             if candidates:
                 state.pending = None
+            diagnostics["reason"] = (
+                "no_usable_candidates" if not candidates
+                else "rejected_by_lane_geometry"
+            )
+            diagnostics["pending_hits"] = (
+                int(state.pending["hits"]) if state.pending else 0
+            )
             return False
 
         options.sort(key=lambda item: item[0])
@@ -1126,6 +1210,11 @@ class LaneBoundaryTracker:
             "matched_tracks": int(hall_result.get("matched_tracks", 0)),
             "hall_satisfied": bool(hall_result.get("hall_satisfied", True)),
             "hall_deficiency": int(hall_result.get("hall_deficiency", 0)),
+            "reacquisition_diagnostics": dict(
+                self._reacquisition_diagnostics.get(
+                    side, {"attempted": False, "reason": "unavailable"}
+                )
+            ),
         }
 
     def recovery_rois(self, left_roi, right_roi, frame_shape,
@@ -1556,6 +1645,10 @@ class LaneBoundaryTracker:
             else frame_width * 0.5
         )
 
+        self._reacquisition_diagnostics = {
+            side: {"attempted": False, "reason": "not_needed_this_frame"}
+            for side in ("left", "right")
+        }
         self._frame_index += 1
         left_hall, left_hall_selected = self._hall_update(
             "left", left_lines, left_box, left_preferred_index, frame_shape
