@@ -753,9 +753,20 @@ class LaneBoundaryTracker:
 
     def _side_payload(self, side, roi, y_ref, observed, inferred_x,
                       fallback_angle=0.0, hall_result=None, anchor_side=None,
-                      frame_height=None):
+                      frame_height=None, coast_frames=0):
         state = self._sides[side]
         line = state.line_global if observed else None
+        coasting = bool(
+            not observed
+            and state.track_id is not None
+            and state.missed_frames > 0
+            and state.missed_frames <= max(0, int(coast_frames))
+        )
+        # Preserve the last confirmed line briefly when Hough misses a frame.
+        # Do not replace it with the opposite-side width estimate immediately.
+        if coasting:
+            inferred_x = None
+            anchor_side = None
         x_px = state.x_px if observed else inferred_x
         if x_px is None:
             x_px = state.x_px
@@ -764,6 +775,8 @@ class LaneBoundaryTracker:
             status = "DETECTED"
         elif state.pending is not None:
             status = "REACQUIRING"
+        elif coasting:
+            status = "COASTING"
         elif inferred:
             status = "INFERRED"
         elif state.x_px is not None and state.missed_frames <= self.max_missed_frames:
@@ -826,6 +839,7 @@ class LaneBoundaryTracker:
             "side": side,
             "status": status,
             "observed": bool(observed),
+            "coasting": coasting,
             "inferred": inferred,
             "track_id": int(state.track_id) if state.track_id is not None else None,
             "x_px": float(x_px) if x_px is not None else None,
@@ -845,7 +859,10 @@ class LaneBoundaryTracker:
             "missed_frames": int(state.missed_frames),
             "pending_hits": int(state.pending["hits"]) if state.pending else 0,
             "pending_required": int(self.reacquire_frames),
+            "raw_hough_count": int(hall_result.get("raw_hough_count", 0)),
             "candidate_count": int(hall_result.get("candidate_count", 0)),
+            "ranked_count": int(hall_result.get("ranked_count", 0)),
+            "temporal_rejected_count": int(hall_result.get("temporal_rejected_count", 0)),
             "matched_tracks": int(hall_result.get("matched_tracks", 0)),
             "hall_satisfied": bool(hall_result.get("hall_satisfied", True)),
             "hall_deficiency": int(hall_result.get("hall_deficiency", 0)),
@@ -1243,6 +1260,7 @@ class LaneBoundaryTracker:
         right_prediction_valid=True,
         enable_full_pair_reacquisition=False,
         max_inferred_frames=None,
+        coast_frames=0,
     ):
         """Update the joint lane model using two full-frame ROI definitions."""
         if geometry_mode is not None:
@@ -1291,6 +1309,8 @@ class LaneBoundaryTracker:
         right_candidates = self._candidates(
             right_lines, right_box, frame_width, y_ref, right_preferred_index
         )
+        left_hall["raw_hough_count"] = 0 if left_lines is None else len(left_lines)
+        right_hall["raw_hough_count"] = 0 if right_lines is None else len(right_lines)
         left_hall["candidate_count"] = len(left_candidates)
         right_hall["candidate_count"] = len(right_candidates)
         left_ranked = self._ranked(
@@ -1300,6 +1320,14 @@ class LaneBoundaryTracker:
         right_ranked = self._ranked(
             "right", right_candidates, right_preferred_index,
             right_hall_selected, frame_width,
+        )
+        left_hall["ranked_count"] = len(left_ranked)
+        right_hall["ranked_count"] = len(right_ranked)
+        left_hall["temporal_rejected_count"] = max(
+            0, len(left_candidates) - len(left_ranked)
+        )
+        right_hall["temporal_rejected_count"] = max(
+            0, len(right_candidates) - len(right_ranked)
         )
 
         left_observed = False
@@ -1656,12 +1684,14 @@ class LaneBoundaryTracker:
             left_inferred_x, fallback_angle, left_hall,
             anchor_side="right" if inferred_side == "left" and right_observed else None,
             frame_height=frame_height,
+            coast_frames=coast_frames,
         )
         right_payload = self._side_payload(
             "right", right_box, y_ref, right_observed,
             right_inferred_x, fallback_angle, right_hall,
             anchor_side="left" if inferred_side == "right" and left_observed else None,
             frame_height=frame_height,
+            coast_frames=coast_frames,
         )
         hall_satisfied = bool(
             left_hall.get("hall_satisfied", True)
