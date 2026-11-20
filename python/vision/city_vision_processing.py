@@ -488,6 +488,14 @@ class VisionProcessor:
                 right_preferred_index=None if recovery["right"]["expanded"] else self._line_index_for_midpoint(rl_lines, rl_x_mid),
                 left_prediction_valid=bool(recovery["left"].get("prediction_valid", True)),
                 right_prediction_valid=bool(recovery["right"].get("prediction_valid", True)),
+                enable_full_pair_reacquisition=bool(simulator_joint_tracking),
+                max_inferred_frames=(
+                    max(
+                        self._lane_boundary_tracker.reacquire_frames * 2,
+                        max_missed * 3,
+                    )
+                    if simulator_joint_tracking else None
+                ),
             )
             # Keep the configured-vs-search ROI geometry and signed edge
             # distances attached to the live diagnostics for each side.
