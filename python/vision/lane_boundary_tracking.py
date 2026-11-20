@@ -645,11 +645,10 @@ class LaneBoundaryTracker:
             )
         predicted_line = self._points_to_line(predicted_points)
         if predicted_line is None and x_px is not None and (
-            inferred or state.missed_frames <= self.max_missed_frames
+            not inferred and state.missed_frames <= self.max_missed_frames
         ):
-            geometry_angle = fallback_angle if inferred else state.angle_deg
             predicted_line = self._predicted_line(
-                state, x_px, y_ref, roi, geometry_angle
+                state, x_px, y_ref, roi, state.angle_deg
             )
         hall_result = hall_result or {}
         return {
