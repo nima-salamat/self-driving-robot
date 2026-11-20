@@ -177,7 +177,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(first_hit["right"]["status"], "REACQUIRING")
         first_diagnostics = first_hit["right"]["reacquisition_diagnostics"]
         self.assertTrue(first_diagnostics["attempted"])
-        self.assertEqual(first_diagnostics["route"], "joint_pair")
+        self.assertEqual(first_diagnostics["route"], "independent_roi")
         self.assertEqual(first_diagnostics["candidate_count"], 1)
         self.assertEqual(first_diagnostics["pending_hits"], 1)
 
@@ -187,7 +187,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(second_hit["lane_type"], "both")
         self.assertEqual(
             second_hit["right"]["reacquisition_diagnostics"]["reason"],
-            "confirmed_by_joint_pair",
+            "independent_track_reacquired",
         )
 
     def test_simulator_single_segment_reacquisition_requires_two_consistent_frames(self):
@@ -381,6 +381,60 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertTrue(second["perception_valid"])
         self.assertEqual(second["lane_type"], "both")
         self.assertEqual(second["candidate_count"], {"left": 1, "right": 1})
+
+    def test_independent_roi_tracking_accepts_perspective_divergent_boundaries(self):
+        self.tracker.reacquire_frames = 2
+        self.tracker.set_geometry_mode("perspective")
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-60.0)
+        right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=60.0)
+
+        first = self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+            geometry_mode="perspective",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertFalse(first["left"]["observed"])
+        self.assertFalse(first["right"]["observed"])
+
+        second = self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+            geometry_mode="perspective",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertTrue(second["left"]["observed"])
+        self.assertTrue(second["right"]["observed"])
+        self.assertTrue(second["pair_geometry_valid"])
+        self.assertEqual(second["geometry_mode"], "perspective")
+
+    def test_independent_roi_detection_is_preserved_when_bev_pair_is_not_parallel(self):
+        self.tracker.reacquire_frames = 2
+        self.tracker.set_geometry_mode("bev")
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-60.0)
+        right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=60.0)
+
+        self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+            geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        second = self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0,
+            geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertTrue(second["left"]["observed"])
+        self.assertTrue(second["right"]["observed"])
+        self.assertFalse(second["pair_geometry_valid"])
+        self.assertEqual(second["state"], "PAIR_GEOMETRY_REJECTED")
+        self.assertFalse(second["perception_valid"])
 
     def test_simulator_startup_single_boundary_is_pending_not_detected(self):
         self.tracker.reacquire_frames = 2
@@ -604,7 +658,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.assertFalse(result["left"]["observed"])
             self.assertEqual(result["left"]["pending_hits"], 0)
 
-    def test_nearby_candidate_with_incompatible_tangent_is_rejected(self):
+    def test_nearby_candidate_with_incompatible_tangent_is_rejected_in_bev(self):
+        self.tracker.set_geometry_mode("bev")
         self.update(left_x=220.0, right_x=420.0)
         self.update(left_x=None, right_x=420.0)
         misleading = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=180.0)
@@ -612,12 +667,72 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             misleading,
             self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=0.0),
             self.FRAME_SHAPE, self.LEFT_ROI, self.RIGHT_ROI,
-            reference_center_x=320.0,
+            reference_center_x=320.0, geometry_mode="bev",
         )
 
         self.assertFalse(result["left"]["observed"])
         self.assertEqual(result["left"]["pending_hits"], 0)
         self.assertEqual(result["inferred_side"], "left")
+
+    def test_pair_tangent_gate_depends_on_projection_mode(self):
+        left = {"x_px": 220.0, "angle_deg": -30.0}
+        right = {"x_px": 420.0, "angle_deg": 30.0}
+
+        self.tracker.set_geometry_mode("perspective")
+        perspective_ok, perspective_width = self.tracker._pair_is_plausible(
+            left, right, 640, prior_width=None, reference_center_x=320.0,
+        )
+        self.assertTrue(perspective_ok)
+        self.assertAlmostEqual(perspective_width, 200.0)
+
+        self.tracker.set_geometry_mode("bev")
+        bev_ok, bev_width = self.tracker._pair_is_plausible(
+            left, right, 640, prior_width=None, reference_center_x=320.0,
+        )
+        self.assertFalse(bev_ok)
+        self.assertAlmostEqual(bev_width, 200.0)
+
+    def test_opposite_boundary_angle_never_vetoes_local_candidate(self):
+        self.tracker.set_geometry_mode("bev")
+        left_state = self.tracker._sides["left"]
+        left_state.x_px = 220.0
+        left_state.angle_deg = 0.0
+        right_state = self.tracker._sides["right"]
+        right_state.x_px = 420.0
+        right_state.angle_deg = 52.0
+        right_state.observed = True
+        right_state.line_global = (
+            420.0, 300.0, 420.0, 440.0,
+        )
+        candidate = {
+            "index": 0, "x_px": 221.0, "angle_deg": 2.0,
+            "quality": 0.8,
+        }
+        cost = self.tracker._candidate_cost(
+            left_state, candidate, None, None, 640,
+        )
+        self.assertIsNotNone(cost)
+
+    def test_recovery_roi_uses_its_own_track_after_long_one_side_dropout(self):
+        self.tracker.set_geometry_mode("bev")
+        left_state = self.tracker._sides["left"]
+        left_state.track_id = 1
+        left_state.x_px = 220.0
+        left_state.line_global = (220.0, 300.0, 220.0, 440.0)
+        left_state.missed_frames = 5
+        right_state = self.tracker._sides["right"]
+        right_state.track_id = 2
+        right_state.x_px = 500.0
+        right_state.line_global = (500.0, 300.0, 500.0, 440.0)
+        right_state.observed = True
+        self.tracker._lane_width_px = 200.0
+
+        recovery = self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            geometry_mode="bev",
+        )["left"]
+        self.assertEqual(recovery["expected_x"], 220.0)
+        self.assertEqual(recovery["reason"], "independent_track_recovery")
 
     def test_left_boundary_can_be_the_single_reliable_anchor(self):
         self.update(left_x=220.0, right_x=420.0)
