@@ -243,15 +243,17 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
     def test_recovery_roi_expands_inward_around_predicted_boundary(self):
         left_roi = (90, 300, 228, 440)
         right_roi = (432, 300, 570, 440)
-        # Put the left boundary just inside the inter-ROI gap so its
-        # predicted recovery corridor must extend inward from the configured box.
-        left_lines = self.line_for_global_x(left_roi, 235.0, dx=-12.0)
-        right_lines = self.line_for_global_x(right_roi, 500.0, dx=12.0)
+        # Acquire both boundaries within the configured crops, then let the
+        # visible right boundary move so the inferred left boundary lands just
+        # outside the left ROI and requires a bounded inward search expansion.
+        left_lines = self.line_for_global_x(left_roi, 220.0, dx=-12.0)
+        initial_right_lines = self.line_for_global_x(right_roi, 480.0, dx=12.0)
+        shifted_right_lines = self.line_for_global_x(right_roi, 500.0, dx=12.0)
         self.tracker.update(
-            left_lines, right_lines, self.FRAME_SHAPE,
+            left_lines, initial_right_lines, self.FRAME_SHAPE,
             left_roi, right_roi, reference_center_x=320.0,
         )
-        self.tracker.update(None, right_lines, self.FRAME_SHAPE,
+        self.tracker.update(None, shifted_right_lines, self.FRAME_SHAPE,
                             left_roi, right_roi, reference_center_x=320.0)
 
         search = self.tracker.recovery_rois(left_roi, right_roi, self.FRAME_SHAPE)
