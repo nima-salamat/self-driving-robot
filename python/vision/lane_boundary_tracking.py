@@ -1239,7 +1239,7 @@ class LaneBoundaryTracker:
                     if abs(y2 - y1) > 1e-6:
                         slope = (x2 - x1) / (y2 - y1)
                 expected = float(
-                    state.x_px + state.velocity_px * min(missed, grace_frames)
+                    state.x_px + state.velocity_px * missed
                 )
                 sample_x = [
                     expected + slope * (float(y) - y_ref)
