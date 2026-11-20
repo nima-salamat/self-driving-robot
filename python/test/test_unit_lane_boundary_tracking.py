@@ -702,9 +702,9 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.tracker.set_geometry_mode("bev")
         left_state = self.tracker._sides["left"]
         left_state.track_id = 1
-        left_state.x_px = 220.0
+        left_state.x_px = 270.0
         left_state.missed_frames = 2
-        left_state.line_global = (220.0, 300.0, 220.0, 440.0)
+        left_state.line_global = (270.0, 300.0, 270.0, 440.0)
         right_state = self.tracker._sides["right"]
         right_state.track_id = 2
         right_state.x_px = 450.0
