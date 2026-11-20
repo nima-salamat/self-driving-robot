@@ -192,13 +192,25 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
                 )
         elif isinstance(predicted, (list, tuple)) and len(predicted) >= 4:
             x1, y1, x2, y2 = map(float, predicted[:4])
-            _draw_dashed_line(
-                canvas,
-                _scaled_point(x1, y1, sx, sy),
-                _scaled_point(x2, y2, sx, sy),
-                inferred_color,
-                max(2, thickness + 1),
-            )
+            if side.get("coasting"):
+                # A one/two-frame Hough dropout keeps the last measured
+                # geometry solid; it is not yet a new inferred boundary.
+                cv2.line(
+                    canvas,
+                    _scaled_point(x1, y1, sx, sy),
+                    _scaled_point(x2, y2, sx, sy),
+                    observed_color,
+                    max(2, thickness),
+                    cv2.LINE_AA,
+                )
+            else:
+                _draw_dashed_line(
+                    canvas,
+                    _scaled_point(x1, y1, sx, sy),
+                    _scaled_point(x2, y2, sx, sy),
+                    inferred_color,
+                    max(2, thickness + 1),
+                )
         if isinstance(pending, (list, tuple)) and len(pending) >= 4:
             x1, y1, x2, y2 = map(float, pending[:4])
             _draw_dashed_line(canvas, _scaled_point(x1, y1, sx, sy),
@@ -226,6 +238,11 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             missed = int(side.get("missed_frames", 0))
             label = "{} INFERRED {}f".format(side_name.upper(), missed)
             color = inferred_color
+        elif status == "COASTING":
+            label = "{} TRACK HOLD {}f".format(
+                side_name.upper(), int(side.get("missed_frames", 0))
+            )
+            color = observed_color
 
         elif status == "PREDICTED":
             label = "{} PREDICTED {}f".format(
@@ -235,6 +252,13 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
         else:
             label = f"{side_name.upper()} LOST"
             color = (60, 70, 255)
+
+        detector_stats = "H{}/C{}/T{}".format(
+            int(side.get("raw_hough_count", 0)),
+            int(side.get("candidate_count", 0)),
+            int(side.get("ranked_count", 0)),
+        )
+        label += " [" + detector_stats + "]"
 
         recovery = side.get("recovery") or {}
         if recovery and not recovery.get("prediction_valid", True):
