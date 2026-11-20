@@ -35,6 +35,7 @@ SIMULATOR_KEYS = {
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
     "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
+    "HALL_LINE_TRACKING_REACQUIRE_FRAMES",
     "USE_PID", "AUTO_UPDATE_KP", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS",
     "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER",
 }
@@ -52,6 +53,7 @@ INT_KEYS = {
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
     "CROSSWALK_HORIZONTAL_MIN_LINES", "HALL_LINE_TRACKING_MAX_MISSED",
+    "HALL_LINE_TRACKING_REACQUIRE_FRAMES",
 }
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
@@ -123,6 +125,7 @@ def _defaults(mode, backend):
         "USE_BEV": False,
         "HALL_LINE_TRACKING_ENABLED": False,
         "HALL_LINE_TRACKING_MAX_MISSED": 4,
+        "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 1,
         "DEBUG": False,
         "LANE_THRESHOLD": 180,
         "HOUGH_THRESHOLD": 15,
@@ -244,6 +247,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
             if key == "HALL_LINE_TRACKING_MAX_MISSED" and not 1 <= value <= 12:
                 raise ValueError("HALL_LINE_TRACKING_MAX_MISSED must be between 1 and 12")
+            if key == "HALL_LINE_TRACKING_REACQUIRE_FRAMES" and not 1 <= value <= 10:
+                raise ValueError("HALL_LINE_TRACKING_REACQUIRE_FRAMES must be between 1 and 10")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
                 raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
         elif key in NUMERIC_KEYS:
