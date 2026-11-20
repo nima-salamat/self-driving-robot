@@ -422,6 +422,60 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["state"], "REACQUIRING")
         self.assertFalse(result["pair_reacquire_required"])
 
+    def test_reacquired_candidate_updates_width_model_and_stays_detected(self):
+        left_roi = (80, 300, 300, 440)
+        right_roi = (380, 300, 560, 440)
+        self.tracker.reacquire_frames = 2
+        self.tracker.set_geometry_mode("bev")
+        initial_left = self.line_for_global_x(left_roi, 220.0, dx=-8.0)
+        initial_right = self.line_for_global_x(right_roi, 420.0, dx=8.0)
+        initial = self.tracker.update(
+            initial_left, initial_right, self.FRAME_SHAPE,
+            left_roi, right_roi, reference_center_x=320.0,
+            geometry_mode="bev",
+        )
+        self.assertTrue(initial["perception_valid"])
+
+        # Right boundary stays visible. The real left boundary moves far
+        # enough that the old width prediction would reject it on the first
+        # dropout frame, but the observed pair remains physically plausible.
+        shifted_left = self.line_for_global_x(left_roi, 175.0, dx=-8.0)
+        missing = self.tracker.update(
+            None, initial_right, self.FRAME_SHAPE,
+            left_roi, right_roi, reference_center_x=320.0,
+            geometry_mode="bev",
+        )
+        self.assertTrue(missing["perception_valid"])
+        self.assertEqual(missing["lane_type"], "only_right")
+
+        first_hit = self.tracker.update(
+            shifted_left, initial_right, self.FRAME_SHAPE,
+            left_roi, right_roi, reference_center_x=320.0,
+            geometry_mode="bev",
+        )
+        self.assertFalse(first_hit["left"]["observed"])
+        self.assertEqual(first_hit["left"]["status"], "REACQUIRING")
+
+        second_hit = self.tracker.update(
+            shifted_left, initial_right, self.FRAME_SHAPE,
+            left_roi, right_roi, reference_center_x=320.0,
+            geometry_mode="bev",
+        )
+        self.assertTrue(second_hit["left"]["observed"])
+        self.assertTrue(second_hit["right"]["observed"])
+        self.assertEqual(second_hit["lane_type"], "both")
+        self.assertTrue(second_hit["perception_valid"])
+
+        stable = self.tracker.update(
+            shifted_left, initial_right, self.FRAME_SHAPE,
+            left_roi, right_roi, reference_center_x=320.0,
+            geometry_mode="bev",
+        )
+        self.assertEqual(stable["lane_type"], "both")
+        self.assertEqual(stable["left"]["status"], "DETECTED")
+        self.assertEqual(stable["right"]["status"], "DETECTED")
+        self.assertEqual(stable["state"], "TRACKING")
+
     def test_single_roi_candidate_reacquires_after_stale_position_gate(self):
         left_roi = (80, 300, 320, 440)
         right_roi = (380, 300, 560, 440)
@@ -472,6 +526,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertTrue(result["perception_valid"])
         self.assertEqual(result["lane_type"], "only_right")
         self.assertEqual(result["inferred_side"], "left")
+        self.assertFalse(result["left"]["observed"])
         self.assertFalse(result["left"]["observed"])
         self.assertEqual(result["left"]["pending_hits"], 0)
         self.assertAlmostEqual(result["lane_width_px"], 200.0, delta=3.0)
