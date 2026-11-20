@@ -219,6 +219,13 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             tuple(previous_line), tuple(self.tracker._sides["left"].line_global)
         )
 
+        pending = self.update(left_x=220.0, right_x=420.0, coast_frames=2)
+        self.assertEqual(pending["left"]["status"], "REACQUIRING")
+        self.assertTrue(pending["left"]["coasting"])
+        self.assertFalse(pending["left"]["inferred"])
+        self.assertTrue(pending["left"]["pending_hits"])
+        self.assertIsNotNone(pending["left"]["predicted_line"])
+
         returned = self.update(left_x=220.0, right_x=420.0, coast_frames=2)
         self.assertEqual(returned["left"]["status"], "DETECTED")
         self.assertTrue(returned["left"]["observed"])
