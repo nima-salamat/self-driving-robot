@@ -475,11 +475,11 @@ class VisionProcessor:
             tracking_right_roi = recovery["right"]["roi"]
             tracking_left_lines = ll_lines
             tracking_right_lines = rl_lines
-            if recovery["left"]["expanded"]:
+            if recovery["left"]["expanded"] or recovery["left"].get("recheck", False):
                 _left_edges, tracking_left_lines = detect_recovery_lines(
                     frame, tracking_left_roi, conf, self._morph_kernel
                 )
-            if recovery["right"]["expanded"]:
+            if recovery["right"]["expanded"] or recovery["right"].get("recheck", False):
                 _right_edges, tracking_right_lines = detect_recovery_lines(
                     frame, tracking_right_roi, conf, self._morph_kernel
                 )
