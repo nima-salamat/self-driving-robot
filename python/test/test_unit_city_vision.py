@@ -104,6 +104,26 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         self.assertEqual(result["observed_lane_boundaries"], 2)
         self.assertEqual(result["line_tracking"]["reacquire_frames"], 2)
 
+    def test_hall_tracker_receives_bev_geometry_mode_from_city_processor(self):
+        import modes.city.config_city as config
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True,
+            "SIMULATOR_BACKEND": "carla",
+            "USE_BEV": True,
+            "OLD_METHOD": False,
+            "DEBUG": False,
+            "STREAM": False,
+        }
+        with patch.multiple(config, create=True, **values):
+            result = VisionProcessor().detect(frame)
+
+        self.assertEqual(result["line_tracking"]["geometry_mode"], "bev")
+        self.assertEqual(result["debug"]["draw_data"]["geometry_mode"], "bev")
+        self.assertEqual(result["line_tracking"]["lane_width_model"], "constant_bev")
+
     def test_simulator_hall_uses_exact_configured_rois_when_legacy_resizing_is_enabled(self):
         import modes.city.config_city as config
         from unittest.mock import patch
