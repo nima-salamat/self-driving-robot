@@ -226,6 +226,17 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             missed = int(side.get("missed_frames", 0))
             label = "{} INFERRED {}f".format(side_name.upper(), missed)
             color = inferred_color
+
+        recovery = side.get("recovery") or {}
+        if recovery and not recovery.get("prediction_valid", True):
+            distances = recovery.get("edge_distances_px") or {}
+            outside = max(
+                _finite_number(distances.get("outside_left_px")) or 0.0,
+                _finite_number(distances.get("outside_right_px")) or 0.0,
+            )
+            reason = str(recovery.get("reason") or "")
+            if reason == "predicted_boundary_outside_recovery_limit":
+                label += " · OUTSIDE ROI {:.0f}px".format(outside)
         elif status == "PREDICTED":
             label = "{} PREDICTED {}f".format(
                 side_name.upper(), int(side.get("missed_frames", 0))
