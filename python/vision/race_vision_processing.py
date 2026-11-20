@@ -427,6 +427,7 @@ class VisionProcessor:
                     )
                     if simulator_joint_tracking else None
                 ),
+                coast_frames=2 if simulator_joint_tracking else 0,
             )
             # Keep the configured-vs-search ROI geometry and signed edge
             # distances attached to the live diagnostics for each side.
