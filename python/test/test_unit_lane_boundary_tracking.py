@@ -152,6 +152,53 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["left"]["pending_hits"], 0)
         self.assertEqual(result["reacquire_frames"], 1)
 
+    def test_one_frame_dropout_is_coasted_instead_of_flapping_to_inferred(self):
+        self.tracker.reacquire_frames = 1
+        self.update(left_x=220.0, right_x=420.0)
+
+        dropped = self.update(left_x=None, right_x=420.0)
+        self.assertEqual(dropped["held_side"], "left")
+        self.assertEqual(dropped["held_frames"], 1)
+        self.assertEqual(dropped["state"], "COASTING_LEFT")
+        self.assertEqual(dropped["left"]["status"], "PREDICTED")
+        self.assertFalse(dropped["left"]["inferred"])
+        self.assertTrue(dropped["perception_valid"])
+
+        returned = self.update(left_x=220.0, right_x=420.0)
+        self.assertEqual(returned["lane_type"], "both")
+        self.assertTrue(returned["left"]["observed"])
+        self.assertEqual(returned["left"]["status"], "DETECTED")
+        self.assertEqual(returned["held_side"], None)
+
+    def test_recent_missing_track_uses_own_geometry_and_requests_recheck(self):
+        left_roi = (80, 300, 260, 440)
+        right_roi = (380, 300, 560, 440)
+        left_state = self.tracker._sides["left"]
+        left_state.track_id = 1
+        left_state.x_px = 270.0
+        left_state.missed_frames = 1
+        left_state.observed = False
+        left_state.line_global = (270.0, 300.0, 270.0, 440.0)
+
+        right_state = self.tracker._sides["right"]
+        right_state.track_id = 2
+        right_state.x_px = 500.0
+        right_state.observed = True
+        right_state.line_global = (500.0, 300.0, 500.0, 440.0)
+
+        self.tracker._lane_width_px = 200.0
+        self.tracker.set_geometry_mode("bev")
+        recovery = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE, geometry_mode="bev"
+        )["left"]
+
+        self.assertTrue(recovery["recheck"])
+        self.assertEqual(recovery["reason"], "recent_track_grace")
+        self.assertTrue(recovery["prediction_valid"])
+        self.assertTrue(recovery["expanded"])
+        self.assertAlmostEqual(recovery["expected_x"], 270.0, delta=2.0)
+        self.assertGreater(recovery["roi"][2], left_roi[2])
+
     def test_tracker_default_accepts_one_valid_candidate_frame(self):
         tracker = LaneBoundaryTracker()
         self.assertEqual(tracker.reacquire_frames, 1)
