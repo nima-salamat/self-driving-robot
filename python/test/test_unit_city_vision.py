@@ -102,7 +102,7 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         self.assertEqual(result["lane_type"], "both")
         self.assertTrue(result["perception_valid"])
         self.assertEqual(result["observed_lane_boundaries"], 2)
-        self.assertEqual(result["line_tracking"]["reacquire_frames"], 1)
+        self.assertEqual(result["line_tracking"]["reacquire_frames"], 2)
 
     def test_hall_tracker_receives_bev_geometry_mode_from_city_processor(self):
         import modes.city.config_city as config
