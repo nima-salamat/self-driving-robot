@@ -269,6 +269,17 @@ class LaneBoundaryTracker:
             return (x1 + x2) * 0.5
         return x1 + (y - y1) * (x2 - x1) / (y2 - y1)
 
+    @staticmethod
+    def _reference_row(left_box, right_box):
+        """Return the common look-ahead row used by both lane boundaries."""
+        overlap_top = max(left_box[1], right_box[1])
+        overlap_bottom = min(left_box[3], right_box[3])
+        if overlap_bottom > overlap_top:
+            return 0.5 * (overlap_top + overlap_bottom)
+        return 0.25 * (
+            left_box[1] + left_box[3] + right_box[1] + right_box[3]
+        )
+
     def _width_at(self, y, frame_height):
         profile = self._lane_width_profile
         if not profile:
@@ -630,9 +641,15 @@ class LaneBoundaryTracker:
                 and other.observed
                 and other.x_px is not None
             ):
-                y_ref = 0.5 * (box[1] + box[3])
+                y_ref = self._reference_row(boxes["left"], boxes["right"])
                 lane_width = self._width_at(y_ref, frame_height) or self._lane_width_px
-                expected = other.x_px + (
+                other_x = (
+                    self._line_x_at(other.line_global, y_ref)
+                    if other.line_global is not None else other.x_px
+                )
+                if other_x is None:
+                    other_x = other.x_px
+                expected = float(other_x) + other.velocity_px + (
                     lane_width if side == "right" else -lane_width
                 )
                 if other.line_global is not None:
@@ -641,7 +658,14 @@ class LaneBoundaryTracker:
                         math.atan2(ox2 - ox1, oy2 - oy1)
                     )
             elif state.track_id is not None and state.x_px is not None:
-                expected = state.x_px + state.velocity_px
+                y_ref = self._reference_row(boxes["left"], boxes["right"])
+                own_x = (
+                    self._line_x_at(state.line_global, y_ref)
+                    if state.line_global is not None else state.x_px
+                )
+                if own_x is None:
+                    own_x = state.x_px
+                expected = float(own_x) + state.velocity_px
                 reference_angle = state.angle_deg
 
             if expected is None or not math.isfinite(float(expected)):
@@ -661,7 +685,7 @@ class LaneBoundaryTracker:
                 math.tan(math.radians(float(reference_angle)))
                 if reference_angle is not None else 0.0
             )
-            y_ref = 0.5 * (box[1] + box[3])
+            y_ref = self._reference_row(boxes["left"], boxes["right"])
             sample_y = (
                 box[1] + 0.20 * (box[3] - box[1]),
                 box[1] + 0.60 * (box[3] - box[1]),
@@ -775,14 +799,7 @@ class LaneBoundaryTracker:
         frame_height = max(1, frame_height)
         left_box = self._roi_tuple(left_roi)
         right_box = self._roi_tuple(right_roi)
-        overlap_top = max(left_box[1], right_box[1])
-        overlap_bottom = min(left_box[3], right_box[3])
-        if overlap_bottom > overlap_top:
-            y_ref = 0.5 * (overlap_top + overlap_bottom)
-        else:
-            y_ref = 0.25 * (
-                left_box[1] + left_box[3] + right_box[1] + right_box[3]
-            )
+        y_ref = self._reference_row(left_box, right_box)
         reference_x = (
             float(reference_center_x)
             if reference_center_x is not None
