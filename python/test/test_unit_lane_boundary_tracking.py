@@ -36,6 +36,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         *,
         max_inferred_frames=None,
         enable_full_pair_reacquisition=False,
+        coast_frames=0,
     ):
         left_lines = (
             self.line_for_global_x(self.LEFT_ROI, left_x, dx=-8.0)
@@ -56,6 +57,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             right_preferred_index=0 if right_lines is not None else None,
             max_inferred_frames=max_inferred_frames,
             enable_full_pair_reacquisition=enable_full_pair_reacquisition,
+            coast_frames=coast_frames,
         )
 
     def test_candidate_limit_preserves_preferred_index_and_original_hough_index(self):
@@ -187,6 +189,39 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             after,
             delta=0.1,
         )
+
+    def test_hough_fragment_near_lookahead_row_is_not_discarded(self):
+        # Dashed/partially occluded lane paint often produces a segment which
+        # ends a little before the reference row. Its projected x is still
+        # inside the configured ROI and should be considered as one candidate.
+        fragment = np.asarray([[[120.0, 0.0, 130.0, 40.0]]], dtype=np.float32)
+        candidates = self.tracker._candidates(
+            fragment, self.LEFT_ROI, frame_width=640, y_ref=370.0
+        )
+        self.assertEqual(len(candidates), 1)
+        self.assertAlmostEqual(candidates[0]["x_px"], 227.5, delta=0.5)
+        self.assertGreater(candidates[0]["quality"], 0.0)
+
+    def test_simulator_keeps_last_boundary_solid_during_short_hough_dropout(self):
+        self.update(left_x=220.0, right_x=420.0)
+        previous_line = list(self.tracker._sides["left"].line_global)
+
+        held = self.update(
+            left_x=None, right_x=420.0, coast_frames=2
+        )
+        self.assertTrue(held["perception_valid"])
+        self.assertEqual(held["lane_type"], "only_right")
+        self.assertEqual(held["left"]["status"], "COASTING")
+        self.assertTrue(held["left"]["coasting"])
+        self.assertFalse(held["left"]["inferred"])
+        self.assertIsNotNone(held["left"]["predicted_line"])
+        self.assertEqual(
+            self.tracker._sides["left"].line_global, previous_line
+        )
+
+        returned = self.update(left_x=220.0, right_x=420.0, coast_frames=2)
+        self.assertEqual(returned["left"]["status"], "DETECTED")
+        self.assertTrue(returned["left"]["observed"])
 
     def test_short_hough_fragment_is_not_a_lane_boundary_candidate(self):
         # Tiny fragments from shadows and road texture must not be extrapolated
