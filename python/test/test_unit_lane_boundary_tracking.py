@@ -94,18 +94,30 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(result["left"]["observed"])
         self.assertIn("INFERRED", result["left"]["status"])
         self.assertAlmostEqual(result["lane_center_px"], 330.0, delta=7.0)
+        self.assertTrue(result["left"]["inference_valid"])
+        self.assertTrue(result["left"]["inside_search_roi"])
+        self.assertGreaterEqual(result["left"]["roi_edge_distances_px"]["left_px"], 0)
+        self.assertGreaterEqual(result["left"]["roi_edge_distances_px"]["right_px"], 0)
 
-    def test_missing_side_can_remain_inferred_beyond_short_hall_coast_window(self):
+    def test_single_side_inference_expires_after_a_bounded_number_of_frames(self):
         self.update(left_x=220.0, right_x=420.0)
-        last_center = None
-        for index in range(20):
-            result = self.update(left_x=None, right_x=430.0 + index * 0.5)
+        inference_limit = max(
+            self.tracker.reacquire_frames * 2,
+            self.tracker.max_missed_frames * 3,
+        )
+        for index in range(inference_limit + 1):
+            result = self.update(left_x=None, right_x=430.0 + index * 0.25)
             self.assertTrue(result["perception_valid"])
             self.assertEqual(result["lane_type"], "only_right")
             self.assertEqual(result["inferred_side"], "left")
             self.assertAlmostEqual(result["speed_factor"], 0.55)
-            last_center = result["lane_center_px"]
-        self.assertIsNotNone(last_center)
+
+        expired = self.update(left_x=None, right_x=433.5)
+        self.assertFalse(expired["perception_valid"])
+        self.assertEqual(expired["lane_type"], "none")
+        self.assertEqual(expired["state"], "LOST")
+        self.assertIsNone(expired["inferred_side"])
+        self.assertFalse(expired["left"]["inferred"])
 
     def test_wrong_opposite_line_is_rejected_instead_of_stealing_the_track(self):
         self.update(left_x=220.0, right_x=420.0)
@@ -424,6 +436,159 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertLessEqual(search[0], left_roi[0])
         self.assertGreaterEqual(search[2], left_roi[2])
         self.assertGreaterEqual(search[2] - search[0], left_roi[2] - left_roi[0])
+
+
+    def test_candidate_projection_must_stay_inside_the_actual_search_roi(self):
+        # The segment itself is inside the crop, but extrapolating it to y_ref
+        # puts its lane point 6 px beyond the right edge. The old 15%-of-ROI
+        # horizontal margin incorrectly accepted this candidate.
+        fragment = np.asarray([[[0.0, 0.0, 80.0, 30.0]]], dtype=np.float32)
+        candidates = self.tracker._candidates(
+            fragment, self.LEFT_ROI, frame_width=640, y_ref=370.0
+        )
+        self.assertEqual(candidates, [])
+
+    def test_hall_association_uses_full_frame_coordinates_when_crop_changes(self):
+        first_roi = (80, 300, 260, 440)
+        second_roi = (60, 300, 300, 440)
+        first = self.line_for_global_x(first_roi, 220.0, dx=-8.0)
+        second = self.line_for_global_x(second_roi, 220.0, dx=-8.0)
+
+        self.tracker._hall_update("left", first, first_roi, 0, self.FRAME_SHAPE)
+        tracks = self.tracker._hall["left"]._tracks
+        self.assertEqual(len(tracks), 1)
+        original_id = next(iter(tracks))
+        original_feature = tuple(tracks[original_id]["feature"])
+
+        self.tracker._hall_update("left", second, second_roi, 0, self.FRAME_SHAPE)
+        tracks = self.tracker._hall["left"]._tracks
+        self.assertEqual(len(tracks), 1)
+        self.assertIn(original_id, tracks)
+        np.testing.assert_allclose(
+            tracks[original_id]["feature"], original_feature, atol=1e-6
+        )
+        self.assertEqual(tracks[original_id]["missed"], 0)
+
+    def test_recovery_rejects_a_prediction_beyond_the_configured_expansion_limit(self):
+        left_roi = (80, 300, 260, 440)
+        right_roi = (400, 300, 580, 440)
+        left_state = self.tracker._sides["left"]
+        left_state.track_id = 1
+        left_state.missed_frames = 2
+        right_state = self.tracker._sides["right"]
+        right_state.track_id = 2
+        right_state.x_px = 630.0
+        right_state.line_global = (630.0, 300.0, 630.0, 440.0)
+        right_state.observed = True
+        self.tracker._lane_width_px = 200.0
+        self.tracker._geometry_mode = "bev"
+
+        recovery = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE, geometry_mode="bev"
+        )["left"]
+
+        self.assertFalse(recovery["prediction_valid"])
+        self.assertFalse(recovery["expanded"])
+        self.assertEqual(recovery["roi"], left_roi)
+        self.assertEqual(
+            recovery["reason"], "predicted_boundary_outside_recovery_limit"
+        )
+        self.assertAlmostEqual(
+            recovery["edge_distances_px"]["outside_right_px"], 171.0, delta=1.0
+        )
+        self.assertLess(
+            recovery["edge_distances_px"]["to_inner_edge_px"], 0.0
+        )
+
+    def test_valid_recovery_roi_contains_the_whole_predicted_corridor(self):
+        left_roi = (80, 300, 260, 440)
+        right_roi = (380, 300, 560, 440)
+        self.tracker.set_geometry_mode("bev")
+        self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE, geometry_mode="bev"
+        )
+        left = self.line_for_global_x(left_roi, 220.0, dx=-8.0)
+        right = self.line_for_global_x(right_roi, 420.0, dx=8.0)
+        self.tracker.update(
+            left, right, self.FRAME_SHAPE, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
+        self.tracker.update(
+            None, right, self.FRAME_SHAPE, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
+        recovery = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE, geometry_mode="bev"
+        )["left"]
+        self.assertTrue(recovery["prediction_valid"])
+        self.assertTrue(recovery["expanded"])
+        left_edge, top, right_edge, bottom = recovery["roi"]
+        for x, y in recovery["expected_points"]:
+            self.assertGreaterEqual(x, left_edge)
+            self.assertLess(x, right_edge)
+            self.assertGreaterEqual(y, top)
+            self.assertLess(y, bottom)
+        distances = recovery["edge_distances_px"]
+        self.assertIn("to_outer_edge_px", distances)
+        self.assertIn("to_inner_edge_px", distances)
+
+    def test_full_pair_loss_enters_wide_reacquisition_and_confirms_new_pair(self):
+        # Initialise the configured ROI signature as production does.
+        self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            geometry_mode="bev",
+        )
+        self.update(left_x=220.0, right_x=420.0)
+
+        for _ in range(self.tracker.max_missed_frames + 1):
+            self.tracker.recovery_rois(
+                self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+                geometry_mode="bev",
+            )
+            lost = self.tracker.update(
+                None, None, self.FRAME_SHAPE,
+                self.LEFT_ROI, self.RIGHT_ROI,
+                reference_center_x=320.0, geometry_mode="bev",
+            )
+        self.assertFalse(lost["perception_valid"])
+        self.assertEqual(lost["state"], "LOST")
+
+        recovery = self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            geometry_mode="bev",
+        )
+        self.assertTrue(recovery["left"]["pair_reacquire"])
+        self.assertEqual(recovery["left"]["roi"], (0, 300, 640, 440))
+        self.assertEqual(recovery["right"]["roi"], (0, 300, 640, 440))
+
+        pair_roi = recovery["left"]["roi"]
+        left_new = self.line_for_global_x(pair_roi, 270.0, dx=-8.0)
+        right_new = self.line_for_global_x(pair_roi, 470.0, dx=8.0)
+        pair_lines = np.concatenate((left_new, right_new), axis=0)
+
+        for hit in range(self.tracker.reacquire_frames):
+            recovery = self.tracker.recovery_rois(
+                self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+                geometry_mode="bev",
+            )
+            pair_roi = recovery["left"]["roi"]
+            result = self.tracker.update(
+                pair_lines, pair_lines, self.FRAME_SHAPE,
+                pair_roi, pair_roi,
+                reference_center_x=320.0, geometry_mode="bev",
+                left_prediction_valid=False, right_prediction_valid=False,
+            )
+            if hit < self.tracker.reacquire_frames - 1:
+                self.assertFalse(result["perception_valid"])
+                self.assertEqual(result["state"], "REACQUIRING_PAIR")
+                self.assertEqual(result["pair_pending_hits"], hit + 1)
+
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["lane_type"], "both")
+        self.assertEqual(result["state"], "REACQUIRING")
+        self.assertAlmostEqual(result["lane_center_px"], 370.0, delta=3.0)
+        self.assertAlmostEqual(result["lane_width_px"], 200.0, delta=3.0)
+        self.assertFalse(result["pair_reacquire_required"])
 
 
 if __name__ == "__main__":
