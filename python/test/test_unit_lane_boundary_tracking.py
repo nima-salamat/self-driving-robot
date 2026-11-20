@@ -504,19 +504,17 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         left_roi = (80, 300, 260, 440)
         right_roi = (380, 300, 560, 440)
         self.tracker.set_geometry_mode("bev")
-        self.tracker.recovery_rois(
-            left_roi, right_roi, self.FRAME_SHAPE, geometry_mode="bev"
-        )
-        left = self.line_for_global_x(left_roi, 220.0, dx=-8.0)
-        right = self.line_for_global_x(right_roi, 420.0, dx=8.0)
-        self.tracker.update(
-            left, right, self.FRAME_SHAPE, left_roi, right_roi,
-            reference_center_x=320.0, geometry_mode="bev",
-        )
-        self.tracker.update(
-            None, right, self.FRAME_SHAPE, left_roi, right_roi,
-            reference_center_x=320.0, geometry_mode="bev",
-        )
+        left_state = self.tracker._sides["left"]
+        left_state.track_id = 1
+        left_state.x_px = 220.0
+        left_state.missed_frames = 2
+        left_state.line_global = (220.0, 300.0, 220.0, 440.0)
+        right_state = self.tracker._sides["right"]
+        right_state.track_id = 2
+        right_state.x_px = 450.0
+        right_state.observed = True
+        right_state.line_global = (450.0, 300.0, 450.0, 440.0)
+        self.tracker._lane_width_px = 200.0
         recovery = self.tracker.recovery_rois(
             left_roi, right_roi, self.FRAME_SHAPE, geometry_mode="bev"
         )["left"]
