@@ -327,7 +327,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )["left"]
 
         self.assertTrue(recovery["recheck"])
-        self.assertEqual(recovery["reason"], "recent_track_grace")
+        self.assertEqual(recovery["reason"], "independent_track_recovery")
         self.assertTrue(recovery["prediction_valid"])
         self.assertTrue(recovery["expanded"])
         self.assertAlmostEqual(recovery["expected_x"], 270.0, delta=2.0)
@@ -346,11 +346,14 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
         self.assertFalse(ghost["perception_valid"])
         self.assertEqual(ghost["state"], "ACQUIRING_PAIR")
-        self.assertEqual(ghost["pair_pending_hits"], 1)
+        self.assertEqual(ghost["pair_pending_hits"], 0)
+        self.assertEqual(ghost["left"]["pending_hits"], 1)
+        self.assertEqual(ghost["right"]["pending_hits"], 1)
         self.assertIsNone(self.tracker._sides["left"].track_id)
         self.assertIsNone(self.tracker._sides["right"].track_id)
 
-        # The candidate disappears on the next frame: discard that hypothesis.
+        # The candidate disappears on the next frame: each unconfirmed
+        # per-ROI hypothesis is discarded instead of being combined later.
         blank = self.tracker.update(
             None, None, self.FRAME_SHAPE,
             self.LEFT_ROI, self.RIGHT_ROI,
@@ -359,10 +362,12 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
         self.assertFalse(blank["perception_valid"])
         self.assertEqual(blank["pair_pending_hits"], 0)
+        self.assertEqual(blank["left"]["pending_hits"], 0)
+        self.assertEqual(blank["right"]["pending_hits"], 0)
         self.assertIsNone(self.tracker._sides["left"].track_id)
 
-        # A real pair with the same geometry on two consecutive frames is
-        # accepted, using one Hough segment in each ROI per frame.
+        # A real line in each configured ROI is then independently confirmed
+        # over two consecutive frames.
         first = self.tracker.update(
             left, right, self.FRAME_SHAPE,
             self.LEFT_ROI, self.RIGHT_ROI,
@@ -370,7 +375,9 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             enable_full_pair_reacquisition=True,
         )
         self.assertFalse(first["perception_valid"])
-        self.assertEqual(first["pair_pending_hits"], 1)
+        self.assertEqual(first["pair_pending_hits"], 0)
+        self.assertEqual(first["left"]["pending_hits"], 1)
+        self.assertEqual(first["right"]["pending_hits"], 1)
 
         second = self.tracker.update(
             left, right, self.FRAME_SHAPE,
@@ -656,9 +663,12 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             result = self.update(left_x=145.0, right_x=430.0)
             self.assertEqual(result["lane_type"], "only_right")
             self.assertFalse(result["left"]["observed"])
-            self.assertEqual(result["left"]["pending_hits"], 0)
+            self.assertEqual(
+                result["left"]["pending_hits"], 0,
+                repr(result["left"]["reacquisition_diagnostics"]),
+            )
 
-    def test_nearby_candidate_with_incompatible_tangent_is_rejected_in_bev(self):
+    def test_nearby_candidate_with_incompatible_tangent_is_rejected_in_bev:
         self.tracker.set_geometry_mode("bev")
         self.update(left_x=220.0, right_x=420.0)
         self.update(left_x=None, right_x=420.0)
