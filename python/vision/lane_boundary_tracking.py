@@ -992,8 +992,6 @@ class LaneBoundaryTracker:
                 }
                 continue
 
-                float(box[1]), float(max(box[1], box[3] - 1)), 7
-            )
             sample_x = []
             expected = None
             has_anchor_prediction = (
