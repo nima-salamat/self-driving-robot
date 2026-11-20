@@ -57,12 +57,15 @@ class LaneRecoveryDetectionTests(unittest.TestCase):
         right_roi = (432, 300, 570, 440)
         tracker = LaneBoundaryTracker()
         tracker.update(
-            self._vertical_line(left_roi, 235),
+            self._vertical_line(left_roi, 220),
             self._vertical_line(right_roi, 465),
             frame_shape, left_roi, right_roi, reference_center_x=350.0,
         )
+        # Move the visible anchor enough that the inferred left boundary sits
+        # just beyond the configured ROI edge, without training from an
+        # out-of-ROI candidate on initial acquisition.
         tracker.update(
-            None, self._vertical_line(right_roi, 465),
+            None, self._vertical_line(right_roi, 480),
             frame_shape, left_roi, right_roi, reference_center_x=350.0,
         )
         search = tracker.recovery_rois(left_roi, right_roi, frame_shape)
