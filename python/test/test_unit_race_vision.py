@@ -127,6 +127,7 @@ class RaceVisionLaneLossTests(unittest.TestCase):
         self.assertFalse(draw["legacy_roi_resizable_applied"])
         self.assertEqual(result["line_tracking"]["left"]["search_roi"], list(expected_left))
         self.assertEqual(result["line_tracking"]["right"]["search_roi"], list(expected_right))
+        self.assertEqual(result["line_tracking"]["reacquire_frames"], 1)
 
 
 class RaceVisionLineExtractionTests(unittest.TestCase):
