@@ -490,23 +490,33 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
         self.assertTrue(first["perception_valid"])
 
-        # A single real segment is present in the left ROI, but it has moved
-        # too far for the old temporal gate. It must be confirmed, not ignored.
-        shifted = self.line_for_global_x(left_roi, 285.0, dx=-8.0)
+        # First let the opposite boundary remain visible while the left side
+        # is genuinely missing. Then present one valid, temporally consistent
+        # segment in the left ROI at a position the old x gate rejects.
+        missing = self.tracker.update(
+            None, right, shape, left_roi, right_roi,
+            reference_center_x=320.0, geometry_mode="bev",
+        )
+        self.assertTrue(missing["perception_valid"])
+        self.assertEqual(missing["lane_type"], "only_right")
+
+        shifted = self.line_for_global_x(left_roi, 172.0, dx=-8.0)
         first_hit = self.tracker.update(
-            shifted, None, shape, left_roi, right_roi,
+            shifted, right, shape, left_roi, right_roi,
             reference_center_x=320.0, geometry_mode="bev",
         )
         self.assertFalse(first_hit["left"]["observed"])
         self.assertGreaterEqual(first_hit["left"]["pending_hits"], 1)
+        self.assertEqual(first_hit["left"]["status"], "REACQUIRING")
 
         second_hit = self.tracker.update(
-            shifted, None, shape, left_roi, right_roi,
+            shifted, right, shape, left_roi, right_roi,
             reference_center_x=320.0, geometry_mode="bev",
         )
         self.assertTrue(second_hit["left"]["observed"])
+        self.assertTrue(second_hit["right"]["observed"])
         self.assertTrue(second_hit["perception_valid"])
-        self.assertEqual(second_hit["lane_type"], "only_left")
+        self.assertEqual(second_hit["lane_type"], "both")
         self.assertEqual(second_hit["candidate_count"]["left"], 1)
         self.assertEqual(second_hit["left"]["status"], "DETECTED")
 
