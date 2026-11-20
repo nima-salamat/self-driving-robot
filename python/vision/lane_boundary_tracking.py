@@ -1259,6 +1259,8 @@ class LaneBoundaryTracker:
         right_observed = False
         inferred_side = None
         reacquired = False
+        held_side = None
+        held_frames = 0
         rejected_left = len(left_candidates)
         rejected_right = len(right_candidates)
 
@@ -1312,20 +1314,29 @@ class LaneBoundaryTracker:
                 rejected_left = max(0, len(left_candidates) - 1)
                 rejected_right = max(0, len(right_candidates) - 1)
             else:
-                # Keep the side with the stronger current identity. The
-                # opposite side is inferred until a width-compatible candidate
-                # passes consecutive-frame confirmation.
+                # Prefer the side with the most continuous identity first;
+                # candidate score breaks ties. This prevents the anchor from
+                # swapping left/right on alternate frames because Hough segment
+                # quality fluctuated slightly.
                 active = []
                 if left_ranked and self._sides["left"].x_px is not None:
-                    active.append(("left", left_ranked[0]))
+                    state = self._sides["left"]
+                    active.append((
+                        state.missed_frames, left_ranked[0][0], -state.age,
+                        "left", left_ranked[0][1],
+                    ))
                 if right_ranked and self._sides["right"].x_px is not None:
-                    active.append(("right", right_ranked[0]))
+                    state = self._sides["right"]
+                    active.append((
+                        state.missed_frames, right_ranked[0][0], -state.age,
+                        "right", right_ranked[0][1],
+                    ))
 
                 anchor_side = None
                 anchor_candidate = None
                 if active:
-                    active.sort(key=lambda item: item[1][0])
-                    anchor_side, (_cost, anchor_candidate) = active[0]
+                    active.sort(key=lambda item: (item[0], item[1], item[2]))
+                    _missed, _cost, _age, anchor_side, anchor_candidate = active[0]
 
                 if anchor_side == "left":
                     left_state = self._sides["left"]
@@ -1445,24 +1456,48 @@ class LaneBoundaryTracker:
                 inferred_right_x = visible_x + self._width_at(y_ref, frame_height)
                 lane_center_x = 0.5 * (visible_x + inferred_right_x)
                 lane_type = "only_left"
-                inferred_side = "right"
-                state_name = (
-                    "REACQUIRING_RIGHT"
-                    if self._sides["right"].pending else "SINGLE_SIDE_LEFT"
-                )
+                missing_state = self._sides["right"]
+                grace_frames = min(2, self.max_missed_frames)
+                if (
+                    missing_state.track_id is not None
+                    and 0 < missing_state.missed_frames <= grace_frames
+                ):
+                    # One or two missed Hough frames are treated as a coast
+                    # of the last confirmed line, not a new inferred boundary.
+                    held_side = "right"
+                    held_frames = int(missing_state.missed_frames)
+                    inferred_side = None
+                    state_name = "COASTING_RIGHT"
+                else:
+                    inferred_side = "right"
+                    state_name = (
+                        "REACQUIRING_RIGHT"
+                        if missing_state.pending else "SINGLE_SIDE_LEFT"
+                    )
             else:
                 visible_x = self._sides["right"].x_px
                 inferred_left_x = visible_x - self._width_at(y_ref, frame_height)
                 lane_center_x = 0.5 * (inferred_left_x + visible_x)
                 lane_type = "only_right"
-                inferred_side = "left"
-                state_name = (
-                    "REACQUIRING_LEFT"
-                    if self._sides["left"].pending else "SINGLE_SIDE_RIGHT"
-                )
+                missing_state = self._sides["left"]
+                grace_frames = min(2, self.max_missed_frames)
+                if (
+                    missing_state.track_id is not None
+                    and 0 < missing_state.missed_frames <= grace_frames
+                ):
+                    held_side = "left"
+                    held_frames = int(missing_state.missed_frames)
+                    inferred_side = None
+                    state_name = "COASTING_LEFT"
+                else:
+                    inferred_side = "left"
+                    state_name = (
+                        "REACQUIRING_LEFT"
+                        if missing_state.pending else "SINGLE_SIDE_RIGHT"
+                    )
             perception_valid = True
-            quality = 0.58
-            speed_factor = 0.55
+            quality = 0.48 if held_side is not None else 0.58
+            speed_factor = 0.38 if held_side is not None else 0.55
             if self._last_lane_center_px is not None:
                 self._last_lane_center_velocity_px = (
                     0.75 * self._last_lane_center_velocity_px
@@ -1609,6 +1644,8 @@ class LaneBoundaryTracker:
                 for y, width in sorted((self._lane_width_profile or {}).items())
             ],
             "inferred_side": inferred_side,
+            "held_side": held_side,
+            "held_frames": int(held_frames),
             "reacquire_frames": int(self.reacquire_frames),
             "pair_reacquire_required": bool(self._reacquiring_pair),
             "pair_pending_hits": (
