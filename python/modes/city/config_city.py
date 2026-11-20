@@ -109,7 +109,7 @@ SERVO_DIRECTION = "ltr" # left = 0 and right = 180
 # Optional frame-to-frame line identity association using Hall matching.
 HALL_LINE_TRACKING_ENABLED = False  # [JSON] enable temporal line tracking
 HALL_LINE_TRACKING_MAX_MISSED = 4  # [JSON] tolerated missed frames before LOST
-HALL_LINE_TRACKING_REACQUIRE_FRAMES = 3  # [JSON] consecutive geometric hits required to confirm a returning boundary
+HALL_LINE_TRACKING_REACQUIRE_FRAMES = 1  # [JSON] one geometrically valid hit confirms a returning boundary
 
 # --- Speed Config ---
 SPEED = 175  # Normal City cruising PWM command (0-255)
