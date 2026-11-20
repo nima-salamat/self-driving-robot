@@ -58,9 +58,11 @@ class LaneBoundaryTracker:
         self._last_lane_center_px = None
         self._last_lane_center_velocity_px = 0.0
         self._frame_index = 0
+        self._reacquiring_pair = False
+        self._pair_pending = None
 
-    def reset(self):
-        """Forget lane geometry and all temporal identities."""
+    def _clear_lane_model(self):
+        """Clear stale geometry while preserving the active ROI and transform mode."""
         for state in self._sides.values():
             state.track_id = None
             state.x_px = None
@@ -76,10 +78,16 @@ class LaneBoundaryTracker:
         self._next_track_id = 1
         self._lane_width_px = None
         self._lane_width_profile = None
-        self._roi_signature = None
         self._last_lane_center_px = None
         self._last_lane_center_velocity_px = 0.0
+
+    def reset(self):
+        """Forget lane geometry, ROI identity, and all temporal associations."""
+        self._clear_lane_model()
+        self._roi_signature = None
         self._frame_index = 0
+        self._reacquiring_pair = False
+        self._pair_pending = None
 
     def set_geometry_mode(self, mode):
         """Reset stale lane state when switching between BEV and perspective."""
@@ -162,12 +170,14 @@ class LaneBoundaryTracker:
             if y_gap > roi_height * 0.35:
                 continue
             x_ref = gx1 + slope * (y_ref - gy1)
-            horizontal_margin = max(4.0, (right - left) * 0.15)
+            # Hough endpoints are local to the crop, but extrapolating a short
+            # segment to y_ref can place its lane point outside that crop.
+            # Such a line must not be treated as a detection for this ROI.
             if (
                 not math.isfinite(x_ref)
                 or not 0 <= x_ref < frame_width
-                or x_ref < left - horizontal_margin
-                or x_ref > right + horizontal_margin
+                or x_ref < left
+                or x_ref >= right
             ):
                 continue
 
@@ -192,14 +202,37 @@ class LaneBoundaryTracker:
             })
         return candidates
 
-    def _hall_update(self, side, lines, roi, preferred_index):
-        left, top, right, bottom = roi
+    def _hall_update(self, side, lines, roi, preferred_index, frame_shape):
+        """Associate Hall segments in stable full-frame coordinates.
+
+        Recovery crops change size and origin as the search expands. Passing
+        crop-local coordinates to HallLineTracker would make a stationary line
+        appear to move when the crop changes. Translate every segment first.
+        """
+        left, top, _right, _bottom = roi
+        frame_height, frame_width = map(int, frame_shape[:2])
+        source = [] if lines is None else list(lines)
+        global_lines = []
+        for line in source:
+            try:
+                values = np.asarray(line, dtype=np.float64).reshape(-1)
+                if values.size < 4 or not np.isfinite(values[:4]).all():
+                    global_lines.append(line)
+                    continue
+                x1, y1, x2, y2 = map(float, values[:4])
+                global_lines.append((
+                    x1 + left, y1 + top, x2 + left, y2 + top,
+                ))
+            except (TypeError, ValueError, OverflowError):
+                # Preserve the original index; HallLineTracker rejects malformed
+                # segments itself, and candidate indices must remain aligned.
+                global_lines.append(line)
         hall = self._hall[side]
         hall.max_missed_frames = self.max_missed_frames
         result = hall.update(
-            lines,
-            max(1, right - left),
-            max(1, bottom - top),
+            global_lines,
+            max(1, frame_width),
+            max(1, frame_height),
             preferred_index=preferred_index,
         )
         selected_index = None
@@ -408,6 +441,34 @@ class LaneBoundaryTracker:
                     best = (score, left, right, width)
         return best
 
+    def _confirm_pair_reacquisition(self, pair, frame_width):
+        """Require a stable lane pair before replacing a completely lost model."""
+        _score, left, right, width = pair
+        current = {
+            "left_x": float(left["x_px"]),
+            "right_x": float(right["x_px"]),
+            "width": float(width),
+            "left_angle": float(left["angle_deg"]),
+            "right_angle": float(right["angle_deg"]),
+            "hits": 1,
+        }
+        previous = self._pair_pending
+        if previous is not None:
+            position_tolerance = max(frame_width * 0.035, previous["width"] * 0.10)
+            width_tolerance = max(frame_width * 0.025, previous["width"] * 0.08)
+            consistent = (
+                abs(current["left_x"] - previous["left_x"]) <= position_tolerance
+                and abs(current["right_x"] - previous["right_x"]) <= position_tolerance
+                and abs(current["width"] - previous["width"]) <= width_tolerance
+                and self._angle_delta(current["left_angle"], previous["left_angle"]) <= 18.0
+                and self._angle_delta(current["right_angle"], previous["right_angle"]) <= 18.0
+            )
+            if consistent:
+                current["hits"] = previous["hits"] + 1
+
+        self._pair_pending = current
+        return current["hits"] >= self.reacquire_frames
+
     def _apply(self, side, candidate):
         state = self._sides[side]
         if state.x_px is None:
@@ -522,13 +583,20 @@ class LaneBoundaryTracker:
                               frame_width, preferred_index, hall_selected_index,
                               frame_height):
         state = self._sides[side]
-        if self._lane_width_px is None:
+        if self._lane_width_px is None or expected_x is None:
+            return False
+        if not math.isfinite(float(expected_x)):
             return False
         anchor = self._sides["right" if side == "left" else "left"]
-        tolerance = max(
+        base_tolerance = max(
             frame_width * 0.045,
             min(frame_width * 0.12, self._lane_width_px * 0.18),
         )
+        missed_growth = min(
+            frame_width * 0.10,
+            frame_width * 0.018 * max(0, state.missed_frames - 1),
+        )
+        tolerance = base_tolerance + missed_growth
         options = []
         for candidate in candidates:
             dx = abs(candidate["x_px"] - expected_x)
@@ -698,13 +766,18 @@ class LaneBoundaryTracker:
         }
 
     def recovery_rois(self, left_roi, right_roi, frame_shape,
-                     max_expansion_fraction=None, geometry_mode=None):
-        """Create a recovery crop that contains the inferred boundary corridor.
+                     max_expansion_fraction=0.18, geometry_mode=None):
+        """Return bounded recovery crops justified by the current lane geometry.
 
-        BEV uses a constant rectified lane width. Perspective images use the
-        learned width profile at each row. The returned ROI is in full-frame
-        coordinates and always contains the user's configured ROI plus every
-        predicted sample (with a bounded uncertainty margin).
+        The user's configured ROI is never modified. While one boundary is
+        visible, its tangent and the active BEV/perspective width model predict
+        the missing boundary. The search crop may expand only by a bounded
+        amount and only when every predicted sample remains inside it.
+
+        After both previously tracked boundaries have exceeded the coast window,
+        stale geometry is retired and both ROIs become a temporary full-width
+        pair reacquisition band. A new pair is then confirmed over consecutive
+        frames by update().
         """
         if geometry_mode is not None:
             self.set_geometry_mode(geometry_mode)
@@ -719,6 +792,54 @@ class LaneBoundaryTracker:
             "left": self._roi_tuple(left_roi),
             "right": self._roi_tuple(right_roi),
         }
+
+        previously_learned = (
+            self._lane_width_px is not None
+            and self._last_lane_center_px is not None
+            and all(
+                state.track_id is not None
+                and state.missed_frames > self.max_missed_frames
+                for state in self._sides.values()
+            )
+        )
+        if previously_learned and not self._reacquiring_pair:
+            self._reacquiring_pair = True
+            self._pair_pending = None
+
+        if self._reacquiring_pair:
+            left_box, right_box = boxes["left"], boxes["right"]
+            overlap_top = max(left_box[1], right_box[1])
+            overlap_bottom = min(left_box[3], right_box[3])
+            if overlap_bottom <= overlap_top:
+                overlap_top = min(left_box[1], right_box[1])
+                overlap_bottom = max(left_box[3], right_box[3])
+            pair_roi = (0, overlap_top, frame_width, overlap_bottom)
+            return {
+                side: {
+                    "roi": pair_roi,
+                    "configured_roi": boxes[side],
+                    "expanded": pair_roi != boxes[side],
+                    "expected_x": None,
+                    "expected_points": [],
+                    "prediction_valid": False,
+                    "pair_reacquire": True,
+                    "missed_frames": int(self._sides[side].missed_frames),
+                    "max_expansion_px": 0,
+                    "edge_distances_px": None,
+                    "reason": "full_frame_pair_reacquisition",
+                    "geometry_mode": self._geometry_mode,
+                }
+                for side in ("left", "right")
+            }
+
+        try:
+            expansion_fraction = float(max_expansion_fraction)
+        except (TypeError, ValueError, OverflowError):
+            expansion_fraction = 0.18
+        if not math.isfinite(expansion_fraction):
+            expansion_fraction = 0.18
+        expansion_fraction = max(0.02, min(0.35, expansion_fraction))
+
         y_ref = self._reference_row(boxes["left"], boxes["right"])
         results = {}
 
@@ -728,6 +849,10 @@ class LaneBoundaryTracker:
             anchor_side = "right" if side == "left" else "left"
             anchor = self._sides[anchor_side]
             base_width = max(1, box[2] - box[0])
+            max_extra = min(
+                frame_width * expansion_fraction,
+                max(base_width * 0.75, frame_width * 0.05),
+            )
 
             if state.missed_frames == 0 and state.pending is None:
                 results[side] = {
@@ -735,34 +860,40 @@ class LaneBoundaryTracker:
                     "configured_roi": box,
                     "expanded": False,
                     "expected_x": state.x_px,
+                    "expected_points": [],
+                    "prediction_valid": True,
+                    "pair_reacquire": False,
                     "missed_frames": 0,
+                    "max_expansion_px": float(max_extra),
+                    "edge_distances_px": None,
                     "reason": "tracking",
                     "geometry_mode": self._geometry_mode,
                 }
                 continue
 
-            sample_y = np.linspace(float(box[1]), float(max(box[1], box[3] - 1)), 7)
+            sample_y = np.linspace(
+                float(box[1]), float(max(box[1], box[3] - 1)), 7
+            )
             sample_x = []
             expected = None
-            reference_angle = state.angle_deg
+            has_anchor_prediction = (
+                self._lane_width_px is not None
+                and anchor.observed
+                and anchor.x_px is not None
+            )
 
-            if self._lane_width_px is not None and anchor.observed and anchor.x_px is not None:
+            if has_anchor_prediction:
                 for y in sample_y:
                     value = self._boundary_x_from_anchor(
                         anchor_side, side, float(y), y_ref, frame_height,
                         predict_next_frame=True,
                     )
-                    if value is not None:
-                        sample_x.append(value)
+                    if value is not None and math.isfinite(value):
+                        sample_x.append(float(value))
                 expected = self._boundary_x_from_anchor(
                     anchor_side, side, y_ref, y_ref, frame_height,
                     predict_next_frame=True,
                 )
-                if anchor.line_global is not None:
-                    ax1, ay1, ax2, ay2 = anchor.line_global
-                    reference_angle = math.degrees(
-                        math.atan2(ax2 - ax1, ay2 - ay1)
-                    )
             elif state.track_id is not None and state.x_px is not None:
                 slope = 0.0
                 if state.line_global is not None:
@@ -775,42 +906,107 @@ class LaneBoundaryTracker:
                     for y in sample_y
                 ]
 
-            if expected is None or not math.isfinite(float(expected)) or len(sample_x) < 2:
+            if (
+                expected is None
+                or not math.isfinite(float(expected))
+                or len(sample_x) != len(sample_y)
+            ):
                 results[side] = {
                     "roi": box,
                     "configured_roi": box,
                     "expanded": False,
                     "expected_x": None,
+                    "expected_points": [],
+                    "prediction_valid": False,
+                    "pair_reacquire": False,
                     "missed_frames": int(state.missed_frames),
+                    "max_expansion_px": float(max_extra),
+                    "edge_distances_px": None,
                     "reason": "no_confirmed_geometric_prediction",
                     "geometry_mode": self._geometry_mode,
                 }
                 continue
 
-            miss_count = max(1, int(state.missed_frames))
-            miss_ratio = min(0.75, 0.18 + 0.10 * (miss_count - 1))
-            margin = max(
-                2.0,
-                base_width * miss_ratio
-                + min(base_width * 0.40, abs(state.velocity_px) * 0.80),
+            inside_frame = all(
+                0.0 <= x < float(frame_width) for x in sample_x
             )
+            # Signed distances from the predicted reference point to the
+            # configured ROI's outer and inner vertical edges.
+            if side == "left":
+                outer_distance = float(expected - box[0])
+                inner_distance = float((box[2] - 1) - expected)
+            else:
+                inner_distance = float(expected - box[0])
+                outer_distance = float((box[2] - 1) - expected)
+            outside_left = max(0.0, float(box[0]) - min(sample_x))
+            outside_right = max(0.0, max(sample_x) - float(box[2] - 1))
+            edge_distances = {
+                "to_outer_edge_px": outer_distance,
+                "to_inner_edge_px": inner_distance,
+                "outside_left_px": outside_left,
+                "outside_right_px": outside_right,
+            }
 
-            # Do not cap away the predicted curve. The previous width-based cap
-            # could leave the inferred line outside the crop and make reacquisition
-            # impossible even though a line was visible in the camera frame.
+            prediction_valid = (
+                inside_frame
+                and outside_left <= max_extra
+                and outside_right <= max_extra
+            )
+            if not prediction_valid:
+                results[side] = {
+                    "roi": box,
+                    "configured_roi": box,
+                    "expanded": False,
+                    "expected_x": float(expected),
+                    "expected_points": [
+                        [float(x), float(y)]
+                        for x, y in zip(sample_x, sample_y)
+                    ],
+                    "prediction_valid": False,
+                    "pair_reacquire": False,
+                    "missed_frames": int(state.missed_frames),
+                    "max_expansion_px": float(max_extra),
+                    "edge_distances_px": edge_distances,
+                    "reason": "predicted_boundary_outside_recovery_limit",
+                    "geometry_mode": self._geometry_mode,
+                }
+                continue
+
+            miss_count = max(1, int(state.missed_frames))
+            miss_growth = min(0.12, 0.025 * max(0, miss_count - 1))
+            margin = max(
+                3.0,
+                base_width * (0.08 + miss_growth)
+                + min(base_width * 0.20, abs(state.velocity_px) * 0.60),
+            )
+            desired_left = min(float(box[0]), min(sample_x) - margin)
+            desired_right = max(float(box[2]), max(sample_x) + margin)
             search_left = max(
-                0, int(math.floor(min(box[0], min(sample_x) - margin)))
+                0,
+                int(math.floor(max(float(box[0]) - max_extra, desired_left))),
             )
             search_right = min(
                 frame_width,
-                int(math.ceil(max(box[2], max(sample_x) + margin))),
+                int(math.ceil(min(float(box[2]) + max_extra, desired_right))),
             )
             search_roi = (
                 search_left, int(box[1]),
                 max(search_left + 1, search_right), int(box[3]),
             )
-            if search_roi[2] - search_roi[0] >= frame_width:
-                search_roi = (0, int(box[1]), frame_width, int(box[3]))
+            samples_contained = all(
+                search_roi[0] <= x < search_roi[2]
+                and search_roi[1] <= y < search_roi[3]
+                for x, y in zip(sample_x, sample_y)
+            )
+            if not samples_contained:
+                search_roi = box
+                prediction_valid = False
+                reason = "predicted_boundary_not_contained"
+            else:
+                reason = (
+                    "predicted_track_recovery"
+                    if search_roi != box else "prediction_inside_configured_roi"
+                )
 
             results[side] = {
                 "roi": search_roi,
@@ -818,10 +1014,15 @@ class LaneBoundaryTracker:
                 "expanded": search_roi != box,
                 "expected_x": float(expected),
                 "expected_points": [
-                    [float(x), float(y)] for x, y in zip(sample_x, sample_y)
+                    [float(x), float(y)]
+                    for x, y in zip(sample_x, sample_y)
                 ],
+                "prediction_valid": bool(prediction_valid),
+                "pair_reacquire": False,
                 "missed_frames": int(state.missed_frames),
-                "reason": "predicted_track_recovery",
+                "max_expansion_px": float(max_extra),
+                "edge_distances_px": edge_distances,
+                "reason": reason,
                 "geometry_mode": self._geometry_mode,
             }
         return results
@@ -837,6 +1038,8 @@ class LaneBoundaryTracker:
         left_preferred_index=None,
         right_preferred_index=None,
         geometry_mode=None,
+        left_prediction_valid=True,
+        right_prediction_valid=True,
     ):
         """Update the joint lane model using two full-frame ROI definitions."""
         if geometry_mode is not None:
@@ -849,6 +1052,22 @@ class LaneBoundaryTracker:
         left_box = self._roi_tuple(left_roi)
         right_box = self._roi_tuple(right_roi)
         y_ref = self._reference_row(left_box, right_box)
+        if (
+            self._lane_width_px is not None
+            and all(
+                state.track_id is not None
+                and state.missed_frames > self.max_missed_frames
+                for state in self._sides.values()
+            )
+            and not self._reacquiring_pair
+        ):
+            self._reacquiring_pair = True
+            self._pair_pending = None
+        if self._reacquiring_pair and self._lane_width_px is not None:
+            # Both old boundaries have expired. Do not keep gating new lines
+            # against their stale IDs, width, tangent, or lane-centre velocity.
+            self._clear_lane_model()
+
         reference_x = (
             float(reference_center_x)
             if reference_center_x is not None
@@ -857,10 +1076,10 @@ class LaneBoundaryTracker:
 
         self._frame_index += 1
         left_hall, left_hall_selected = self._hall_update(
-            "left", left_lines, left_box, left_preferred_index
+            "left", left_lines, left_box, left_preferred_index, frame_shape
         )
         right_hall, right_hall_selected = self._hall_update(
-            "right", right_lines, right_box, right_preferred_index
+            "right", right_lines, right_box, right_preferred_index, frame_shape
         )
         left_candidates = self._candidates(
             left_lines, left_box, frame_width, y_ref, left_preferred_index
@@ -890,7 +1109,22 @@ class LaneBoundaryTracker:
             pair = self._initial_pair(
                 left_ranked, right_ranked, frame_width, reference_x
             )
-            if pair is not None:
+            if self._reacquiring_pair:
+                if pair is not None and self._confirm_pair_reacquisition(
+                    pair, frame_width
+                ):
+                    _score, left, right, _width = pair
+                    left_observed, right_observed = self._accept_pair(
+                        left, right, frame_width
+                    )
+                    self._reacquiring_pair = False
+                    self._pair_pending = None
+                    reacquired = True
+                    rejected_left = max(0, len(left_candidates) - 1)
+                    rejected_right = max(0, len(right_candidates) - 1)
+                elif pair is None:
+                    self._pair_pending = None
+            elif pair is not None:
                 _score, left, right, _width = pair
                 left_observed, right_observed = self._accept_pair(
                     left, right, frame_width
@@ -960,7 +1194,7 @@ class LaneBoundaryTracker:
                             frame_width, right_preferred_index, right_hall_selected,
                             frame_height,
                         )
-                        if expected_right is not None else False
+                        if expected_right is not None and right_prediction_valid else False
                     )
                     right_observed = bool(confirmed)
                     reacquired = right_observed
@@ -989,7 +1223,7 @@ class LaneBoundaryTracker:
                             frame_width, left_preferred_index, left_hall_selected,
                             frame_height,
                         )
-                        if expected_left is not None else False
+                        if expected_left is not None and left_prediction_valid else False
                     )
                     left_observed = bool(confirmed)
                     reacquired = left_observed
@@ -1031,6 +1265,17 @@ class LaneBoundaryTracker:
             self._lane_width_px is not None
             and self._width_at(y_ref, frame_height) is not None
             and (left_observed or right_observed)
+            and (
+                (left_observed
+                 and right_prediction_valid
+                 and self._sides["right"].missed_frames
+                     <= max(self.reacquire_frames * 2, self.max_missed_frames * 3))
+                or
+                (right_observed
+                 and left_prediction_valid
+                 and self._sides["left"].missed_frames
+                     <= max(self.reacquire_frames * 2, self.max_missed_frames * 3))
+            )
         ):
             if left_observed:
                 visible_x = self._sides["left"].x_px
@@ -1085,7 +1330,11 @@ class LaneBoundaryTracker:
                 speed_factor = 0.25
             else:
                 lane_center_x = None
-                state_name = "LOST" if self._lane_width_px is not None else "ACQUIRING_PAIR"
+                state_name = (
+                    "REACQUIRING_PAIR" if self._reacquiring_pair
+                    else "LOST" if self._lane_width_px is not None
+                    else "ACQUIRING_PAIR"
+                )
                 lane_type = "none"
                 perception_valid = False
                 quality = 0.0
@@ -1192,6 +1441,11 @@ class LaneBoundaryTracker:
             ],
             "inferred_side": inferred_side,
             "reacquire_frames": int(self.reacquire_frames),
+            "pair_reacquire_required": bool(self._reacquiring_pair),
+            "pair_pending_hits": (
+                int(self._pair_pending["hits"]) if self._pair_pending else 0
+            ),
+            "pair_pending_required": int(self.reacquire_frames),
             "hall_satisfied": hall_satisfied,
             "hall_applicable": bool(
                 left_hall.get("hall_applicable", False)
