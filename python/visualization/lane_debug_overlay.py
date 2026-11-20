@@ -179,6 +179,17 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
                 max(2, thickness + 1),
                 cv2.LINE_AA,
             )
+        elif isinstance(side.get("predicted_points"), (list, tuple)) and len(side.get("predicted_points")) >= 2:
+            points = [
+                _scaled_point(point[0], point[1], sx, sy)
+                for point in side["predicted_points"]
+                if isinstance(point, (list, tuple)) and len(point) >= 2
+            ]
+            for start, end in zip(points, points[1:]):
+                _draw_dashed_line(
+                    canvas, start, end, inferred_color,
+                    max(2, thickness + 1), dash=9, gap=6,
+                )
         elif isinstance(predicted, (list, tuple)) and len(predicted) >= 4:
             x1, y1, x2, y2 = map(float, predicted[:4])
             _draw_dashed_line(
@@ -291,7 +302,9 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
 
     state = str(tracking.get("state") or "UNKNOWN").upper()
     lane_width = _finite_number(tracking.get("lane_width_px"))
-    summary = f"LANE TRACK: {state}"
+    geometry_mode = str(tracking.get("geometry_mode") or "perspective").upper()
+    width_model = str(tracking.get("lane_width_model") or "perspective_profile").upper()
+    summary = f"LANE TRACK: {state} | {geometry_mode} / {width_model}"
     confidence = _finite_number(tracking.get("perception_quality"))
     if lane_width is not None:
         summary += f" | WIDTH {lane_width:.0f}px"
