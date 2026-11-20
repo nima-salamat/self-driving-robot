@@ -668,7 +668,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
                 repr(result["left"]["reacquisition_diagnostics"]),
             )
 
-    def test_nearby_candidate_with_incompatible_tangent_is_rejected_in_bev:
+    def test_nearby_candidate_with_incompatible_tangent_is_rejected_in_bev(self):
         self.tracker.set_geometry_mode("bev")
         self.update(left_x=220.0, right_x=420.0)
         self.update(left_x=None, right_x=420.0)
