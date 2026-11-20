@@ -563,7 +563,7 @@ class LaneBoundaryTracker:
         )
 
     def _boundary_x_from_anchor(self, anchor_side, target_side, y, y_ref,
-                                frame_height):
+                                frame_height, predict_next_frame=False):
         """Predict the other boundary in the active BEV/perspective geometry."""
         anchor = self._sides[anchor_side]
         if anchor.x_px is None:
@@ -577,7 +577,8 @@ class LaneBoundaryTracker:
             if abs(y2 - y1) > 1e-6:
                 slope = (x2 - x1) / (y2 - y1)
         anchor_x = anchor.x_px + slope * (float(y) - float(y_ref))
-        anchor_x += anchor.velocity_px
+        if predict_next_frame:
+            anchor_x += anchor.velocity_px
         direction = 1.0 if target_side == "right" else -1.0
         return float(anchor_x + direction * width)
 
@@ -728,12 +729,14 @@ class LaneBoundaryTracker:
             if self._lane_width_px is not None and anchor.observed and anchor.x_px is not None:
                 for y in sample_y:
                     value = self._boundary_x_from_anchor(
-                        anchor_side, side, float(y), y_ref, frame_height
+                        anchor_side, side, float(y), y_ref, frame_height,
+                        predict_next_frame=True,
                     )
                     if value is not None:
                         sample_x.append(value)
                 expected = self._boundary_x_from_anchor(
-                    anchor_side, side, y_ref, y_ref, frame_height
+                    anchor_side, side, y_ref, y_ref, frame_height,
+                    predict_next_frame=True,
                 )
                 if anchor.line_global is not None:
                     ax1, ay1, ax2, ay2 = anchor.line_global
