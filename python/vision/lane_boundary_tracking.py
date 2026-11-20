@@ -163,7 +163,7 @@ class LaneBoundaryTracker:
             # HoughLinesP already applies the user-configured minLineLength.
             # Do not silently replace it with 10% of the ROI height here: AVIS
             # dashed markings often arrive as a single shorter segment.
-            if length < max(5.0, roi_height * 0.025):
+            if length < max(10.0, roi_height * 0.035):
                 continue
 
             gx1, gx2 = x1 + left, x2 + left
@@ -657,7 +657,7 @@ class LaneBoundaryTracker:
                     ax1, ay1, ax2, ay2 = anchor.line_global
                     anchor_angle = math.degrees(math.atan2(ax2 - ax1, ay2 - ay1))
                 angle_delta = self._angle_delta(candidate["angle_deg"], anchor_angle)
-                if angle_delta > 55.0:
+                if angle_delta > 42.0:
                     continue
             else:
                 angle_delta = 0.0
