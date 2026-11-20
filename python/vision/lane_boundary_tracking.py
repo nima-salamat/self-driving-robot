@@ -517,10 +517,10 @@ class LaneBoundaryTracker:
         # Hough fragments move a few pixels between frames; replacing the whole
         # line with each fragment makes the overlay and inferred counterpart
         # oscillate even when the physical lane marking is stationary.
-        state.x_px = predicted + 0.28 * innovation
-        state.velocity_px = 0.78 * state.velocity_px + 0.22 * innovation
+        state.x_px = predicted + 0.35 * innovation
+        state.velocity_px = 0.75 * state.velocity_px + 0.25 * innovation
         angle_delta = candidate["angle_deg"] - state.angle_deg
-        state.angle_deg += 0.22 * angle_delta
+        state.angle_deg += 0.25 * angle_delta
         state.line_global = self._stable_line_from_candidate(
             candidate, state.x_px, state.angle_deg
         )
