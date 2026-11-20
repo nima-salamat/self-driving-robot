@@ -456,6 +456,47 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertGreaterEqual(search[2] - search[0], left_roi[2] - left_roi[0])
 
 
+    def test_recovered_boundary_keeps_expanded_search_window_until_back_inside_roi(self):
+        left_roi = (90, 300, 228, 440)
+        right_roi = (432, 300, 570, 440)
+        state = self.tracker._sides["left"]
+        state.track_id = 1
+        state.x_px = 235.0
+        state.line_global = (235.0, 300.0, 235.0, 440.0)
+        state.observed = True
+        state.missed_frames = 0
+
+        first = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE
+        )["left"]
+        self.assertTrue(first["expanded"])
+        self.assertEqual(first["reason"], "observed_track_hysteresis")
+        self.assertGreater(first["roi"][2], left_roi[2])
+
+        # Recompute on the next frame before processing the next image: the
+        # ROI must remain expanded, otherwise the recovered line disappears
+        # from the detector crop and toggles back to LOST.
+        second = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE
+        )["left"]
+        self.assertTrue(second["expanded"])
+        self.assertGreater(second["roi"][2], left_roi[2])
+        self.assertTrue(all(
+            second["roi"][0] <= x < second["roi"][2]
+            for x, _y in second["expected_points"]
+        ))
+
+        # Once the tracked line has genuinely returned well inside the user's
+        # configured ROI, the search corridor contracts back to that exact ROI.
+        state.x_px = 190.0
+        state.line_global = (190.0, 300.0, 190.0, 440.0)
+        contracted = self.tracker.recovery_rois(
+            left_roi, right_roi, self.FRAME_SHAPE
+        )["left"]
+        self.assertFalse(contracted["expanded"])
+        self.assertEqual(contracted["roi"], left_roi)
+        self.assertEqual(contracted["reason"], "tracking")
+
     def test_candidate_projection_must_stay_inside_the_actual_search_roi(self):
         # The segment itself is inside the crop, but extrapolating it to y_ref
         # puts its lane point 6 px beyond the right edge. The old 15%-of-ROI
