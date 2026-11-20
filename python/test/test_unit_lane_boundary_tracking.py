@@ -226,6 +226,76 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertAlmostEqual(recovery["expected_x"], 270.0, delta=2.0)
         self.assertGreater(recovery["roi"][2], left_roi[2])
 
+    def test_simulator_startup_ignores_a_single_frame_false_pair(self):
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-8.0)
+        right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=8.0)
+
+        ghost = self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertFalse(ghost["perception_valid"])
+        self.assertEqual(ghost["state"], "ACQUIRING_PAIR")
+        self.assertEqual(ghost["pair_pending_hits"], 1)
+        self.assertIsNone(self.tracker._sides["left"].track_id)
+        self.assertIsNone(self.tracker._sides["right"].track_id)
+
+        # The candidate disappears on the next frame: discard that hypothesis.
+        blank = self.tracker.update(
+            None, None, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertFalse(blank["perception_valid"])
+        self.assertEqual(blank["pair_pending_hits"], 0)
+        self.assertIsNone(self.tracker._sides["left"].track_id)
+
+        # A real pair with the same geometry on two consecutive frames is
+        # accepted, using one Hough segment in each ROI per frame.
+        first = self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertFalse(first["perception_valid"])
+        self.assertEqual(first["pair_pending_hits"], 1)
+
+        second = self.tracker.update(
+            left, right, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertTrue(second["perception_valid"])
+        self.assertEqual(second["lane_type"], "both")
+        self.assertEqual(second["candidate_count"], {"left": 1, "right": 1})
+
+    def test_simulator_startup_single_boundary_is_pending_not_detected(self):
+        left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-8.0)
+        first = self.tracker.update(
+            left, None, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertFalse(first["left"]["observed"])
+        self.assertEqual(first["left"]["status"], "REACQUIRING")
+        self.assertEqual(first["left"]["pending_hits"], 1)
+
+        second = self.tracker.update(
+            left, None, self.FRAME_SHAPE,
+            self.LEFT_ROI, self.RIGHT_ROI,
+            reference_center_x=320.0, geometry_mode="bev",
+            enable_full_pair_reacquisition=True,
+        )
+        self.assertTrue(second["left"]["observed"])
+        self.assertEqual(second["left"]["status"], "DETECTED")
+        self.assertIsNone(second["lane_width_px"])
+
     def test_generic_tracker_keeps_three_frame_confirmation_by_default(self):
         tracker = LaneBoundaryTracker()
         self.assertEqual(tracker.reacquire_frames, 3)
