@@ -227,6 +227,15 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             label = "{} INFERRED {}f".format(side_name.upper(), missed)
             color = inferred_color
 
+        elif status == "PREDICTED":
+            label = "{} PREDICTED {}f".format(
+                side_name.upper(), int(side.get("missed_frames", 0))
+            )
+            color = inferred_color
+        else:
+            label = f"{side_name.upper()} LOST"
+            color = (60, 70, 255)
+
         recovery = side.get("recovery") or {}
         if recovery and not recovery.get("prediction_valid", True):
             distances = recovery.get("edge_distances_px") or {}
@@ -237,14 +246,6 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
             reason = str(recovery.get("reason") or "")
             if reason == "predicted_boundary_outside_recovery_limit":
                 label += " · OUTSIDE ROI {:.0f}px".format(outside)
-        elif status == "PREDICTED":
-            label = "{} PREDICTED {}f".format(
-                side_name.upper(), int(side.get("missed_frames", 0))
-            )
-            color = inferred_color
-        else:
-            label = f"{side_name.upper()} LOST"
-            color = (60, 70, 255)
 
         configured_box = boxes.get(roi_name)
         search_box = side.get("search_roi") or configured_box
