@@ -96,7 +96,9 @@ class CityVisionLineExtractionTests(unittest.TestCase):
             "LL_LEFT_ROI": .1, "LL_RIGHT_ROI": .45,
         }
         with patch.multiple(config, create=True, **values):
-            result = VisionProcessor().detect(frame)
+            processor = VisionProcessor()
+            processor.detect(frame)  # First consistent frame is only pending.
+            result = processor.detect(frame)
 
         self.assertTrue(result["line_tracking"]["enabled"])
         self.assertEqual(result["lane_type"], "both")
