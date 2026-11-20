@@ -202,6 +202,34 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[0]["x_px"], 217.5, delta=0.5)
         self.assertGreater(candidates[0]["quality"], 0.0)
 
+    def test_reacquisition_confirmation_survives_an_intermittent_hough_miss(self):
+        self.tracker.reacquire_frames = 2
+        self.update(left_x=220.0, right_x=420.0)
+        self.update(left_x=None, right_x=420.0, coast_frames=2)
+
+        first_hit = self.update(
+            left_x=220.0, right_x=420.0, coast_frames=2
+        )
+        self.assertFalse(first_hit["left"]["observed"])
+        self.assertEqual(first_hit["left"]["pending_hits"], 1)
+
+        # Hough misses the same dashed boundary for one frame. Keep the
+        # already matched candidate hypothesis instead of resetting it.
+        missed = self.update(
+            left_x=None, right_x=420.0, coast_frames=2
+        )
+        self.assertFalse(missed["left"]["observed"])
+        self.assertEqual(missed["left"]["pending_hits"], 1)
+        self.assertTrue(missed["left"]["coasting"])
+        self.assertFalse(missed["left"]["inferred"])
+
+        returned = self.update(
+            left_x=220.0, right_x=420.0, coast_frames=2
+        )
+        self.assertTrue(returned["left"]["observed"])
+        self.assertEqual(returned["left"]["status"], "DETECTED")
+        self.assertEqual(returned["lane_type"], "both")
+
     def test_simulator_keeps_last_boundary_solid_during_short_hough_dropout(self):
         self.update(left_x=220.0, right_x=420.0)
         previous_line = list(self.tracker._sides["left"].line_global)
