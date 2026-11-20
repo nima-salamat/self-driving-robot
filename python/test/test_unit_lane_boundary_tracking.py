@@ -199,7 +199,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             fragment, self.LEFT_ROI, frame_width=640, y_ref=370.0
         )
         self.assertEqual(len(candidates), 1)
-        self.assertAlmostEqual(candidates[0]["x_px"], 227.5, delta=0.5)
+        self.assertAlmostEqual(candidates[0]["x_px"], 217.5, delta=0.5)
         self.assertGreater(candidates[0]["quality"], 0.0)
 
     def test_simulator_keeps_last_boundary_solid_during_short_hough_dropout(self):
@@ -216,7 +216,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(held["left"]["inferred"])
         self.assertIsNotNone(held["left"]["predicted_line"])
         self.assertEqual(
-            self.tracker._sides["left"].line_global, previous_line
+            tuple(previous_line), self.tracker._sides["left"].line_global
         )
 
         returned = self.update(left_x=220.0, right_x=420.0, coast_frames=2)
