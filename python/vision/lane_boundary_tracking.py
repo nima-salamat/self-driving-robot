@@ -1079,6 +1079,8 @@ class LaneBoundaryTracker:
         geometry_mode=None,
         left_prediction_valid=True,
         right_prediction_valid=True,
+        enable_full_pair_reacquisition=False,
+        max_inferred_frames=None,
     ):
         """Update the joint lane model using two full-frame ROI definitions."""
         if geometry_mode is not None:
@@ -1092,7 +1094,8 @@ class LaneBoundaryTracker:
         right_box = self._roi_tuple(right_roi)
         y_ref = self._reference_row(left_box, right_box)
         if (
-            self._lane_width_px is not None
+            enable_full_pair_reacquisition
+            and self._lane_width_px is not None
             and all(
                 state.track_id is not None
                 and state.missed_frames > self.max_missed_frames
@@ -1307,13 +1310,19 @@ class LaneBoundaryTracker:
             and (
                 (left_observed
                  and right_prediction_valid
-                 and self._sides["right"].missed_frames
-                     <= max(self.reacquire_frames * 2, self.max_missed_frames * 3))
+                 and (
+                     max_inferred_frames is None
+                     or self._sides["right"].missed_frames
+                        <= max(1, int(max_inferred_frames))
+                 ))
                 or
                 (right_observed
                  and left_prediction_valid
-                 and self._sides["left"].missed_frames
-                     <= max(self.reacquire_frames * 2, self.max_missed_frames * 3))
+                 and (
+                     max_inferred_frames is None
+                     or self._sides["left"].missed_frames
+                        <= max(1, int(max_inferred_frames))
+                 ))
             )
         ):
             if left_observed:
