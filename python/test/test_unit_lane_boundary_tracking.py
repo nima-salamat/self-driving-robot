@@ -216,7 +216,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(held["left"]["inferred"])
         self.assertIsNotNone(held["left"]["predicted_line"])
         self.assertEqual(
-            tuple(previous_line), self.tracker._sides["left"].line_global
+            tuple(previous_line), tuple(self.tracker._sides["left"].line_global)
         )
 
         returned = self.update(left_x=220.0, right_x=420.0, coast_frames=2)
