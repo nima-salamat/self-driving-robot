@@ -227,6 +227,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertGreater(recovery["roi"][2], left_roi[2])
 
     def test_simulator_startup_ignores_a_single_frame_false_pair(self):
+        self.tracker.reacquire_frames = 2
         left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-8.0)
         right = self.line_for_global_x(self.RIGHT_ROI, 420.0, dx=8.0)
 
@@ -275,6 +276,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(second["candidate_count"], {"left": 1, "right": 1})
 
     def test_simulator_startup_single_boundary_is_pending_not_detected(self):
+        self.tracker.reacquire_frames = 2
         left = self.line_for_global_x(self.LEFT_ROI, 220.0, dx=-8.0)
         first = self.tracker.update(
             left, None, self.FRAME_SHAPE,
