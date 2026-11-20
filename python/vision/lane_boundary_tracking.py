@@ -736,14 +736,19 @@ class LaneBoundaryTracker:
         state.age += 1
         state.velocity_px *= 0.86
         if state.pending is not None:
-            state.pending["missed_frames"] = (
-                int(state.pending.get("missed_frames", 0)) + 1
-            )
-            # Hough may drop a dashed paint fragment for a frame between two
-            # valid observations. Keep the confirmation hypothesis briefly;
-            # discard it only after a bounded gap, never indefinitely.
-            if state.pending["missed_frames"] > max(1, self.reacquire_frames):
+            # A never-confirmed startup hypothesis must be consecutive. A
+            # one-frame false edge should not survive a blank frame and later
+            # combine with a second isolated hit to create a fake track.
+            if state.track_id is None:
                 state.pending = None
+            else:
+                # For a previously confirmed track, tolerate a brief Hough
+                # dropout while its own ROI is reacquiring the boundary.
+                state.pending["missed_frames"] = (
+                    int(state.pending.get("missed_frames", 0)) + 1
+                )
+                if state.pending["missed_frames"] > max(1, self.reacquire_frames):
+                    state.pending = None
 
     def _mark_observed(self, side, candidate):
         status = self._apply(side, candidate)
@@ -1228,9 +1233,16 @@ class LaneBoundaryTracker:
                 and state.x_px is not None
                 and state.line_global is not None
                 and missed > 0
-                and state.pending is None
             )
-            has_anchor_prediction = False
+            # If this ROI has never yielded usable geometry, the opposite
+            # boundary may provide a bounded fallback search corridor. Once
+            # this side has its own track, it always gets first priority.
+            has_anchor_prediction = (
+                not use_own_track_grace
+                and self._lane_width_px is not None
+                and anchor.observed
+                and anchor.x_px is not None
+            )
 
             if use_own_track_grace:
                 slope = 0.0
