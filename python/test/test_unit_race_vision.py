@@ -54,6 +54,30 @@ class RaceVisionLaneLossTests(unittest.TestCase):
         self.assertEqual(result["observed_lane_boundaries"], 2)
 
 
+    def test_hall_tracker_receives_bev_geometry_mode_from_race_processor(self):
+        import modes.race.config_race as config
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True,
+            "SIMULATOR_BACKEND": "avis",
+            "USE_ML_LANE_DETECTOR": False,
+            "USE_BEV": True,
+            "OLD_METHOD": False,
+            "DEBUG": False,
+            "STREAM": False,
+        }
+        with patch.multiple(config, create=True, **values):
+            processor = VisionProcessor()
+            processor.ml_lane_detector = None
+            result = processor.detect(frame)
+
+        self.assertEqual(result["line_tracking"]["geometry_mode"], "bev")
+        self.assertEqual(result["debug"]["draw_data"]["geometry_mode"], "bev")
+        self.assertEqual(result["line_tracking"]["lane_width_model"], "constant_bev")
+
+
     def test_simulator_hall_uses_exact_configured_rois_when_legacy_resizing_is_enabled(self):
         import modes.race.config_race as config
         from unittest.mock import patch
