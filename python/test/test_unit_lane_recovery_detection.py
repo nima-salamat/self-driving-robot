@@ -64,10 +64,13 @@ class LaneRecoveryDetectionTests(unittest.TestCase):
         # Move the visible anchor enough that the inferred left boundary sits
         # just beyond the configured ROI edge, without training from an
         # out-of-ROI candidate on initial acquisition.
-        tracker.update(
-            None, self._vertical_line(right_roi, 480),
-            frame_shape, left_roi, right_roi, reference_center_x=350.0,
-        )
+        for _ in range(3):
+            tracker.update(
+                None, self._vertical_line(right_roi, 480),
+                frame_shape, left_roi, right_roi, reference_center_x=350.0,
+            )
+        # The first two misses coast the old line. Recovery switches to the
+        # opposite-side width model only after that short grace period.
         search = tracker.recovery_rois(left_roi, right_roi, frame_shape)
         search_roi = search["left"]["roi"]
         self.assertGreater(search_roi[2], left_roi[2])
