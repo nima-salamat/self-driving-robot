@@ -231,6 +231,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(returned["lane_type"], "both")
 
     def test_simulator_keeps_last_boundary_solid_during_short_hough_dropout(self):
+        self.tracker.reacquire_frames = 2
         self.update(left_x=220.0, right_x=420.0)
         previous_line = list(self.tracker._sides["left"].line_global)
 
