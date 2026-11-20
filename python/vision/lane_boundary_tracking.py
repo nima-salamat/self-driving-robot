@@ -775,12 +775,13 @@ class LaneBoundaryTracker:
                 profile_residual = sum(residuals) / max(1, len(residuals))
 
             strict_profile_limit = max(
-                base_tolerance * 1.6, frame_width * 0.08
+                base_tolerance * 1.10, frame_width * 0.05
             )
-            relaxed_profile_limit = min(
-                frame_width * 0.18,
-                max(strict_profile_limit, relaxed_tolerance),
-            )
+            # The relaxed position gate may compensate for stale x
+            # prediction, but must not relax the lane-width/profile check.
+            # Otherwise a neighbouring parallel marking eventually enters
+            # the gate simply because the miss counter keeps growing.
+            relaxed_profile_limit = strict_profile_limit
             profile_limit = (
                 strict_profile_limit
                 if strict_position and angle_delta <= 42.0
@@ -856,7 +857,7 @@ class LaneBoundaryTracker:
                     angle_delta = self._angle_delta(
                         candidate["angle_deg"], anchor_angle
                     )
-                    angle_limit = min(62.0, 48.0 + 2.0 * missed)
+                    angle_limit = 42.0
                     if angle_delta > angle_limit or candidate["quality"] < 0.12:
                         continue
 
