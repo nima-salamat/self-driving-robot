@@ -426,6 +426,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         left_roi = (80, 300, 320, 440)
         right_roi = (380, 300, 560, 440)
         shape = self.FRAME_SHAPE
+        self.tracker.reacquire_frames = 2
         self.tracker.set_geometry_mode("bev")
         left = self.line_for_global_x(left_roi, 220.0, dx=-8.0)
         right = self.line_for_global_x(right_roi, 420.0, dx=8.0)
