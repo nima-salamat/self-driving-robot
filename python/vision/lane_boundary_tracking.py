@@ -756,13 +756,20 @@ class LaneBoundaryTracker:
                       frame_height=None, coast_frames=0):
         state = self._sides[side]
         line = state.line_global if observed else None
+        coast_limit = max(0, int(coast_frames))
+        if state.pending is not None:
+            # Keep the old geometry visible while a returning segment is being
+            # confirmed. Otherwise the first pending hit is rendered as INFERRED
+            # and the overlay flips precisely during reacquisition.
+            coast_limit += max(0, int(self.reacquire_frames) - 1)
         coasting = bool(
             not observed
             and state.track_id is not None
             and state.missed_frames > 0
-            and state.missed_frames <= max(0, int(coast_frames))
+            and state.missed_frames <= coast_limit
         )
-        # Preserve the last confirmed line briefly when Hough misses a frame.
+        # Preserve the last confirmed line briefly when Hough misses a frame,
+        # including the confirmation interval after the segment returns.
         # Do not replace it with the opposite-side width estimate immediately.
         if coasting:
             inferred_x = None
