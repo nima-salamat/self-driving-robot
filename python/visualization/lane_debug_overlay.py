@@ -321,6 +321,10 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
         summary += f" | WIDTH {lane_width:.0f}px"
     if confidence is not None:
         summary += f" | CONF {confidence:.2f}"
+    if tracking.get("pair_reacquire_required"):
+        pending_hits = int(tracking.get("pair_pending_hits", 0))
+        pending_required = int(tracking.get("pair_pending_required", 3))
+        summary += f" | PAIR REACQUIRE {pending_hits}/{pending_required}"
     summary_scale = max(0.30, min(0.48, font_scale + 0.05))
     cv2.putText(
         canvas, summary, (7, max(16, int(20 * sy))),
