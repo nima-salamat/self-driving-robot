@@ -125,7 +125,7 @@ def _defaults(mode, backend):
         "USE_BEV": False,
         "HALL_LINE_TRACKING_ENABLED": False,
         "HALL_LINE_TRACKING_MAX_MISSED": 4,
-        "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 1,
+        "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 2,
         "DEBUG": False,
         "LANE_THRESHOLD": 180,
         "HOUGH_THRESHOLD": 15,
