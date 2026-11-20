@@ -135,6 +135,62 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertIsNone(expired["inferred_side"])
         self.assertFalse(expired["left"]["inferred"])
 
+    def test_one_geometrically_valid_returning_line_is_accepted_immediately(self):
+        self.update(left_x=220.0, right_x=420.0)
+        self.update(left_x=None, right_x=430.0)
+        self.tracker.reacquire_frames = 1
+
+        # Exactly one Hough segment per ROI on this frame. The returning left
+        # segment is accepted immediately because lane width, side, position,
+        # and tangent all agree with the right-side anchor.
+        result = self.update(left_x=230.0, right_x=430.0)
+
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["lane_type"], "both")
+        self.assertTrue(result["left"]["observed"])
+        self.assertTrue(result["right"]["observed"])
+        self.assertEqual(result["left"]["pending_hits"], 0)
+        self.assertEqual(result["reacquire_frames"], 1)
+
+    def test_single_pair_reacquisition_accepts_one_candidate_per_side(self):
+        self.tracker.reacquire_frames = 1
+        self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            geometry_mode="bev",
+        )
+        self.update(left_x=220.0, right_x=420.0)
+
+        for _ in range(self.tracker.max_missed_frames + 1):
+            self.tracker.recovery_rois(
+                self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+                geometry_mode="bev",
+            )
+            self.tracker.update(
+                None, None, self.FRAME_SHAPE,
+                self.LEFT_ROI, self.RIGHT_ROI,
+                reference_center_x=320.0, geometry_mode="bev",
+                enable_full_pair_reacquisition=True,
+            )
+
+        recovery = self.tracker.recovery_rois(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE,
+            geometry_mode="bev",
+        )
+        pair_roi = recovery["left"]["roi"]
+        one_left_line = self.line_for_global_x(pair_roi, 270.0, dx=-8.0)
+        one_right_line = self.line_for_global_x(pair_roi, 470.0, dx=8.0)
+        result = self.tracker.update(
+            one_left_line, one_right_line, self.FRAME_SHAPE,
+            pair_roi, pair_roi, reference_center_x=370.0,
+            geometry_mode="bev", enable_full_pair_reacquisition=True,
+        )
+
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["lane_type"], "both")
+        self.assertEqual(result["candidate_count"], {"left": 1, "right": 1})
+        self.assertEqual(result["state"], "REACQUIRING")
+        self.assertFalse(result["pair_reacquire_required"])
+
     def test_wrong_opposite_line_is_rejected_instead_of_stealing_the_track(self):
         self.update(left_x=220.0, right_x=420.0)
         result = self.update(left_x=180.0, right_x=430.0)
