@@ -375,14 +375,27 @@ class VisionProcessor:
             tracking_right_roi = recovery["right"]["roi"]
             tracking_left_lines = ll_lines
             tracking_right_lines = rl_lines
-            if recovery["left"]["expanded"] or recovery["left"].get("recheck", False):
+            if simulator_joint_tracking:
+                # Use one deterministic detector path on every frame. Switching
+                # between normal ROI preprocessing and an unmasked recovery
+                # crop made the same physical line alternate DETECTED/INFERRED.
                 _left_edges, tracking_left_lines = detect_recovery_lines(
-                    frame, tracking_left_roi, conf, self._morph_kernel
+                    frame, tracking_left_roi, conf, self._morph_kernel,
+                    side="left", mirrored=ll_mirrored,
                 )
-            if recovery["right"]["expanded"] or recovery["right"].get("recheck", False):
                 _right_edges, tracking_right_lines = detect_recovery_lines(
-                    frame, tracking_right_roi, conf, self._morph_kernel
+                    frame, tracking_right_roi, conf, self._morph_kernel,
+                    side="right", mirrored=rl_mirrored,
                 )
+            else:
+                if recovery["left"]["expanded"] or recovery["left"].get("recheck", False):
+                    _left_edges, tracking_left_lines = detect_recovery_lines(
+                        frame, tracking_left_roi, conf, self._morph_kernel
+                    )
+                if recovery["right"]["expanded"] or recovery["right"].get("recheck", False):
+                    _right_edges, tracking_right_lines = detect_recovery_lines(
+                        frame, tracking_right_roi, conf, self._morph_kernel
+                    )
             lane_tracking_result = self._lane_boundary_tracker.update(
                 left_lines=tracking_left_lines,
                 right_lines=tracking_right_lines,
@@ -391,8 +404,14 @@ class VisionProcessor:
                 right_roi=tracking_right_roi,
                 reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
                 geometry_mode=geometry_mode,
-                left_preferred_index=None if recovery["left"]["expanded"] else self._line_index_for_midpoint(ll_lines, ll_x_mid),
-                right_preferred_index=None if recovery["right"]["expanded"] else self._line_index_for_midpoint(rl_lines, rl_x_mid),
+                left_preferred_index=(
+                    None if simulator_joint_tracking or recovery["left"]["expanded"]
+                    else self._line_index_for_midpoint(ll_lines, ll_x_mid)
+                ),
+                right_preferred_index=(
+                    None if simulator_joint_tracking or recovery["right"]["expanded"]
+                    else self._line_index_for_midpoint(rl_lines, rl_x_mid)
+                ),
                 left_prediction_valid=bool(recovery["left"].get("prediction_valid", True)),
                 right_prediction_valid=bool(recovery["right"].get("prediction_valid", True)),
                 enable_full_pair_reacquisition=bool(simulator_joint_tracking),
