@@ -142,11 +142,10 @@ class StopLineDetectorTests(unittest.TestCase):
 class RangeObstacleAvoidanceTests(unittest.TestCase):
     def test_selects_clearer_side_and_limits_bypass_motion(self):
         controller = RangeObstacleAvoidance(obstacle_config())
+        ranges = {"left": 150.0, "front": 80.0, "right": 60.0}
+        controller.apply(base_command(), ranges, perception_valid=True, now=0.1)
         command = controller.apply(
-            base_command(),
-            {"left": 150.0, "front": 80.0, "right": 60.0},
-            perception_valid=True,
-            now=0.1,
+            base_command(), ranges, perception_valid=True, now=0.2,
         )
         self.assertEqual(controller.state, controller.SHIFT)
         self.assertEqual(controller.direction, -1.0)
