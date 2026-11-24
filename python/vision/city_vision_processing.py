@@ -314,7 +314,8 @@ class VisionProcessor:
         crosswalk = False
         cw_lines = []
 
-        if cw_frame is not None:
+        crosswalk_enabled = bool(getattr(conf, "SIMULATOR_CROSSWALK_DETECTION_ENABLED", True))
+        if cw_frame is not None and crosswalk_enabled:
             if bool(getattr(conf, "CW_OLD_METHOD", CW_OLD_METHOD)):
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)

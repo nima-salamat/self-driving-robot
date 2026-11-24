@@ -354,6 +354,19 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="avis-sensor-view"', page_text)
                         self.assertIn('id="avis-sensor-expand"', page_text)
                         self.assertIn("No valid reading", page_text)
+                        self.assertIn('id="obstacle-avoidance-enabled"', page_text)
+                        self.assertIn('id="sign-actions-enabled"', page_text)
+                        self.assertNotIn('id="crosswalk-threshold"', page_text)
+                        self.assertNotIn('id="stop-crosswalk"', page_text)
+                        if mode == "avis":
+                            self.assertIn('id="stop-line-threshold"', page_text)
+                            self.assertIn('id="traffic-lights-enabled"', page_text)
+                            self.assertIn('id="tl-red-hue-min"', page_text)
+                            self.assertIn('data-sim-roi-select="SL"', page_text)
+                            self.assertIn('data-sim-roi-select="TL"', page_text)
+                        else:
+                            self.assertNotIn('id="stop-line-threshold"', page_text)
+                            self.assertNotIn('id="traffic-lights-enabled"', page_text)
 
                     state = client.get("/api/simulation/settings")
                     self.assertEqual(state.status_code, 200, state.get_data(as_text=True))
@@ -365,6 +378,10 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertTrue(payload["roi_geometry"]["cw_trapezoid_mode"])
                         self.assertTrue(payload["roi_geometry"]["roi_resizable"])
                         self.assertEqual(payload["roi_geometry"]["rl_top_width_factor"], 0.72)
+                    elif mode == "avis":
+                        self.assertFalse(payload["roi_geometry"]["cw_trapezoid_mode"] if "cw_trapezoid_mode" in payload["roi_geometry"] else False)
+                        self.assertFalse(payload["roi_geometry"]["stop_line_enabled"])
+                        self.assertFalse(payload["roi_geometry"]["traffic_lights_enabled"])
                     self.assertFalse(payload["controls_enabled"])
 
                     denied = client.post(

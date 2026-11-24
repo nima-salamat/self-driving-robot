@@ -83,7 +83,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   <div class="stack">
     <section class="panel">
       <div class="panel-head"><div><h2>Simulator camera</h2><p>Live frame from the selected adapter, with shared lane perception</p></div><span class="sim-spacer"></span><span id="camera-image-state" class="pill">Waiting for camera</span><span id="frame-age" class="pill">No frame</span></div>
-      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane and crosswalk ROI overlay"></canvas></div></div>
+      <div class="camera-wrap"><span class="camera-chip">{{ caps.vision_profile|upper }} VISION · AUTONOMOUS</span><div class="sim-camera-frame" id="sim-camera-frame"><img id="camera" alt="Simulator camera frame"><canvas id="sim-roi-canvas" class="sim-roi-canvas {% if not caps.supports_lane_roi %}section-hide{% endif %}" aria-label="Interactive lane, stop-line and traffic-light ROI overlay"></canvas></div></div>
       <div class="panel-content">
         <div id="runtime-error" class="status-message section-hide"></div>
         <div id="camera-feed-status" class="msg" role="status">Connecting to camera frame endpoint…</div>
@@ -93,6 +93,9 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
           <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">Virtual servo scale and normalized steering</div></div>
           <div class="metric"><div class="eyebrow">Throttle / brake</div><div id="motion-value" class="value">—</div><div id="motion-reason" class="unit">Safe stop until perception is valid</div></div>
+          {% if caps.supports_obstacle_avoidance or caps.supports_stop_line or caps.supports_sign_actions %}
+          <div class="metric"><div class="eyebrow">AVIS behavior</div><div id="avis-behavior-value" class="value">IDLE</div><div id="avis-behavior-detail" class="unit">Waiting for AVIS behavior state</div></div>
+          {% endif %}
         </div>
         <div class="sim-roi-editor {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-roi-editor">
           <div class="sim-roi-editor-head">
@@ -103,6 +106,8 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <button type="button" data-sim-roi-select="RL" class="active">RL · Right lane</button>
             <button type="button" data-sim-roi-select="LL">LL · Left lane</button>
             {% if caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
+            {% if caps.supports_stop_line %}<button type="button" data-sim-roi-select="SL">SL · Stop line</button>{% endif %}
+            {% if caps.supports_traffic_lights %}<button type="button" data-sim-roi-select="TL">TL · Traffic light</button>{% endif %}
           </div>
           <div class="sim-roi-mirror-control" id="sim-roi-mirror-control">
             <label id="sim-roi-mirror-label" for="sim-roi-mirror-selected"><input type="checkbox" id="sim-roi-mirror-selected"> Mirror selected lane ROI before detection</label>
@@ -113,6 +118,8 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
             <label><input type="checkbox" data-sim-roi-visible="RL" checked> RL</label>
             <label><input type="checkbox" data-sim-roi-visible="LL" checked> LL</label>
             {% if caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
+            {% if caps.supports_stop_line %}<label><input type="checkbox" data-sim-roi-visible="SL" checked> SL</label>{% endif %}
+            {% if caps.supports_traffic_lights %}<label><input type="checkbox" data-sim-roi-visible="TL" checked> TL</label>{% endif %}
           </div>
         </div>
       </div>
@@ -245,12 +252,70 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max="1" step="any" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
               {% endif %}
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
-              <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-stop-distance">Forward emergency brake threshold (cm; bypass retains an independent 20 cm hard stop)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
             </div>
+            {% if caps.supports_obstacle_avoidance %}
+            <div class="setting-block">
+              <h3 class="section-title">AVIS · Optional range-based obstacle bypass</h3>
+              <label class="check-field"><input id="obstacle-avoidance-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"> Enable bounded obstacle avoidance (left/front/right sensors)</label>
+              <div class="grid-two">
+                <div class="field"><label for="obstacle-trigger-distance">Start bypass below (cm)</label><input id="obstacle-trigger-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"></div>
+                <div class="field"><label for="obstacle-clear-distance">Consider path clear above (cm)</label><input id="obstacle-clear-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"></div>
+                <div class="field"><label for="obstacle-side-clearance">Minimum side clearance (cm)</label><input id="obstacle-side-clearance" type="number" min="1" max="500" step="1" name="SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"></div>
+                <div class="field"><label for="obstacle-steering-offset">Steering nudge (0.05–0.35)</label><input id="obstacle-steering-offset" type="number" min=".05" max=".35" step=".01" name="SIMULATOR_OBSTACLE_STEERING_OFFSET"></div>
+                <div class="field"><label for="obstacle-shift-time">Shift duration (seconds)</label><input id="obstacle-shift-time" type="number" min=".05" max="2" step=".05" name="SIMULATOR_OBSTACLE_SHIFT_SECONDS"></div>
+                <div class="field"><label for="obstacle-rejoin-time">Rejoin duration (seconds)</label><input id="obstacle-rejoin-time" type="number" min=".05" max="2" step=".05" name="SIMULATOR_OBSTACLE_REJOIN_SECONDS"></div>
+                <div class="field"><label for="obstacle-pass-timeout">Maximum pass time (seconds)</label><input id="obstacle-pass-timeout" type="number" min=".2" max="10" step=".1" name="SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS"></div>
+                <div class="field"><label for="obstacle-throttle-limit">Bypass throttle cap (0–0.25)</label><input id="obstacle-throttle-limit" type="number" min="0" max=".25" step=".01" name="SIMULATOR_OBSTACLE_THROTTLE_LIMIT"></div>
+              </div>
+              <p class="note">AVIS side sensors are directional range samples, not a free-space map. The maneuver is speed-limited and time-bounded; missing range data or insufficient side clearance causes braking. Keep the emergency brake threshold enabled.</p>
+            </div>
+            {% endif %}
             <label class="check-field"><input id="stop-lost-lane" type="checkbox" name="SIMULATOR_STOP_ON_LOST_LANE"> Brake when no valid lane is detected</label>
-            <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
+            {% if caps.supports_crosswalk %}<label class="check-field"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>{% endif %}
             <label class="check-field"><input id="steering-inverted" type="checkbox" name="SIMULATOR_STEERING_INVERTED"> Invert simulator steering direction</label>
           </div>
+          {% if caps.supports_stop_line %}
+          <div class="setting-block">
+            <h3 class="section-title">AVIS City · Stop line & traffic lights</h3>
+            <label class="check-field"><input id="stop-line-enabled" type="checkbox" name="SIMULATOR_STOP_LINE_ENABLED"> Detect the solid City stop line and hold the vehicle</label>
+            <label class="check-field"><input id="traffic-lights-enabled" type="checkbox" name="SIMULATOR_TRAFFIC_LIGHTS_ENABLED"> Require a confirmed green traffic light before releasing the stop</label>
+            <div class="grid-two">
+              <div class="field"><label for="stop-line-threshold">Stop-line white threshold (0–255)</label><input id="stop-line-threshold" type="number" min="0" max="255" step="1" name="SIMULATOR_STOP_LINE_THRESHOLD"></div>
+              <div class="field"><label for="stop-line-width">Minimum line width ratio (0–1)</label><input id="stop-line-width" type="number" min="0.01" max="1" step=".01" name="SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO"></div>
+              <div class="field"><label for="stop-line-area">Minimum stop-line area (px²)</label><input id="stop-line-area" type="number" min="1" max="50000" step="1" name="SIMULATOR_STOP_LINE_MIN_AREA"></div>
+              <div class="field"><label for="stop-line-angle">Maximum line angle (degrees)</label><input id="stop-line-angle" type="number" min="1" max="45" step="1" name="SIMULATOR_STOP_LINE_MAX_ANGLE_DEG"></div>
+              <div class="field"><label for="stop-line-frames">Consecutive line frames</label><input id="stop-line-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_STOP_LINE_CONFIRM_FRAMES"></div>
+              <div class="field"><label for="stop-line-dwell">Stop dwell without light detector (seconds)</label><input id="stop-line-dwell" type="number" min=".1" max="10" step=".1" name="SIMULATOR_STOP_LINE_DWELL_SECONDS"></div>
+              <div class="field"><label for="tl-min-saturation">Light minimum saturation (0–255)</label><input id="tl-min-saturation" type="number" min="0" max="255" step="1" name="TL_MIN_SATURATION"></div>
+              <div class="field"><label for="tl-min-value">Light minimum value (0–255)</label><input id="tl-min-value" type="number" min="0" max="255" step="1" name="TL_MIN_VALUE"></div>
+              <div class="field"><label for="tl-min-area">Light minimum contour area (px²)</label><input id="tl-min-area" type="number" min="1" max="10000" step="1" name="TL_MIN_CONTOUR_AREA"></div>
+              <div class="field"><label for="tl-brightness">Active light brightness (0–255)</label><input id="tl-brightness" type="number" min="0" max="255" step="1" name="TL_MIN_ACTIVE_BRIGHTNESS"></div>
+              <div class="field"><label for="tl-red-hue-min">Red hue minimum (0–180)</label><input id="tl-red-hue-min" type="number" min="0" max="180" step="1" name="TL_RED_HUE_MIN"></div>
+              <div class="field"><label for="tl-red-hue-max">Red hue maximum (0–180)</label><input id="tl-red-hue-max" type="number" min="0" max="180" step="1" name="TL_RED_HUE_MAX"></div>
+              <div class="field"><label for="tl-red-wrap-hue">Red wrap hue minimum (0–180)</label><input id="tl-red-wrap-hue" type="number" min="0" max="180" step="1" name="TL_RED_HUE_WRAP_MIN"></div>
+              <div class="field"><label for="tl-green-hue-min">Green hue minimum (0–180)</label><input id="tl-green-hue-min" type="number" min="0" max="180" step="1" name="TL_GREEN_HUE_MIN"></div>
+              <div class="field"><label for="tl-green-hue-max">Green hue maximum (0–180)</label><input id="tl-green-hue-max" type="number" min="0" max="180" step="1" name="TL_GREEN_HUE_MAX"></div>
+              <div class="field"><label for="tl-window">Green confirmation window</label><input id="tl-window" type="number" min="1" max="60" step="1" name="SIMULATOR_TL_CONFIRMATION_WINDOW"></div>
+              <div class="field"><label for="tl-green-required">Green frames required</label><input id="tl-green-required" type="number" min="1" max="60" step="1" name="SIMULATOR_TL_GREEN_REQUIRED"></div>
+            </div>
+            <p class="note">Red latches a stop. A release requires the newest observation to be green and the configured number of distinct green frames; unknown, stale or conflicting colors never release the brake.</p>
+          </div>
+          {% endif %}
+          {% if caps.supports_sign_actions %}
+          <div class="setting-block">
+            <h3 class="section-title">AVIS · Traffic-sign actions</h3>
+            <label class="check-field"><input id="sign-actions-enabled" type="checkbox" name="SIMULATOR_SIGN_ACTIONS_ENABLED"> Enable asynchronous traffic-sign recognition and actions</label>
+            <div class="grid-two">
+              <div class="field"><label for="sign-confidence">Minimum confidence (0.05–1)</label><input id="sign-confidence" type="number" min=".05" max="1" step=".01" name="SIMULATOR_SIGN_CONFIDENCE"></div>
+              <div class="field"><label for="sign-scan-interval">Run inference every N frames</label><input id="sign-scan-interval" type="number" min="1" max="120" step="1" name="SIMULATOR_SIGN_SCAN_INTERVAL"></div>
+              <div class="field"><label for="sign-stop-hold">STOP hold (seconds)</label><input id="sign-stop-hold" type="number" min=".1" max="10" step=".1" name="SIMULATOR_SIGN_STOP_HOLD_SECONDS"></div>
+              <div class="field"><label for="sign-turn-hold">TURN nudge duration (seconds)</label><input id="sign-turn-hold" type="number" min=".1" max="10" step=".1" name="SIMULATOR_SIGN_TURN_HOLD_SECONDS"></div>
+              <div class="field"><label for="sign-steering-offset">TURN steering nudge (0.05–0.35)</label><input id="sign-steering-offset" type="number" min=".05" max=".35" step=".01" name="SIMULATOR_SIGN_STEERING_OFFSET"></div>
+            </div>
+            <p class="note">Uses the project's YOLO / ONNX detector because it provides confidence scores for safety filtering. Enabling or disabling sign actions requires a simulator restart. STOP is a timed hold, PARK remains latched until STRAIGHT, and TURN signs make a short low-throttle steering nudge; verify the model and calibration in AVIS before relying on these actions.</p>
+          </div>
+          {% endif %}
           <div class="setting-block {% if caps.vision_profile != 'race' %}section-hide{% endif %}">
             <h3 class="section-title">Race vision options</h3>
             <label class="check-field"><input id="ml-lane-enabled" type="checkbox" name="USE_ML_LANE_DETECTOR"> Enable ML lane model (requires NCNN model files)</label>
@@ -328,6 +393,18 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-bottom">Crosswalk ROI bottom</label><input id="cw-bottom" type="number" min="0" max="1" step="any" name="CW_BOTTOM_ROI"></div>
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-left">Crosswalk ROI left</label><input id="cw-left" type="number" min="0" max="1" step="any" name="CW_LEFT_ROI"></div>
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min="0" max="1" step="any" name="CW_RIGHT_ROI"></div>
+              {% if caps.supports_stop_line %}
+              <div class="field"><label for="sl-top">Stop-line ROI top</label><input id="sl-top" type="number" min="0" max="1" step="any" name="SIMULATOR_STOP_LINE_TOP_ROI"></div>
+              <div class="field"><label for="sl-bottom">Stop-line ROI bottom</label><input id="sl-bottom" type="number" min="0" max="1" step="any" name="SIMULATOR_STOP_LINE_BOTTOM_ROI"></div>
+              <div class="field"><label for="sl-left">Stop-line ROI left</label><input id="sl-left" type="number" min="0" max="1" step="any" name="SIMULATOR_STOP_LINE_LEFT_ROI"></div>
+              <div class="field"><label for="sl-right">Stop-line ROI right</label><input id="sl-right" type="number" min="0" max="1" step="any" name="SIMULATOR_STOP_LINE_RIGHT_ROI"></div>
+              {% endif %}
+              {% if caps.supports_traffic_lights %}
+              <div class="field"><label for="tl-top">Traffic-light ROI top</label><input id="tl-top" type="number" min="0" max="1" step="any" name="TL_TOP_ROI"></div>
+              <div class="field"><label for="tl-bottom">Traffic-light ROI bottom</label><input id="tl-bottom" type="number" min="0" max="1" step="any" name="TL_BOTTOM_ROI"></div>
+              <div class="field"><label for="tl-left">Traffic-light ROI left</label><input id="tl-left" type="number" min="0" max="1" step="any" name="TL_LEFT_ROI"></div>
+              <div class="field"><label for="tl-right">Traffic-light ROI right</label><input id="tl-right" type="number" min="0" max="1" step="any" name="TL_RIGHT_ROI"></div>
+              {% endif %}
             </div>
           </div>
           <div class="actions"><button type="button" id="reload-settings">Reload saved</button><button class="primary" type="submit" id="save-settings">Save settings</button></div>
@@ -452,11 +529,38 @@ function populate(s){
     "bev-bl-x":"BEV_SRC_BL_X","bev-bl-y":"BEV_SRC_BL_Y",
     "rl-top":"RL_TOP_ROI","rl-bottom":"RL_BOTTOM_ROI","rl-left":"RL_LEFT_ROI","rl-right":"RL_RIGHT_ROI",
     "ll-top":"LL_TOP_ROI","ll-bottom":"LL_BOTTOM_ROI","ll-left":"LL_LEFT_ROI","ll-right":"LL_RIGHT_ROI",
-    "cw-top":"CW_TOP_ROI","cw-bottom":"CW_BOTTOM_ROI","cw-left":"CW_LEFT_ROI","cw-right":"CW_RIGHT_ROI"
+    "cw-top":"CW_TOP_ROI","cw-bottom":"CW_BOTTOM_ROI","cw-left":"CW_LEFT_ROI","cw-right":"CW_RIGHT_ROI",
+    "sl-top":"SIMULATOR_STOP_LINE_TOP_ROI","sl-bottom":"SIMULATOR_STOP_LINE_BOTTOM_ROI",
+    "sl-left":"SIMULATOR_STOP_LINE_LEFT_ROI","sl-right":"SIMULATOR_STOP_LINE_RIGHT_ROI",
+    "tl-top":"TL_TOP_ROI","tl-bottom":"TL_BOTTOM_ROI","tl-left":"TL_LEFT_ROI","tl-right":"TL_RIGHT_ROI",
+    "obstacle-trigger-distance":"SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+    "obstacle-clear-distance":"SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
+    "obstacle-side-clearance":"SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
+    "obstacle-shift-time":"SIMULATOR_OBSTACLE_SHIFT_SECONDS",
+    "obstacle-rejoin-time":"SIMULATOR_OBSTACLE_REJOIN_SECONDS",
+    "obstacle-pass-timeout":"SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS",
+    "obstacle-steering-offset":"SIMULATOR_OBSTACLE_STEERING_OFFSET",
+    "obstacle-throttle-limit":"SIMULATOR_OBSTACLE_THROTTLE_LIMIT",
+    "stop-line-threshold":"SIMULATOR_STOP_LINE_THRESHOLD",
+    "stop-line-width":"SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO",
+    "stop-line-area":"SIMULATOR_STOP_LINE_MIN_AREA",
+    "stop-line-angle":"SIMULATOR_STOP_LINE_MAX_ANGLE_DEG",
+    "stop-line-frames":"SIMULATOR_STOP_LINE_CONFIRM_FRAMES",
+    "stop-line-dwell":"SIMULATOR_STOP_LINE_DWELL_SECONDS",
+    "tl-min-saturation":"TL_MIN_SATURATION","tl-min-value":"TL_MIN_VALUE",
+    "tl-min-area":"TL_MIN_CONTOUR_AREA","tl-brightness":"TL_MIN_ACTIVE_BRIGHTNESS",
+    "tl-red-hue-min":"TL_RED_HUE_MIN","tl-red-hue-max":"TL_RED_HUE_MAX",
+    "tl-red-wrap-hue":"TL_RED_HUE_WRAP_MIN","tl-green-hue-min":"TL_GREEN_HUE_MIN",
+    "tl-green-hue-max":"TL_GREEN_HUE_MAX",
+    "tl-window":"SIMULATOR_TL_CONFIRMATION_WINDOW","tl-green-required":"SIMULATOR_TL_GREEN_REQUIRED",
+    "sign-confidence":"SIMULATOR_SIGN_CONFIDENCE","sign-scan-interval":"SIMULATOR_SIGN_SCAN_INTERVAL",
+    "sign-stop-hold":"SIMULATOR_SIGN_STOP_HOLD_SECONDS","sign-turn-hold":"SIMULATOR_SIGN_TURN_HOLD_SECONDS",
+    "sign-steering-offset":"SIMULATOR_SIGN_STEERING_OFFSET"
   };
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
   ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
-   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable"].forEach(function(id){
+   "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable",
+   "obstacle-avoidance-enabled","stop-line-enabled","traffic-lights-enabled","sign-actions-enabled"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
@@ -472,8 +576,11 @@ function populate(s){
 const simRoiDefs = [
   {id:"RL",label:"Right lane",color:"#48d7a4",fields:{top:"rl-top",bottom:"rl-bottom",left:"rl-left",right:"rl-right"}},
   {id:"LL",label:"Left lane",color:"#65a8ff",fields:{top:"ll-top",bottom:"ll-bottom",left:"ll-left",right:"ll-right"}},
-  {id:"CW",label:"Crosswalk",color:"#f4bd63",fields:{top:"cw-top",bottom:"cw-bottom",left:"cw-left",right:"cw-right"}}
-].filter(function(item){return item.id!=="CW"||caps.supports_crosswalk;});
+  {id:"CW",label:"Crosswalk",color:"#f4bd63",fields:{top:"cw-top",bottom:"cw-bottom",left:"cw-left",right:"cw-right"}},
+  {id:"SL",label:"Stop line",color:"#ffb45d",keyPrefix:"SIMULATOR_STOP_LINE_",fields:{top:"sl-top",bottom:"sl-bottom",left:"sl-left",right:"sl-right"}},
+  {id:"TL",label:"Traffic light",color:"#ff6685",fields:{top:"tl-top",bottom:"tl-bottom",left:"tl-left",right:"tl-right"}}
+].filter(function(item){return (item.id!=="CW"||caps.supports_crosswalk)
+  &&(item.id!=="SL"||caps.supports_stop_line)&&(item.id!=="TL"||caps.supports_traffic_lights);});
 let simRoiGeometry={lane_roi_mode:"rectangle",cw_trapezoid_mode:false,rl_top_width_factor:.85,ll_top_width_factor:.85,cw_top_width_factor:.9,use_bev:false};
 let simRoiSelected="RL", simRoiDrag=null, simRoiControlsEnabled=false;
 let simRoiMirrors={RL:false,LL:false};
@@ -638,7 +745,7 @@ function simRoiCollectSettings(){
       if(values.left>=values.right)return {error:def.label+" ROI left must be smaller than right."};
       return {error:"Invalid "+def.label+" ROI bounds."};
     }
-    const prefix=def.id+"_";
+    const prefix=def.keyPrefix||def.id+"_";
     Object.keys(def.fields).forEach(function(key){settings[prefix+({top:"TOP_ROI",bottom:"BOTTOM_ROI",left:"LEFT_ROI",right:"RIGHT_ROI"})[key]]=b[key];});
   }
   settings.RL_MIRRORED=!!simRoiMirrors.RL;
@@ -703,7 +810,13 @@ async function loadSettings(){
   simRoiControlsEnabled=!!data.controls_enabled;
   simRoiGeometry=Object.assign(simRoiGeometry,data.roi_geometry||{});
   const roiHint=document.querySelector("#sim-roi-editor .sim-roi-hint");
-  if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. Changes auto-save after you finish dragging or edit a numeric coordinate. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+ "Coordinates are normalized fractions from 0 to 1 (0.1 = 10% of the frame); City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
+  if(roiHint){
+    const roiModeDescription=caps.supports_crosswalk
+      ? "City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+". "
+      : caps.supports_stop_line ? "AVIS City uses separate rectangular stop-line and traffic-light ROIs; no crosswalk detector is active. "
+      : "Only the active lane ROIs are shown for this vision profile. ";
+    roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. Changes auto-save after you finish dragging or edit a numeric coordinate. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+"Coordinates are normalized fractions from 0 to 1 (0.1 = 10% of the frame). "+roiModeDescription;
+  }
   populate(data.settings||{});
   if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
@@ -939,6 +1052,17 @@ async function poll(){
     setText("steer-value",numeric(d.steering_angle,1)+"° / "+numeric(d.steering_normalized,2));
     setText("motion-value",numeric(d.command.throttle,2)+" / "+numeric(d.command.brake,2));
     setText("motion-reason",d.command.reason||"");
+    if($("avis-behavior-value")){
+      const behavior=d.simulation_behavior||{}, obstacle=behavior.obstacle||{};
+      const state=obstacle.state||"CLEAR";
+      setText("avis-behavior-value",String(state).replace(/_/g," ").toUpperCase());
+      const details=[];
+      if(caps.supports_obstacle_avoidance)details.push("Obstacle "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
+      if(caps.supports_stop_line)details.push("Stop line "+(!behavior.stop_line_enabled?"off":behavior.stop_line_waiting?"HOLD":behavior.stop_line_armed?"armed":"passed"));
+      if(caps.supports_traffic_lights)details.push("Light "+(!behavior.traffic_light_enabled?"off":behavior.traffic_light||"unknown"));
+      if(caps.supports_sign_actions)details.push("Sign "+(behavior.sign_label||"none"));
+      setText("avis-behavior-detail",details.join(" · ")||"No active behavior");
+    }
     setText("encoder-count",String(d.virtual_io.pulses||0));
     setText("encoder-distance",numeric(d.virtual_io.distance_cm,1)+" cm");
     const err=$("runtime-error");
@@ -977,6 +1101,14 @@ $("settings-form").addEventListener("submit",async function(event){
   s.RL_MIRRORED=!!simRoiMirrors.RL;s.LL_MIRRORED=!!simRoiMirrors.LL;
   if(caps.supports_crosswalk) roiPairs.push(
     ["cw-top","CW_TOP_ROI"],["cw-bottom","CW_BOTTOM_ROI"],["cw-left","CW_LEFT_ROI"],["cw-right","CW_RIGHT_ROI"]
+  );
+  if(caps.supports_stop_line) roiPairs.push(
+    ["sl-top","SIMULATOR_STOP_LINE_TOP_ROI"],["sl-bottom","SIMULATOR_STOP_LINE_BOTTOM_ROI"],
+    ["sl-left","SIMULATOR_STOP_LINE_LEFT_ROI"],["sl-right","SIMULATOR_STOP_LINE_RIGHT_ROI"]
+  );
+  if(caps.supports_traffic_lights) roiPairs.push(
+    ["tl-top","TL_TOP_ROI"],["tl-bottom","TL_BOTTOM_ROI"],
+    ["tl-left","TL_LEFT_ROI"],["tl-right","TL_RIGHT_ROI"]
   );
   roiPairs.forEach(function(pair){const el=$(pair[0]);if(el&&el.value!=="")s[pair[1]]=Number(el.value);});
   if(caps.simulator_backend==="carla"){
@@ -1036,6 +1168,54 @@ $("settings-form").addEventListener("submit",async function(event){
     s.SIMULATOR_CAMERA_FOV=Number($("camera-fov").value);
   }
   if(caps.supports_range_sensors)s.SIMULATOR_AVIS_SENSOR_ANGLE=Number($("avis-angle").value);
+  if(caps.supports_obstacle_avoidance){
+    s.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED=$("obstacle-avoidance-enabled").checked;
+    s.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=Number($("obstacle-trigger-distance").value);
+    s.SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=Number($("obstacle-clear-distance").value);
+    s.SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM=Number($("obstacle-side-clearance").value);
+    s.SIMULATOR_OBSTACLE_SHIFT_SECONDS=Number($("obstacle-shift-time").value);
+    s.SIMULATOR_OBSTACLE_REJOIN_SECONDS=Number($("obstacle-rejoin-time").value);
+    s.SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS=Number($("obstacle-pass-timeout").value);
+    s.SIMULATOR_OBSTACLE_STEERING_OFFSET=Number($("obstacle-steering-offset").value);
+    s.SIMULATOR_OBSTACLE_THROTTLE_LIMIT=Number($("obstacle-throttle-limit").value);
+  }
+  if(caps.supports_stop_line){
+    s.SIMULATOR_STOP_LINE_ENABLED=$("stop-line-enabled").checked;
+    s.SIMULATOR_STOP_LINE_THRESHOLD=Number($("stop-line-threshold").value);
+    s.SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO=Number($("stop-line-width").value);
+    s.SIMULATOR_STOP_LINE_MIN_AREA=Number($("stop-line-area").value);
+    s.SIMULATOR_STOP_LINE_MAX_ANGLE_DEG=Number($("stop-line-angle").value);
+    s.SIMULATOR_STOP_LINE_CONFIRM_FRAMES=Number($("stop-line-frames").value);
+    s.SIMULATOR_STOP_LINE_DWELL_SECONDS=Number($("stop-line-dwell").value);
+    s.SIMULATOR_STOP_LINE_TOP_ROI=Number($("sl-top").value);
+    s.SIMULATOR_STOP_LINE_BOTTOM_ROI=Number($("sl-bottom").value);
+    s.SIMULATOR_STOP_LINE_LEFT_ROI=Number($("sl-left").value);
+    s.SIMULATOR_STOP_LINE_RIGHT_ROI=Number($("sl-right").value);
+  }
+  if(caps.supports_traffic_lights){
+    s.SIMULATOR_TRAFFIC_LIGHTS_ENABLED=$("traffic-lights-enabled").checked;
+    s.TL_TOP_ROI=Number($("tl-top").value);s.TL_BOTTOM_ROI=Number($("tl-bottom").value);
+    s.TL_LEFT_ROI=Number($("tl-left").value);s.TL_RIGHT_ROI=Number($("tl-right").value);
+    s.TL_MIN_SATURATION=Number($("tl-min-saturation").value);
+    s.TL_MIN_VALUE=Number($("tl-min-value").value);
+    s.TL_MIN_CONTOUR_AREA=Number($("tl-min-area").value);
+    s.TL_MIN_ACTIVE_BRIGHTNESS=Number($("tl-brightness").value);
+    s.TL_RED_HUE_MIN=Number($("tl-red-hue-min").value);
+    s.TL_RED_HUE_MAX=Number($("tl-red-hue-max").value);
+    s.TL_RED_HUE_WRAP_MIN=Number($("tl-red-wrap-hue").value);
+    s.TL_GREEN_HUE_MIN=Number($("tl-green-hue-min").value);
+    s.TL_GREEN_HUE_MAX=Number($("tl-green-hue-max").value);
+    s.SIMULATOR_TL_CONFIRMATION_WINDOW=Number($("tl-window").value);
+    s.SIMULATOR_TL_GREEN_REQUIRED=Number($("tl-green-required").value);
+  }
+  if(caps.supports_sign_actions){
+    s.SIMULATOR_SIGN_ACTIONS_ENABLED=$("sign-actions-enabled").checked;
+    s.SIMULATOR_SIGN_CONFIDENCE=Number($("sign-confidence").value);
+    s.SIMULATOR_SIGN_SCAN_INTERVAL=Number($("sign-scan-interval").value);
+    s.SIMULATOR_SIGN_STOP_HOLD_SECONDS=Number($("sign-stop-hold").value);
+    s.SIMULATOR_SIGN_TURN_HOLD_SECONDS=Number($("sign-turn-hold").value);
+    s.SIMULATOR_SIGN_STEERING_OFFSET=Number($("sign-steering-offset").value);
+  }
   try{
     const response=await fetch("/api/simulation/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({settings:s})});
     const data=await response.json();

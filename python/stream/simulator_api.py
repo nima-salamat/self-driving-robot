@@ -7,6 +7,9 @@ from stream.capabilities import mode_capabilities
 
 
 RESTART_KEYS = {
+    "SIMULATOR_STOP_LINE_ENABLED", "SIMULATOR_TRAFFIC_LIGHTS_ENABLED",
+    "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
+    "SIMULATOR_SIGN_ACTIONS_ENABLED",
     "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S",
     "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
     "SIMULATOR_SPAWN_POINT_INDEX", "SIMULATOR_LIDAR_ENABLED",
@@ -28,7 +31,23 @@ LIVE_KEYS = {
     "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_STEERING_INVERTED",
     "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
     "SIMULATOR_CAMERA_PITCH", "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL",
-    "SIMULATOR_AVIS_SENSOR_ANGLE", "USE_BEV", "DEBUG",
+    "SIMULATOR_AVIS_SENSOR_ANGLE", "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED",
+    "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
+    "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", "SIMULATOR_OBSTACLE_SHIFT_SECONDS",
+    "SIMULATOR_OBSTACLE_REJOIN_SECONDS", "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS",
+    "SIMULATOR_OBSTACLE_STEERING_OFFSET", "SIMULATOR_OBSTACLE_THROTTLE_LIMIT",
+    "SIMULATOR_STOP_LINE_THRESHOLD", "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO",
+    "SIMULATOR_STOP_LINE_MIN_AREA", "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG",
+    "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_STOP_LINE_DWELL_SECONDS",
+    "SIMULATOR_SIGN_CONFIDENCE", "SIMULATOR_SIGN_SCAN_INTERVAL",
+    "SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS",
+    "SIMULATOR_SIGN_STEERING_OFFSET", "TL_TOP_ROI", "TL_BOTTOM_ROI",
+    "TL_LEFT_ROI", "TL_RIGHT_ROI", "TL_MIN_SATURATION", "TL_MIN_VALUE",
+    "TL_MIN_CONTOUR_AREA", "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN",
+    "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
+    "SIMULATOR_STOP_LINE_TOP_ROI",
+    "SIMULATOR_STOP_LINE_BOTTOM_ROI", "SIMULATOR_STOP_LINE_LEFT_ROI",
+    "SIMULATOR_STOP_LINE_RIGHT_ROI", "USE_BEV", "DEBUG",
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "RL_MIRRORED", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
@@ -66,6 +85,8 @@ def _roi_geometry(config):
         "cw_top_width_factor": factor("CW_TOP_WIDTH_FACTOR", 0.90),
         "roi_resizable": bool(getattr(config, "ROI_RESIZABLE", False)),
         "use_bev": bool(getattr(config, "USE_BEV", False)),
+        "stop_line_enabled": bool(getattr(config, "SIMULATOR_STOP_LINE_ENABLED", False)),
+        "traffic_lights_enabled": bool(getattr(config, "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", False)),
     }
 
 
@@ -157,6 +178,33 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message="City lane/crosswalk settings are available only for the City vision profile"), 400
         if profile != "race" and ({"USE_ML_LANE_DETECTOR", "ML_LANE_MODEL"} & set(patch)):
             return jsonify(success=False, message="ML lane settings are available only for the Race vision profile"), 400
+        avis_only_keys = {
+            "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+            "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
+            "SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS",
+            "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
+            "SIMULATOR_OBSTACLE_THROTTLE_LIMIT", "SIMULATOR_SIGN_ACTIONS_ENABLED",
+            "SIMULATOR_SIGN_CONFIDENCE",
+            "SIMULATOR_SIGN_SCAN_INTERVAL", "SIMULATOR_SIGN_STOP_HOLD_SECONDS",
+            "SIMULATOR_SIGN_TURN_HOLD_SECONDS", "SIMULATOR_SIGN_STEERING_OFFSET",
+        }
+        avis_city_keys = {
+            "SIMULATOR_STOP_LINE_ENABLED", "SIMULATOR_TRAFFIC_LIGHTS_ENABLED",
+            "SIMULATOR_STOP_LINE_THRESHOLD", "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO",
+            "SIMULATOR_STOP_LINE_MIN_AREA", "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG",
+            "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_STOP_LINE_DWELL_SECONDS",
+            "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
+            "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_MIN_CONTOUR_AREA",
+            "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
+            "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
+            "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED", "SIMULATOR_STOP_LINE_TOP_ROI",
+            "SIMULATOR_STOP_LINE_BOTTOM_ROI", "SIMULATOR_STOP_LINE_LEFT_ROI",
+            "SIMULATOR_STOP_LINE_RIGHT_ROI",
+        }
+        if backend != "avis" and (set(patch) & (avis_only_keys | avis_city_keys)):
+            return jsonify(success=False, message="AVIS-specific behavior settings are available only in AVIS Engine modes"), 400
+        if profile != "city" and (set(patch) & avis_city_keys):
+            return jsonify(success=False, message="Stop-line and traffic-light settings are available only in AVIS City mode"), 400
         if "SIMULATOR_TARGET_SPEED" in patch:
             try:
                 target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
@@ -168,6 +216,8 @@ def register_simulator_routes(app, streamer):
             patch["SIMULATOR_TARGET_SPEED"] = target_speed
         if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
             return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
+        if backend == "avis" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
+            return jsonify(success=False, message="AVIS City uses a solid stop line rather than crosswalk detection"), 400
         if "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in patch:
             try:
                 obstacle_distance = float(patch["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"])
@@ -202,12 +252,17 @@ def register_simulator_routes(app, streamer):
             patch["SIMULATOR_THROTTLE_LIMIT"] = value
         for key in ("SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
                     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED",
+                    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_STOP_LINE_ENABLED",
+                    "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_SIGN_ACTIONS_ENABLED",
                     "USE_BEV", "USE_ML_LANE_DETECTOR", "DEBUG"):
             if key in patch and not isinstance(patch[key], bool):
                 return jsonify(success=False, message=key + " must be boolean"), 400
         for key in ("RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
                     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
-                    "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"):
+                    "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+                    "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
+                    "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
+                    "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI"):
             if key in patch:
                 try:
                     value = float(patch[key])

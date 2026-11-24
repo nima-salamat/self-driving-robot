@@ -67,7 +67,23 @@ Per-frame virtual steering changes are kept in the Stream event console/state ra
 
 Implementation: `python/modes/simulation/avis_adapter.py`, using the bundled AVIS client.
 
-The adapter consumes AVIS camera frames and native distance-sensor readings. These readings are exposed as ranges; the code does not fabricate a LiDAR point cloud from them. Sensor angle is configurable only where the current AVIS adapter and editor support it. AVIS requests are synchronous TCP operations, so the timeout should stay within the documented CLI range and be tuned to the simulator environment.
+The adapter consumes AVIS camera frames and native left/front/right distance-sensor readings. These readings are exposed as ranges; the code does not fabricate a LiDAR point cloud from them. Sensor angle is configurable only where the current AVIS adapter and editor support it. AVIS requests are synchronous TCP operations, so the timeout should stay within the documented CLI range and be tuned to the simulator environment.
+
+### AVIS City stop line and traffic lights
+
+AVIS \`avis\` is the City profile, but it does **not** use the physical City crosswalk detector. The AVIS City behavior coordinator instead supports a separate solid stop-line detector with its own normalized ROI (\`SIMULATOR_STOP_LINE_*_ROI\`). It looks for a broad, near-horizontal bright marking inside the configured lower-camera ROI and requires multiple consecutive frames before latching a stop. Tune the threshold, minimum width/area and maximum angle from the simulator Stream settings; SL in the ROI overlay identifies this region.
+
+The traffic-light detector reuses \`vision/traffic_light.py\` and has an independently editable TL ROI (\`TL_*_ROI\`). The editor exposes red/green hue ranges, saturation/value, contour area and brightness thresholds. A red observation latches braking. When stopped at the line, motion is released only after the newest observation is green and the configured number of distinct green frames has been observed (default 8 of 10). Unknown, conflicting or missing observations never release an active signal hold. If traffic-light gating is disabled while stop-line detection remains enabled, the line uses a short configured dwell instead. These features are City-only; \`avis-race\` and CARLA do not receive these AVIS-specific controls.
+
+### Optional AVIS obstacle bypass
+
+Both \`avis\` and \`avis-race\` expose an optional range-based obstacle bypass in the Stream editor. It uses only the actual AVIS left/front/right readings and a bounded \`CLEAR → SHIFT → PASS → REJOIN\` state machine. The default bypass is disabled. When enabled, it starts evaluating an obstacle at 100 cm, requires at least 75 cm on a selected side sensor, caps bypass throttle at 0.12, uses short steering offsets, and expects the front range to clear beyond 125 cm before rejoining. The existing 35 cm forward emergency-brake threshold remains active; the bypass also keeps a separate minimum hard-stop envelope if that legacy threshold is set to zero. A pass that times out, missing forward range, invalid lane perception, or a selected-side sensor that loses its configured clearance results in braking. During bypass, lost lane perception latches the controller in a blocked state. After a stop line is passed, the detector waits for eight consecutive absent frames before arming for the next line.
+
+These three directional range sensors are not a 2D occupancy grid and cannot prove that a full vehicle-width path is clear. This is a conservative simulator behavior prototype, not a general obstacle-navigation guarantee. Losing lane perception, losing the selected-side clearance, or disabling avoidance during an active bypass enters a braked blocked state; after re-enabling, the controller requires three clear front-range observations before recovering. Keep the emergency brake enabled, tune at very low speed, inspect the ROI/sensor console, and test each AVIS scene before increasing speed.
+
+### Optional traffic-sign actions
+
+Both AVIS profiles can optionally run the existing asynchronous YOLO/ONNX sign detector. It is used instead of the legacy SVM path because the ONNX detector supplies per-detection confidence for safety filtering. The model is initialized only when sign actions are enabled; changing the enable flag requires a runtime restart. Inference is sampled at a configurable frame interval and consumes only fresh worker results. Supported labels are STOP, PARK, STRAIGHT, TURN LEFT and TURN RIGHT. STOP applies a timed brake hold; PARK remains latched until a STRAIGHT sign clears it; TURN signs apply a brief low-throttle steering nudge. These actions are intentionally simple and do not infer route topology or guarantee a complete intersection turn. Confirm model accuracy, camera placement and steering direction in AVIS before enabling them for a run.
 
 ## Configuration isolation
 
@@ -81,7 +97,7 @@ They are separate from `python/city.json` and `python/race.json`. CARLA-only opt
 
 ## Feature boundaries
 
-Shared perception does not imply shared mode orchestration. The simulator runtime does not instantiate physical camera hardware, open Arduino serial, or deliver physical encoder readings. Do not assume it supports every physical lane-change sequence, traffic-light gate, Race start/finish workflow or hardware obstacle-avoidance behavior. Verify each capability in the active adapter, simulator runtime and capability metadata before depending on it.
+Shared perception does not imply shared mode orchestration. The simulator runtime does not instantiate physical camera hardware, open Arduino serial, or deliver physical encoder readings. Do not assume simulator modes inherit every physical lane-change sequence, Race start/finish workflow or hardware obstacle-avoidance behavior. AVIS now has a separate, deliberately limited behavior coordinator for optional range-based bypass, traffic-sign actions and (City only) stop-line/traffic-light gating. This does not reuse the physical Arduino action sequences or odometry-based race avoidance. Verify each capability in the active adapter, simulator runtime and capability metadata before depending on it.
 
 ## Simulator test checklist
 
@@ -89,7 +105,10 @@ Shared perception does not imply shared mode orchestration. The simulator runtim
 2. Start with the Stream editor in read-only mode until the mode and sensor feeds are verified.
 3. Confirm the expected map/world, vehicle and spawn point.
 4. Check steering sign, range measurements, LiDAR presence (CARLA only), and lane-loss braking.
-5. Tune target speed and throttle limit conservatively.
+5. For AVIS City, calibrate SL/TL ROIs against the actual camera frame and verify red/green behavior before enabling stop-line gating.
+6. For AVIS obstacle bypass, verify all three range readings and test both selected bypass directions at the lowest speed; confirm the emergency stop still wins.
+7. Enable sign actions only after verifying the model's labels/confidence against the AVIS scene.
+8. Tune target speed and throttle limit conservatively.
 6. Verify reset-to-spawn and shutdown cleanup after restarting the scenario.
 7. Run the simulator-mode unit tests before changing adapter/runtime contracts.
 

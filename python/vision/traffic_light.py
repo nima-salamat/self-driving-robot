@@ -43,15 +43,34 @@ class TrafficLightDetector:
         min_value = int(self._get("TL_MIN_VALUE", 50))
         min_area = float(self._get("TL_MIN_CONTOUR_AREA", 5.0))
         min_brightness = float(self._get("TL_MIN_ACTIVE_BRIGHTNESS", 180))
-        color_ranges = (
-            ("RED", self._get("TL_RED_HSV_RANGES", (
+        # Simulator profiles can tune hue windows without storing nested
+        # arrays in the mode-specific JSON settings file. Physical modes keep
+        # their legacy HSV-range configuration unchanged.
+        has_tunable_hue = all(
+            hasattr(self.config or config_city, key)
+            for key in ("TL_RED_HUE_MIN", "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN",
+                        "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX")
+        )
+        if has_tunable_hue:
+            red_ranges = (
+                ((int(self._get("TL_RED_HUE_MIN", 0)), min_sat, min_value),
+                 (int(self._get("TL_RED_HUE_MAX", 10)), 255, 255)),
+                ((int(self._get("TL_RED_HUE_WRAP_MIN", 170)), min_sat, min_value),
+                 (180, 255, 255)),
+            )
+            green_ranges = (
+                ((int(self._get("TL_GREEN_HUE_MIN", 40)), min_sat, min_value),
+                 (int(self._get("TL_GREEN_HUE_MAX", 90)), 255, 255)),
+            )
+        else:
+            red_ranges = self._get("TL_RED_HSV_RANGES", (
                 ((0, 100, 100), (10, 255, 255)),
                 ((170, 100, 100), (180, 255, 255)),
-            ))),
-            ("GREEN", self._get("TL_GREEN_HSV_RANGES", (
+            ))
+            green_ranges = self._get("TL_GREEN_HSV_RANGES", (
                 ((40, 50, 50), (90, 255, 255)),
-            ))),
-        )
+            ))
+        color_ranges = (("RED", red_ranges), ("GREEN", green_ranges))
         evidence = {}
         for color_name, ranges in color_ranges:
             mask = np.zeros(hsv.shape[:2], dtype=np.uint8)

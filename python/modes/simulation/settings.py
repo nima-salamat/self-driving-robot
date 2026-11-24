@@ -18,6 +18,25 @@ SIMULATOR_KEYS = {
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "SIMULATOR_STOP_ON_LOST_LANE",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+    "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
+    "SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS",
+    "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
+    "SIMULATOR_OBSTACLE_THROTTLE_LIMIT", "SIMULATOR_STOP_LINE_ENABLED",
+    "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_STOP_LINE_THRESHOLD",
+    "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO", "SIMULATOR_STOP_LINE_MIN_AREA",
+    "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG", "SIMULATOR_STOP_LINE_CONFIRM_FRAMES",
+    "SIMULATOR_STOP_LINE_DWELL_SECONDS", "SIMULATOR_SIGN_ACTIONS_ENABLED",
+
+    "SIMULATOR_SIGN_SCAN_INTERVAL", "SIMULATOR_SIGN_STOP_HOLD_SECONDS",
+    "SIMULATOR_SIGN_TURN_HOLD_SECONDS", "SIMULATOR_SIGN_STEERING_OFFSET",
+    "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
+    "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_MIN_CONTOUR_AREA",
+    "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
+    "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
+    "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
+    "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
+    "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI",
     "SIMULATOR_STEERING_INVERTED", "SIMULATOR_AVIS_SENSOR_ANGLE",
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE", "SERVO_DIRECTION",
     "ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM",
@@ -38,6 +57,8 @@ SIMULATOR_KEYS = {
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
+    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_STOP_LINE_ENABLED",
+    "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_SIGN_ACTIONS_ENABLED",
     "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
     "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD", "ROI_RESIZABLE",
 }
@@ -47,14 +68,22 @@ INT_KEYS = {
     "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
-    "CROSSWALK_HORIZONTAL_MIN_LINES",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "SIMULATOR_STOP_LINE_THRESHOLD",
+    "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_SIGN_SCAN_INTERVAL",
+    "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
+    "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
+    "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
 }
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
     "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL", "LANE_ROI_MODE", "SERVO_DIRECTION",
+
 }
 POSITIVE_KEYS = {
     "SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
+    "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
+    "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", "SIMULATOR_STOP_LINE_MIN_AREA",
+    "SIMULATOR_STOP_LINE_DWELL_SECONDS", "TL_MIN_CONTOUR_AREA",
     "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "ENCODER_PULSE_DISTANCE_CM", "CAMERA_HEIGHT", "LANE_WIDTH",
@@ -62,14 +91,24 @@ POSITIVE_KEYS = {
 NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"}
 ROI_KEYS = {"RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
             "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
-            "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI"}
+            "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+            "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
+            "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
+            "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI"}
 BEV_KEYS = {
     "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y",
     "BEV_SRC_BR_X", "BEV_SRC_BR_Y", "BEV_SRC_BL_X", "BEV_SRC_BL_Y",
 }
-ROI_FACTOR_KEYS = {"RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR"}
+ROI_FACTOR_KEYS = {"RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
+                   "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO"}
 NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS | {
     "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STEERING_LIMIT",
+    "SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS",
+    "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
+    "SIMULATOR_OBSTACLE_THROTTLE_LIMIT", "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG",
+    "TL_MIN_ACTIVE_BRIGHTNESS", "SIMULATOR_SIGN_CONFIDENCE",
+    "SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS",
+    "SIMULATOR_SIGN_STEERING_OFFSET",
     "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
@@ -140,8 +179,47 @@ def _defaults(mode, backend):
         "BEV_SRC_BR_X": 1.00, "BEV_SRC_BR_Y": 1.00,
         "BEV_SRC_BL_X": 0.00, "BEV_SRC_BL_Y": 1.00,
         "SIMULATOR_STOP_ON_LOST_LANE": True,
-        "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race",
+        "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race" and backend != "avis",
+        # AVIS City has a solid stop line rather than a crosswalk. Keep the
+        # existing City processor's crosswalk path active for CARLA and physical City.
+        "SIMULATOR_CROSSWALK_DETECTION_ENABLED": backend != "avis",
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
+        "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": False,
+        "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 100.0,
+        "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 125.0,
+        "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 75.0,
+        "SIMULATOR_OBSTACLE_SHIFT_SECONDS": 0.35,
+        "SIMULATOR_OBSTACLE_REJOIN_SECONDS": 0.35,
+        "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS": 4.0,
+        "SIMULATOR_OBSTACLE_STEERING_OFFSET": 0.28,
+        "SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 0.12,
+        "SIMULATOR_STOP_LINE_ENABLED": avis and mode == "avis",
+        "SIMULATOR_TRAFFIC_LIGHTS_ENABLED": avis and mode == "avis",
+        "SIMULATOR_STOP_LINE_THRESHOLD": 190,
+        "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO": 0.55,
+        "SIMULATOR_STOP_LINE_MIN_AREA": 120.0,
+        "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG": 12.0,
+        "SIMULATOR_STOP_LINE_CONFIRM_FRAMES": 3,
+        "SIMULATOR_STOP_LINE_DWELL_SECONDS": 1.0,
+        "SIMULATOR_STOP_LINE_TOP_ROI": 0.72,
+        "SIMULATOR_STOP_LINE_BOTTOM_ROI": 0.98,
+        "SIMULATOR_STOP_LINE_LEFT_ROI": 0.10,
+        "SIMULATOR_STOP_LINE_RIGHT_ROI": 0.90,
+        "TL_TOP_ROI": 0.03, "TL_BOTTOM_ROI": 0.55,
+        "TL_LEFT_ROI": 0.15, "TL_RIGHT_ROI": 0.85,
+        "TL_MIN_SATURATION": 50, "TL_MIN_VALUE": 50,
+        "TL_MIN_CONTOUR_AREA": 5.0, "TL_MIN_ACTIVE_BRIGHTNESS": 180.0,
+        "TL_RED_HUE_MIN": 0, "TL_RED_HUE_MAX": 10, "TL_RED_HUE_WRAP_MIN": 170,
+        "TL_GREEN_HUE_MIN": 40, "TL_GREEN_HUE_MAX": 90,
+        "SIMULATOR_TL_CONFIRMATION_WINDOW": 10,
+        "SIMULATOR_TL_GREEN_REQUIRED": 8,
+        "SIMULATOR_SIGN_ACTIONS_ENABLED": False,
+
+        "SIMULATOR_SIGN_CONFIDENCE": 0.45,
+        "SIMULATOR_SIGN_SCAN_INTERVAL": 6,
+        "SIMULATOR_SIGN_STOP_HOLD_SECONDS": 2.0,
+        "SIMULATOR_SIGN_TURN_HOLD_SECONDS": 0.6,
+        "SIMULATOR_SIGN_STEERING_OFFSET": 0.18,
         "CITY_LANE_DETECTOR": "default",
         "USE_ML_LANE_DETECTOR": False,
         "ML_LANE_MODEL": "unet_depthwise_nano",
@@ -182,6 +260,7 @@ def _validate_settings(data):
                 raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
             if key == "SERVO_DIRECTION" and value not in {"ltr", "rtl"}:
                 raise ValueError("SERVO_DIRECTION must be ltr or rtl")
+
         elif key in INT_KEYS:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError(f"{key} must be an integer")
@@ -209,6 +288,21 @@ def _validate_settings(data):
                 raise ValueError("CROSSWALK_THRESHOLD must be between 0 and 255")
             if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 1 <= value <= 1000:
                 raise ValueError(f"{key} must be between 1 and 1000")
+            if key == "SIMULATOR_STOP_LINE_THRESHOLD" and not 0 <= value <= 255:
+                raise ValueError("SIMULATOR_STOP_LINE_THRESHOLD must be between 0 and 255")
+            if key == "SIMULATOR_STOP_LINE_CONFIRM_FRAMES" and not 1 <= value <= 20:
+                raise ValueError("SIMULATOR_STOP_LINE_CONFIRM_FRAMES must be between 1 and 20")
+            if key == "SIMULATOR_SIGN_SCAN_INTERVAL" and not 1 <= value <= 120:
+                raise ValueError("SIMULATOR_SIGN_SCAN_INTERVAL must be between 1 and 120")
+            if key in {"TL_MIN_SATURATION", "TL_MIN_VALUE"} and not 0 <= value <= 255:
+                raise ValueError(f"{key} must be between 0 and 255")
+            if key in {"TL_RED_HUE_MIN", "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN",
+                       "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX"} and not 0 <= value <= 180:
+                raise ValueError(f"{key} must be between 0 and 180")
+            if key == "SIMULATOR_TL_CONFIRMATION_WINDOW" and not 1 <= value <= 60:
+                raise ValueError("SIMULATOR_TL_CONFIRMATION_WINDOW must be between 1 and 60")
+            if key == "SIMULATOR_TL_GREEN_REQUIRED" and not 1 <= value <= 60:
+                raise ValueError("SIMULATOR_TL_GREEN_REQUIRED must be between 1 and 60")
             if key == "SIMULATOR_SPAWN_POINT_INDEX" and not -1 <= value <= 100000:
                 raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
@@ -230,8 +324,25 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_TARGET_SPEED must be at most 200")
             if key == "SIMULATOR_LIDAR_RANGE_M" and value > 500:
                 raise ValueError("SIMULATOR_LIDAR_RANGE_M must be at most 500 meters")
-            if key == "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" and value > 500:
-                raise ValueError("SIMULATOR_OBSTACLE_STOP_DISTANCE_CM must be at most 500 cm")
+            if key in {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+                       "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"} and value > 500:
+                raise ValueError(f"{key} must be at most 500 cm")
+            if key in {"SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS"} and not 0.05 <= value <= 2.0:
+                raise ValueError(f"{key} must be between 0.05 and 2 seconds")
+            if key == "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS" and not 0.2 <= value <= 10.0:
+                raise ValueError("SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS must be between 0.2 and 10 seconds")
+            if key in {"SIMULATOR_OBSTACLE_STEERING_OFFSET", "SIMULATOR_SIGN_STEERING_OFFSET"} and not 0.05 <= value <= 0.35:
+                raise ValueError(f"{key} must be between 0.05 and 0.35")
+            if key == "SIMULATOR_OBSTACLE_THROTTLE_LIMIT" and not 0 <= value <= 0.25:
+                raise ValueError("SIMULATOR_OBSTACLE_THROTTLE_LIMIT must be between 0 and 0.25")
+            if key == "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG" and not 1 <= value <= 45:
+                raise ValueError("SIMULATOR_STOP_LINE_MAX_ANGLE_DEG must be between 1 and 45 degrees")
+            if key == "TL_MIN_ACTIVE_BRIGHTNESS" and not 0 <= value <= 255:
+                raise ValueError("TL_MIN_ACTIVE_BRIGHTNESS must be between 0 and 255")
+            if key == "SIMULATOR_SIGN_CONFIDENCE" and not 0.05 <= value <= 1:
+                raise ValueError("SIMULATOR_SIGN_CONFIDENCE must be between 0.05 and 1")
+            if key in {"SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS"} and not 0.1 <= value <= 10:
+                raise ValueError(f"{key} must be between 0.1 and 10 seconds")
             if key == "SIMULATOR_THROTTLE_LIMIT" and not 0 <= value <= 1:
                 raise ValueError("SIMULATOR_THROTTLE_LIMIT must be between 0 and 1")
             if key == "SIMULATOR_STEERING_LIMIT" and not 0.05 <= value <= 1:
@@ -259,9 +370,29 @@ def _validate_settings(data):
                 raise ValueError("ENCODER_WHEELBASE_CM must be positive")
         clean[key] = value
     for left, right in (("RL_TOP_ROI", "RL_BOTTOM_ROI"), ("LL_TOP_ROI", "LL_BOTTOM_ROI"), ("CW_TOP_ROI", "CW_BOTTOM_ROI"),
-                        ("RL_LEFT_ROI", "RL_RIGHT_ROI"), ("LL_LEFT_ROI", "LL_RIGHT_ROI"), ("CW_LEFT_ROI", "CW_RIGHT_ROI")):
+                        ("RL_LEFT_ROI", "RL_RIGHT_ROI"), ("LL_LEFT_ROI", "LL_RIGHT_ROI"), ("CW_LEFT_ROI", "CW_RIGHT_ROI"),
+                        ("TL_TOP_ROI", "TL_BOTTOM_ROI"), ("TL_LEFT_ROI", "TL_RIGHT_ROI"),
+                        ("SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI"),
+                        ("SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI")):
         if left in clean and right in clean and clean[left] >= clean[right]:
             raise ValueError(f"{left} must be smaller than {right}")
+    for low, high in (("TL_RED_HUE_MIN", "TL_RED_HUE_MAX"), ("TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX")):
+        if low in clean and high in clean and clean[low] >= clean[high]:
+            raise ValueError(f"{low} must be smaller than {high}")
+    if "TL_RED_HUE_WRAP_MIN" in clean and "TL_RED_HUE_MAX" in clean:
+        if clean["TL_RED_HUE_WRAP_MIN"] <= clean["TL_RED_HUE_MAX"]:
+            raise ValueError("TL_RED_HUE_WRAP_MIN must exceed TL_RED_HUE_MAX")
+    if "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO" in clean and not 0 < clean["SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO"] <= 1:
+        raise ValueError("SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO must be greater than 0 and at most 1")
+    if "SIMULATOR_TL_CONFIRMATION_WINDOW" in clean and "SIMULATOR_TL_GREEN_REQUIRED" in clean:
+        if clean["SIMULATOR_TL_GREEN_REQUIRED"] > clean["SIMULATOR_TL_CONFIRMATION_WINDOW"]:
+            raise ValueError("SIMULATOR_TL_GREEN_REQUIRED cannot exceed SIMULATOR_TL_CONFIRMATION_WINDOW")
+    if "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM" in clean and "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in clean:
+        if clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"] <= clean["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"]:
+            raise ValueError("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM must exceed the emergency stop distance")
+    if "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM" in clean and "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM" in clean:
+        if clean["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"] <= clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"]:
+            raise ValueError("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM must exceed the trigger distance")
     if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
         if not clean["MIN_SERVO_ANGLE"] < clean["SERVO_CENTER"] < clean["MAX_SERVO_ANGLE"]:
             raise ValueError("MIN_SERVO_ANGLE must be smaller than SERVO_CENTER, which must be smaller than MAX_SERVO_ANGLE")
@@ -278,6 +409,7 @@ def load_simulator_settings(config, mode, backend):
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
             saved_values = _validate_settings(json.load(handle))
+        _validate_settings({**_defaults(mode, backend), **saved_values})
         for key, value in saved_values.items():
             setattr(config, key, value)
     if backend == "carla" and path.is_file() and int(saved_values.get("SIMULATOR_TUNING_PROFILE_VERSION", 0)) < 2:
@@ -313,6 +445,8 @@ def save_simulator_settings(config, mode, patch):
         with path.open("r", encoding="utf-8") as handle:
             values.update(_validate_settings(json.load(handle)))
     values.update(_validate_settings(patch))
+    backend = str(getattr(config, "SIMULATOR_BACKEND", ""))
+    _validate_settings({**_defaults(mode, backend), **values})
     if str(getattr(config, "SIMULATOR_BACKEND", "")) == "carla":
         # Mark all newly written CARLA profiles as migrated. This prevents a
         # future restart from applying the one-time legacy safety clamp again.

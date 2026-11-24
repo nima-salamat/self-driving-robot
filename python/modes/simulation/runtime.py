@@ -14,6 +14,7 @@ from stream import start_stream, stop_stream
 from .adapter_registry import create_adapter
 from .base_adapter import VehicleCommand
 from .controller import VirtualVehicleController
+from .avis_behaviors import AVISBehaviorCoordinator
 from visualization.lane_debug_overlay import render_lane_debug_overlay
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,12 @@ class SimulationRuntime:
             self.vision = VisionProcessor()
         self.adapter = create_adapter(self.backend, config)
         self.controller = VirtualVehicleController(config, self.backend)
+        # AVIS-only rules share the simulator's virtual actuator path. They do
+        # not import or instantiate the physical City/Race robot controllers.
+        self.avis_behaviors = (
+            AVISBehaviorCoordinator(config, self.vision_profile)
+            if self.backend == "avis" else None
+        )
         self.shutdown_event = getattr(config, "SHUTDOWN_EVENT", None)
         if self.shutdown_event is None:
             self.shutdown_event = threading.Event()
@@ -410,7 +417,9 @@ class SimulationRuntime:
                 "perception_valid": bool(result.get("perception_valid", False)),
                 "steering_angle": round(float(self.controller.last_servo), 2),
                 "steering_normalized": round(float(self._last_command.steering), 3),
-                "crosswalk": bool(result.get("crosswalk", False)), "speed_kmh": round(speed, 2),
+                "crosswalk": bool(result.get("crosswalk", False)),
+                "simulation_behavior": (self.avis_behaviors.snapshot() if self.avis_behaviors is not None else {}),
+                "speed_kmh": round(speed, 2),
                 "command": {"steering": round(float(self._last_command.steering), 3),
                             "throttle": round(float(self._last_command.throttle), 3),
                             "brake": round(float(self._last_command.brake), 3),
@@ -475,6 +484,10 @@ class SimulationRuntime:
                 if not isinstance(result, dict):
                     result = {}
                 command = self.controller.command_for(result, frame.speed_kmh)
+                if self.avis_behaviors is not None:
+                    self.avis_behaviors.submit_sign_frame(frame)
+                    command = self.avis_behaviors.apply(frame, result, command, now=now)
+                    result["simulation_behavior"] = self.avis_behaviors.snapshot()
                 obstacle_limit = float(getattr(self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", 35.0))
                 ranges = dict(getattr(frame, "ranges_cm", {}) or {})
                 front_range = ranges.get("front")
@@ -489,7 +502,7 @@ class SimulationRuntime:
                             servo_angle=command.servo_angle, target_speed=0.0,
                             reason=f"forward range {front_range:.1f} cm at/below {obstacle_limit:.1f} cm; simulator braking",
                         )
-                if (self.vision_profile == "city" and bool(result.get("crosswalk", False))
+                if (self.backend != "avis" and self.vision_profile == "city" and bool(result.get("crosswalk", False))
                         and bool(getattr(self.config, "SIMULATOR_STOP_ON_CROSSWALK", True))):
                     command = VehicleCommand(
                         steering=command.steering, throttle=0.0, brake=1.0,
@@ -562,6 +575,8 @@ class SimulationRuntime:
             self._started_at = None
             self._stop_visualization_worker()
             self._safe_stop("Simulation runtime stopped; virtual vehicle commanded to brake.")
+            if self.avis_behaviors is not None:
+                self.avis_behaviors.close()
             try:
                 self.adapter.close()
             finally:
