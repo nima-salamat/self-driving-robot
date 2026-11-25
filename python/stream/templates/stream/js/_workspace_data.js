@@ -111,7 +111,7 @@ function applyWorkspace(workspace){
   syncLayerControls();syncLegacyLayerControls();refreshAnnotationList();renderWorkspaceCanvas();drawPrecisionOverlay();updateZoomStatus();
 }
 function syncLegacyLayerControls(){
-  const map={RL:'rl',LL:'ll',CW:'cw',ST:'st',OBJ:'obj',BEV:'bev'};
+  const map={RL:'rl',LL:'ll',CW:'cw',ST:'st',OBJ:'obj',ML:'ml',MR:'mr',BEV:'bev'};
   Object.keys(map).forEach(function(key){const vis=$('vis_'+map[key]),color=$('color_'+map[key]);if(vis)vis.checked=ui.visible[key]!==false;if(color)color.value=(ui.colors||{})[key]||'#ffffff';});
 }
 function syncLayerControls(){
@@ -119,7 +119,7 @@ function syncLayerControls(){
   EXT_LAYERS.forEach(function(key){
     const row=document.createElement('div');row.className='ext-layer-row';
     const check=document.createElement('input');check.type='checkbox';check.checked=ui.visible[key]!==false;check.title='Show/hide '+key;check.onchange=function(){ui.visible[key]=check.checked;syncLegacyLayerControls();saveUILayers();};row.appendChild(check);
-    const label=document.createElement('span');label.textContent=({RL:'Right lane',LL:'Left lane',CW:'Crosswalk',ST:'Sign / tag',OBJ:'Object region',BEV:'Bird eye view'})[key]||key;row.appendChild(label);
+    const label=document.createElement('span');label.textContent=({RL:'Right lane',LL:'Left lane',CW:'Crosswalk',ST:'Sign / tag',OBJ:'Object region',ML:'Maneuver left ROI',MR:'Maneuver right ROI',BEV:'Bird eye view'})[key]||key;row.appendChild(label);
     const color=document.createElement('input');color.type='color';color.value=(ui.colors||{})[key]||'#ffffff';color.title='Layer color';color.oninput=function(){ui.colors[key]=color.value;syncLegacyLayerControls();renderWorkspaceCanvas();scheduleUILayerSave();};row.appendChild(color);
     const opacity=document.createElement('input');opacity.type='range';opacity.min='0';opacity.max='1';opacity.step='.05';opacity.value=String((ui.opacity||{})[key]==null?1:ui.opacity[key]);opacity.title='Layer opacity';opacity.oninput=function(){ui.opacity=ui.opacity||{};ui.opacity[key]=Number(opacity.value);renderWorkspaceCanvas();drawPrecisionOverlay();scheduleUILayerSave();};row.appendChild(opacity);
     root.appendChild(row);
@@ -143,6 +143,8 @@ async function saveUILayers(){
 function applyConfigToUI(snapshot){
   const cfg=normalizedConfig(snapshot);if(!cfg)return;
   currentConfig=cfg;values=jsonClone(cfg.values||values);advanced=jsonClone(cfg.advanced||advanced);ui=jsonClone(cfg.ui||ui);
+  ui.colors=ui.colors||{};ui.visible=ui.visible||{};ui.opacity=ui.opacity||{};
+  [['ML','#38bdf8'],['MR','#f59e0b']].forEach(function(item){if(ui.visible[item[0]]==null)ui.visible[item[0]]=true;if(!ui.colors[item[0]])ui.colors[item[0]]=item[1];if(ui.opacity[item[0]]==null)ui.opacity[item[0]]=1;});
   document.querySelectorAll('#inputs_container input[name]').forEach(function(input){if(Object.prototype.hasOwnProperty.call(values,input.name))input.value=String(values[input.name]);});
   const advancedInputs={lane_threshold:'LANE_THRESHOLD',cross_thresh:'CROSSWALK_THRESHOLD',crosswalk_sleep:'CROSSWALK_SLEEP',crosswalk_thresh_spend:'CROSSWALK_THRESH_SPEND',read_sign_threshold:'READ_SIGN_THRESHOLD',turn_right:'TURN_RIGHT',turn_left:'TURN_LEFT',straight:'STRAIGHT',stop_lvl:'STOP'};
   Object.keys(advancedInputs).forEach(function(id){if($(id)&&advanced[advancedInputs[id]]!=null)$(id).value=String(advanced[advancedInputs[id]]);});
