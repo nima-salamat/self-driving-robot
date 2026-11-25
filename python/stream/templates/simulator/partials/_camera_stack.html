@@ -51,9 +51,14 @@
           <div class="sim-roi-selectors">
             <button type="button" data-sim-roi-select="RL" class="active">RL · Right lane</button>
             <button type="button" data-sim-roi-select="LL">LL · Left lane</button>
+            {% if caps.simulator_backend == 'avis' %}
+            <button type="button" data-sim-roi-select="ML">ML · Left maneuver</button>
+            <button type="button" data-sim-roi-select="MR">MR · Right maneuver</button>
+            {% endif %}
             {% if caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
             {% if caps.supports_stop_line %}<button type="button" data-sim-roi-select="SL">SL · Stop line</button>{% endif %}
             {% if caps.supports_traffic_lights %}<button type="button" data-sim-roi-select="TL">TL · Traffic light</button>{% endif %}
+            {% if caps.supports_bev %}<button type="button" data-sim-roi-select="BEV">BEV · Source area</button>{% endif %}
           </div>
           <div class="sim-roi-mirror-control" id="sim-roi-mirror-control">
             <label id="sim-roi-mirror-label" for="sim-roi-mirror-selected"><input type="checkbox" id="sim-roi-mirror-selected"> Mirror selected lane ROI before detection</label>
@@ -63,9 +68,22 @@
             <label><input type="checkbox" id="sim-roi-overlay-toggle" checked> Show ROI overlays</label>
             <label><input type="checkbox" data-sim-roi-visible="RL" checked> RL</label>
             <label><input type="checkbox" data-sim-roi-visible="LL" checked> LL</label>
+            {% if caps.simulator_backend == 'avis' %}
+            <label><input type="checkbox" data-sim-roi-visible="ML" checked> ML</label>
+            <label><input type="checkbox" data-sim-roi-visible="MR" checked> MR</label>
+            {% endif %}
             {% if caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
             {% if caps.supports_stop_line %}<label><input type="checkbox" data-sim-roi-visible="SL" checked> SL</label>{% endif %}
             {% if caps.supports_traffic_lights %}<label><input type="checkbox" data-sim-roi-visible="TL" checked> TL</label>{% endif %}
+            {% if caps.supports_bev %}<label><input type="checkbox" data-sim-roi-visible="BEV" checked> BEV</label>{% endif %}
+          </div>
+          <div class="sim-roi-zoom-control" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+            <label for="sim-roi-zoom" style="display:flex;align-items:center;gap:8px">Camera frame
+              <input id="sim-roi-zoom" type="range" min="50" max="100" step="5" value="100" style="width:150px">
+              <span id="sim-roi-zoom-value" class="note">100% · fit</span>
+            </label>
+            <button type="button" id="sim-roi-fit">Fit full frame</button>
+            <span class="note">100% fits the complete frame; lower values only zoom out and never crop the overlay.</span>
           </div>
         </div>
           </section>
