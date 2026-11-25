@@ -112,5 +112,24 @@ class HallLineMatchingTests(unittest.TestCase):
         self.assertEqual(len(adjacency) - len(matching), 1)
 
 
+    def test_track_history_is_bounded_and_keeps_selected_identity(self):
+        tracker = HallLineTracker(
+            max_missed_frames=3, max_candidates=32, max_tracks=16,
+        )
+        selected_track_id = None
+        for frame_index in range(12):
+            lines = []
+            for line_index in range(32):
+                if line_index == 0:
+                    x = 42.0
+                else:
+                    x = float(70 + ((line_index * 37 + frame_index * 53) % 540))
+                lines.append(np.asarray([x, 20.0, x + 4.0, 140.0]))
+            result = tracker.update(lines, 640, 480, preferred_index=0)
+            if selected_track_id is None:
+                selected_track_id = result["selected_track_id"]
+            self.assertEqual(result["selected_track_id"], selected_track_id)
+            self.assertLessEqual(result["active_tracks"], 16)
+
 if __name__ == "__main__":
     unittest.main()
