@@ -156,21 +156,26 @@ async function poll(){
           details.push("Maneuver ROI "+obstacle.active_maneuver_roi.toUpperCase()+" · lock "+
             numeric(obstacle.roi_confirmations,0)+"/"+numeric(obstacle.roi_confirmations_required,0));
         }
-        if(state==="PASS_LANE_FOLLOW"){
-          details.push("Passing lane hold "+numeric(obstacle.lane_hold_elapsed_seconds,1)+"/"+
+        if(state==="PASS_LANE_FOLLOW"||state==="REJOIN_LANE_FOLLOW"){
+          const followingOriginalLane=state==="REJOIN_LANE_FOLLOW";
+          details.push((followingOriginalLane?"Original lane hold ":"Passing lane hold ")+
+            numeric(obstacle.lane_hold_elapsed_seconds,1)+"/"+
             numeric(obstacle.lane_hold_seconds,1)+" s");
           if(obstacle.return_steering_gate_enabled){
             const mean=obstacle.return_steering_mean_percent;
             const meanText=mean===null||mean===undefined?"collecting":numeric(mean,1)+"%";
             const gateState=obstacle.return_steering_gate_ready?"READY":
               obstacle.return_steering_gate_waiting?"WAITING":"SAMPLING";
-            details.push("Return steering "+gateState+" · mean "+meanText+" ("+
+            details.push((followingOriginalLane?"Recenter steering ":"Return steering ")+gateState+
+              " · mean "+meanText+" ("+
               numeric(obstacle.return_steering_sample_count,0)+"/"+
               numeric(obstacle.return_steering_sample_window,0)+") · band ["+
               numeric(obstacle.return_steering_min_percent,0)+", "+
               numeric(obstacle.return_steering_max_percent,0)+"]%");
           }else{
-            details.push("Steering return gate off · timed return");
+            details.push(followingOriginalLane
+              ?"Steering gate off · timed lane restore"
+              :"Steering return gate off · timed return");
           }
         }
         if(obstacle.reason)details.push(obstacle.reason);
