@@ -374,7 +374,7 @@ function syncPropertiesSelection(target){
  }
  if(st.kind==='roi'){
   selectedVar=st.group;select.value=st.group;const n=names(st.group);
-  document.getElementById('properties_mode').textContent=({RL:'Right Lane ROI',LL:'Left Lane ROI',CW:'Crosswalk ROI',ST:'Sign / Tag ROI',OBJ:'Object ROI'})[st.group]+' · bounds';
+  document.getElementById('properties_mode').textContent=({RL:'Right Lane ROI',LL:'Left Lane ROI',CW:'Crosswalk ROI',ST:'Sign / Tag ROI',OBJ:'Object ROI',ML:'Maneuver Left ROI',MR:'Maneuver Right ROI'})[st.group]+' · bounds';
   document.getElementById('prop_left').value=values[n.left]??'';document.getElementById('prop_top').value=values[n.top]??'';document.getElementById('prop_right').value=values[n.right]??'';document.getElementById('prop_bottom').value=values[n.bottom]??'';
   document.getElementById('prop_hint').textContent='Normalized camera coordinates (0–1). Drag this ROI, use arrow keys, or edit fields.';document.getElementById('cad_selected_area').textContent='Object: '+st.group;
  }else{
