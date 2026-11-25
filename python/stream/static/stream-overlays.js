@@ -84,7 +84,7 @@ function drawOverlays(){
         }
 
         // Draw the selected ROI last so overlapping regions cannot cover it.
-        const roiOrder=['RL','LL','CW','ST','OBJ'];
+        const roiOrder=['RL','LL','CW','ST','OBJ','ML','MR'];
         if(roiOrder.includes(markerHighlight)){
             const selectedIndex=roiOrder.indexOf(markerHighlight);
             roiOrder.push(roiOrder.splice(selectedIndex,1)[0]);
@@ -193,7 +193,7 @@ function hitTest(px, py){
     }
 
     const rects = computeRects();
-    for(const key of ['RL','LL','CW','ST','OBJ']){
+    for(const key of ['RL','LL','CW','ST','OBJ','ML','MR']){
         if(!ui.visible[key]) continue;
         const r = rects[key];
         if(!r) continue;
