@@ -963,6 +963,18 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertIn('id="pid-enabled"', page_text)
                     self.assertIn('id="pid-output-min"', page_text)
                     if backend == "avis":
+                        settings_panel_start = page_text.index('<section class="panel sim-settings-panel"')
+                        settings_panel_content = page_text.index('<div class="panel-content">', settings_panel_start)
+                        settings_header = page_text[settings_panel_start:settings_panel_content]
+                        self.assertIn("<h2>Settings</h2>", settings_header)
+                        self.assertIn('id="reload-settings"', settings_header)
+                        self.assertIn('id="save-settings"', settings_header)
+                        self.assertIn('form="settings-form"', settings_header)
+                        self.assertNotIn("editor-description", page_text)
+                        self.assertEqual(page_text.count('id="reload-settings"'), 1)
+                        self.assertEqual(page_text.count('id="save-settings"'), 1)
+                        self.assertIn('setActive(0);', page_text)
+                        self.assertIn('event.key==="Enter"&&results.querySelector(".settings-search-result")', page_text)
                         self.assertIn('data-sim-roi-select="ML"', page_text)
                         self.assertIn('data-sim-roi-select="MR"', page_text)
                         self.assertIn('data-sim-roi-visible="ML"', page_text)
