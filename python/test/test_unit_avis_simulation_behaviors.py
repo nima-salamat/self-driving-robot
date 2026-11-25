@@ -351,6 +351,54 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
 
 
 
+    def test_direct_steering_percent_settings_accept_full_range_only(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT": 100.0,
+            "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT": 0.0,
+        }, backend="avis")
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT"], 100.0)
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT"], 0.0)
+        with self.assertRaises(ValueError):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT": 100.1},
+                backend="avis",
+            )
+        with self.assertRaises(ValueError):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT": -0.1},
+                backend="avis",
+            )
+
+    def test_maneuver_roi_timing_and_confirmation_settings_are_bounded(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS": 1.0,
+            "SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS": 3.0,
+            "SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS": 4.0,
+            "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES": 2,
+            "ML_TOP_ROI": 0.60,
+            "ML_BOTTOM_ROI": 0.98,
+            "ML_LEFT_ROI": 0.02,
+            "ML_RIGHT_ROI": 0.42,
+            "MR_TOP_ROI": 0.60,
+            "MR_BOTTOM_ROI": 0.98,
+            "MR_LEFT_ROI": 0.58,
+            "MR_RIGHT_ROI": 0.98,
+        }, backend="avis")
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES"], 2)
+        self.assertEqual(clean["ML_LEFT_ROI"], 0.02)
+        self.assertEqual(clean["MR_RIGHT_ROI"], 0.98)
+        with self.assertRaises(ValueError):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES": 0},
+                backend="avis",
+            )
+        with self.assertRaises(ValueError):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS": 15.1},
+                backend="avis",
+            )
+
+
 class AVISCitySignalGateTests(unittest.TestCase):
     def test_stop_line_holds_until_distinct_green_frames_are_confirmed(self):
         coordinator = AVISBehaviorCoordinator(city_config(), "city")
