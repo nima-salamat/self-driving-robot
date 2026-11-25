@@ -313,13 +313,26 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         command = base_command()
         result = controller.apply(
             command,
-            {"left": 180.0, "front": 80.0, "right": 90.0},
+            {"left": 180.0, "front": 160.0, "right": 90.0},
             perception_valid=False,
             now=1.0,
         )
         self.assertIs(result, command)
         self.assertEqual(controller.state, controller.CLEAR)
         self.assertIn("waiting for valid lane perception", controller.snapshot()["reason"])
+
+    def test_obstacle_inside_bypass_trigger_brakes_when_lane_perception_is_invalid(self):
+        controller = RangeObstacleAvoidance(obstacle_config())
+        result = controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 80.0, "right": 90.0},
+            perception_valid=False,
+            now=1.0,
+        )
+        self.assertEqual(result.throttle, 0.0)
+        self.assertEqual(result.brake, 1.0)
+        self.assertEqual(controller.state, controller.BLOCKED)
+        self.assertIn("lane perception is invalid", controller.snapshot()["reason"])
 
     def test_rejoin_requires_three_clear_frames_and_minimum_travel_distance(self):
         controller = RangeObstacleAvoidance(obstacle_config())
