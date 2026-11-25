@@ -509,7 +509,8 @@ class VisionProcessor:
                     recovery["right"] = search
                     if search_valid:
                         tracking_right_roi = search["roi"]
-                        _target_edges, tracking_right_lines = detect_recovery_lines(
+                        ll_edge = None
+                        ll_edge, tracking_right_lines = detect_recovery_lines(
                             frame, tracking_right_roi, conf, self._morph_kernel,
                             mirrored=rl_mirrored,
                         )
@@ -525,7 +526,8 @@ class VisionProcessor:
                     recovery["left"] = search
                     if search_valid:
                         tracking_left_roi = search["roi"]
-                        _target_edges, tracking_left_lines = detect_recovery_lines(
+                        rl_edge = None
+                        ll_edge, tracking_left_lines = detect_recovery_lines(
                             frame, tracking_left_roi, conf, self._morph_kernel,
                             mirrored=ll_mirrored,
                         )
