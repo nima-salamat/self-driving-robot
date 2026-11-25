@@ -562,6 +562,118 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
                 backend="avis",
             )
 
+    def test_hall_bypass_hands_off_right_then_left_and_restores_both_rois(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            HALL_LINE_TRACKING_ENABLED=True,
+            OLD_METHOD=False,
+            SIMULATOR_BACKEND="avis",
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES=1,
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.2,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=False,
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=80.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=70.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        left_track = {
+            "left": {"observed": True, "track_id": 41},
+            "right": {"observed": True, "track_id": 42},
+            "lane_width_px": 200.0,
+        }
+        controller.apply(
+            base_command(), ranges, perception_valid=True,
+            lane_tracking=left_track, now=1.0,
+        )
+        controller.apply(
+            base_command(), ranges, perception_valid=True,
+            lane_tracking=left_track, now=1.6,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
+        self.assertEqual(controller.prepare_vision(), "right")
+        first_plan = controller.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF
+        self.assertEqual(first_plan["source_side"], "left")
+        self.assertEqual(first_plan["target_side"], "right")
+        self.assertEqual(first_plan["expected_track_id"], 41)
+
+        right_lock = {
+            "side": "right", "observed": True, "handoff_locked": True,
+            "track_id": 41,
+        }
+        right_track = {
+            "left": {"observed": False},
+            "right": {"observed": True, "track_id": 41},
+            "lane_width_px": 200.0,
+        }
+        lane_pid = VehicleCommand(
+            steering=0.08, throttle=0.10, brake=0.0,
+            servo_angle=100.0, target_speed=12.0, reason="lane PID",
+        )
+        controller.apply(
+            lane_pid, ranges, perception_valid=True,
+            lane_tracking=right_track, maneuver_roi=right_lock, now=1.7,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertEqual(controller.prepare_vision(), "right")
+
+        controller.apply(
+            lane_pid, ranges, perception_valid=True,
+            lane_tracking=right_track, maneuver_roi=right_lock, now=1.95,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        controller.apply(
+            base_command(), ranges, perception_valid=True,
+            lane_tracking=right_track, now=2.5,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_RIGHT_ROI)
+        self.assertEqual(controller.prepare_vision(), "left")
+        second_plan = controller.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF
+        self.assertEqual(second_plan["source_side"], "right")
+        self.assertEqual(second_plan["target_side"], "left")
+        self.assertEqual(second_plan["expected_track_id"], 41)
+
+        left_lock = {
+            "side": "left", "observed": True, "handoff_locked": True,
+            "track_id": 41,
+        }
+        left_track = {
+            "left": {"observed": True, "track_id": 41},
+            "right": {"observed": False},
+            "lane_width_px": 200.0,
+        }
+        controller.apply(
+            lane_pid, ranges, perception_valid=True,
+            lane_tracking=left_track, maneuver_roi=left_lock, now=2.6,
+        )
+        self.assertEqual(controller.state, controller.REJOIN_LANE_FOLLOW)
+        self.assertEqual(controller.prepare_vision(), "left")
+
+        controller.apply(
+            lane_pid, ranges, perception_valid=True,
+            lane_tracking=left_track, maneuver_roi=left_lock, now=2.85,
+        )
+        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertIsNone(controller.prepare_vision())
+        self.assertIsNone(controller.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF)
+
+    def test_hall_handoff_is_not_used_by_ml_or_blsf_detectors(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            HALL_LINE_TRACKING_ENABLED=True,
+            OLD_METHOD=False,
+            SIMULATOR_BACKEND="avis",
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+        ))
+        self.assertTrue(controller._hall_handoff_enabled())
+        controller.config.USE_ML_LANE_DETECTOR = True
+        self.assertFalse(controller._hall_handoff_enabled())
+        controller.config.USE_ML_LANE_DETECTOR = False
+        controller.config.CITY_LANE_DETECTOR = "blsf-beta"
+        self.assertFalse(controller._hall_handoff_enabled())
+
+
 
 class AVISCitySignalGateTests(unittest.TestCase):
     def test_stop_line_holds_until_distinct_green_frames_are_confirmed(self):
