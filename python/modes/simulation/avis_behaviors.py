@@ -670,11 +670,20 @@ class RangeObstacleAvoidance:
             self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW
         }:
             if right is None or right < minimum_side:
-                self._set_state(
-                    self.BLOCKED, now,
-                    "right-side clearance is not proven for the return maneuver; braking",
+                self.return_clear_observations = 0
+                return self._brake(
+                    command,
+                    "right-return paused until side clearance is restored "
+                    f"(right range {right if right is not None else 'unavailable'} cm; "
+                    f"required at least {minimum_side:.1f} cm)",
                 )
-                return self._brake(command, self.last_reason)
+            self.return_clear_observations += 1
+            if self.return_clear_observations < clear_confirm_frames:
+                return self._brake(
+                    command,
+                    "right-return waiting for consecutive side-clearance observations "
+                    f"({self.return_clear_observations}/{clear_confirm_frames})",
+                )
 
         if self.state == self.SHIFT_LEFT_DIRECT:
             return self._direct_phase(
@@ -1001,11 +1010,20 @@ class RangeObstacleAvoidance:
             1, min(20, self._integer("SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES", 3))
         )
         right_range = self.last_ranges.get("right")
+        right_return_active = self.state in {
+            self.PASS_LANE_FOLLOW, self.SHIFT_RIGHT_DIRECT,
+            self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW,
+        }
         return_clearance_waiting = bool(
-            self.state == self.PASS_LANE_FOLLOW
-            and hold_elapsed >= lane_hold
-            and (right_range is None or right_range < minimum_side
-                 or self.return_clear_observations < clear_confirmations)
+            right_return_active
+            and (
+                self.state != self.PASS_LANE_FOLLOW
+                or hold_elapsed >= lane_hold
+            )
+            and (
+                right_range is None or right_range < minimum_side
+                or self.return_clear_observations < clear_confirmations
+            )
         )
         return {
             "enabled": bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),

@@ -364,6 +364,53 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertAlmostEqual(returning.steering, 0.70)
         self.assertIn("clearance confirmed", controller.last_reason.lower())
 
+    def test_right_return_pauses_and_resumes_without_permanently_blocking(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_BACKEND="avis",
+            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
+            SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=3,
+            SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM=75.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=70.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        controller.state = controller.SHIFT_RIGHT_DIRECT
+        controller.state_since = 10.0
+        controller.return_clear_observations = 3
+        lane_command = VehicleCommand(
+            steering=0.0, throttle=0.1, brake=0.0,
+            servo_angle=95.0, target_speed=12.0, reason="lane PID",
+        )
+
+        paused = controller.apply(
+            lane_command,
+            {"left": 180.0, "front": 180.0, "right": 50.0},
+            perception_valid=True, now=10.1,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertGreaterEqual(paused.brake, 0.5)
+        self.assertIn("paused until side clearance", paused.reason.lower())
+
+        for current_time in (10.2, 10.3):
+            paused = controller.apply(
+                lane_command,
+                {"left": 180.0, "front": 180.0, "right": 120.0},
+                perception_valid=True, now=current_time,
+            )
+            self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+            self.assertGreaterEqual(paused.brake, 0.5)
+
+        resumed = controller.apply(
+            lane_command,
+            {"left": 180.0, "front": 180.0, "right": 120.0},
+            perception_valid=True, now=10.4,
+        )
+        self.assertNotEqual(controller.state, controller.BLOCKED)
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertAlmostEqual(resumed.steering, 0.70)
+        self.assertEqual(resumed.brake, 0.0)
+
     def test_return_steering_gate_timeout_releases_right_return_with_hall_tracking(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_BACKEND="avis",
