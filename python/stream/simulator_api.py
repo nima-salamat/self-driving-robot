@@ -102,11 +102,17 @@ def register_simulator_routes(app, streamer):
     def simulator_run_mode():
         if not streamer._control_allowed():
             return streamer._control_denied()
-        if str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower() != "carla":
-            return jsonify(success=False, message="Explicit run mode is currently available only for CARLA."), 409
+        caps = mode_capabilities(streamer.config)
+        backend = str(caps.get("simulator_backend") or "").strip().lower()
+        if backend not in {"carla", "avis"}:
+            return jsonify(
+                success=False,
+                message="Explicit run control is available only for CARLA and AVIS Engine modes.",
+            ), 409
+        engine = "AVIS Engine" if backend == "avis" else "CARLA"
         runtime = getattr(streamer.config, "simulation_runtime", None)
         if runtime is None:
-            return jsonify(success=False, message="CARLA simulation runtime is not initialized."), 503
+            return jsonify(success=False, message=f"{engine} simulation runtime is not initialized."), 503
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify(success=False, message="JSON object required"), 400
@@ -117,9 +123,15 @@ def register_simulator_routes(app, streamer):
             enabled = runtime.set_run_enabled(action == "start")
         except RuntimeError as exc:
             return jsonify(success=False, message=str(exc)), 409
-        return jsonify(success=True, run_enabled=enabled,
-                       run_mode="running" if enabled else "stopped",
-                       message="CARLA autonomous run started." if enabled else "CARLA autonomous run stopped; brake applied.")
+        return jsonify(
+            success=True,
+            run_enabled=enabled,
+            run_mode="running" if enabled else "stopped",
+            message=(
+                f"{engine} autonomous run started."
+                if enabled else f"{engine} autonomous run stopped; brake applied."
+            ),
+        )
 
 
     @app.get("/api/simulation/settings")
