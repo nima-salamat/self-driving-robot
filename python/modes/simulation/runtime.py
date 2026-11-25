@@ -67,9 +67,11 @@ class SimulationRuntime:
         self._stop_event_active = False
         self._camera_editor_active = False
         self._scene_edit_active = False
-        # CARLA is deliberately disarmed on every process start. AVIS keeps
-        # its historical auto-run behavior until it gains a separate run UI.
-        self._run_enabled = self.backend != "carla"
+        # Remote autonomous simulator modes are disarmed on every process
+        # start. Sensor/perception streaming can initialize, but motion requires
+        # an explicit Start Run command from the Stream dashboard.
+        self._requires_explicit_start = self.backend in {"carla", "avis"}
+        self._run_enabled = not self._requires_explicit_start
         self._last_image_diagnostics = {}
         self._cycle_times = deque(maxlen=120)
         self._detection_times_ms = deque(maxlen=120)
@@ -266,26 +268,30 @@ class SimulationRuntime:
             self._record_event(level, message, log=False)
 
     def set_run_enabled(self, enabled):
-        """Arm/disarm CARLA autonomous motion; disarming applies the brake immediately."""
-        if self.backend != "carla":
-            raise RuntimeError("Explicit run mode is currently available only for CARLA.")
+        """Arm/disarm remote simulator motion; disarming applies the brake immediately."""
+        if not self._requires_explicit_start:
+            raise RuntimeError("Explicit run mode is available only for CARLA and AVIS Engine.")
         enabled = bool(enabled)
         if enabled == self._run_enabled:
             return self._run_enabled
+        engine = "AVIS Engine" if self.backend == "avis" else "CARLA"
         if enabled:
-            if self._camera_editor_active or self._scene_edit_active:
+            if self.backend == "carla" and (self._camera_editor_active or self._scene_edit_active):
                 raise RuntimeError("Close the CARLA camera/scene editor before starting autonomous run.")
-            if not self.adapter.connected or not self._carla_vehicle_ready():
-                raise RuntimeError("CARLA vehicle is not ready; autonomous run cannot be started.")
+            ready = self.adapter.connected and (
+                self.backend != "carla" or self._carla_vehicle_ready()
+            )
+            if not ready:
+                raise RuntimeError(f"{engine} is not connected and ready; autonomous run cannot be started.")
             self._run_enabled = True
             self._last_error = None
             self._stop_event_active = False
-            self._record_event("info", "CARLA autonomous run enabled by an explicit Stream command.")
+            self._record_event("info", f"{engine} autonomous run enabled by an explicit Stream command.")
         else:
             self._run_enabled = False
-            self._safe_stop("CARLA run mode stopped; waiting for an explicit Start Run command.")
+            self._safe_stop(f"{engine} run mode stopped; waiting for an explicit Start Run command.")
             self._last_error = None
-            self._record_event("warning", "CARLA autonomous run disabled; vehicle is held by the brake.")
+            self._record_event("warning", f"{engine} autonomous run disabled; vehicle is held by the brake.")
         return self._run_enabled
 
     def set_camera_editor_active(self, active):
@@ -437,9 +443,11 @@ class SimulationRuntime:
             self._started_at = time.monotonic()
             self._stop_event_active = False
             self._record_event("info", f"Connected {self.backend}; {self.vision_profile} vision processor loaded.")
-            if self.backend == "carla":
-                # Apply a physical CARLA brake before the first sensor/control cycle.
-                self._safe_stop("CARLA connected in STOPPED mode; press Start Run to enable autonomy.")
+            if self._requires_explicit_start:
+                # Apply a brake before the first sensor/control cycle. Neither
+                # remote simulator may move merely because the process launched.
+                engine = "AVIS Engine" if self.backend == "avis" else "CARLA"
+                self._safe_stop(f"{engine} connected in STOPPED mode; press Start Run to enable autonomy.")
             while not self.shutdown_event.is_set():
                 frame = self.adapter.read(timeout=0.25)
                 now = time.monotonic()
@@ -509,11 +517,12 @@ class SimulationRuntime:
                         servo_angle=command.servo_angle, target_speed=0.0,
                         reason="crosswalk detected; simulator braking",
                     )
-                if self.backend == "carla" and not self._run_enabled:
+                if self._requires_explicit_start and not self._run_enabled:
+                    engine = "AVIS Engine" if self.backend == "avis" else "CARLA"
                     command = VehicleCommand(
                         steering=command.steering, throttle=0.0, brake=1.0,
                         servo_angle=command.servo_angle, target_speed=0.0,
-                        reason="run mode stopped; waiting for explicit Start Run command",
+                        reason=f"{engine} run mode stopped; waiting for explicit Start Run command",
                     )
                 if self.backend == "carla" and (self._camera_editor_active or self._scene_edit_active):
                     hold_reason = ("CARLA scene is being reconfigured; vehicle held stationary"
