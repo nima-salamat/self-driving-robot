@@ -662,7 +662,8 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
 
     def test_hall_identity_is_kept_during_direct_right_return_steer(self):
         controller = RangeObstacleAvoidance(obstacle_config(
-            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
+            HALL_LINE_TRACKING_ENABLED=False,
             OLD_METHOD=False,
             SIMULATOR_BACKEND="avis",
             CITY_LANE_DETECTOR="default",
@@ -741,7 +742,8 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
 
     def test_hall_handoff_is_not_used_by_ml_or_blsf_detectors(self):
         controller = RangeObstacleAvoidance(obstacle_config(
-            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
+            HALL_LINE_TRACKING_ENABLED=False,
             OLD_METHOD=False,
             SIMULATOR_BACKEND="avis",
             CITY_LANE_DETECTOR="default",
