@@ -30,6 +30,23 @@ from utils.parser import parse_args
 
 
 class AvisEngineProtocolTests(unittest.TestCase):
+    def test_set_drive_command_sends_speed_and_steering_in_one_packet(self):
+        class FakeSocket:
+            def __init__(self):
+                self.sent = []
+            def sendall(self, data):
+                self.sent.append(data.decode("utf-8"))
+
+        car = Car()
+        sock = FakeSocket()
+        car.sock = sock
+        with patch("avisengine.time.sleep"):
+            car.setDriveCommand(-45, 0)
+        self.assertEqual(len(sock.sent), 1)
+        self.assertIn("Speed:0,Steering:-45", sock.sent[0])
+        self.assertIn("ImageStatus:0,SensorStatus:0", sock.sent[0])
+        car.sock = None
+
     def test_get_data_decodes_tagged_jpeg_using_legacy_avis_protocol(self):
         class FakeSocket:
             def __init__(self, payload):
@@ -321,7 +338,14 @@ class SimulatorSettingsTests(unittest.TestCase):
                 self.assertFalse(set(defaults) - SIMULATOR_KEYS)
                 validated = _validate_settings(defaults, backend=backend)
                 self.assertEqual(set(validated), set(defaults))
-                self.assertFalse(defaults["SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"])
+                self.assertEqual(
+                    defaults["SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"],
+                    backend == "avis",
+                )
+                self.assertEqual(
+                    defaults["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"],
+                    60.0 if backend == "avis" else 35.0,
+                )
                 self.assertFalse(defaults["SIMULATOR_SIGN_ACTIONS_ENABLED"])
                 if backend == "avis":
                     self.assertFalse(defaults["SIMULATOR_STOP_ON_CROSSWALK"])
@@ -331,6 +355,27 @@ class SimulatorSettingsTests(unittest.TestCase):
                 if mode == "avis-race":
                     self.assertFalse(defaults["SIMULATOR_STOP_LINE_ENABLED"])
                     self.assertFalse(defaults["SIMULATOR_TRAFFIC_LIGHTS_ENABLED"])
+
+    def test_legacy_avis_profile_is_migrated_to_enabled_bypass_and_safe_distances(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = Path(directory) / "avis.sim.json"
+            legacy_path.write_text(json.dumps({
+                "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": False,
+                "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
+                "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 100.0,
+                "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 125.0,
+            }), encoding="utf-8")
+            config = SimpleNamespace(BASE_DIR=directory)
+
+            load_simulator_settings(config, "avis", "avis")
+
+            self.assertTrue(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
+            self.assertEqual(config.SIMULATOR_OBSTACLE_STOP_DISTANCE_CM, 60.0)
+            self.assertEqual(config.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM, 120.0)
+            self.assertEqual(config.SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM, 150.0)
+            saved = json.loads(legacy_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["SIMULATOR_AVIS_SAFETY_PROFILE_VERSION"], 1)
+            self.assertTrue(saved["SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"])
 
     def test_avis_uses_configured_tcp_timeout_without_one_second_cap(self):
         self.assertEqual(AvisAdapter(SimpleNamespace())._request_timeout(), 5.0)
@@ -1818,6 +1863,25 @@ class VirtualControllerTests(unittest.TestCase):
             self.assertFalse(adapter.apply_control(command))
         self.assertEqual(car.commands, [])
 
+    def test_avis_adapter_prefers_atomic_drive_command_when_braking(self):
+        class FakeCar:
+            def __init__(self):
+                self.commands = []
+            def setDriveCommand(self, steering, speed):
+                self.commands.append((steering, speed))
+
+        car = FakeCar()
+        adapter = AvisAdapter(SimpleNamespace())
+        adapter.car = car
+        adapter.connected = True
+        command = VehicleCommand(
+            steering=-0.4, throttle=0.2, brake=1.0,
+            servo_angle=95.0, target_speed=0.0, reason="front obstacle",
+        )
+
+        self.assertTrue(adapter.apply_control(command))
+        self.assertEqual(car.commands, [(-40, 0)])
+
     def test_avis_adapter_maps_signed_steering_to_legacy_percent_range(self):
         from modes.simulation.base_adapter import VehicleCommand
 
@@ -2270,6 +2334,53 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertTrue(args.simulator_stop_on_crosswalk)
         self.assertEqual(args.simulator_obstacle_stop_distance_cm, 42.0)
         self.assertEqual(parse_args(["--mode", "avis-race"]).mode, "avis-race")
+
+
+
+class ForwardRangeSafetyTests(unittest.TestCase):
+    def test_avis_missing_front_range_brakes_independent_of_bypass_toggle(self):
+        from modes.simulation.runtime import _apply_forward_range_guard
+
+        command = VehicleCommand(0.1, 0.2, 0.0, 100.0, 20.0, "lane following")
+        safe, status = _apply_forward_range_guard(
+            command, {"left": 180.0, "front": None, "right": 160.0},
+            backend="avis", stop_distance_cm=60.0,
+        )
+        self.assertEqual(safe.throttle, 0.0)
+        self.assertEqual(safe.brake, 1.0)
+        self.assertEqual(status["status"], "sensor_unavailable")
+
+    def test_avis_front_range_guard_stops_at_threshold_and_has_twenty_cm_floor(self):
+        from modes.simulation.runtime import _apply_forward_range_guard
+
+        command = VehicleCommand(0.0, 0.2, 0.0, 95.0, 20.0, "lane following")
+        stopped, status = _apply_forward_range_guard(
+            command, {"front": 60.0}, backend="avis", stop_distance_cm=60.0,
+        )
+        self.assertEqual(stopped.brake, 1.0)
+        self.assertEqual(status["status"], "obstacle_detected")
+
+        floored, floor_status = _apply_forward_range_guard(
+            command, {"front": 19.0}, backend="avis", stop_distance_cm=0.0,
+        )
+        self.assertEqual(floored.brake, 1.0)
+        self.assertEqual(floor_status["threshold_cm"], 20.0)
+
+        clear, clear_status = _apply_forward_range_guard(
+            command, {"front": 61.0}, backend="avis", stop_distance_cm=60.0,
+        )
+        self.assertIs(clear, command)
+        self.assertEqual(clear_status["status"], "clear")
+
+    def test_carla_forward_range_guard_keeps_legacy_missing_sensor_behavior(self):
+        from modes.simulation.runtime import _apply_forward_range_guard
+
+        command = VehicleCommand(0.0, 0.2, 0.0, 95.0, 20.0, "lane following")
+        result, status = _apply_forward_range_guard(
+            command, {"front": None}, backend="carla", stop_distance_cm=35.0,
+        )
+        self.assertIs(result, command)
+        self.assertEqual(status["status"], "unavailable")
 
 
 if __name__ == "__main__":
