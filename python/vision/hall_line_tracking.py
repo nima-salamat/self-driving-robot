@@ -405,15 +405,16 @@ class HallLineTracker:
         )
         hall_deficiency = max(0, len(previous) - len(matching))
         hall_satisfied = len(matching) == len(previous)
-        edge_costs = {
-            (track_index, detection_index): float(cost)
-            for track_index, edges in enumerate(adjacency)
-            for detection_index, cost in edges
-        }
-        matching_cost = sum(
-            edge_costs[(track_index, detection_index)]
-            for track_index, detection_index in matching.items()
-        )
+        matching_cost = 0.0
+        for track_index, detection_index in matching.items():
+            matching_cost += next(
+                (
+                    float(cost)
+                    for candidate_index, cost in adjacency[track_index]
+                    if candidate_index == detection_index
+                ),
+                0.0,
+            )
         unmatched_track_ids = [
             int(track_id)
             for index, (track_id, _track) in enumerate(previous)
