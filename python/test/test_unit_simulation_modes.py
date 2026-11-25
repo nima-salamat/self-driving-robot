@@ -17,7 +17,8 @@ from modes.registry import (
 from modes.simulation.base_adapter import VehicleCommand
 from modes.simulation.controller import VirtualVehicleController
 from modes.simulation.settings import (
-    _validate_settings, load_simulator_settings, save_simulator_settings,
+    SIMULATOR_KEYS, _defaults, _validate_settings, load_simulator_settings,
+    save_simulator_settings,
 )
 from modes.simulation.avis_adapter import AvisAdapter
 from stream.capabilities import mode_capabilities
@@ -78,6 +79,37 @@ class ModeRegistryTests(unittest.TestCase):
 
 
 class SimulatorSettingsTests(unittest.TestCase):
+    def test_every_mode_default_is_accepted_by_settings_schema(self):
+        for mode, backend in (("carla", "carla"), ("avis", "avis"), ("avis-race", "avis")):
+            with self.subTest(mode=mode):
+                unsupported = set(_defaults(mode, backend)) - SIMULATOR_KEYS
+                self.assertEqual(unsupported, set())
+
+    def test_avis_race_existing_settings_can_load_save_and_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory) / "avis-race.sim.json"
+            profile.write_text(json.dumps({
+                "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": True,
+                "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 110.0,
+                "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 140.0,
+            }), encoding="utf-8")
+
+            config = SimpleNamespace(BASE_DIR=directory)
+            loaded_path = load_simulator_settings(config, "avis-race", "avis")
+            self.assertEqual(loaded_path, profile)
+            self.assertTrue(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
+            self.assertEqual(config.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM, 110.0)
+            self.assertFalse(config.SIMULATOR_STOP_LINE_ENABLED)
+
+            save_simulator_settings(config, "avis-race", {
+                "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 90.0,
+            })
+            reloaded = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(reloaded, "avis-race", "avis")
+            self.assertTrue(reloaded.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
+            self.assertEqual(reloaded.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM, 110.0)
+            self.assertEqual(reloaded.SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM, 90.0)
+
     def test_settings_are_mode_specific_and_update_config(self):
         with tempfile.TemporaryDirectory() as directory:
             config = SimpleNamespace(BASE_DIR=directory)
