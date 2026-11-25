@@ -118,8 +118,8 @@
               <div class="field"><label for="obstacle-roi-delay">Delay before maneuver ROI (s)</label><input id="obstacle-roi-delay" type="number" min="0" max="5" step=".1" name="SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS"></div>
               <div class="field"><label for="obstacle-lane-hold">Time following passing lane (s)</label><input id="obstacle-lane-hold" type="number" min=".2" max="10" step=".1" name="SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS"></div>
               <div class="field" style="grid-column:1/-1">
-                <label class="check-field"><input id="obstacle-return-steering-gate-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"> Wait for near-straight steering before returning right</label>
-                <p class="note">The passing-lane time above remains the minimum. When enabled, the right-return maneuver starts only after the mean of the latest lane-controller commands enters the configured AVIS-percent band.</p>
+                <label class="check-field"><input id="obstacle-return-steering-gate-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"> Start the right-return maneuver when the mean of the latest 10 steering commands enters ±10 AVIS %</label>
+                <p class="note">The passing-lane hold remains the minimum duration. After that, the last 10 lane-controller steering commands are averaged; return begins only when their mean is between the configured minimum and maximum. The window and band remain editable below.</p>
               </div>
               <div class="field"><label for="obstacle-return-steering-samples">Recent steering commands to average (N)</label><input id="obstacle-return-steering-samples" type="number" min="1" max="100" step="1" name="SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT"></div>
               <div class="field"><label for="obstacle-return-steering-min">Return band minimum (AVIS %)</label><input id="obstacle-return-steering-min" type="number" min="-100" max="100" step="1" name="SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT"></div>
@@ -285,6 +285,16 @@
               <div class="field"><label for="ll-bottom">Left-lane ROI bottom</label><input id="ll-bottom" type="number" min="0" max="1" step="any" name="LL_BOTTOM_ROI"></div>
               <div class="field"><label for="ll-left">Left-lane ROI left</label><input id="ll-left" type="number" min="0" max="1" step="any" name="LL_LEFT_ROI"></div>
               <div class="field"><label for="ll-right">Left-lane ROI right</label><input id="ll-right" type="number" min="0" max="1" step="any" name="LL_RIGHT_ROI"></div>
+              {% if caps.simulator_backend == 'avis' %}
+              <div class="field"><label for="ml-top">Left maneuver ROI top</label><input id="ml-top" type="number" min="0" max="1" step="any" name="ML_TOP_ROI"></div>
+              <div class="field"><label for="ml-bottom">Left maneuver ROI bottom</label><input id="ml-bottom" type="number" min="0" max="1" step="any" name="ML_BOTTOM_ROI"></div>
+              <div class="field"><label for="ml-left">Left maneuver ROI left</label><input id="ml-left" type="number" min="0" max="1" step="any" name="ML_LEFT_ROI"></div>
+              <div class="field"><label for="ml-right">Left maneuver ROI right</label><input id="ml-right" type="number" min="0" max="1" step="any" name="ML_RIGHT_ROI"></div>
+              <div class="field"><label for="mr-top">Right maneuver ROI top</label><input id="mr-top" type="number" min="0" max="1" step="any" name="MR_TOP_ROI"></div>
+              <div class="field"><label for="mr-bottom">Right maneuver ROI bottom</label><input id="mr-bottom" type="number" min="0" max="1" step="any" name="MR_BOTTOM_ROI"></div>
+              <div class="field"><label for="mr-left">Right maneuver ROI left</label><input id="mr-left" type="number" min="0" max="1" step="any" name="MR_LEFT_ROI"></div>
+              <div class="field"><label for="mr-right">Right maneuver ROI right</label><input id="mr-right" type="number" min="0" max="1" step="any" name="MR_RIGHT_ROI"></div>
+              {% endif %}
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-top">Crosswalk ROI top</label><input id="cw-top" type="number" min="0" max="1" step="any" name="CW_TOP_ROI"></div>
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-bottom">Crosswalk ROI bottom</label><input id="cw-bottom" type="number" min="0" max="1" step="any" name="CW_BOTTOM_ROI"></div>
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-left">Crosswalk ROI left</label><input id="cw-left" type="number" min="0" max="1" step="any" name="CW_LEFT_ROI"></div>
