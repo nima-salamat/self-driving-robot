@@ -659,7 +659,7 @@ class AVISModeSettingsTests(unittest.TestCase):
             # AVIS City uses the dedicated solid stop-line detector, not
             # the generic simulator crosswalk-braking path.
             self.assertFalse(config.SIMULATOR_STOP_ON_CROSSWALK)
-            self.assertFalse(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
+            self.assertTrue(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
             self.assertFalse(config.SIMULATOR_SIGN_ACTIONS_ENABLED)
             save_simulator_settings(config, "avis", {
                 "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": True,
@@ -668,7 +668,7 @@ class AVISModeSettingsTests(unittest.TestCase):
             race_path = load_simulator_settings(config, "avis-race", "avis")
             self.assertFalse(config.SIMULATOR_STOP_LINE_ENABLED)
             self.assertFalse(config.SIMULATOR_TRAFFIC_LIGHTS_ENABLED)
-            self.assertFalse(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
+            self.assertTrue(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
             self.assertNotEqual(city_path, race_path)
             load_simulator_settings(config, "carla", "carla")
             self.assertTrue(config.SIMULATOR_STOP_ON_CROSSWALK)
