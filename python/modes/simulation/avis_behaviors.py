@@ -109,6 +109,8 @@ class RangeObstacleAvoidance:
     def _target_lane_steering(self, command, lane_tracking, progress, fallback):
         """Track the adjacent-lane center when the vision tracker has geometry."""
         self.lane_geometry_active = False
+        self.last_lane_error_px = None
+        self.last_lane_width_px = None
         if not isinstance(lane_tracking, dict) or not lane_tracking.get("enabled"):
             return fallback
         if self.last_lane_quality is not None:
