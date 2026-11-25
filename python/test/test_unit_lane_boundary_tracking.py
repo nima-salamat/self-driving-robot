@@ -1234,5 +1234,32 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertEqual(result["lane_type"], "only_right")
 
 
+    def test_hall_uses_the_same_bounded_candidate_indices_as_lane_ranking(self):
+        tracker = LaneBoundaryTracker(max_candidates=8)
+        lines = [
+            np.asarray([[[20.0 + index * 10.0, 0.0,
+                          25.0 + index * 10.0, 140.0]]], dtype=np.float32)
+            for index in range(10)
+        ]
+        candidates = tracker._candidates(
+            lines, self.LEFT_ROI, 640, 370.0, preferred_index=9,
+        )
+
+        self.assertEqual(len(candidates), 8)
+        candidate_indices = {item["index"] for item in candidates}
+        self.assertIn(9, candidate_indices)
+        self.assertNotIn(8, candidate_indices)
+
+        hall, selected_index = tracker._hall_update(
+            "left", candidates, 9, self.FRAME_SHAPE,
+        )
+        self.assertEqual(selected_index, 9)
+        selected_id = hall["selected_track_id"]
+        selected_candidate = next(
+            item for item in hall["candidate_tracks"]
+            if item["track_id"] == selected_id
+        )
+        self.assertEqual(selected_candidate["candidate_index"], 9)
+
 if __name__ == "__main__":
     unittest.main()
