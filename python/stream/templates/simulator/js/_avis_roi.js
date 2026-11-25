@@ -35,7 +35,7 @@ function simBevCorners(){
     const xEl=$("bev-"+key.toLowerCase()+"-x"),yEl=$("bev-"+key.toLowerCase()+"-y");
     const x=xEl&&xEl.value!==""?Number(xEl.value):NaN;
     const y=yEl&&yEl.value!==""?Number(yEl.value):NaN;
-    if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>1||y<0||y>1)return null;
+    if(!Number.isFinite(x)||!Number.isFinite(y)||x< -0.15||x>1.15||y< -0.15||y>1.15)return null;
     corners[key]={x:x,y:y};
   }
   return corners;
@@ -83,10 +83,44 @@ function simRoiUpdateSelection(){
   if(mirrorInput&&laneSelected)mirrorInput.checked=!!simRoiMirrors[simRoiSelected];
   if(mirrorLabel&&laneSelected)mirrorLabel.lastChild.textContent=" Mirror "+(simRoiSelected==="RL"?"right":"left")+" lane ROI before detection";
 }
+function simRoiVisibilityStorageKey(){
+  return "self-driving-robot:simulator-roi-visibility:"+String(mode||"simulation");
+}
+function persistSimRoiVisibility(){
+  try{
+    const state={};
+    const master=$("sim-roi-overlay-toggle");
+    if(master)state.all=!!master.checked;
+    document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){
+      state[input.dataset.simRoiVisible]=!!input.checked;
+    });
+    window.localStorage.setItem(simRoiVisibilityStorageKey(),JSON.stringify(state));
+  }catch(_){
+    // Visibility preferences are best-effort when browser storage is unavailable.
+  }
+}
+function restoreSimRoiVisibility(){
+  try{
+    const raw=window.localStorage.getItem(simRoiVisibilityStorageKey());
+    if(!raw)return;
+    const state=JSON.parse(raw);
+    if(!state||typeof state!=="object")return;
+    const master=$("sim-roi-overlay-toggle");
+    if(master&&typeof state.all==="boolean")master.checked=state.all;
+    document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){
+      const key=input.dataset.simRoiVisible;
+      if(typeof state[key]==="boolean")input.checked=state[key];
+    });
+  }catch(_){
+    // Ignore malformed or unavailable local preferences and keep template defaults.
+  }
+}
 function fitSimulatorCameraFrame(){
   const frame=$("sim-camera-frame"),wrap=frame&&frame.parentElement;
   if(!frame||!wrap)return;
   const isAvis=caps.simulator_backend==="avis";
+  const editingBev=isAvis&&caps.supports_bev&&simRoiSelected==="BEV";
+  const margin=editingBev?0.17:0;
   if(!camera.naturalWidth||!camera.naturalHeight){
     if(isAvis&&simRoiCanvas){
       simRoiCanvas.style.visibility="hidden";
@@ -96,9 +130,10 @@ function fitSimulatorCameraFrame(){
   }
   const ratio=camera.naturalWidth/camera.naturalHeight;
   if(!Number.isFinite(ratio)||ratio<=0)return;
-  const maxWidth=Math.max(1,wrap.clientWidth);
+  const fitScale=1+margin*2;
+  const maxWidth=Math.max(1,wrap.clientWidth/fitScale);
   const maxHeight=isAvis
-    ? Math.max(1,wrap.clientHeight)
+    ? Math.max(1,wrap.clientHeight/fitScale)
     : Math.max(180,window.innerHeight*0.68);
   let width=maxWidth,height=width/ratio;
   if(height>maxHeight){height=maxHeight;width=height*ratio;}
@@ -111,17 +146,25 @@ function fitSimulatorCameraFrame(){
     frame.style.right="auto";
     frame.style.bottom="auto";
     frame.style.transform="translate(-50%, -50%)";
+    frame.style.overflow=editingBev?"visible":"hidden";
   }
   frame.style.width=width+"px";
   frame.style.height=height+"px";
+  if(isAvis&&simRoiCanvas){
+    simRoiCanvas.style.position="absolute";
+    simRoiCanvas.style.left=(-margin*100)+"%";
+    simRoiCanvas.style.top=(-margin*100)+"%";
+    simRoiCanvas.style.right="auto";
+    simRoiCanvas.style.bottom="auto";
+    simRoiCanvas.style.width=(fitScale*100)+"%";
+    simRoiCanvas.style.height=(fitScale*100)+"%";
+    simRoiCanvas.style.visibility="visible";
+    simRoiUpdateSelection();
+  }
   const zoomValue=$("sim-roi-zoom-value");
   if(zoomValue)zoomValue.textContent=Math.round(zoom*100)+"%"+(zoom>=0.999?" · fit":" · zoomed out");
   const zoomInput=$("sim-roi-zoom");
   if(zoomInput&&Number(zoomInput.value)!==Math.round(zoom*100))zoomInput.value=String(Math.round(zoom*100));
-  if(isAvis&&simRoiCanvas){
-    simRoiCanvas.style.visibility="visible";
-    simRoiUpdateSelection();
-  }
   drawSimRoiOverlay();
 }
 function setCameraFeedStatus(message,kind){
@@ -157,26 +200,51 @@ async function refreshSimulatorCameraFrame(){
 }
 function drawSimRoiOverlay(){
   if(!simRoiCanvas||!caps.supports_lane_roi)return;
-  const frame=$("sim-camera-frame"),rect=frame&&frame.getBoundingClientRect();
-  if(!rect||rect.width<2||rect.height<2)return;
-  const dpr=Math.max(1,window.devicePixelRatio||1),w=rect.width,h=rect.height;
-  const pixelW=Math.max(1,Math.round(w*dpr)),pixelH=Math.max(1,Math.round(h*dpr));
-  if(simRoiCanvas.width!==pixelW||simRoiCanvas.height!==pixelH){simRoiCanvas.width=pixelW;simRoiCanvas.height=pixelH;}
-  const ctx=simRoiCanvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
-  const master=$("sim-roi-overlay-toggle");if(master&&!master.checked)return;
+  const frame=$("sim-camera-frame"),frameRect=frame&&frame.getBoundingClientRect();
+  const canvasRect=simRoiCanvas.getBoundingClientRect();
+  if(!frameRect||frameRect.width<2||frameRect.height<2||canvasRect.width<2||canvasRect.height<2)return;
+  const dpr=Math.max(1,window.devicePixelRatio||1);
+  const frameW=frameRect.width,frameH=frameRect.height;
+  const canvasW=canvasRect.width,canvasH=canvasRect.height;
+  const originX=frameRect.left-canvasRect.left,originY=frameRect.top-canvasRect.top;
+  const pixelW=Math.max(1,Math.round(canvasW*dpr)),pixelH=Math.max(1,Math.round(canvasH*dpr));
+  if(simRoiCanvas.width!==pixelW||simRoiCanvas.height!==pixelH){
+    simRoiCanvas.width=pixelW;simRoiCanvas.height=pixelH;
+  }
+  const ctx=simRoiCanvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,canvasW,canvasH);
+  const master=$("sim-roi-overlay-toggle");
+  if(master&&!master.checked)return;
+  function mapPoint(point){
+    return [originX+point[0]*frameW,originY+point[1]*frameH];
+  }
+  function drawLabel(point,label,color){
+    ctx.font="700 12px system-ui";
+    const labelW=ctx.measureText(label).width+12;
+    const labelX=simRoiClamp(point[0]+originX,4,Math.max(4,canvasW-labelW-4));
+    const labelY=simRoiClamp(point[1]+originY-22,2,Math.max(2,canvasH-22));
+    ctx.fillStyle=color;ctx.fillRect(labelX,labelY,labelW,20);
+    ctx.fillStyle="#07111a";ctx.fillText(label,labelX+6,labelY+14);
+  }
 
   simRoiDefs.forEach(function(def){
-    const visible=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');if(visible&&!visible.checked)return;
+    const visible=document.querySelector('[data-sim-roi-visible="'+def.id+'"]');
+    if(visible&&!visible.checked)return;
     const b=simRoiBounds(def.id);if(!b)return;
     const polygon=simRoiPolygon(def.id,b),selected=def.id===simRoiSelected;
-    const points=polygon.map(function(point){return [point[0]*w,point[1]*h];});
-    ctx.save();ctx.fillStyle=def.color+"20";ctx.strokeStyle=def.color;ctx.lineWidth=selected?3:2;ctx.setLineDash(selected?[]:[7,4]);
-    ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);points.slice(1).forEach(function(point){ctx.lineTo(point[0],point[1]);});ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
-    ctx.font="700 12px system-ui";const label=def.id+" · "+def.label;const labelW=ctx.measureText(label).width+12;
-    const labelX=Math.min(w-labelW,Math.max(0,points[0][0]));
-    ctx.fillStyle=def.color;ctx.fillRect(labelX,Math.max(0,points[0][1]-22),labelW,20);ctx.fillStyle="#07111a";ctx.fillText(label,labelX+6,Math.max(14,points[0][1]-8));
+    const points=polygon.map(mapPoint);
+    ctx.save();ctx.fillStyle=def.color+"20";ctx.strokeStyle=def.color;
+    ctx.lineWidth=selected?3:2;ctx.setLineDash(selected?[]:[7,4]);
+    ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);
+    points.slice(1).forEach(function(point){ctx.lineTo(point[0],point[1]);});
+    ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
+    drawLabel(polygon[0],def.id+" · "+def.label,def.color);
     if(selected){
-      points.forEach(function(point){ctx.fillStyle="#f4f8fc";ctx.fillRect(point[0]-5,point[1]-5,10,10);ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(point[0]-5,point[1]-5,10,10);});
+      points.forEach(function(point){
+        ctx.fillStyle="#f4f8fc";ctx.fillRect(point[0]-5,point[1]-5,10,10);
+        ctx.strokeStyle=def.color;ctx.lineWidth=2;ctx.strokeRect(point[0]-5,point[1]-5,10,10);
+      });
     }
     ctx.restore();
   });
@@ -186,24 +254,18 @@ function drawSimRoiOverlay(){
     const corners=simBevCorners();
     if(corners&&(!visible||visible.checked)){
       const selected=simRoiSelected==="BEV";
-      const points=simBevPolygon(corners).map(function(point){return [point[0]*w,point[1]*h];});
+      const polygon=simBevPolygon(corners),points=polygon.map(mapPoint);
       const bevColor="#c084fc";
       ctx.save();
       ctx.fillStyle=simRoiGeometry.use_bev?"#c084fc24":"#c084fc10";
-      ctx.strokeStyle=bevColor;
-      ctx.lineWidth=selected?3:2;
+      ctx.strokeStyle=bevColor;ctx.lineWidth=selected?3:2;
       ctx.setLineDash(selected?[]:(simRoiGeometry.use_bev?[]:[5,5]));
       ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);
       points.slice(1).forEach(function(point){ctx.lineTo(point[0],point[1]);});
       ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
-      const label="BEV source · "+(simRoiGeometry.use_bev?"ON":"OFF");
-      ctx.font="700 12px system-ui";
-      const labelW=ctx.measureText(label).width+12;
-      const labelX=Math.min(w-labelW,Math.max(0,points[0][0]));
-      ctx.fillStyle=bevColor;ctx.fillRect(labelX,Math.max(0,points[0][1]-22),labelW,20);
-      ctx.fillStyle="#07111a";ctx.fillText(label,labelX+6,Math.max(14,points[0][1]-8));
+      drawLabel(polygon[0],"BEV source · "+(simRoiGeometry.use_bev?"ON":"OFF"),bevColor);
       if(selected){
-        points.forEach(function(point,index){
+        points.forEach(function(point){
           ctx.fillStyle="#f4f8fc";ctx.fillRect(point[0]-6,point[1]-6,12,12);
           ctx.strokeStyle=bevColor;ctx.lineWidth=2;ctx.strokeRect(point[0]-6,point[1]-6,12,12);
         });
@@ -212,7 +274,7 @@ function drawSimRoiOverlay(){
     }
   }
 }
-function simRoiPoint(event){const r=simRoiCanvas.getBoundingClientRect();return{x:(event.clientX-r.left)/r.width,y:(event.clientY-r.top)/r.height,px:event.clientX-r.left,py:event.clientY-r.top,width:r.width,height:r.height};}
+function simRoiPoint(event){const frame=$("sim-camera-frame"),r=frame&&frame.getBoundingClientRect();if(!r||r.width<1||r.height<1)return{x:0,y:0,px:0,py:0,width:1,height:1};return{x:(event.clientX-r.left)/r.width,y:(event.clientY-r.top)/r.height,px:event.clientX-r.left,py:event.clientY-r.top,width:r.width,height:r.height};}
 function simRoiClamp(value,min,max){return Math.max(min,Math.min(max,value));}
 function simRoiPointerDown(event){
   if(!simRoiControlsEnabled||!$("sim-roi-overlay-toggle").checked)return;
@@ -265,16 +327,16 @@ function simRoiPointerMove(event){
     const corners=JSON.parse(JSON.stringify(drag.initial));
     if(drag.mode==="resize"){
       const point=corners[drag.corner];
-      point.x=simRoiClamp(point.x+dx,0,1);
-      point.y=simRoiClamp(point.y+dy,0,1);
+      point.x=simRoiClamp(point.x+dx,-0.15,1.15);
+      point.y=simRoiClamp(point.y+dy,-0.15,1.15);
     }else{
       const values=Object.values(corners);
       const minX=Math.min.apply(null,values.map(function(point){return point.x;}));
       const maxX=Math.max.apply(null,values.map(function(point){return point.x;}));
       const minY=Math.min.apply(null,values.map(function(point){return point.y;}));
       const maxY=Math.max.apply(null,values.map(function(point){return point.y;}));
-      const shiftX=simRoiClamp(dx,-minX,1-maxX);
-      const shiftY=simRoiClamp(dy,-minY,1-maxY);
+      const shiftX=simRoiClamp(dx,-0.15-minX,1.15-maxX);
+      const shiftY=simRoiClamp(dy,-0.15-minY,1.15-maxY);
       Object.keys(corners).forEach(function(key){
         corners[key].x+=shiftX;corners[key].y+=shiftY;
       });
@@ -320,7 +382,7 @@ function simRoiCollectSettings(){
   }
   if(caps.supports_bev){
     const corners=simBevCorners();
-    if(!corners)return {error:"BEV source corners must be finite coordinates from 0 to 1."};
+    if(!corners)return {error:"BEV source corners must be finite coordinates from -0.15 to 1.15."};
     ["TL","TR","BR","BL"].forEach(function(key){
       settings["BEV_SRC_"+key+"_X"]=corners[key].x;
       settings["BEV_SRC_"+key+"_Y"]=corners[key].y;
@@ -435,11 +497,12 @@ function bindSimRoiEditor(){
   document.querySelectorAll("[data-sim-roi-select]").forEach(function(button){
     button.addEventListener("click",function(){
       simRoiSelected=button.dataset.simRoiSelect;
-      simRoiUpdateSelection();drawSimRoiOverlay();
+      fitSimulatorCameraFrame();
     });
   });
-  document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",drawSimRoiOverlay);});
-  $("sim-roi-overlay-toggle").addEventListener("change",function(){simRoiUpdateSelection();drawSimRoiOverlay();});
+  restoreSimRoiVisibility();
+  document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",function(){persistSimRoiVisibility();drawSimRoiOverlay();});});
+  $("sim-roi-overlay-toggle").addEventListener("change",function(){persistSimRoiVisibility();simRoiUpdateSelection();drawSimRoiOverlay();});
   $("sim-roi-mirror-selected").addEventListener("change",function(){
     if(simRoiSelected!=="RL"&&simRoiSelected!=="LL")return;
     simRoiMirrors[simRoiSelected]=this.checked;scheduleSimRoiSave(100);
