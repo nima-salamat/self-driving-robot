@@ -452,4 +452,3 @@ function bindSimRoiEditor(){
   simRoiUpdateSelection();drawSimRoiOverlay();
 }
 bindSimRoiEditor();
-bindSimRoiEditor();
