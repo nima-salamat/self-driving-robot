@@ -55,6 +55,7 @@ class RangeObstacleAvoidance:
         self.config = config
         self.state = self.CLEAR
         self.direction = 0.0
+        self.selected_side = None
         self.state_since = 0.0
         self.pass_started_at = 0.0
         self.distance_since_shift_cm = 0.0
@@ -83,6 +84,9 @@ class RangeObstacleAvoidance:
         self.state_since = now
         self.clear_observations = 0
         self.last_reason = reason
+        if state == self.CLEAR:
+            self.direction = 0.0
+            self.selected_side = None
         if state == self.SHIFT:
             self.distance_since_shift_cm = 0.0
         if state == self.PASS:
@@ -217,8 +221,8 @@ class RangeObstacleAvoidance:
             return self._brake(command, self.last_reason)
 
         if self.state in {self.SHIFT, self.PASS, self.REJOIN}:
-            selected_side = left if self.direction < 0 else right
-            if selected_side is None or selected_side < minimum_side:
+            selected_side_range = self.last_ranges.get(self.selected_side)
+            if selected_side_range is None or selected_side_range < minimum_side:
                 self._set_state(
                     self.BLOCKED, now,
                     "selected lane-change side is no longer proven clear; braking",
@@ -258,6 +262,7 @@ class RangeObstacleAvoidance:
                 )
                 return self._brake(command, self.last_reason)
             clearance, direction, side_name = max(candidates, key=lambda item: item[0])
+            self.selected_side = side_name
             if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
                 direction = -direction
             self.direction = direction
@@ -360,6 +365,7 @@ class RangeObstacleAvoidance:
             "direction": (
                 "left" if self.direction < 0 else "right" if self.direction > 0 else None
             ) if self.state != self.CLEAR else None,
+            "selected_side_sensor": self.selected_side,
             "ranges_cm": dict(self.last_ranges),
             "lane_quality": self.last_lane_quality,
             "distance_since_shift_cm": round(self.distance_since_shift_cm, 1),
@@ -560,7 +566,6 @@ class AVISBehaviorCoordinator:
 
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
-        lane_tracking = (perception or {}).get("line_tracking")
         lane_quality = (perception or {}).get("perception_quality")
         obstacle_command = self.obstacles.apply(
             command,
