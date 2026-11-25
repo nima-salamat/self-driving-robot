@@ -1,4 +1,15 @@
 /* ---------- Overlays (Shapes & Rects) ---------- */
+
+function roiVariableNames(group){
+    if(!['RL','LL','CW','ST','OBJ','ML','MR'].includes(group)) return null;
+    const prefix=group+'_';
+    return {
+        top:prefix+'TOP_ROI',
+        bottom:prefix+'BOTTOM_ROI',
+        left:prefix+'LEFT_ROI',
+        right:prefix+'RIGHT_ROI'
+    };
+}
 function drawHandle(cx,cy,size,fill,stroke){
     const z=getOverlayScale();
     ctx.beginPath();ctx.fillStyle=fill;ctx.strokeStyle=stroke||'#000';
@@ -303,12 +314,9 @@ canvas.addEventListener('mousemove',e=>{
     }
     
     const group = dragState.group;
-    let topVar, bottomVar, leftVar, rightVar;
-    if(group==='RL'){ topVar='RL_TOP_ROI'; bottomVar='RL_BOTTOM_ROI'; leftVar='RL_LEFT_ROI'; rightVar='RL_RIGHT_ROI'; }
-    else if(group==='LL'){ topVar='LL_TOP_ROI'; bottomVar='LL_BOTTOM_ROI'; leftVar='LL_LEFT_ROI'; rightVar='LL_RIGHT_ROI'; }
-    else if(group==='CW'){ topVar='CW_TOP_ROI'; bottomVar='CW_BOTTOM_ROI'; leftVar='CW_LEFT_ROI'; rightVar='CW_RIGHT_ROI'; }
-    else if(group==='ST'){ topVar='ST_TOP_ROI'; bottomVar='ST_BOTTOM_ROI'; leftVar='ST_LEFT_ROI'; rightVar='ST_RIGHT_ROI'; }
-    else { topVar='OBJ_TOP_ROI'; bottomVar='OBJ_BOTTOM_ROI'; leftVar='OBJ_LEFT_ROI'; rightVar='OBJ_RIGHT_ROI'; }
+    const roiFields=roiVariableNames(group);
+    if(!roiFields)return;
+    const topVar=roiFields.top,bottomVar=roiFields.bottom,leftVar=roiFields.left,rightVar=roiFields.right;
     
     const orig = dragState.origRect;
     let nx_t = orig.t, nx_b = orig.b, nx_l = orig.l, nx_r = orig.r;
@@ -366,13 +374,15 @@ window.addEventListener('mouseup',()=>{
         });
     } else {
         const group = dragState.group;
-        let topVar, bottomVar, leftVar, rightVar;
-        if(group==='RL'){ topVar='RL_TOP_ROI'; bottomVar='RL_BOTTOM_ROI'; leftVar='RL_LEFT_ROI'; rightVar='RL_RIGHT_ROI'; }
-        else if(group==='LL'){ topVar='LL_TOP_ROI'; bottomVar='LL_BOTTOM_ROI'; leftVar='LL_LEFT_ROI'; rightVar='LL_RIGHT_ROI'; }
-        else if(group==='CW'){ topVar='CW_TOP_ROI'; bottomVar='CW_BOTTOM_ROI'; leftVar='CW_LEFT_ROI'; rightVar='CW_RIGHT_ROI'; }
-        else if(group==='ST'){ topVar='ST_TOP_ROI'; bottomVar='ST_BOTTOM_ROI'; leftVar='ST_LEFT_ROI'; rightVar='ST_RIGHT_ROI'; }
-        else { topVar='OBJ_TOP_ROI'; bottomVar='OBJ_BOTTOM_ROI'; leftVar='OBJ_LEFT_ROI'; rightVar='OBJ_RIGHT_ROI'; }
-        sendUpdate({[topVar]:values[topVar], [bottomVar]:values[bottomVar], [leftVar]:values[leftVar], [rightVar]:values[rightVar]});
+        const roiFields=roiVariableNames(group);
+        if(roiFields){
+            sendUpdate({
+                [roiFields.top]:values[roiFields.top],
+                [roiFields.bottom]:values[roiFields.bottom],
+                [roiFields.left]:values[roiFields.left],
+                [roiFields.right]:values[roiFields.right]
+            });
+        }
     }
     
     dragState = null;
