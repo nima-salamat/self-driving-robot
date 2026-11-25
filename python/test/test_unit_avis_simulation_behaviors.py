@@ -217,7 +217,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertLess(shifted.steering, 0.0)
 
         clear = {"left": 180.0, "front": 150.0, "right": 90.0}
-        for now in (1.5, 1.6, 1.7):
+        for now in (1.5, 1.6, 1.7, 1.8):
             controller.apply(
                 base_command(), clear, perception_valid=True,
                 distance_delta_cm=30.0, lane_quality=0.9, lane_kp=0.4,
@@ -226,7 +226,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.REJOIN)
         returning = controller.apply(
             base_command(), clear, perception_valid=True,
-            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.85,
+            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.95,
         )
         self.assertIn("rejoining original lane", returning.reason)
 
