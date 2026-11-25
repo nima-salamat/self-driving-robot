@@ -378,11 +378,12 @@ class SimulatorEditorTests(unittest.TestCase):
                     self.assertIn("/video_feed_frame", page_text)
                     self.assertIn(mode.upper(), page_text)
                     self.assertIn("no-store", page.headers.get("Cache-Control", ""))
+                    self.assertIn("Autonomous run control", page_text)
+                    self.assertIn('id="simulator-run-start"', page_text)
+                    self.assertIn('id="simulator-run-stop"', page_text)
+                    self.assertIn("never starts moving automatically", page_text)
                     if backend == "carla":
                         self.assertIn("Open camera placement studio", page_text)
-                        self.assertIn("Autonomous run control", page_text)
-                        self.assertIn('id="carla-run-start"', page_text)
-                        self.assertIn('id="carla-run-stop"', page_text)
                         self.assertIn('id="lane-threshold"', page_text)
                         self.assertIn('id="crosswalk-threshold"', page_text)
                         self.assertIn('id="bev-tl-x"', page_text)
@@ -465,7 +466,7 @@ class SimulatorEditorTests(unittest.TestCase):
                         json={"SIMULATOR_TARGET_SPEED": 5.0},
                     )
                     self.assertEqual(denied.status_code, 403)
-                    if backend == "carla":
+                    if backend in {"carla", "avis"}:
                         run_denied = client.post("/api/simulation/run-mode", json={"action": "start"})
                         self.assertEqual(run_denied.status_code, 403)
                     if backend == "carla":
@@ -479,6 +480,52 @@ class SimulatorEditorTests(unittest.TestCase):
                             json={"action": "reset_to_spawn"},
                         )
                         self.assertEqual(scene_denied.status_code, 403)
+
+    def test_avis_run_mode_api_starts_and_stops_only_through_stream_control(self):
+        import os
+        import stream
+        from stream import WebStreamer
+
+        class FakeRuntime:
+            def __init__(self):
+                self.enabled = False
+                self.actions = []
+            def set_run_enabled(self, enabled):
+                self.enabled = bool(enabled)
+                self.actions.append(self.enabled)
+                return self.enabled
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(stream, "BASE_DIR", directory), patch.dict(
+                os.environ, {"STREAM_USERNAME": "", "STREAM_PASSWORD": ""}
+            ):
+                runtime = FakeRuntime()
+                config = SimpleNamespace(
+                    BASE_DIR=directory, MODE="avis-race", SIMULATOR_BACKEND="avis",
+                    SIMULATION_VISION_PROFILE="race", STREAM=True,
+                    STREAM_HOST="127.0.0.1", STREAM_PORT=41993,
+                    STREAM_ALLOW_CONTROL=True, RECORD_VIDEO=False,
+                    USE_BEV=False, USE_ML_LANE_DETECTOR=False,
+                    CITY_LANE_DETECTOR="default", ROI_RESIZABLE=False,
+                    LANE_ROI_MODE="rectangle", CW_TRAPEZOID_MODE=False,
+                    RL_TOP_WIDTH_FACTOR=0.85, LL_TOP_WIDTH_FACTOR=0.85,
+                    CW_TOP_WIDTH_FACTOR=0.9, WITHOUT_ARDUINO=True,
+                    READ_ARDUINO_OUTPUT=False, SEND_AUTOMATIC_ARDUINO_COMMANDS=False,
+                    MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
+                    debug_frames_list=[None, None], stream_frame_seq=1,
+                    OUTPUT_DIR=directory, simulation_runtime=runtime,
+                )
+                client = WebStreamer(config).app.test_client()
+                started = client.post("/api/simulation/run-mode", json={"action": "start"})
+                self.assertEqual(started.status_code, 200, started.get_data(as_text=True))
+                self.assertTrue(started.get_json()["run_enabled"])
+                self.assertIn("AVIS Engine autonomous run started", started.get_json()["message"])
+
+                stopped = client.post("/api/simulation/run-mode", json={"action": "stop"})
+                self.assertEqual(stopped.status_code, 200, stopped.get_data(as_text=True))
+                self.assertFalse(stopped.get_json()["run_enabled"])
+                self.assertIn("brake applied", stopped.get_json()["message"])
+                self.assertEqual(runtime.actions, [True, False])
 
     def test_camera_editor_state_reports_actual_stream_sensor_transform(self):
         from modes.simulation.carla_adapter import CarlaAdapter
@@ -885,7 +932,7 @@ class VirtualControllerTests(unittest.TestCase):
         self.assertEqual(config.debug_frames_list[-1].shape, raw_frame.shape)
         np.testing.assert_array_equal(config.debug_frames_list[-1], rendered_frame)
 
-    def test_carla_run_mode_is_disarmed_until_explicit_start(self):
+    def test_remote_simulator_modes_are_disarmed_until_explicit_start(self):
         from modes.simulation.runtime import SimulationRuntime
 
         class FakeAdapter:
@@ -894,25 +941,32 @@ class VirtualControllerTests(unittest.TestCase):
             def control_ready(self): return True
             def apply_control(self, command): self.commands.append(command); return True
 
-        config = SimpleNamespace(
-            MODE="carla", SIMULATOR_BACKEND="carla", SIMULATION_VISION_PROFILE="city",
-            CITY_LANE_DETECTOR="default", MIN_SERVO_ANGLE=50, SERVO_CENTER=95, MAX_SERVO_ANGLE=130,
-            SIMULATOR_TARGET_SPEED=5.0, SIMULATOR_THROTTLE_LIMIT=0.12,
-            SIMULATOR_STEERING_LIMIT=0.28, SIMULATOR_STEERING_RATE=0.80,
-            SIMULATOR_THROTTLE_RISE_RATE=0.12,
-            SIMULATOR_STOP_ON_LOST_LANE=True, SIMULATOR_STEERING_INVERTED=False,
-            ENCODER_MAP_ENABLED=False, STREAM=False, debug_frames_list=[None, None],
-        )
-        adapter = FakeAdapter()
-        with patch("modes.simulation.runtime.create_adapter", return_value=adapter):
-            runtime = SimulationRuntime(config)
-        self.assertFalse(runtime.snapshot()["run_enabled"])
-        self.assertEqual(runtime.snapshot()["run_mode"], "stopped")
-        self.assertTrue(runtime.set_run_enabled(True))
-        self.assertTrue(runtime.snapshot()["run_enabled"])
-        self.assertFalse(runtime.set_run_enabled(False))
-        self.assertEqual(adapter.commands[-1].brake, 1.0)
-        self.assertEqual(adapter.commands[-1].throttle, 0.0)
+        for mode, backend, profile in (
+            ("carla", "carla", "city"),
+            ("avis", "avis", "city"),
+            ("avis-race", "avis", "race"),
+        ):
+            with self.subTest(mode=mode):
+                config_values = _defaults(mode, backend)
+                config_values.update({
+                    "MODE": mode, "SIMULATOR_BACKEND": backend,
+                    "SIMULATION_VISION_PROFILE": profile,
+                    "CITY_LANE_DETECTOR": "default",
+                    "ENCODER_MAP_ENABLED": False, "STREAM": False,
+                    "debug_frames_list": [None, None],
+                })
+                config = SimpleNamespace(**config_values)
+                adapter = FakeAdapter()
+                with patch("modes.simulation.runtime.create_adapter", return_value=adapter):
+                    runtime = SimulationRuntime(config)
+
+                self.assertFalse(runtime.snapshot()["run_enabled"])
+                self.assertEqual(runtime.snapshot()["run_mode"], "stopped")
+                self.assertTrue(runtime.set_run_enabled(True))
+                self.assertTrue(runtime.snapshot()["run_enabled"])
+                self.assertFalse(runtime.set_run_enabled(False))
+                self.assertEqual(adapter.commands[-1].brake, 1.0)
+                self.assertEqual(adapter.commands[-1].throttle, 0.0)
 
     def test_carla_bev_blank_frame_falls_back_to_raw_camera(self):
         import time
