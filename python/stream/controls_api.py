@@ -64,9 +64,9 @@ class StreamControlsMixin:
     def load_ui_settings(self):
         fname = self.ui_filename()
         default_ui = {
-            "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef", "ST":"#bf7bff", "OBJ":"#ff5757"},
-            "visible": {"RL":True, "LL":True, "CW":True, "BEV":True, "ST":True, "OBJ":True},
-            "opacity": {"RL":1.0, "LL":1.0, "CW":1.0, "BEV":0.8, "ST":1.0, "OBJ":1.0},
+            "colors": {"RL":"#ff7b7b", "LL":"#7bffb8", "CW":"#ffd27b", "BEV":"#d946ef", "ST":"#bf7bff", "OBJ":"#ff5757", "ML":"#38bdf8", "MR":"#f59e0b"},
+            "visible": {"RL":True, "LL":True, "CW":True, "BEV":True, "ST":True, "OBJ":True, "ML":True, "MR":True},
+            "opacity": {"RL":1.0, "LL":1.0, "CW":1.0, "BEV":0.8, "ST":1.0, "OBJ":1.0, "ML":1.0, "MR":1.0},
             "frame_overlay": {
             "fps": True, "realfps": False, "status": True,
             "applied_angle": True, "vision_angle": True, "servo_center": True,
