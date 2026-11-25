@@ -36,40 +36,38 @@ def _brake(command, reason):
 
 
 class RangeObstacleAvoidance:
-    """Sensor-gated, staged lane-change controller for the three-ray AVIS setup.
+    """Direct, ROI-confirmed AVIS obstacle lane-change state machine.
 
-    The controller uses a smooth lane-change profile, holds the lateral offset
-    while clearing the obstacle, and only rejoins after both a clear-front
-    confirmation window and a minimum travelled distance. It is intentionally
-    conservative because AVIS exposes range rays rather than a full occupancy
-    grid or rear-facing sensors.
+    AVIS steering is normalized to [-1, 1]: negative is left and positive is
+    right. Range rays gate each side independently; every direct-search phase
+    has a timeout that fails closed rather than steering indefinitely.
     """
 
     CLEAR = "clear"
-    SHIFT = "shift"
-    PASS = "pass"
-    REJOIN = "rejoin"
+    SHIFT_LEFT_DIRECT = "shift_left_direct"
+    SEARCH_LEFT_ROI = "search_left_roi"
+    PASS_LANE_FOLLOW = "pass_lane_follow"
+    SHIFT_RIGHT_DIRECT = "shift_right_direct"
+    SEARCH_RIGHT_ROI = "search_right_roi"
     BLOCKED = "blocked"
+
+    # Compatibility aliases for older diagnostics/integrations.
+    SHIFT = SHIFT_LEFT_DIRECT
+    PASS = PASS_LANE_FOLLOW
+    REJOIN = SHIFT_RIGHT_DIRECT
 
     def __init__(self, config):
         self.config = config
         self.state = self.CLEAR
-        self.direction = 0.0
-        self.lane_direction = 0.0
         self.selected_side = None
-        self.lane_geometry_active = False
-        self.last_lane_error_px = None
-        self.last_lane_width_px = None
         self.state_since = 0.0
         self.pass_started_at = 0.0
-        self.distance_since_shift_cm = 0.0
+        self.roi_confirmations = 0
         self.clear_observations = 0
+        self.awaiting_clear = False
         self.last_ranges = {"left": None, "front": None, "right": None}
-        self.last_lane_quality = None
-        self.last_lane_kp = None
         self.last_reason = "obstacle avoidance idle"
-        self._last_output_steering = None
-        self._last_output_at = None
+        self.last_maneuver_roi = None
 
     def _number(self, key, default):
         try:
@@ -78,136 +76,101 @@ class RangeObstacleAvoidance:
             return float(default)
         return value if math.isfinite(value) else float(default)
 
-    @staticmethod
-    def _smoothstep(progress):
-        value = max(0.0, min(1.0, float(progress)))
-        return value * value * (3.0 - 2.0 * value)
+    def _integer(self, key, default):
+        try:
+            value = int(getattr(self.config, key, default))
+        except (TypeError, ValueError, OverflowError):
+            return int(default)
+        return value
 
     def _set_state(self, state, now, reason):
         previous = self.state
         self.state = state
         self.state_since = now
-        self.clear_observations = 0
+        self.roi_confirmations = 0
         self.last_reason = reason
-        if state == self.CLEAR:
-            self.direction = 0.0
-            self.lane_direction = 0.0
-            self.selected_side = None
-            self.lane_geometry_active = False
-        if state == self.SHIFT:
-            self.distance_since_shift_cm = 0.0
-        if state == self.PASS:
+        if state == self.PASS_LANE_FOLLOW:
             self.pass_started_at = now
+        if state == self.CLEAR:
+            self.selected_side = None
         if previous != state:
             logger.info("AVIS obstacle maneuver: %s -> %s (%s)", previous, state, reason)
 
-    def _brake(self, command, reason):
-        self.last_reason = reason
-        return _brake(command, reason)
+    def prepare_vision(self, now=None):
+        """Select the temporary lane ROI before the next camera frame is parsed."""
+        active_roi = None
+        if self.state in {self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW}:
+            active_roi = "left"
+        elif self.state == self.SEARCH_RIGHT_ROI:
+            active_roi = "right"
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = active_roi
+        return active_roi
 
-
-    def _target_lane_steering(
-        self, command, lane_tracking, progress, fallback, steering_authority=1.0
-    ):
-        """Track the adjacent-lane center when the vision tracker has geometry."""
-        self.lane_geometry_active = False
-        self.last_lane_error_px = None
-        self.last_lane_width_px = None
-        if not isinstance(lane_tracking, dict) or not lane_tracking.get("enabled"):
-            return fallback
-        if self.last_lane_quality is not None:
-            try:
-                if float(self.last_lane_quality) < 0.25:
-                    return fallback
-            except (TypeError, ValueError, OverflowError):
-                return fallback
-        try:
-            lane_error = float(lane_tracking.get("lane_error_px"))
-            lane_width = float(lane_tracking.get("lane_width_px"))
-            kp = float(
-                self.last_lane_kp
-                if self.last_lane_kp is not None
-                else getattr(self.config, "KP", 0.35)
-            )
-            minimum = float(getattr(self.config, "MIN_SERVO_ANGLE", 55.0))
-            center = float(getattr(self.config, "SERVO_CENTER", 95.0))
-            maximum = float(getattr(self.config, "MAX_SERVO_ANGLE", 125.0))
-        except (TypeError, ValueError, OverflowError):
-            return fallback
-        if not all(math.isfinite(value) for value in (
-            lane_error, lane_width, kp, minimum, center, maximum
-        )):
-            return fallback
-        if lane_width <= 1.0 or kp <= 0.0 or not minimum < center < maximum:
-            return fallback
-
-        # The current lane center moves in the image opposite to vehicle
-        # motion. A one-lane-width target offset therefore tracks progress
-        # toward the neighboring lane instead of applying a fixed steering
-        # nudge for the entire maneuver.
-        target_error = lane_error + self.lane_direction * lane_width * max(
-            0.0, min(1.0, float(progress))
+    def _direct_command(self, command, side, reason):
+        setting = (
+            "SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT"
+            if side == "left"
+            else "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT"
         )
-        servo_direction = str(
-            getattr(self.config, "SERVO_DIRECTION", "ltr")
-        ).strip().lower()
-        # Match VirtualVehicleController's servo-angle convention:
-        # LTR: positive correction increases the angle; RTL reverses it.
-        servo_axis_sign = -1.0 if servo_direction == "rtl" else 1.0
-        correction = kp * target_error
-        target_angle = center + servo_axis_sign * correction
-        target_angle = max(minimum, min(maximum, target_angle))
-        if target_angle < center:
-            steering = (target_angle - center) / max(1.0, center - minimum)
-        else:
-            steering = (target_angle - center) / max(1.0, maximum - center)
-
-        # AVIS uses one stable signed convention regardless of servo orientation:
-        # negative steers left, positive steers right. Convert the selected servo
-        # axis back to that convention before applying the simulator inversion.
-        steering *= servo_axis_sign
-        if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
-            steering = -steering
-        try:
-            authority = float(steering_authority)
-        except (TypeError, ValueError, OverflowError):
-            authority = 1.0
-        if not math.isfinite(authority):
-            authority = 1.0
-        steering *= max(0.0, min(1.0, authority))
-        self.lane_geometry_active = True
-        self.last_lane_error_px = round(lane_error, 2)
-        self.last_lane_width_px = round(lane_width, 2)
-        return max(-1.0, min(1.0, steering))
-
-    def _steer_command(self, command, steering, throttle_cap, reason, now):
+        percent = max(0.0, min(100.0, self._number(setting, 80.0)))
         steering_limit = max(
-            0.05,
-            min(1.0, self._number("SIMULATOR_STEERING_LIMIT", 1.0)),
+            0.05, min(1.0, self._number("SIMULATOR_STEERING_LIMIT", 1.0))
         )
-        target_steering = max(-steering_limit, min(steering_limit, steering))
-        rate = max(0.1, min(10.0, self._number("SIMULATOR_STEERING_RATE", 2.0)))
-        previous_at = self._last_output_at
-        dt = 0.05 if previous_at is None else max(0.0, min(0.25, now - previous_at))
-        previous_steering = (
-            command.steering if self._last_output_steering is None
-            else self._last_output_steering
+        steering = (-1.0 if side == "left" else 1.0) * percent / 100.0
+        steering = max(-steering_limit, min(steering_limit, steering))
+        throttle_limit = max(
+            0.0, min(1.0, self._number("SIMULATOR_THROTTLE_LIMIT", 0.35))
         )
-        max_step = rate * dt
-        applied_steering = previous_steering + max(
-            -max_step,
-            min(max_step, target_steering - previous_steering),
+        throttle_cap = max(
+            0.0, min(0.25, self._number("SIMULATOR_OBSTACLE_THROTTLE_LIMIT", 0.08))
         )
-        self._last_output_steering = applied_steering
-        self._last_output_at = now
+        throttle = min(throttle_limit, throttle_cap)
+        target_speed = max(
+            0.0, min(15.0, self._number("SIMULATOR_TARGET_SPEED", 15.0))
+        )
         self.last_reason = reason
         return VehicleCommand(
-            steering=max(-steering_limit, min(steering_limit, applied_steering)),
-            throttle=min(command.throttle, max(0.0, throttle_cap)),
+            steering=steering,
+            throttle=throttle,
             brake=0.0,
             servo_angle=command.servo_angle,
-            target_speed=min(command.target_speed, 15.0),
+            target_speed=target_speed,
             reason=reason,
+        )
+
+    def _brake(self, command, reason):
+        self.last_reason = reason
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+        return _brake(command, reason)
+
+    def _direct_phase(self, command, side, now, delay, search_state):
+        elapsed = max(0.0, now - self.state_since)
+        if self.state in {self.SHIFT_LEFT_DIRECT, self.SHIFT_RIGHT_DIRECT} and elapsed >= delay:
+            self._set_state(
+                search_state,
+                now,
+                f"{side} steering delay elapsed; enabling {side} maneuver ROI",
+            )
+        if self.state == search_state:
+            timeout = max(
+                0.5,
+                min(15.0, self._number("SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS", 4.0)),
+            )
+            if now - self.state_since > timeout:
+                self._set_state(
+                    self.BLOCKED, now,
+                    f"{side} maneuver ROI did not find a valid lane before search timeout",
+                )
+                return self._brake(command, self.last_reason)
+        percent = self._number(
+            "SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT"
+            if side == "left"
+            else "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT",
+            80.0,
+        )
+        return self._direct_command(
+            command, side,
+            f"obstacle lane change: direct {side} steering ({max(0.0, min(100.0, percent)):.0f}%)",
         )
 
     def apply(
@@ -220,6 +183,7 @@ class RangeObstacleAvoidance:
         lane_quality=None,
         lane_kp=None,
         lane_tracking=None,
+        maneuver_roi=None,
         now=None,
     ):
         now = time.monotonic() if now is None else float(now)
@@ -228,78 +192,40 @@ class RangeObstacleAvoidance:
             key: _finite_range(ranges.get(key))
             for key in ("left", "front", "right")
         }
-        self.last_lane_quality = lane_quality
-        self.last_lane_kp = lane_kp
-
-        if not bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)):
-            if self.state != self.CLEAR:
-                self._set_state(
-                    self.BLOCKED, now,
-                    "lane-change option disabled during an active maneuver; braking",
-                )
-                return self._brake(command, self.last_reason)
-            self.last_reason = "obstacle avoidance disabled"
-            return command
-
         front = self.last_ranges["front"]
         left = self.last_ranges["left"]
         right = self.last_ranges["right"]
-        trigger = max(36.0, self._number("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 100.0))
 
-        if command.brake >= 0.5 or not perception_valid:
+        if not bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)):
             if self.state != self.CLEAR:
-                self._set_state(
-                    self.BLOCKED, now,
-                    "lane perception or another safety rule requested braking during bypass",
+                return self._brake(
+                    command,
+                    "lane-change option disabled during an active maneuver; braking",
                 )
-                return self._brake(command, self.last_reason)
-            if (
-                not perception_valid and command.brake < 0.5
-                and front is not None and front <= trigger
-            ):
-                self._set_state(
-                    self.BLOCKED, now,
-                    "obstacle inside bypass trigger distance but lane perception is invalid; braking",
-                )
-                return self._brake(command, self.last_reason)
-            self.last_reason = (
-                "waiting for valid lane perception before starting a lane change"
-                if not perception_valid else command.reason or "another safety rule owns braking"
-            )
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+            self.last_reason = "obstacle avoidance disabled"
             return command
+
+        trigger = max(36.0, self._number("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 120.0))
         clear_distance = max(
             trigger + 1.0,
-            self._number("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", 125.0),
+            self._number("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", 150.0),
         )
         minimum_side = max(
-            1.0,
-            self._number("SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", 75.0),
+            1.0, self._number("SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", 75.0)
         )
         hard_stop = max(
-            20.0,
-            self._number("SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", 35.0),
+            20.0, self._number("SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", 60.0)
         )
-        shift_duration = max(
-            0.05,
-            self._number("SIMULATOR_OBSTACLE_SHIFT_SECONDS", 0.35),
+        roi_delay = max(
+            0.0, min(5.0, self._number("SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS", 1.0))
         )
-        rejoin_duration = max(
-            0.05,
-            self._number("SIMULATOR_OBSTACLE_REJOIN_SECONDS", 0.35),
+        confirm_frames = max(
+            1, min(10, self._integer("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", 2))
         )
-        pass_timeout = max(
-            0.2,
-            self._number("SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", 4.0),
+        lane_hold = max(
+            0.2, min(10.0, self._number("SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS", 3.0))
         )
-        offset = max(
-            0.05,
-            min(1.0, self._number("SIMULATOR_OBSTACLE_STEERING_OFFSET", 0.28)),
-        )
-        throttle_cap = max(
-            0.0,
-            min(0.25, self._number("SIMULATOR_OBSTACLE_THROTTLE_LIMIT", 0.12)),
-        )
-        minimum_pass_distance = max(40.0, min(150.0, trigger * 0.75))
 
         if front is None:
             self._set_state(
@@ -314,20 +240,16 @@ class RangeObstacleAvoidance:
             )
             return self._brake(command, self.last_reason)
 
-        if self.state in {self.SHIFT, self.PASS, self.REJOIN}:
-            selected_side_range = self.last_ranges.get(self.selected_side)
-            if selected_side_range is None or selected_side_range < minimum_side:
-                self._set_state(
-                    self.BLOCKED, now,
-                    "selected lane-change side is no longer proven clear; braking",
-                )
-                return self._brake(command, self.last_reason)
-
         if self.state == self.BLOCKED:
             if front >= clear_distance:
                 self.clear_observations += 1
                 if self.clear_observations >= 3:
-                    self._set_state(self.CLEAR, now, "forward clearance restored; maneuver controller re-armed")
+                    self.awaiting_clear = True
+                    self._set_state(
+                        self.CLEAR, now,
+                        "forward clearance restored; maneuver controller re-armed",
+                    )
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 else:
                     return self._brake(
                         command,
@@ -338,161 +260,157 @@ class RangeObstacleAvoidance:
                 return self._brake(command, self.last_reason)
 
         if self.state == self.CLEAR:
+            if self.awaiting_clear:
+                if front >= clear_distance:
+                    self.clear_observations += 1
+                    if self.clear_observations >= 3:
+                        self.awaiting_clear = False
+                        self.clear_observations = 0
+                else:
+                    self.clear_observations = 0
+                    self.last_reason = "waiting for the previous obstacle to clear before re-arming"
+                    return command
             if front > trigger:
                 self.last_reason = "armed; no obstacle inside the lane-change trigger distance"
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 return command
-            candidates = [
-                (distance, direction, side_name)
-                for distance, direction, side_name in (
-                    (left, -1.0, "left"),
-                    (right, 1.0, "right"),
-                )
-                if distance is not None and distance >= minimum_side
-            ]
-            if not candidates:
+            if command.brake >= 0.5 or not perception_valid:
                 self._set_state(
                     self.BLOCKED, now,
-                    "obstacle ahead but neither side sensor confirms minimum clearance",
+                    "obstacle inside bypass trigger distance but normal lane perception is invalid; braking",
                 )
                 return self._brake(command, self.last_reason)
-            clearance, direction, side_name = max(candidates, key=lambda item: item[0])
-            self.selected_side = side_name
-            if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
-                direction = -direction
-            self.lane_direction = -1.0 if side_name == "left" else 1.0
-            self.direction = direction
+            if left is None or left < minimum_side:
+                self._set_state(
+                    self.BLOCKED, now,
+                    "left lane departure is not proven clear by the left range sensor; braking",
+                )
+                return self._brake(command, self.last_reason)
             self._set_state(
-                self.SHIFT, now,
-                f"lane change {side_name} selected; side range {clearance:.1f} cm",
+                self.SHIFT_LEFT_DIRECT, now,
+                f"left lane departure selected; left clearance {left:.1f} cm",
             )
+            self.selected_side = "left"
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+            return self._direct_command(command, "left", "obstacle lane change: direct left steering")
 
-        if self.state == self.SHIFT:
-            elapsed = max(0.0, now - self.state_since)
-            progress = self._smoothstep(elapsed / shift_duration)
-            if elapsed >= shift_duration:
-                self._set_state(self.PASS, now, "lane-change shift completed; holding bypass path")
-                progress = 1.0
-            target_steering = self._target_lane_steering(
-                command, lane_tracking, progress,
-                command.steering + self.direction * offset * progress,
-                steering_authority=offset,
-            )
-            return self._steer_command(
-                command,
-                target_steering,
-                throttle_cap,
-                f"obstacle lane change: shifting {('left' if self.direction < 0 else 'right')} ({progress:.0%})",
-                now,
-            )
-
-        if self.state == self.PASS:
-            delta = _finite_range(distance_delta_cm)
-            if delta is not None:
-                self.distance_since_shift_cm += min(delta, 100.0)
-            if now - self.pass_started_at > pass_timeout:
+        if self.state in {self.SHIFT_LEFT_DIRECT, self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW}:
+            if left is None or left < minimum_side:
                 self._set_state(
                     self.BLOCKED, now,
-                    "obstacle did not clear within the configured pass timeout",
+                    "left-side clearance is no longer proven during bypass; braking",
                 )
                 return self._brake(command, self.last_reason)
-            if front >= clear_distance:
-                self.clear_observations += 1
-            else:
-                self.clear_observations = 0
-            if (
-                self.clear_observations >= 3
-                and self.distance_since_shift_cm >= minimum_pass_distance
-            ):
-                self._set_state(
-                    self.REJOIN, now,
-                    "front path clear and minimum pass distance reached; beginning lane rejoin",
-                )
-            else:
-                reason = (
-                    "obstacle lane change: passing; confirming clearance and travel distance"
-                    if front >= clear_distance
-                    else "obstacle lane change: passing beside obstacle"
-                )
-                target_steering = self._target_lane_steering(
-                    command, lane_tracking, 1.0,
-                    command.steering + self.direction * offset * 0.78,
-                    steering_authority=offset,
-                )
-                return self._steer_command(
-                    command,
-                    target_steering,
-                    throttle_cap,
-                    reason,
-                    now,
-                )
 
-        if self.state == self.REJOIN:
-            if front <= trigger:
+        if self.state in {self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI}:
+            if right is None or right < minimum_side:
                 self._set_state(
-                    self.PASS, now,
-                    "obstacle re-entered forward range; holding bypass path",
+                    self.BLOCKED, now,
+                    "right-side clearance is not proven for the return maneuver; braking",
                 )
-                target_steering = self._target_lane_steering(
-                    command, lane_tracking, 1.0,
-                    command.steering + self.direction * offset * 0.78,
-                    steering_authority=offset,
+                return self._brake(command, self.last_reason)
+
+        if self.state == self.SHIFT_LEFT_DIRECT:
+            return self._direct_phase(
+                command, "left", now, roi_delay, self.SEARCH_LEFT_ROI
+            )
+
+        if self.state == self.SEARCH_LEFT_ROI:
+            observed = (
+                isinstance(maneuver_roi, dict)
+                and maneuver_roi.get("side") == "left"
+                and bool(maneuver_roi.get("observed"))
+                and bool(perception_valid)
+            )
+            self.roi_confirmations = self.roi_confirmations + 1 if observed else 0
+            self.last_maneuver_roi = "left" if observed else None
+            if self.roi_confirmations >= confirm_frames:
+                self._set_state(
+                    self.PASS_LANE_FOLLOW, now,
+                    "left maneuver ROI confirmed a lane; handing steering back to lane PID",
                 )
-                return self._steer_command(
-                    command,
-                    target_steering,
-                    throttle_cap,
-                    "obstacle lane change: obstacle remains ahead",
-                    now,
-                )
-            elapsed = max(0.0, now - self.state_since)
-            progress = self._smoothstep(elapsed / rejoin_duration)
-            if elapsed >= rejoin_duration:
-                self._set_state(self.CLEAR, now, "lane rejoin completed")
-                self._last_output_steering = command.steering
-                self._last_output_at = now
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
                 return command
-            target_steering = self._target_lane_steering(
-                command, lane_tracking, 1.0 - progress,
-                command.steering + self.direction * offset * 0.78 * (1.0 - progress),
-            )
-            return self._steer_command(
-                command,
-                target_steering,
-                throttle_cap,
-                f"obstacle lane change: rejoining original lane ({progress:.0%})",
-                now,
+            return self._direct_phase(
+                command, "left", now, roi_delay, self.SEARCH_LEFT_ROI
             )
 
+        if self.state == self.PASS_LANE_FOLLOW:
+            if not perception_valid or command.brake >= 0.5:
+                self._set_state(
+                    self.BLOCKED, now,
+                    "passing-lane perception was lost; stopping instead of driving blind",
+                )
+                return self._brake(command, self.last_reason)
+            if now - self.pass_started_at >= lane_hold:
+                if right is None or right < minimum_side:
+                    self._set_state(
+                        self.BLOCKED, now,
+                        "passing interval ended but right-side clearance is not proven; braking",
+                    )
+                    return self._brake(command, self.last_reason)
+                self._set_state(
+                    self.SHIFT_RIGHT_DIRECT, now,
+                    "passing-lane hold completed; beginning direct right return",
+                )
+                self.selected_side = "right"
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                return self._direct_command(
+                    command, "right", "obstacle lane change: direct right steering"
+                )
+            self.last_reason = (
+                "obstacle lane change: following the passing lane with normal lane PID"
+            )
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
+            return command
+
+        if self.state == self.SHIFT_RIGHT_DIRECT:
+            return self._direct_phase(
+                command, "right", now, roi_delay, self.SEARCH_RIGHT_ROI
+            )
+
+        if self.state == self.SEARCH_RIGHT_ROI:
+            observed = (
+                isinstance(maneuver_roi, dict)
+                and maneuver_roi.get("side") == "right"
+                and bool(maneuver_roi.get("observed"))
+                and bool(perception_valid)
+            )
+            self.roi_confirmations = self.roi_confirmations + 1 if observed else 0
+            self.last_maneuver_roi = "right" if observed else None
+            if self.roi_confirmations >= confirm_frames:
+                self.awaiting_clear = True
+                self.clear_observations = 0
+                self._set_state(
+                    self.CLEAR, now,
+                    "right maneuver ROI confirmed the original lane; normal lane detection restored",
+                )
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                return command
+            return self._direct_phase(
+                command, "right", now, roi_delay, self.SEARCH_RIGHT_ROI
+            )
+
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
         return command
 
     def snapshot(self):
-        minimum_pass_distance = max(
-            40.0,
-            min(
-                150.0,
-                self._number("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 100.0) * 0.75,
-            ),
-        )
+        active_roi = self.prepare_vision()
         return {
             "enabled": bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),
             "state": self.state,
             "direction": (
-                "left" if self.direction < 0 else "right" if self.direction > 0 else None
-            ) if self.state != self.CLEAR else None,
-            "selected_side_sensor": self.selected_side,
-            "lane_direction": (
-                "left" if self.lane_direction < 0
-                else "right" if self.lane_direction > 0 else None
+                "left" if self.state in {
+                    self.SHIFT_LEFT_DIRECT, self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW
+                } else "right" if self.state in {
+                    self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI
+                } else None
             ),
-            "lane_geometry_active": bool(self.lane_geometry_active),
-            "lane_error_px": self.last_lane_error_px,
-            "lane_width_px": self.last_lane_width_px,
+            "active_maneuver_roi": active_roi,
+            "roi_confirmations": int(self.roi_confirmations),
             "ranges_cm": dict(self.last_ranges),
-            "lane_quality": self.last_lane_quality,
-            "lane_kp": self.last_lane_kp,
-            "distance_since_shift_cm": round(self.distance_since_shift_cm, 1),
-            "minimum_pass_distance_cm": round(minimum_pass_distance, 1),
             "front_clear_observations": int(self.clear_observations),
+            "awaiting_obstacle_clear": bool(self.awaiting_clear),
             "reason": self.last_reason,
         }
 
@@ -667,6 +585,11 @@ class AVISBehaviorCoordinator:
         elif line_detected:
             self.stop_line_absent_count = 0
 
+    def prepare_vision(self, now=None):
+        if str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() != "avis":
+            return None
+        return self.obstacles.prepare_vision(now=now)
+
     def apply(self, frame, perception, command, *, distance_delta_cm=0.0, now=None):
         if str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() != "avis":
             return command
@@ -691,6 +614,7 @@ class AVISBehaviorCoordinator:
         lane_quality = (perception or {}).get("perception_quality")
         lane_kp = (perception or {}).get("kp")
         lane_tracking = (perception or {}).get("line_tracking")
+        maneuver_roi = (perception or {}).get("maneuver_roi")
         obstacle_command = self.obstacles.apply(
             command,
             ranges,
@@ -699,6 +623,7 @@ class AVISBehaviorCoordinator:
             lane_quality=lane_quality,
             lane_kp=lane_kp,
             lane_tracking=lane_tracking,
+            maneuver_roi=maneuver_roi,
             now=now,
         )
         if self.obstacles.state != RangeObstacleAvoidance.CLEAR or obstacle_command is not command:
