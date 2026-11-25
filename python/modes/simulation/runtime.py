@@ -47,7 +47,7 @@ def _apply_forward_range_guard(command, ranges, *, backend, stop_distance_cm):
     if backend == "avis":
         threshold = max(20.0, configured_threshold)
         if front is None:
-            reason = "AVIS front range sensor missing/invalid; fail-safe stop"
+            reason = "AVIS front range sensor missing/invalid; temporary safety brake"
             status = "sensor_unavailable"
         elif front <= threshold:
             reason = f"forward range {front:.1f} cm at/below {threshold:.1f} cm; AVIS safety stop"
@@ -128,6 +128,8 @@ class SimulationRuntime:
         self._last_result = {}
         self._last_sensor_frame = None
         self._last_range_safety = {"status": "waiting", "reason": "waiting for the first front-range sample"}
+        self._front_range_unavailable_since = None
+        self._front_range_grace_notified = False
         self._last_command = self.controller.last_command
         self._last_error = None
         self._last_event_key = None
@@ -357,6 +359,8 @@ class SimulationRuntime:
                 label = "CARLA vehicle" if self.backend == "carla" else "AVIS connection"
                 raise RuntimeError(label + " is not ready; wait for reconnection before starting.")
             self._run_enabled = True
+            self._front_range_unavailable_since = None
+            self._front_range_grace_notified = False
             self._last_error = None
             self._stop_event_active = False
             self._record_event("info", self.backend.upper() + " autonomous run enabled by an explicit Stream Start command.")
@@ -383,18 +387,71 @@ class SimulationRuntime:
             self._record_event("info", self.backend.upper() + " autonomous run disabled; explicit stop requested.")
         return self._run_enabled
 
-    def _latch_avis_range_stop(self):
-        """Disarm AVIS and issue the Engine stop token on a forward safety fault."""
-        status = str(self._last_range_safety.get("status", ""))
-        if (
-            self.backend != "avis" or not self._run_enabled
-            or status not in {"sensor_unavailable", "obstacle_detected"}
-        ):
+    def _latch_avis_range_stop(self, now=None):
+        """Disarm for a confirmed obstacle or a sustained front-sensor outage.
+
+        A missing sample still produces an immediate brake in
+        _apply_forward_range_guard. Brief telemetry gaps keep the Engine
+        session armed so a valid next sample can safely resume control.
+        """
+        if self.backend != "avis":
             return False
+        status = str(self._last_range_safety.get("status", ""))
+        if status == "clear":
+            self._front_range_unavailable_since = None
+            self._front_range_grace_notified = False
+            self._last_range_safety.pop("unavailable_for_seconds", None)
+            self._last_range_safety.pop("invalid_grace_seconds", None)
+            return False
+        if status not in {"sensor_unavailable", "obstacle_detected"} or not self._run_enabled:
+            return False
+
+        now = time.monotonic() if now is None else float(now)
+        reason = str(self._last_range_safety.get("reason", "AVIS forward range safety fault"))
+        if status == "sensor_unavailable":
+            if self._front_range_unavailable_since is None:
+                self._front_range_unavailable_since = now
+                self._front_range_grace_notified = False
+            unavailable_for = max(0.0, now - self._front_range_unavailable_since)
+            try:
+                grace = float(getattr(
+                    self.config, "SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS", 1.5
+                ))
+            except (TypeError, ValueError, OverflowError):
+                grace = 1.5
+            if not math.isfinite(grace):
+                grace = 1.5
+            grace = max(0.0, min(10.0, grace))
+            self._last_range_safety["unavailable_for_seconds"] = unavailable_for
+            self._last_range_safety["invalid_grace_seconds"] = grace
+            if unavailable_for < grace:
+                if not self._front_range_grace_notified:
+                    tag_state = (
+                        "present" if self._last_range_safety.get("sensor_tag_present")
+                        else "absent/unknown"
+                    )
+                    count = self._last_range_safety.get("range_sensor_count", "unknown")
+                    self._record_event(
+                        "warning",
+                        f"AVIS front range telemetry is unavailable (sensor tag {tag_state}, "
+                        f"{count} readings); braking this frame and waiting up to "
+                        f"{grace:.1f}s for valid range data before disarming the run.",
+                    )
+                    self._front_range_grace_notified = True
+                return False
+            reason += (
+                f"; front-range telemetry stayed unavailable for {unavailable_for:.1f}s "
+                f"(configured grace {grace:.1f}s elapsed)"
+            )
+        else:
+            # A positive near-range reading is a confirmed forward hazard;
+            # never apply the telemetry grace period to a real obstacle.
+            self._front_range_unavailable_since = None
+            self._front_range_grace_notified = False
+
         self._record_event(
             "warning",
-            str(self._last_range_safety.get("reason", "AVIS forward safety stop"))
-            + "; issuing AVIS Engine stop and disarming autonomous run.",
+            reason + "; issuing AVIS Engine stop and disarming autonomous run.",
         )
         self.set_run_enabled(False)
         self._last_range_safety["stop_latched"] = True
@@ -720,6 +777,15 @@ class SimulationRuntime:
                     command, ranges, backend=self.backend,
                     stop_distance_cm=obstacle_limit,
                 )
+                if self.backend == "avis":
+                    sensor_status = dict(getattr(frame, "sensor_status", {}) or {})
+                    self._last_range_safety.update({
+                        "sensor_tag_present": sensor_status.get("sensor_tag_present"),
+                        "range_sensor_count": sensor_status.get("range_sensor_count"),
+                        "front_range_available": sensor_status.get(
+                            "front_range_available", ranges.get("front") is not None
+                        ),
+                    })
                 if self._latch_avis_range_stop():
                     # The Engine stop token closes the active control session.
                     # Motion requires a fresh Start click after reconnect.

@@ -91,6 +91,8 @@ class RangeObstacleAvoidance:
         self.state_since = now
         self.roi_confirmations = 0
         self.last_reason = reason
+        if state == self.BLOCKED:
+            self.clear_observations = 0
         if state == self.PASS_LANE_FOLLOW:
             self.pass_started_at = now
             self.return_steering_history.clear()
@@ -272,6 +274,9 @@ class RangeObstacleAvoidance:
         confirm_frames = max(
             1, min(10, self._integer("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", 2))
         )
+        clear_confirm_frames = max(
+            1, min(20, self._integer("SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES", 3))
+        )
         lane_hold = max(
             0.2, min(10.0, self._number("SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS", 3.0))
         )
@@ -292,8 +297,9 @@ class RangeObstacleAvoidance:
         if self.state == self.BLOCKED:
             if front >= clear_distance:
                 self.clear_observations += 1
-                if self.clear_observations >= 3:
-                    self.awaiting_clear = True
+                if self.clear_observations >= clear_confirm_frames:
+                    self.clear_observations = 0
+                    self.awaiting_clear = False
                     self._set_state(
                         self.CLEAR, now,
                         "forward clearance restored; maneuver controller re-armed",
@@ -302,7 +308,7 @@ class RangeObstacleAvoidance:
                 else:
                     return self._brake(
                         command,
-                        f"waiting for clear front range ({self.clear_observations}/3 observations)",
+                        f"waiting for clear front range ({self.clear_observations}/{clear_confirm_frames} observations)",
                     )
             else:
                 self.clear_observations = 0
@@ -312,12 +318,21 @@ class RangeObstacleAvoidance:
             if self.awaiting_clear:
                 if front >= clear_distance:
                     self.clear_observations += 1
-                    if self.clear_observations >= 3:
+                    if self.clear_observations >= clear_confirm_frames:
                         self.awaiting_clear = False
                         self.clear_observations = 0
+                    else:
+                        self.last_reason = (
+                            f"waiting for clear front range before re-arming "
+                            f"({self.clear_observations}/{clear_confirm_frames} observations)"
+                        )
+                        return command
                 else:
                     self.clear_observations = 0
-                    self.last_reason = "waiting for the previous obstacle to clear before re-arming"
+                    self.last_reason = (
+                        f"waiting for the previous obstacle to clear before re-arming "
+                        f"(0/{clear_confirm_frames} observations)"
+                    )
                     return command
             if front > trigger:
                 self.last_reason = "armed; no obstacle inside the lane-change trigger distance"
@@ -540,6 +555,9 @@ class RangeObstacleAvoidance:
             ),
             "ranges_cm": dict(self.last_ranges),
             "front_clear_observations": int(self.clear_observations),
+            "front_clear_observations_required": max(
+                1, min(20, self._integer("SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES", 3))
+            ),
             "awaiting_obstacle_clear": bool(self.awaiting_clear),
             "reason": self.last_reason,
         }
