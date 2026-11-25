@@ -22,14 +22,14 @@
 .sim-roi-mirror-control{display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;border:1px solid var(--sim-border);border-radius:8px;background:var(--sim-panel2);font-size:12px}
 .sim-roi-mirror-control label{display:flex;align-items:center;gap:7px}
 .sim-roi-mirror-control input{accent-color:var(--sim-accent)}
-.carla-run-panel{border-color:#3d5971}
-.carla-run-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.carla-run-state{font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.04em}
-.carla-run-state.stopped{color:#ffcf7b}
-.carla-run-state.running{color:#78e2a7}
-.carla-run-note{font-size:11px;color:var(--sim-muted);margin:8px 0 0}
-.carla-run-start{background:#1d6548;border-color:#328b63}
-.carla-run-stop{background:#713b3b;border-color:#a75b5b}
+.simulator-run-panel{border-color:#3d5971}
+.simulator-run-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.simulator-run-state{font:700 11px ui-monospace,Consolas,monospace;letter-spacing:.04em}
+.simulator-run-state.stopped{color:#ffcf7b}
+.simulator-run-state.running{color:#78e2a7}
+.simulator-run-note{font-size:11px;color:var(--sim-muted);margin:8px 0 0}
+.simulator-run-start{background:#1d6548;border-color:#328b63}
+.simulator-run-stop{background:#713b3b;border-color:#a75b5b}
 @media(max-width:680px){.sim-roi-editor-head{align-items:flex-start}.sim-roi-actions{width:100%;justify-content:space-between}}
 :root{color-scheme:dark;--sim-bg:#10151d;--sim-panel:#171e28;--sim-panel2:#1c2633;--sim-border:#2b3747;--sim-text:#e5edf5;--sim-muted:#93a4b8;--sim-accent:#73c5ff;--sim-green:#71d9a0;--sim-warn:#ffc56d;--sim-red:#ff8282}
 *{box-sizing:border-box}body{margin:0;background:var(--sim-bg);color:var(--sim-text);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;overflow:auto}
@@ -162,18 +162,20 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
   </div>
 
   <div class="stack">
-    {% if caps.simulator_backend == 'carla' %}
-    <section class="panel carla-run-panel" id="carla-run-panel">
-      <div class="panel-head"><div><h2>Autonomous run control</h2><p>CARLA never starts moving automatically after launch or reconnect.</p></div><span class="sim-spacer"></span><span class="pill" id="carla-run-state">STOPPED</span></div>
+    {% if caps.simulator_backend in ['carla', 'avis'] %}
+    <section class="panel simulator-run-panel" id="simulator-run-panel">
+      <div class="panel-head"><div><h2>Autonomous run control</h2><p>{{ caps.simulator_backend|upper }} never starts moving automatically after launch or reconnect.</p></div><span class="sim-spacer"></span><span class="pill" id="simulator-run-state">STOPPED</span></div>
       <div class="panel-content">
-        <div class="carla-run-controls">
-          <button type="button" id="carla-run-start" class="carla-run-start">▶ Start Run</button>
-          <button type="button" id="carla-run-stop" class="carla-run-stop">■ Stop / Brake</button>
-          <span id="carla-run-message" class="msg" role="status"></span>
+        <div class="simulator-run-controls">
+          <button type="button" id="simulator-run-start" class="simulator-run-start">▶ Start Run</button>
+          <button type="button" id="simulator-run-stop" class="simulator-run-stop">■ Stop / Brake</button>
+          <span id="simulator-run-message" class="msg" role="status"></span>
         </div>
-        <p class="carla-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake immediately disarms it. Changing the map, vehicle or spawn point disarms the run; press Start Run again after scene changes.</p>
+        <p class="simulator-run-note">Start Run explicitly arms autonomous throttle. Stop / Brake immediately disarms it and commands zero speed with full braking. Every new simulator process starts STOPPED and requires a fresh Start Run command.</p>
       </div>
     </section>
+    {% endif %}
+    {% if caps.simulator_backend == 'carla' %}
     <section class="panel" id="carla-scene-panel">
       <div class="panel-head">
         <div><h2>CARLA · World & Spawn Studio</h2><p>Choose a map, vehicle blueprint and exact spawn location</p></div>
@@ -569,8 +571,8 @@ function populate(s){
   simRoiMirrors.LL=!!s.LL_MIRRORED;
   simRoiUpdateSelection();
   setText("target-speed-label", caps.simulator_backend==="avis" ? "AVIS motor speed (0–100%)" : "Target vehicle speed (km/h, editable up to 200)");
-  if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled;
-  if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
+  if($("simulator-run-start"))$("simulator-run-start").disabled=!simRoiControlsEnabled;
+  if($("simulator-run-stop"))$("simulator-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
 }
 const simRoiDefs = [
@@ -818,8 +820,8 @@ async function loadSettings(){
     roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. Changes auto-save after you finish dragging or edit a numeric coordinate. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+"Coordinates are normalized fractions from 0 to 1 (0.1 = 10% of the frame). "+roiModeDescription;
   }
   populate(data.settings||{});
-  if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
-  if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
+  if($("simulator-run-start"))$("simulator-run-start").disabled=!data.controls_enabled;
+  if($("simulator-run-stop"))$("simulator-run-stop").disabled=!data.controls_enabled;
   const roiSaveButton=$("sim-roi-save");if(roiSaveButton)roiSaveButton.disabled=!simRoiControlsEnabled;
   const roiMirrorInput=$("sim-roi-mirror-selected");if(roiMirrorInput)roiMirrorInput.disabled=!simRoiControlsEnabled;
   simRoiDefs.forEach(function(def){Object.values(def.fields).forEach(function(id){const input=$(id);if(input)input.disabled=!simRoiControlsEnabled;});});
@@ -987,14 +989,14 @@ function renderEvents(events){
   if(!eventKeys.length)consoleEl.textContent="No actuator events yet.";
   consoleEl.scrollTop=consoleEl.scrollHeight;
 }
-async function setCarlaRunMode(action){
-  const start=$("carla-run-start"),stop=$("carla-run-stop"),message=$("carla-run-message");
+async function setSimulatorRunMode(action){
+  const start=$("simulator-run-start"),stop=$("simulator-run-stop"),message=$("simulator-run-message");
   if(start)start.disabled=true;if(stop)stop.disabled=true;
   if(message){message.textContent=action==="start"?"Starting autonomous run…":"Applying brake and stopping…";message.className="msg";}
   try{
     const response=await fetch("/api/simulation/run-mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:action})});
     const data=await response.json();
-    if(!response.ok||!data.success)throw new Error(data.message||"Could not change CARLA run mode");
+    if(!response.ok||!data.success)throw new Error(data.message||"Could not change simulator run mode");
     if(message){message.textContent=data.message||"Run mode updated.";message.className="msg good";}
     await poll();
   }catch(error){
@@ -1002,8 +1004,8 @@ async function setCarlaRunMode(action){
     if(start)start.disabled=!simRoiControlsEnabled;if(stop)stop.disabled=!simRoiControlsEnabled;
   }
 }
-if($("carla-run-start"))$("carla-run-start").addEventListener("click",function(){setCarlaRunMode("start");});
-if($("carla-run-stop"))$("carla-run-stop").addEventListener("click",function(){setCarlaRunMode("stop");});
+if($("simulator-run-start"))$("simulator-run-start").addEventListener("click",function(){setCarlaRunMode("start");});
+if($("simulator-run-stop"))$("simulator-run-stop").addEventListener("click",function(){setCarlaRunMode("stop");});
 
 async function poll(){
   try{
@@ -1039,12 +1041,12 @@ async function poll(){
       cameraDiagnostic.textContent=detail;
       cameraDiagnostic.className="status-message"+((sensorInfo.rendering_error||sensorInfo.no_rendering_mode===true||sensorInfo.decode_error||Number(sensorInfo.callback_count||0)===0||imageInfo.looks_black)?" error":"");
     }
-    if($("carla-run-state")){
+    if($("simulator-run-state")){
       const enabled=!!d.run_enabled;
-      setText("carla-run-state",enabled?"AUTONOMOUS RUNNING":"STOPPED · MANUAL START REQUIRED");
-      $("carla-run-state").className="pill carla-run-state "+(enabled?"running":"stopped");
-      if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled||!d.connected||enabled;
-      if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled||!enabled;
+      setText("simulator-run-state",enabled?"AUTONOMOUS RUNNING":"STOPPED · PRESS START TO MOVE");
+      $("simulator-run-state").className="pill simulator-run-state "+(enabled?"running":"stopped");
+      if($("simulator-run-start"))$("simulator-run-start").disabled=!simRoiControlsEnabled||!d.connected||enabled;
+      if($("simulator-run-stop"))$("simulator-run-stop").disabled=!simRoiControlsEnabled||!enabled;
     }
     setText("lane-value",d.lane_type||"none");
     setText("lane-valid",d.perception_valid?"Perception valid":"Invalid lane estimate · safety policy applies");
