@@ -140,6 +140,32 @@ class StopLineDetectorTests(unittest.TestCase):
 
 
 class RangeObstacleAvoidanceTests(unittest.TestCase):
+    def test_500_cm_trigger_is_inclusive_and_starts_only_at_or_below_threshold(self):
+        ranges_at_threshold = {"left": 180.0, "front": 500.0, "right": 180.0}
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=500.0,
+            SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=150.0,
+        ))
+        command = controller.apply(
+            base_command(), ranges_at_threshold, perception_valid=True, now=1.0,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertLess(command.steering, 0.0)
+
+        above = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=500.0,
+            SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=150.0,
+        ))
+        idle_command = base_command()
+        unchanged = above.apply(
+            idle_command,
+            {"left": 180.0, "front": 500.1, "right": 180.0},
+            perception_valid=True,
+            now=1.0,
+        )
+        self.assertEqual(above.state, above.CLEAR)
+        self.assertIs(unchanged, idle_command)
+
     def test_direct_left_steering_is_negative_and_roi_waits_for_delay(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=92.0,
