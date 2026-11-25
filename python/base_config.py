@@ -40,6 +40,16 @@ LL_BOTTOM_ROI = 1
 LL_LEFT_ROI = 0.2
 LL_RIGHT_ROI = 0.5
 
+# Temporary AVIS lane-change search windows (normalized frame coordinates).
+ML_TOP_ROI = 0.62
+ML_BOTTOM_ROI = 0.98
+ML_LEFT_ROI = 0.02
+ML_RIGHT_ROI = 0.42
+MR_TOP_ROI = 0.62
+MR_BOTTOM_ROI = 0.98
+MR_LEFT_ROI = 0.58
+MR_RIGHT_ROI = 0.98
+
 # Crosswalk ROI (if you later want stop line detection)
 CW_TOP_ROI = 0.8
 CW_BOTTOM_ROI = 1.0
