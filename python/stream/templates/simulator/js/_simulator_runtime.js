@@ -134,6 +134,10 @@ async function poll(){
         if(obstacle.minimum_pass_distance_cm!=null){
           details.push("Pass "+numeric(obstacle.distance_since_shift_cm,0)+"/"+numeric(obstacle.minimum_pass_distance_cm,0)+" cm");
         }
+        details.push("Vision lane geometry "+(obstacle.lane_geometry_active?"active":"fallback profile"));
+        if(obstacle.lane_geometry_active&&obstacle.lane_width_px!=null){
+          details.push("Lane error "+numeric(obstacle.lane_error_px,0)+" / width "+numeric(obstacle.lane_width_px,0)+" px");
+        }
         if(obstacle.reason)details.push(obstacle.reason);
       }
       if(caps.supports_stop_line){
