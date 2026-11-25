@@ -345,6 +345,17 @@ class RangeObstacleAvoidance:
             getattr(self.config, "USE_ML_LANE_DETECTOR", False)
         )
 
+    def _hall_tracking_without_identity_handoff(self):
+        """Keep Hall tracking anchored to the bypass lane when identity transfer is off."""
+        return (
+            bool(getattr(self.config, "HALL_LINE_TRACKING_ENABLED", False))
+            and not bool(getattr(self.config, "OLD_METHOD", False))
+            and str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() == "avis"
+            and str(getattr(self.config, "CITY_LANE_DETECTOR", "default")).lower().find("blsf") < 0
+            and not bool(getattr(self.config, "USE_ML_LANE_DETECTOR", False))
+            and not self._hall_handoff_enabled()
+        )
+
     def _remember_lane_tracking(self, lane_tracking):
         if not isinstance(lane_tracking, dict):
             return
@@ -412,7 +423,14 @@ class RangeObstacleAvoidance:
                 self._start_hall_handoff(*pair)
             descriptor = dict(self._handoff_plan)
             active_roi = pair[1]
-        elif self.state == self.SEARCH_LEFT_ROI:
+        elif self.state == self.SEARCH_LEFT_ROI or (
+            self.state == self.PASS_LANE_FOLLOW
+            and self._hall_tracking_without_identity_handoff()
+        ):
+            # The left-side Hall ROI is the only independent anchor for the
+            # passing lane when cross-ROI identity handoff is disabled. Keep
+            # it active for the entire PASS phase instead of reverting to the
+            # original pair of lane ROIs immediately after confirmation.
             active_roi = "left"
         elif self.state == self.SEARCH_RIGHT_ROI:
             active_roi = "right"
@@ -722,6 +740,9 @@ class RangeObstacleAvoidance:
             )
 
         if self.state == self.PASS_LANE_FOLLOW:
+            passing_lane_roi = (
+                "left" if self._hall_tracking_without_identity_handoff() else None
+            )
             if hall_handoff and not self._handoff_anchor_available(maneuver_roi, "right"):
                 self._set_state(
                     self.BLOCKED, now,
@@ -767,7 +788,7 @@ class RangeObstacleAvoidance:
                     f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples; "
                     f"{gate_wait_elapsed:.1f}/{gate_max_wait:.1f}s maximum wait)"
                 )
-                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = passing_lane_roi
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
                 return command
 
@@ -780,7 +801,7 @@ class RangeObstacleAvoidance:
                         f"(right range {right if right is not None else 'unavailable'} cm; "
                         f"required at least {minimum_side:.1f} cm)"
                     )
-                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = passing_lane_roi
                     self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
                     return command
 
@@ -790,7 +811,7 @@ class RangeObstacleAvoidance:
                         "right-side clearance detected; confirming before return "
                         f"({self.return_clear_observations}/{clear_confirm_frames} observations)"
                     )
-                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = passing_lane_roi
                     self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
                     return command
 
@@ -832,7 +853,7 @@ class RangeObstacleAvoidance:
             )
             # The confirmation frame used the temporary ROI; subsequent
             # passing-lane frames return to the ordinary lane detector and PID.
-            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = passing_lane_roi
             self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
             return command
 
