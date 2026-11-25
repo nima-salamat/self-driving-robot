@@ -712,7 +712,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
                 maneuver_roi=missing_lock, now=current_time,
             )
             self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
-            self.assertLess(command.steering, 0.0 if False else 1.0)
+            self.assertAlmostEqual(command.steering, 0.70)
             self.assertEqual(command.brake, 0.0)
 
         stopped = controller.apply(
