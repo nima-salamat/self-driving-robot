@@ -82,7 +82,8 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
                                   and not (simulation and lane_detector == "blsf-beta")),
         "supports_bev": bool(base.get("supports_bev", False) and not ml_active),
         "supports_crosswalk": bool(base.get("supports_crosswalk", False) and
-                                   not (simulation and lane_detector == "blsf-beta")),
+                                   not (simulation and lane_detector == "blsf-beta")
+                                   and not (simulation and backend == "avis")),
         "bev": bool(getattr(config, "USE_BEV", False)),
         "sign_enabled": bool(getattr(config, "WITH_SIGN", False)),
         "apriltag_enabled": bool(getattr(config, "WITH_APRILTAG", False)),
@@ -96,6 +97,12 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         "marker_runtime_control": callable(getattr(config, "apply_marker_mode", None)),
     })
     if simulation:
+        avis_backend = backend == "avis"
+        base["is_avis_engine"] = avis_backend
+        base["supports_obstacle_avoidance"] = avis_backend
+        base["supports_sign_actions"] = avis_backend
+        base["supports_stop_line"] = bool(avis_backend and profile == "city")
+        base["supports_traffic_lights"] = bool(avis_backend and profile == "city")
         # The simulator runtime shares lane/crosswalk vision, not the complete
         # physical orchestration for signs, actuator sequences or video output.
         base["supports_sign"] = False
