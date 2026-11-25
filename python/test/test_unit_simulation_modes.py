@@ -834,10 +834,20 @@ class SimulatorSettingsApiTests(unittest.TestCase):
     def test_simulator_editor_does_not_save_before_load_or_coerce_empty_numbers(self):
         from pathlib import Path
 
-        template = (
+        template_root = (
             Path(__file__).resolve().parents[1]
-            / "stream" / "templates" / "simulator_editor.html"
-        ).read_text(encoding="utf-8")
+            / "stream" / "templates"
+        )
+        template_files = [template_root / "simulator_editor.html"] + sorted(
+            path for path in (template_root / "simulator").rglob("*")
+            if path.is_file() and path.suffix in {".html", ".js"}
+        )
+        # The editor is assembled from Jinja partials; inspect the actual
+        # fragments as well as the entry template instead of testing only
+        # the include directives.
+        template = "\\n".join(
+            path.read_text(encoding="utf-8") for path in template_files
+        )
         self.assertIn("function readSettingNumber(id)", template)
         self.assertIn("function collectSimulatorSettings()", template)
         self.assertIn('control.closest(".section-hide")', template)
