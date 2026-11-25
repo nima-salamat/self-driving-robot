@@ -165,6 +165,27 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.direction, -1.0)
         self.assertIn("shifting left", first.reason)
 
+    def test_inverted_steering_does_not_swap_the_selected_range_sensor(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_STEERING_INVERTED=True,
+        ))
+        controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 80.0, "right": 90.0},
+            perception_valid=True,
+            now=1.0,
+        )
+        self.assertEqual(controller.selected_side, "left")
+        self.assertEqual(controller.direction, 1.0)
+        stopped = controller.apply(
+            base_command(),
+            {"left": 40.0, "front": 80.0, "right": 90.0},
+            perception_valid=True,
+            now=1.1,
+        )
+        self.assertEqual(stopped.brake, 1.0)
+        self.assertEqual(controller.state, controller.BLOCKED)
+
     def test_lane_change_waits_for_valid_lane_and_reports_why(self):
         controller = RangeObstacleAvoidance(obstacle_config())
         command = base_command()
@@ -215,7 +236,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         for now in (1.6, 1.7, 1.8):
             controller.apply(
                 base_command(), clear, perception_valid=True,
-                distance_delta_cm=20.0, now=now,
+                distance_delta_cm=30.0, now=now,
             )
         self.assertEqual(controller.state, controller.REJOIN)
         returning = controller.apply(
