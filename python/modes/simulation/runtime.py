@@ -700,6 +700,22 @@ class SimulationRuntime:
                     command, ranges, backend=self.backend,
                     stop_distance_cm=obstacle_limit,
                 )
+                if (
+                    self.backend == "avis" and self._run_enabled
+                    and self._last_range_safety.get("status")
+                    in {"sensor_unavailable", "obstacle_detected"}
+                ):
+                    # Use the Engine's explicit stop token and disarm the run.
+                    # It closes the active control session; reconnect may happen
+                    # in the background, but motion requires a fresh Start click.
+                    self._record_event(
+                        "warning",
+                        str(self._last_range_safety.get("reason", "AVIS forward safety stop"))
+                        + "; issuing AVIS Engine stop and disarming autonomous run.",
+                    )
+                    self.set_run_enabled(False)
+                    self.shutdown_event.wait(0.05)
+                    continue
                 if (self.backend != "avis" and self.vision_profile == "city" and bool(result.get("crosswalk", False))
                         and bool(getattr(self.config, "SIMULATOR_STOP_ON_CROSSWALK", True))):
                     command = VehicleCommand(
