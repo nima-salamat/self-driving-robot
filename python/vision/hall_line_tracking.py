@@ -30,15 +30,20 @@ class HallLineTracker:
         self._selected_track_id = None
         self._ever_selected = False
 
-    def _prune_tracks(self):
-        """Bound history growth while never evicting the currently selected line."""
+    def _prune_tracks(self, protected_track_id=None):
+        """Bound history growth while retaining the selected or preferred current line."""
         if len(self._tracks) <= self.max_tracks:
             return []
         selected_id = self._selected_track_id
+        protected_id = (
+            selected_id if selected_id in self._tracks
+            else protected_track_id if protected_track_id in self._tracks
+            else None
+        )
         ranked = sorted(
             self._tracks.items(),
             key=lambda item: (
-                0 if item[0] == selected_id else 1,
+                0 if item[0] == protected_id else 1,
                 int(item[1].get("missed", 0)),
                 -int(item[1].get("hits", 0)),
                 -int(item[1].get("age", 0)),
@@ -46,8 +51,8 @@ class HallLineTracker:
             ),
         )
         keep = {track_id for track_id, _track in ranked[:self.max_tracks]}
-        if selected_id in self._tracks:
-            keep.add(selected_id)
+        if protected_id in self._tracks:
+            keep.add(protected_id)
         removed = []
         for track_id in list(self._tracks):
             if track_id not in keep:
@@ -361,7 +366,24 @@ class HallLineTracker:
             }
             detection_to_track[detection_index] = track_id
 
-        budget_pruned_track_ids = self._prune_tracks()
+        protected_track_id = self._selected_track_id
+        if protected_track_id not in self._tracks:
+            preferred_detection_index = next(
+                (
+                    index for index, item in enumerate(detections)
+                    if item["original_index"] == preferred_index
+                    and index in detection_to_track
+                ),
+                None,
+            )
+            if preferred_detection_index is None and detections:
+                preferred_detection_index = max(
+                    range(len(detections)),
+                    key=lambda index: detections[index]["feature"][2],
+                )
+            if preferred_detection_index is not None:
+                protected_track_id = detection_to_track[preferred_detection_index]
+        budget_pruned_track_ids = self._prune_tracks(protected_track_id)
 
         selected_track = self._tracks.get(self._selected_track_id)
         state, selected_line, selected_midpoint = "LOST", None, None
