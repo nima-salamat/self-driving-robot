@@ -1507,6 +1507,36 @@ class SimulatorFramePipelineTests(unittest.TestCase):
         self.assertEqual(rendered_sequences, [1, 3])
 
 
+class SimulationAutoArmingTests(unittest.TestCase):
+    def test_avis_without_stream_auto_arms_at_runtime_initialization(self):
+        from modes.simulation.runtime import SimulationRuntime
+
+        self.assertTrue(SimulationRuntime._should_auto_start_without_stream(
+            SimpleNamespace(STREAM=False), "avis"
+        ))
+
+    def test_avis_with_stream_keeps_explicit_start_interlock(self):
+        from modes.simulation.runtime import SimulationRuntime
+
+        self.assertFalse(SimulationRuntime._should_auto_start_without_stream(
+            SimpleNamespace(STREAM=True), "avis"
+        ))
+
+    def test_carla_never_auto_arms_without_stream(self):
+        from modes.simulation.runtime import SimulationRuntime
+
+        self.assertFalse(SimulationRuntime._should_auto_start_without_stream(
+            SimpleNamespace(STREAM=False), "carla"
+        ))
+
+    def test_missing_stream_flag_defaults_to_headless_avis_behavior(self):
+        from modes.simulation.runtime import SimulationRuntime
+
+        self.assertTrue(SimulationRuntime._should_auto_start_without_stream(
+            SimpleNamespace(), "avis"
+        ))
+
+
 class VirtualControllerTests(unittest.TestCase):
     def setUp(self):
         self.config = SimpleNamespace(
