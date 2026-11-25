@@ -610,7 +610,11 @@ class SimulationRuntime:
                 command = self.controller.command_for(result, frame.speed_kmh)
                 if self.avis_behaviors is not None:
                     self.avis_behaviors.submit_sign_frame(frame)
-                    command = self.avis_behaviors.apply(frame, result, command, now=now)
+                    command = self.avis_behaviors.apply(
+                        frame, result, command,
+                        distance_delta_cm=getattr(frame, "distance_delta_cm", 0.0),
+                        now=now,
+                    )
                     result["simulation_behavior"] = self.avis_behaviors.snapshot()
                 obstacle_limit = float(getattr(self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", 35.0))
                 ranges = dict(getattr(frame, "ranges_cm", {}) or {})
