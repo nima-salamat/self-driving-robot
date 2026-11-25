@@ -118,3 +118,7 @@ Shared perception does not imply shared mode orchestration. The simulator runtim
 7. Run the simulator-mode unit tests before changing adapter/runtime contracts.
 
 A simulator validates API wiring and virtual control behavior; it cannot establish physical wheel geometry, real sensor validity, braking distance or hardware watchdog behavior.
+
+## AVIS obstacle approach speed
+
+The AVIS runtime reads the left, front and right range rays. When any valid ray reports an object within `SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM`, a closed-loop speed controller uses AVIS's measured vehicle speed from `car.getSpeed()` to regulate toward `SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH` (default 10 km/h). The actuator still receives AVIS's normalized/percentage speed command; the km/h target is not sent as a percentage. This behavior applies only to the virtual AVIS vehicle. The independent front emergency-stop guard remains in force and can stop the vehicle at its configured threshold.

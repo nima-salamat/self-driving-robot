@@ -10,6 +10,7 @@ import math
 import time
 from collections import deque
 
+from controller.pid_controller import PIDController
 from modes.simulation.base_adapter import VehicleCommand
 from vision.stop_line import StopLineDetector
 from vision.traffic_light import GreenConfirmationWindow, TrafficLightDetector
@@ -34,6 +35,176 @@ def _brake(command, reason):
         target_speed=0.0,
         reason=reason,
     )
+
+
+
+class AVISObstacleApproachSpeedController:
+    """Regulate AVIS speed toward a km/h target when any range ray sees an object.
+
+    AVIS actuator speed is a percentage command, not km/h. This controller
+    therefore uses the Engine's measured km/h as feedback and adjusts only the
+    AVIS virtual actuator throttle. It is never used by physical City/Race.
+    """
+
+    SENSOR_ORDER = ("left", "front", "right")
+
+    def __init__(self, config):
+        self.config = config
+        self._pid = PIDController(
+            0.035, 0.06, 0.0,
+            dt=0.05,
+            output_limits=(0.0, 0.35),
+            min_dt=0.01,
+            max_dt=0.25,
+            derivative_filter=0.0,
+        )
+        self._active = False
+        self._snapshot = {
+            "state": "clear",
+            "target_speed_kmh": float(getattr(
+                config, "SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH", 10.0
+            )),
+            "measured_speed_kmh": None,
+            "nearest_sensor": None,
+            "nearest_distance_cm": None,
+            "throttle": None,
+            "reason": "no ultrasonic object inside the approach range",
+        }
+
+    @staticmethod
+    def _valid_speed(value):
+        try:
+            speed = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return speed if math.isfinite(speed) and speed >= 0 else None
+
+    def apply(self, frame, command, *, now=None):
+        now = time.monotonic() if now is None else float(now)
+        ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
+        ranges = ranges if isinstance(ranges, dict) else {}
+        readings = {}
+        for sensor in self.SENSOR_ORDER:
+            value = _finite_range(ranges.get(sensor))
+            if value is not None and value > 0:
+                readings[sensor] = value
+
+        nearest_sensor = min(readings, key=readings.get) if readings else None
+        nearest_distance = readings.get(nearest_sensor) if nearest_sensor else None
+        trigger_distance = max(
+            20.0,
+            min(500.0, float(getattr(
+                self.config, "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 120.0
+            ))),
+        )
+        target_speed = max(
+            1.0,
+            min(100.0, float(getattr(
+                self.config, "SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH", 10.0
+            ))),
+        )
+
+        if nearest_distance is None or nearest_distance > trigger_distance:
+            if self._active:
+                self._pid.reset()
+            self._active = False
+            self._snapshot = {
+                "state": "clear",
+                "target_speed_kmh": target_speed,
+                "measured_speed_kmh": self._valid_speed(
+                    getattr(frame, "speed_kmh", None)
+                ) if frame is not None else None,
+                "nearest_sensor": nearest_sensor,
+                "nearest_distance_cm": nearest_distance,
+                "ranges_cm": readings,
+                "throttle": None,
+                "reason": "no ultrasonic object inside the approach range",
+            }
+            return command
+
+        if command.brake >= 0.5:
+            self._pid.reset()
+            self._active = False
+            self._snapshot = {
+                "state": "braking",
+                "target_speed_kmh": target_speed,
+                "measured_speed_kmh": self._valid_speed(
+                    getattr(frame, "speed_kmh", None)
+                ),
+                "nearest_sensor": nearest_sensor,
+                "nearest_distance_cm": nearest_distance,
+                "ranges_cm": readings,
+                "throttle": 0.0,
+                "reason": "an independent stop/brake condition has priority",
+            }
+            return command
+
+        sensor_status = getattr(frame, "sensor_status", {}) if frame is not None else {}
+        if isinstance(sensor_status, dict) and sensor_status.get("speed_available") is False:
+            measured_speed = None
+        else:
+            measured_speed = self._valid_speed(
+                getattr(frame, "speed_kmh", None) if frame is not None else None
+            )
+
+        if measured_speed is None:
+            self._pid.reset()
+            self._active = False
+            self._snapshot = {
+                "state": "speed_unavailable",
+                "target_speed_kmh": target_speed,
+                "measured_speed_kmh": None,
+                "nearest_sensor": nearest_sensor,
+                "nearest_distance_cm": nearest_distance,
+                "ranges_cm": readings,
+                "throttle": 0.0,
+                "reason": "AVIS speed feedback unavailable while an object is near; holding zero speed command",
+            }
+            return _brake(
+                command,
+                "AVIS obstacle approach: speed feedback unavailable; holding safe stop",
+            )
+
+        if not self._active:
+            self._pid.reset()
+            self._active = True
+
+        throttle_ceiling = max(0.0, min(
+            float(command.throttle),
+            float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 1.0)),
+            1.0,
+        ))
+        self._pid.limit_min = 0.0
+        self._pid.limit_max = throttle_ceiling
+        throttle = self._pid.update(target_speed - measured_speed, now=now)
+        throttle = max(0.0, min(throttle_ceiling, throttle))
+
+        reason = (
+            "AVIS obstacle approach speed control: {} sensor, target {:.1f} km/h".format(
+                nearest_sensor, target_speed
+            )
+        )
+        self._snapshot = {
+            "state": "approach_speed_control",
+            "target_speed_kmh": target_speed,
+            "measured_speed_kmh": round(measured_speed, 2),
+            "nearest_sensor": nearest_sensor,
+            "nearest_distance_cm": round(nearest_distance, 1),
+            "ranges_cm": {key: round(value, 1) for key, value in readings.items()},
+            "throttle": round(throttle, 3),
+            "reason": reason,
+        }
+        return VehicleCommand(
+            steering=command.steering,
+            throttle=throttle,
+            brake=command.brake,
+            servo_angle=command.servo_angle,
+            target_speed=command.target_speed,
+            reason=reason,
+        )
+
+    def snapshot(self):
+        return dict(self._snapshot)
 
 
 class RangeObstacleAvoidance:
@@ -785,6 +956,7 @@ class AVISBehaviorCoordinator:
         self.vision_profile = str(vision_profile).lower()
         self.is_city = self.vision_profile == "city"
         self.obstacles = RangeObstacleAvoidance(config)
+        self.approach_speed = AVISObstacleApproachSpeedController(config)
         self.stop_line_detector = (
             StopLineDetector(config)
             if self.is_city and bool(getattr(config, "SIMULATOR_STOP_LINE_ENABLED", True))
@@ -1014,6 +1186,7 @@ class AVISBehaviorCoordinator:
     def snapshot(self):
         return {
             "obstacle": self.obstacles.snapshot(),
+            "approach_speed_control": self.approach_speed.snapshot(),
             "stop_line_enabled": self.stop_line_detector is not None,
             "stop_line_waiting": bool(self.stop_line_waiting),
             "stop_line_armed": bool(self.stop_line_armed),

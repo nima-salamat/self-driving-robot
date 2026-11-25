@@ -51,6 +51,7 @@ function populate(s){
     "lidar-rotation":"SIMULATOR_LIDAR_ROTATION_FREQUENCY","camera-fov":"SIMULATOR_CAMERA_FOV",
     "avis-angle":"SIMULATOR_AVIS_SENSOR_ANGLE","obstacle-stop-distance":"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "obstacle-trigger-distance":"SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+    "obstacle-approach-speed":"SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH",
     "obstacle-clear-distance":"SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
     "obstacle-clear-confirm-frames":"SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES",
     "avis-front-range-grace":"SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS",

@@ -328,9 +328,11 @@ class AvisAdapter(SimulatorAdapter):
         self._missing_images = 0
         image = image[:, :, :3].copy()
         now = time.monotonic()
+        speed_available = False
         try:
             speed = float(car.getSpeed())
-            if not math.isfinite(speed):
+            speed_available = math.isfinite(speed) and speed >= 0.0
+            if not speed_available:
                 speed = 0.0
         except Exception:
             speed = 0.0
@@ -366,6 +368,7 @@ class AvisAdapter(SimulatorAdapter):
             "front_range_available": ranges["front"] is not None,
             "range_sensor_count": len(values),
             "sensor_tag_present": bool(response_info.get("sensor_tag")),
+            "speed_available": bool(speed_available),
         }
         return SensorFrame(
             image=image,

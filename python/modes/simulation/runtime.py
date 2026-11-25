@@ -767,6 +767,9 @@ class SimulationRuntime:
                         distance_delta_cm=getattr(frame, "distance_delta_cm", 0.0),
                         now=now,
                     )
+                    command = self.avis_behaviors.approach_speed.apply(
+                        frame, command, now=now
+                    )
                     result["simulation_behavior"] = self.avis_behaviors.snapshot()
                 obstacle_limit = getattr(
                     self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
