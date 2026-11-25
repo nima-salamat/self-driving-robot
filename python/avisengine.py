@@ -433,7 +433,8 @@ class Car():
             sensor_values = re.findall(rb"-?\d+", sensor_match.group(1))
             self.sensors = list(map(int, sensor_values))
         else:
-            self.sensors = [1500, 1500, 1500]
+            # Missing telemetry is unknown, not an infinitely clear path.
+            self.sensors = [None, None, None]
 
         if speed_match is not None:
             try:
