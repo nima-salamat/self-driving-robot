@@ -398,18 +398,47 @@ class RangeObstacleAvoidance:
 
     def snapshot(self):
         active_roi = self.prepare_vision()
+        direction = (
+            "left" if self.state in {
+                self.SHIFT_LEFT_DIRECT, self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW
+            } else "right" if self.state in {
+                self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI
+            } else None
+        )
+        direct_side = (
+            "left" if self.state in {self.SHIFT_LEFT_DIRECT, self.SEARCH_LEFT_ROI}
+            else "right" if self.state in {self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI}
+            else None
+        )
+        direct_setting = (
+            "SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT"
+            if direct_side == "left"
+            else "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT"
+        )
+        lane_hold = max(
+            0.2, min(10.0, self._number("SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS", 3.0))
+        )
         return {
             "enabled": bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),
             "state": self.state,
-            "direction": (
-                "left" if self.state in {
-                    self.SHIFT_LEFT_DIRECT, self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW
-                } else "right" if self.state in {
-                    self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI
-                } else None
-            ),
+            "direction": direction,
             "active_maneuver_roi": active_roi,
             "roi_confirmations": int(self.roi_confirmations),
+            "roi_confirmations_required": max(
+                1, min(10, self._integer("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", 2))
+            ),
+            "roi_search_timeout_seconds": max(
+                0.5, min(15.0, self._number("SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS", 4.0))
+            ),
+            "direct_steering_percent": (
+                max(0.0, min(100.0, self._number(direct_setting, 80.0)))
+                if direct_side else None
+            ),
+            "lane_hold_seconds": lane_hold,
+            "lane_hold_elapsed_seconds": (
+                max(0.0, min(lane_hold, time.monotonic() - self.pass_started_at))
+                if self.state == self.PASS_LANE_FOLLOW else 0.0
+            ),
             "ranges_cm": dict(self.last_ranges),
             "front_clear_observations": int(self.clear_observations),
             "awaiting_obstacle_clear": bool(self.awaiting_clear),
