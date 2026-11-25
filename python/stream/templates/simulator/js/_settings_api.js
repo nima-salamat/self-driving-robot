@@ -10,7 +10,7 @@ async function loadSettings(){
   simRoiControlsEnabled=!!data.controls_enabled;
   simRoiGeometry=Object.assign(simRoiGeometry,data.roi_geometry||{});
   const roiHint=document.querySelector("#sim-roi-editor .sim-roi-hint");
-  if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. Changes auto-save after you finish dragging or edit a numeric coordinate. "+(simRoiGeometry.use_bev?"The preview is in the active BEV processing frame. ":"")+ "Coordinates are normalized fractions from 0 to 1 (0.1 = 10% of the frame); City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
+  if(roiHint)roiHint.textContent="Select a region, drag inside to move it, or drag a corner handle to resize. Changes auto-save after you finish dragging or edit a numeric coordinate. "+(caps.supports_bev?"The BEV source quadrilateral is drawn on the camera frame; drag its corners to tune the perspective transform. ":"")+ "Coordinates are normalized fractions from 0 to 1 (0.1 = 10% of the frame); City lane mask: "+simRoiGeometry.lane_roi_mode+"; crosswalk mask: "+(simRoiGeometry.cw_trapezoid_mode?"trapezoid":"rectangle")+".";
   populate(data.settings||{});
   if($("carla-run-start"))$("carla-run-start").disabled=!data.controls_enabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!data.controls_enabled;
