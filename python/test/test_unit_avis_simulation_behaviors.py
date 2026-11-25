@@ -153,6 +153,101 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertLessEqual(command.throttle, 0.12)
         self.assertEqual(command.brake, 0.0)
 
+    def test_lane_change_requires_front_and_side_ranges_and_uses_clearer_side(self):
+        controller = RangeObstacleAvoidance(obstacle_config())
+        first = controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 80.0, "right": 90.0},
+            perception_valid=True,
+            now=1.0,
+        )
+        self.assertEqual(controller.state, controller.SHIFT)
+        self.assertEqual(controller.direction, -1.0)
+        self.assertIn("shifting left", first.reason)
+
+    def test_lane_change_waits_for_valid_lane_and_reports_why(self):
+        controller = RangeObstacleAvoidance(obstacle_config())
+        command = base_command()
+        result = controller.apply(
+            command,
+            {"left": 180.0, "front": 80.0, "right": 90.0},
+            perception_valid=False,
+            now=1.0,
+        )
+        self.assertIs(result, command)
+        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertIn("waiting for valid lane perception", controller.snapshot()["reason"])
+
+    def test_rejoin_requires_three_clear_frames_and_minimum_travel_distance(self):
+        controller = RangeObstacleAvoidance(obstacle_config())
+        obstacle = {"left": 180.0, "front": 80.0, "right": 90.0}
+        controller.apply(
+            base_command(), obstacle, perception_valid=True,
+            distance_delta_cm=0.0, now=1.0,
+        )
+        controller.apply(
+            base_command(), obstacle, perception_valid=True,
+            distance_delta_cm=0.0, now=1.5,
+        )
+        self.assertEqual(controller.state, controller.PASS)
+
+        clear = {"left": 180.0, "front": 150.0, "right": 90.0}
+        for now in (1.6, 1.7, 1.8):
+            controller.apply(
+                base_command(), clear, perception_valid=True,
+                distance_delta_cm=10.0, now=now,
+            )
+        self.assertEqual(controller.state, controller.PASS)
+        self.assertEqual(controller.snapshot()["front_clear_observations"], 3)
+
+        controller.apply(
+            base_command(), clear, perception_valid=True,
+            distance_delta_cm=60.0, now=1.9,
+        )
+        self.assertEqual(controller.state, controller.REJOIN)
+
+    def test_lane_rejoin_is_smooth_and_returns_to_clear(self):
+        controller = RangeObstacleAvoidance(obstacle_config())
+        obstacle = {"left": 180.0, "front": 80.0, "right": 90.0}
+        controller.apply(base_command(), obstacle, perception_valid=True, now=1.0)
+        controller.apply(base_command(), obstacle, perception_valid=True, now=1.5)
+        clear = {"left": 180.0, "front": 150.0, "right": 90.0}
+        for now in (1.6, 1.7, 1.8):
+            controller.apply(
+                base_command(), clear, perception_valid=True,
+                distance_delta_cm=20.0, now=now,
+            )
+        self.assertEqual(controller.state, controller.REJOIN)
+        returning = controller.apply(
+            base_command(), clear, perception_valid=True, now=2.1,
+        )
+        self.assertIn("rejoining original lane", returning.reason)
+        completed = controller.apply(
+            base_command(), clear, perception_valid=True, now=2.3,
+        )
+        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertEqual(completed.reason, "lane following")
+
+    def test_missing_sensor_tag_is_unknown_not_fake_clearance(self):
+        from avisengine import Car
+
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def sendall(self, _data):
+                pass
+
+            def recv(self, _size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        car = Car()
+        car.sock = FakeSocket(b"<speed>0</speed><EOF>")
+        self.assertFalse(car.getData())
+        self.assertEqual(car.getSensors(), [None, None, None])
+        car.sock = None
+
     def test_unknown_front_or_insufficient_side_clearance_brakes(self):
         controller = RangeObstacleAvoidance(obstacle_config())
         unknown = controller.apply(
