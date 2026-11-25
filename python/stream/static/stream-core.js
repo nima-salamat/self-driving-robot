@@ -365,6 +365,7 @@ function showToast(text, timeout=2500){
 function varColorByKey(key){
   let hex = key==='RL' ? ui.colors.RL : key==='LL' ? ui.colors.LL : key==='CW' ? ui.colors.CW :
     key==='ST' ? (ui.colors.ST || '#bf7bff') : key==='OBJ' ? (ui.colors.OBJ || '#ff5757') :
+    key==='ML' ? (ui.colors.ML || '#38bdf8') : key==='MR' ? (ui.colors.MR || '#f59e0b') :
     key==='BEV' ? (ui.colors.BEV || '#d946ef') : '#9ad0ff';
   const opacity = Number((ui.opacity || {})[key] == null ? 1 : (ui.opacity || {})[key]);
   if(!hex || opacity >= 0.999) return hex || '#9ad0ff';
