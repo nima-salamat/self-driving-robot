@@ -126,10 +126,17 @@ function fitSimulatorCameraFrame(){
   const isAvis=caps.simulator_backend==="avis";
   const master=$("sim-roi-overlay-toggle");
   const bevVisible=document.querySelector('[data-sim-roi-visible="BEV"]');
+  const bevCornersForFit=caps.supports_bev?simBevCorners():null;
+  const bevExtendsBeyondImage=!!(
+    bevCornersForFit&&Object.values(bevCornersForFit).some(function(point){
+      return point.x<0||point.x>1||point.y<0||point.y>1;
+    })
+  );
   const reserveBevSpace=!!(
     isAvis&&caps.supports_bev
     &&(!master||master.checked)
     &&(!bevVisible||bevVisible.checked)
+    &&(simRoiSelected==="BEV"||bevExtendsBeyondImage)
   );
   // Reserve a 17% margin on every side so BEV handles can sit outside the image
   // without being clipped by the camera stage.
