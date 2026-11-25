@@ -155,7 +155,7 @@ def _defaults(mode, backend):
     return {
         "SIMULATOR_HOST": "127.0.0.1",
         "SIMULATOR_TUNING_PROFILE_VERSION": 2,
-        "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 1 if avis else 0,
+        "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 2 if avis else 0,
         "SIMULATOR_PORT": 25001 if avis else 2000,
         # Legacy AVIS camera responses need a realistic TCP read window.
         "SIMULATOR_TIMEOUT_S": 5.0,
@@ -234,7 +234,7 @@ def _defaults(mode, backend):
         "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES": 2,
         "SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES": 3,
         "SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS": 1.5,
-        "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED": False,
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED": True,
         "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT": 10,
         "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT": -10.0,
         "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT": 10.0,
@@ -575,6 +575,23 @@ def load_simulator_settings(config, mode, backend):
         old_clear = float(saved_values.get("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", 125.0))
         if math.isclose(old_clear, 125.0) or old_clear <= new_trigger:
             migration["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"] = max(150.0, new_trigger + 30.0)
+        save_simulator_settings(config, mode, migration)
+
+    if backend == "avis" and path.is_file() and int(
+        saved_values.get("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION", 0)
+    ) < 2:
+        # Enable the near-straight return gate once for existing AVIS profiles.
+        # Preserve custom sample windows and steering bands when present.
+        migration = {
+            "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 2,
+            "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED": True,
+        }
+        if "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT" not in saved_values:
+            migration["SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT"] = 10
+        if "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT" not in saved_values:
+            migration["SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT"] = -10.0
+        if "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT" not in saved_values:
+            migration["SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"] = 10.0
         save_simulator_settings(config, mode, migration)
     return path
 
