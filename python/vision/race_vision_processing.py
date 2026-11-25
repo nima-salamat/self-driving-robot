@@ -507,10 +507,11 @@ class VisionProcessor:
                         "reason": "source_roi_disabled_during_hall_handoff",
                     }
                     recovery["right"] = search
+                    ll_edge = None
+                    rl_edge = None
                     if search_valid:
                         tracking_right_roi = search["roi"]
-                        ll_edge = None
-                        ll_edge, tracking_right_lines = detect_recovery_lines(
+                        rl_edge, tracking_right_lines = detect_recovery_lines(
                             frame, tracking_right_roi, conf, self._morph_kernel,
                             mirrored=rl_mirrored,
                         )
@@ -524,9 +525,10 @@ class VisionProcessor:
                         "reason": "source_roi_disabled_during_hall_handoff",
                     }
                     recovery["left"] = search
+                    rl_edge = None
+                    ll_edge = None
                     if search_valid:
                         tracking_left_roi = search["roi"]
-                        rl_edge = None
                         ll_edge, tracking_left_lines = detect_recovery_lines(
                             frame, tracking_left_roi, conf, self._morph_kernel,
                             mirrored=ll_mirrored,
