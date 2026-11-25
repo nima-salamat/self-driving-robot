@@ -851,8 +851,9 @@ class RangeObstacleAvoidance:
             self.last_reason = (
                 "obstacle lane change: following the passing lane with normal lane PID"
             )
-            # The confirmation frame used the temporary ROI; subsequent
-            # passing-lane frames return to the ordinary lane detector and PID.
+            # When Hall identity handoff is disabled, keep using the left
+            # maneuver ROI as the passing-lane anchor. Other detector paths
+            # continue with their ordinary lane-following ROI configuration.
             self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = passing_lane_roi
             self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
             return command
