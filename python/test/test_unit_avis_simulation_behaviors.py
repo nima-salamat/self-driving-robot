@@ -421,7 +421,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
             USE_ML_LANE_DETECTOR=False,
             SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.5,
             SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=True,
-            SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS=3.0,
             SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=1,
             SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT=3,
             SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT=-10.0,
@@ -457,12 +457,30 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertIs(waiting, lane_command)
         self.assertEqual(controller.prepare_vision(), "left")
 
+        # The complete sample window is still outside the band, so the car
+        # must remain on the passing lane instead of returning prematurely.
+        waiting = controller.apply(
+            lane_command, ranges, perception_valid=True, now=10.9,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertIs(waiting, lane_command)
+        self.assertEqual(controller.config.SIMULATOR_ACTIVE_OBSTACLE_ROI, "left")
+
+        # Once the rolling mean reaches the configured +10% boundary, Hall
+        # mode without identity handoff must issue the right-return command.
+        centered_lane_command = VehicleCommand(
+            steering=0.0, throttle=0.1, brake=0.0,
+            servo_angle=95.0, target_speed=12.0, reason="centered lane PID",
+        )
+        controller.apply(
+            centered_lane_command, ranges, perception_valid=True, now=11.0,
+        )
         returning = controller.apply(
-            lane_command, ranges, perception_valid=True, now=11.2,
+            centered_lane_command, ranges, perception_valid=True, now=11.1,
         )
         self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
         self.assertGreater(returning.steering, 0.0)
-        self.assertIn("steering gate timed out", returning.reason.lower())
+        self.assertIn("mean steering +10.0% is inside", returning.reason.lower())
         self.assertIsNone(controller.prepare_vision())
 
     def test_return_steering_gate_timeout_releases_right_return_with_hall_tracking(self):
