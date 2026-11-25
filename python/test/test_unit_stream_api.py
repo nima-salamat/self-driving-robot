@@ -73,7 +73,11 @@ class StreamApiTests(unittest.TestCase):
 
         response = client.post(
             "/update_conf",
-            json={"ML_LEFT_ROI": 0.08, "ML_RIGHT_ROI": 0.46},
+            json={
+                "ML_LEFT_ROI": 0.08, "ML_RIGHT_ROI": 0.46,
+                "MR_TOP_ROI": 0.59, "MR_BOTTOM_ROI": 0.97,
+                "MR_LEFT_ROI": 0.55, "MR_RIGHT_ROI": 0.96,
+            },
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["success"])
@@ -81,8 +85,14 @@ class StreamApiTests(unittest.TestCase):
         persisted = json.loads(persisted_path.read_text(encoding="utf-8"))
         self.assertEqual(persisted["ML_LEFT_ROI"], 0.08)
         self.assertEqual(persisted["ML_RIGHT_ROI"], 0.46)
+        self.assertEqual(persisted["MR_TOP_ROI"], 0.59)
+        self.assertEqual(persisted["MR_BOTTOM_ROI"], 0.97)
+        self.assertEqual(persisted["MR_LEFT_ROI"], 0.55)
+        self.assertEqual(persisted["MR_RIGHT_ROI"], 0.96)
         self.assertEqual(config.ML_LEFT_ROI, 0.08)
         self.assertEqual(config.ML_RIGHT_ROI, 0.46)
+        self.assertEqual(config.MR_LEFT_ROI, 0.55)
+        self.assertEqual(config.MR_RIGHT_ROI, 0.96)
 
     def test_roi_updates_reject_inverted_rectangles_before_mutation(self):
         config = self.make_config()
