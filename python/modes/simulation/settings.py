@@ -477,9 +477,9 @@ def _validate_settings(data, backend=None):
     if "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM" in clean and "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in clean:
         if clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"] <= clean["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"]:
             raise ValueError("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM must exceed the emergency stop distance")
-    if "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM" in clean and "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM" in clean:
-        if clean["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"] <= clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"]:
-            raise ValueError("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM must exceed the trigger distance")
+    # Clear-distance hysteresis is clamped at runtime to at least
+    # trigger_distance + 1 cm. Do not reject a high trigger setting merely
+    # because the editable clear-distance field has a 500 cm upper bound.
     pid_min_dt = clean.get("PID_MIN_DT")
     pid_max_dt = clean.get("PID_MAX_DT")
     if pid_min_dt is not None and pid_max_dt is not None and pid_max_dt < pid_min_dt:
