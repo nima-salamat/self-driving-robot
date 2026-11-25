@@ -50,6 +50,7 @@ class RangeObstacleAvoidance:
     PASS_LANE_FOLLOW = "pass_lane_follow"
     SHIFT_RIGHT_DIRECT = "shift_right_direct"
     SEARCH_RIGHT_ROI = "search_right_roi"
+    REJOIN_LANE_FOLLOW = "rejoin_lane_follow"
     BLOCKED = "blocked"
 
     # Compatibility aliases for older diagnostics/integrations.
@@ -70,6 +71,9 @@ class RangeObstacleAvoidance:
         self.last_reason = "obstacle avoidance idle"
         self.last_maneuver_roi = None
         self.return_steering_history = deque(maxlen=100)
+        self._last_observed_track_ids = {}
+        self._handoff_plan = None
+        self._handoff_sequence = 0
 
     def _number(self, key, default):
         try:
@@ -93,11 +97,14 @@ class RangeObstacleAvoidance:
         self.last_reason = reason
         if state == self.BLOCKED:
             self.clear_observations = 0
-        if state == self.PASS_LANE_FOLLOW:
+        if state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW}:
             self.pass_started_at = now
             self.return_steering_history.clear()
         if state == self.CLEAR:
             self.selected_side = None
+            self._handoff_plan = None
+        if state == self.BLOCKED:
+            self._handoff_plan = None
         if previous != state:
             logger.info("AVIS obstacle maneuver: %s -> %s (%s)", previous, state, reason)
 
@@ -147,14 +154,71 @@ class RangeObstacleAvoidance:
             "enough_samples": enough_samples,
         }
 
+    def _hall_handoff_enabled(self):
+        """Whether this AVIS profile can use the paired Hall/Hough handoff path."""
+        return bool(getattr(self.config, "HALL_LINE_TRACKING_ENABLED", False)) and not bool(
+            getattr(self.config, "OLD_METHOD", False)
+        ) and str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() == "avis" and str(
+            getattr(self.config, "CITY_LANE_DETECTOR", "default")
+        ).lower() != "blsf-beta"
+
+    def _remember_lane_tracking(self, lane_tracking):
+        if not isinstance(lane_tracking, dict):
+            return
+        for side in ("left", "right"):
+            boundary = lane_tracking.get(side)
+            if not isinstance(boundary, dict) or not boundary.get("observed"):
+                continue
+            track_id = boundary.get("track_id")
+            if track_id is not None:
+                try:
+                    self._last_observed_track_ids[side] = int(track_id)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+
+    def _start_hall_handoff(self, source_side, target_side):
+        self._handoff_sequence += 1
+        expected_track_id = self._last_observed_track_ids.get(source_side)
+        self._handoff_plan = {
+            "enabled": True,
+            "source_side": source_side,
+            "target_side": target_side,
+            "token": self._handoff_sequence,
+            "expected_track_id": expected_track_id,
+        }
+        logger.info(
+            "AVIS Hall ROI handoff armed: %s -> %s (track_id=%s, token=%s)",
+            source_side, target_side, expected_track_id, self._handoff_sequence,
+        )
+        return self._handoff_plan
+
     def prepare_vision(self, now=None):
-        """Select the temporary lane ROI before the next camera frame is parsed."""
+        """Publish the temporary ROI owner before the next camera frame is parsed."""
+        hall_handoff = self._hall_handoff_enabled()
+        pair = None
+        if self.state in {self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW}:
+            pair = ("left", "right")
+        elif self.state in {self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW}:
+            pair = ("right", "left")
+
         active_roi = None
-        if self.state == self.SEARCH_LEFT_ROI:
+        descriptor = None
+        if pair and hall_handoff:
+            if (
+                not isinstance(self._handoff_plan, dict)
+                or self._handoff_plan.get("source_side") != pair[0]
+                or self._handoff_plan.get("target_side") != pair[1]
+            ):
+                self._start_hall_handoff(*pair)
+            descriptor = dict(self._handoff_plan)
+            active_roi = pair[1]
+        elif self.state == self.SEARCH_LEFT_ROI:
             active_roi = "left"
         elif self.state == self.SEARCH_RIGHT_ROI:
             active_roi = "right"
+
         self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = active_roi
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = descriptor
         return active_roi
 
     def _direct_command(self, command, side, reason):
@@ -192,6 +256,7 @@ class RangeObstacleAvoidance:
     def _brake(self, command, reason):
         self.last_reason = reason
         self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
         return _brake(command, reason)
 
     def _direct_phase(self, command, side, now, delay, search_state):
@@ -238,6 +303,8 @@ class RangeObstacleAvoidance:
         now=None,
     ):
         now = time.monotonic() if now is None else float(now)
+        self._remember_lane_tracking(lane_tracking)
+        hall_handoff = self._hall_handoff_enabled()
         ranges = ranges if isinstance(ranges, dict) else {}
         self.last_ranges = {
             key: _finite_range(ranges.get(key))
@@ -354,6 +421,24 @@ class RangeObstacleAvoidance:
                     "left lane departure is not proven clear by the left range sensor; braking",
                 )
                 return self._brake(command, self.last_reason)
+            if hall_handoff:
+                left_boundary = lane_tracking.get("left") if isinstance(lane_tracking, dict) else None
+                try:
+                    lane_width = float(lane_tracking.get("lane_width_px"))
+                except (AttributeError, TypeError, ValueError, OverflowError):
+                    lane_width = 0.0
+                if (
+                    not isinstance(left_boundary, dict)
+                    or not left_boundary.get("observed")
+                    or left_boundary.get("track_id") is None
+                    or not math.isfinite(lane_width)
+                    or lane_width <= 0.0
+                ):
+                    self._set_state(
+                        self.BLOCKED, now,
+                        "Hall bypass requires an observed left boundary and a calibrated lane-width model; braking",
+                    )
+                    return self._brake(command, self.last_reason)
             self._set_state(
                 self.SHIFT_LEFT_DIRECT, now,
                 f"left lane departure selected; left clearance {left:.1f} cm",
@@ -370,7 +455,9 @@ class RangeObstacleAvoidance:
                 )
                 return self._brake(command, self.last_reason)
 
-        if self.state in {self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI}:
+        if self.state in {
+            self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW
+        }:
             if right is None or right < minimum_side:
                 self._set_state(
                     self.BLOCKED, now,
@@ -384,21 +471,31 @@ class RangeObstacleAvoidance:
             )
 
         if self.state == self.SEARCH_LEFT_ROI:
+            expected_side = "right" if hall_handoff else "left"
             observed = (
                 isinstance(maneuver_roi, dict)
-                and maneuver_roi.get("side") == "left"
+                and maneuver_roi.get("side") == expected_side
                 and bool(maneuver_roi.get("observed"))
                 and bool(perception_valid)
+                and (
+                    not hall_handoff
+                    or bool(maneuver_roi.get("handoff_locked"))
+                )
             )
             self.roi_confirmations = self.roi_confirmations + 1 if observed else 0
-            self.last_maneuver_roi = "left" if observed else None
+            self.last_maneuver_roi = expected_side if observed else None
             if self.roi_confirmations >= confirm_frames:
                 self._set_state(
                     self.PASS_LANE_FOLLOW, now,
-                    "left maneuver ROI confirmed a lane; handing steering back to lane PID",
+                    (
+                        "Hall handoff locked the right ROI onto the previous left boundary; "
+                        "following the passing lane with the lane controller"
+                        if hall_handoff
+                        else "left maneuver ROI confirmed a lane; handing steering back to lane PID"
+                    ),
                 )
                 self._record_passing_lane_steering(command)
-                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = expected_side
                 return command
             return self._direct_phase(
                 command, "left", now, roi_delay, self.SEARCH_LEFT_ROI
@@ -430,6 +527,7 @@ class RangeObstacleAvoidance:
                     f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples)"
                 )
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
                 return command
 
             if hold_complete:
@@ -445,6 +543,12 @@ class RangeObstacleAvoidance:
                         f"; mean steering {gate['mean_percent']:+.1f}% is inside "
                         f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]%"
                     )
+                if hall_handoff and self._last_observed_track_ids.get("right") is None:
+                    self._set_state(
+                        self.BLOCKED, now,
+                        "Hall return handoff has no confirmed right-boundary identity; braking",
+                    )
+                    return self._brake(command, self.last_reason)
                 return_reason += "; beginning direct right return"
                 self._set_state(self.SHIFT_RIGHT_DIRECT, now, return_reason)
                 self.selected_side = "right"
@@ -459,6 +563,7 @@ class RangeObstacleAvoidance:
             # The confirmation frame used the temporary ROI; subsequent
             # passing-lane frames return to the ordinary lane detector and PID.
             self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
             return command
 
         if self.state == self.SHIFT_RIGHT_DIRECT:
@@ -467,15 +572,28 @@ class RangeObstacleAvoidance:
             )
 
         if self.state == self.SEARCH_RIGHT_ROI:
+            expected_side = "left" if hall_handoff else "right"
             observed = (
                 isinstance(maneuver_roi, dict)
-                and maneuver_roi.get("side") == "right"
+                and maneuver_roi.get("side") == expected_side
                 and bool(maneuver_roi.get("observed"))
                 and bool(perception_valid)
+                and (
+                    not hall_handoff
+                    or bool(maneuver_roi.get("handoff_locked"))
+                )
             )
             self.roi_confirmations = self.roi_confirmations + 1 if observed else 0
-            self.last_maneuver_roi = "right" if observed else None
+            self.last_maneuver_roi = expected_side if observed else None
             if self.roi_confirmations >= confirm_frames:
+                if hall_handoff:
+                    self._set_state(
+                        self.REJOIN_LANE_FOLLOW, now,
+                        "Hall handoff locked the left ROI onto the boundary tracked by the right ROI; following the original lane",
+                    )
+                    self._record_passing_lane_steering(command)
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
+                    return command
                 self.awaiting_clear = True
                 self.clear_observations = 0
                 self._set_state(
@@ -488,7 +606,56 @@ class RangeObstacleAvoidance:
                 command, "right", now, roi_delay, self.SEARCH_RIGHT_ROI
             )
 
+        if self.state == self.REJOIN_LANE_FOLLOW:
+            if not perception_valid or command.brake >= 0.5:
+                self._set_state(
+                    self.BLOCKED, now,
+                    "original-lane handoff perception was lost; stopping instead of driving blind",
+                )
+                return self._brake(command, self.last_reason)
+
+            self._record_passing_lane_steering(command)
+            hold_complete = now - self.pass_started_at >= lane_hold
+            gate = self._return_steering_gate_stats()
+            if hold_complete and gate["enabled"] and not gate["ready"]:
+                mean_text = (
+                    "collecting samples" if gate["mean_percent"] is None
+                    else f"{gate['mean_percent']:+.1f}%"
+                )
+                self.last_reason = (
+                    f"minimum original-lane follow time complete; waiting for the mean of "
+                    f"the last {gate['window']} steering commands to enter "
+                    f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]% "
+                    f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples)"
+                )
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
+                return command
+
+            if hold_complete:
+                reason = "original-lane follow interval completed"
+                if gate["enabled"]:
+                    reason += (
+                        f"; mean steering {gate['mean_percent']:+.1f}% is inside "
+                        f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]%"
+                    )
+                reason += "; restoring both normal lane ROIs"
+                self.awaiting_clear = True
+                self.clear_observations = 0
+                self._set_state(self.CLEAR, now, reason)
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
+                return command
+
+            self.last_reason = (
+                "obstacle lane change: following the original lane with the handed-off left boundary"
+            )
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
+            return command
+
         self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
         return command
 
     def snapshot(self):
@@ -497,7 +664,7 @@ class RangeObstacleAvoidance:
             "left" if self.state in {
                 self.SHIFT_LEFT_DIRECT, self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW
             } else "right" if self.state in {
-                self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI
+                self.SHIFT_RIGHT_DIRECT, self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW
             } else None
         )
         direct_side = (
@@ -516,10 +683,10 @@ class RangeObstacleAvoidance:
         return_gate = self._return_steering_gate_stats()
         hold_elapsed = (
             max(0.0, time.monotonic() - self.pass_started_at)
-            if self.state == self.PASS_LANE_FOLLOW else 0.0
+            if self.state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW} else 0.0
         )
         return_gate_waiting = bool(
-            self.state == self.PASS_LANE_FOLLOW
+            self.state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW}
             and hold_elapsed >= lane_hold
             and return_gate["enabled"]
             and not return_gate["ready"]
@@ -529,6 +696,8 @@ class RangeObstacleAvoidance:
             "state": self.state,
             "direction": direction,
             "active_maneuver_roi": active_roi,
+            "hall_handoff_enabled": self._hall_handoff_enabled(),
+            "hall_handoff": dict(self._handoff_plan) if self._handoff_plan else None,
             "roi_confirmations": int(self.roi_confirmations),
             "roi_confirmations_required": max(
                 1, min(10, self._integer("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", 2))
