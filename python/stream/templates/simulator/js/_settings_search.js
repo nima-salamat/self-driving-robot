@@ -76,6 +76,7 @@ function bindSettingsSearch(){
    button.append(wrap,kind);button.addEventListener("click",function(){jumpTo(item);});
    results.append(button);
   });
+  setActive(0);
  }
  function setActive(next){
   const buttons=Array.from(results.querySelectorAll(".settings-search-result"));if(!buttons.length)return;
@@ -90,8 +91,9 @@ function bindSettingsSearch(){
   if(event.key==="Escape"){event.preventDefault();closeSearch();}
   else if(event.key==="ArrowDown"){event.preventDefault();setActive(activeIndex+1);}
   else if(event.key==="ArrowUp"){event.preventDefault();setActive(activeIndex<0?0:activeIndex-1);}
-  else if(event.key==="Enter"&&activeIndex>=0){
-   event.preventDefault();const selected=results.querySelector('[data-result-index="'+activeIndex+'"]');if(selected)selected.click();
+  else if(event.key==="Enter"&&results.querySelector(".settings-search-result")){
+   event.preventDefault();if(activeIndex<0)setActive(0);
+   const selected=results.querySelector('[data-result-index="'+activeIndex+'"]');if(selected)selected.click();
   }
  });
  closeButton.addEventListener("click",closeSearch);
