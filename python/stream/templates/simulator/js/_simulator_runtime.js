@@ -135,7 +135,8 @@ async function poll(){
         if(caps.simulator_backend==="avis"&&rangeSafety.status){
           const frontState=rangeSafety.status==="clear"
             ? "CLEAR"
-            : "BRAKE · "+(rangeSafety.reason||rangeSafety.status);
+            : "BRAKE · "+(rangeSafety.reason||rangeSafety.status)
+              +(rangeSafety.stop_latched?" · run disarmed":"");
           details.push("Independent front guard "+frontState);
         }
         if(obstacle.minimum_pass_distance_cm!=null){
