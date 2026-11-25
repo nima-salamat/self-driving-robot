@@ -345,6 +345,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("SIMULATOR_STOP_LINE_CONFIRM_FRAMES must be between 1 and 20")
             if key == "SIMULATOR_SIGN_SCAN_INTERVAL" and not 1 <= value <= 120:
                 raise ValueError("SIMULATOR_SIGN_SCAN_INTERVAL must be between 1 and 120")
+            if key == "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES" and not 1 <= value <= 10:
+                raise ValueError("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES must be between 1 and 10")
             if key in {"TL_MIN_SATURATION", "TL_MIN_VALUE"} and not 0 <= value <= 255:
                 raise ValueError(f"{key} must be between 0 and 255")
             if key in {"TL_RED_HUE_MIN", "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN",
