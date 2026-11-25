@@ -127,6 +127,11 @@ class VisionProcessor:
         active_maneuver_roi = str(getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_ROI", "")).lower()
         if active_maneuver_roi not in {"left", "right"}:
             active_maneuver_roi = None
+        simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
+        hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False)) or (
+            simulator_backend == "avis"
+            and bool(getattr(conf, "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED", False))
+        )
         handoff_request = getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF", None)
         hall_handoff_requested = bool(
             isinstance(handoff_request, dict)
@@ -138,7 +143,7 @@ class VisionProcessor:
             result = self.ml_lane_detector.detect(
                 frame, debug_frame if visualization_enabled else None
             )
-            if bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False)):
+            if hall_requested:
                 result["line_tracking"] = {
                     "enabled": False,
                     "state": "UNSUPPORTED_ML",
@@ -187,7 +192,7 @@ class VisionProcessor:
                 self._bev_cache_key = cache_key
             frame = cv2.warpPerspective(frame, self._bev_matrix, (width, height), flags=cv2.INTER_LINEAR)
             
-        debug_frame = frame.copy() if (conf.DEBUG or getattr(conf, "STREAM", False) or bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))) else None
+        debug_frame = frame.copy() if (conf.DEBUG or getattr(conf, "STREAM", False) or hall_requested) else None
 
         # --- ROI pixel bounds ---
         rl_top, rl_bottom = int(conf.RL_TOP_ROI * height), int(conf.RL_BOTTOM_ROI * height)
@@ -218,9 +223,7 @@ class VisionProcessor:
             else:
                 rl_top, rl_bottom, rl_left, rl_right = top_px, bottom_px, left_px, right_px
 
-        hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
         sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
-        simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
         simulator_joint_tracking = (
             hall_requested
             and sobel_hough_active
