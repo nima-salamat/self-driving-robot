@@ -49,7 +49,13 @@
     </section>
     {% endif %}
     <section class="panel sim-settings-panel" id="sim-settings-panel">
-      <div class="panel-head"><div><h2>Settings</h2><p id="editor-description">{{ mode|upper }} profile · live simulator configuration</p></div></div>
+      <div class="panel-head sim-settings-head">
+        <h2>Settings</h2>
+        <div class="sim-settings-head-actions">
+          <button type="button" id="reload-settings" disabled>Reload settings</button>
+          <button type="submit" class="primary" id="save-settings" disabled form="settings-form">Save settings</button>
+        </div>
+      </div>
       <div class="panel-content">
         <div id="save-message" class="msg" role="status"></div>
         <form id="settings-form">
@@ -301,7 +307,6 @@
               <div class="field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><label for="cw-right">Crosswalk ROI right</label><input id="cw-right" type="number" min="0" max="1" step="any" name="CW_RIGHT_ROI"></div>
             </div>
           </div>
-          <div class="actions"><button type="button" id="reload-settings" disabled>Reload saved</button><button class="primary" type="submit" id="save-settings" disabled>Save settings</button></div>
         </form>
       </div>
     </section>
