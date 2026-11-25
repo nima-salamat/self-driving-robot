@@ -38,7 +38,7 @@ class LaneBoundaryTracker:
     one valid Hough segment is sufficient to restore the observation.
     """
 
-    def __init__(self, max_missed_frames=4, reacquire_frames=3, max_candidates=128):
+    def __init__(self, max_missed_frames=4, reacquire_frames=3, max_candidates=48):
         self.max_missed_frames = max(1, int(max_missed_frames))
         self.reacquire_frames = max(1, int(reacquire_frames))
         self.max_candidates = max(8, int(max_candidates))
@@ -283,16 +283,39 @@ class LaneBoundaryTracker:
         left, top, right, bottom = roi
         roi_height = max(1.0, float(bottom - top))
         raw_source = [] if lines is None else list(lines)
+
+        # Hough output is not ordered by lane relevance. Select a bounded set
+        # of useful long segments before running Hall matching, while always
+        # retaining the detector's preferred candidate when it supplied one.
         if len(raw_source) > self.max_candidates:
-            selected = set(range(self.max_candidates))
-            if preferred_index is not None and 0 <= int(preferred_index) < len(raw_source):
-                preferred = int(preferred_index)
-                if preferred not in selected:
-                    selected.add(preferred)
-                    selected.discard(self.max_candidates - 1)
-            source = [(index, raw_source[index]) for index in sorted(selected)]
+            ranked_source = []
+            for index, line in enumerate(raw_source):
+                try:
+                    values = np.asarray(line, dtype=np.float64).reshape(-1)
+                    if values.size < 4 or not np.isfinite(values[:4]).all():
+                        continue
+                    x1, y1, x2, y2 = map(float, values[:4])
+                    if abs(y2 - y1) < 2.0:
+                        continue
+                    length = math.hypot(x2 - x1, y2 - y1)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                ranked_source.append((length, index))
+            ranked_source.sort(key=lambda item: (-item[0], item[1]))
+            chosen = [index for _length, index in ranked_source[:self.max_candidates]]
+            if (
+                preferred_index is not None
+                and 0 <= int(preferred_index) < len(raw_source)
+                and int(preferred_index) not in chosen
+            ):
+                if chosen:
+                    chosen[-1] = int(preferred_index)
+                else:
+                    chosen.append(int(preferred_index))
+            source = [(index, raw_source[index]) for index in sorted(set(chosen))]
         else:
             source = list(enumerate(raw_source))
+
         candidates = []
         for index, line in source:
             try:
@@ -307,12 +330,6 @@ class LaneBoundaryTracker:
             if abs(dy) < 2.0:
                 continue
             length = math.hypot(dx, dy)
-            # Very short Hough fragments are usually texture/shadow edges, not
-            # stable lane boundaries. Require one sufficiently long segment;
-            # this does not require multiple lines or multiple candidates.
-            # HoughLinesP already applies the user-configured minLineLength.
-            # Do not silently replace it with 10% of the ROI height here: AVIS
-            # dashed markings often arrive as a single shorter segment.
             if length < max(10.0, roi_height * 0.035):
                 continue
 
@@ -322,9 +339,6 @@ class LaneBoundaryTracker:
             segment_min_y = min(gy1, gy2)
             segment_max_y = max(gy1, gy2)
             y_gap = max(0.0, segment_min_y - y_ref, y_ref - segment_max_y)
-            # Hough fragments on dashed or partially occluded paint do not
-            # always cross the look-ahead row. Permit bounded extrapolation,
-            # scaled by the actual segment length, and penalize it in quality.
             max_y_gap = min(
                 roi_height * 0.35,
                 max(roi_height * 0.12, length * 0.75),
@@ -332,9 +346,6 @@ class LaneBoundaryTracker:
             if y_gap > max_y_gap:
                 continue
             x_ref = gx1 + slope * (y_ref - gy1)
-            # Hough endpoints are local to the crop, but extrapolating a short
-            # segment to y_ref can place its lane point outside that crop.
-            # Such a line must not be treated as a detection for this ROI.
             if (
                 not math.isfinite(x_ref)
                 or not 0 <= x_ref < frame_width
@@ -370,46 +381,66 @@ class LaneBoundaryTracker:
             })
         return candidates
 
-    def _hall_update(self, side, lines, roi, preferred_index, frame_shape):
-        """Associate Hall segments in stable full-frame coordinates.
+    def _hall_update(self, side, candidates, preferred_index, frame_shape):
+        """Associate the exact geometry candidates used by the lane tracker.
 
-        Recovery crops change size and origin as the search expands. Passing
-        crop-local coordinates to HallLineTracker would make a stationary line
-        appear to move when the crop changes. Translate every segment first.
+        Hall and lane ranking must see the same bounded candidate list. Running
+        two independent truncation policies can make Hall select a raw Hough
+        index that the lane tracker never evaluates, causing identity drops.
         """
-        left, top, _right, _bottom = roi
         frame_height, frame_width = map(int, frame_shape[:2])
-        source = [] if lines is None else list(lines)
-        global_lines = []
-        for line in source:
-            try:
-                values = np.asarray(line, dtype=np.float64).reshape(-1)
-                if values.size < 4 or not np.isfinite(values[:4]).all():
-                    global_lines.append(line)
-                    continue
-                x1, y1, x2, y2 = map(float, values[:4])
-                global_lines.append((
-                    x1 + left, y1 + top, x2 + left, y2 + top,
-                ))
-            except (TypeError, ValueError, OverflowError):
-                # Preserve the original index; HallLineTracker rejects malformed
-                # segments itself, and candidate indices must remain aligned.
-                global_lines.append(line)
+        source = list(candidates or [])
+        hall_lines = [item["line_global"] for item in source]
+
+        preferred_local_index = None
+        if preferred_index is not None:
+            preferred_local_index = next(
+                (
+                    index for index, item in enumerate(source)
+                    if int(item["index"]) == int(preferred_index)
+                ),
+                None,
+            )
+
         hall = self._hall[side]
         hall.max_missed_frames = self.max_missed_frames
         result = hall.update(
-            global_lines,
+            hall_lines,
             max(1, frame_width),
             max(1, frame_height),
-            preferred_index=preferred_index,
+            preferred_index=preferred_local_index,
         )
+
+        def restore_candidate_indices(values):
+            restored = []
+            for value in values or ():
+                try:
+                    local_index = int(value)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if 0 <= local_index < len(source):
+                    restored.append(int(source[local_index]["index"]))
+            return restored
+
         selected_index = None
         selected_id = result.get("selected_track_id")
         if selected_id is not None:
             for item in result.get("candidate_tracks", ()):
                 if item.get("track_id") == selected_id and item.get("matched"):
-                    selected_index = int(item["candidate_index"])
+                    local_index = int(item["candidate_index"])
+                    if 0 <= local_index < len(source):
+                        selected_index = int(source[local_index]["index"])
                     break
+
+        for item in result.get("candidate_tracks", ()):
+            local_index = int(item["candidate_index"])
+            if 0 <= local_index < len(source):
+                item["candidate_index"] = int(source[local_index]["index"])
+        for key in (
+            "hall_witness_candidate_indices",
+            "unmatched_candidate_indices",
+        ):
+            result[key] = restore_candidate_indices(result.get(key))
         return result, selected_index
 
     def _candidate_cost(self, state, candidate, preferred_index,
@@ -1618,17 +1649,17 @@ class LaneBoundaryTracker:
             for side in ("left", "right")
         }
         self._frame_index += 1
-        left_hall, left_hall_selected = self._hall_update(
-            "left", left_lines, left_box, left_preferred_index, frame_shape
-        )
-        right_hall, right_hall_selected = self._hall_update(
-            "right", right_lines, right_box, right_preferred_index, frame_shape
-        )
         left_candidates = self._candidates(
             left_lines, left_box, frame_width, y_ref, left_preferred_index
         )
         right_candidates = self._candidates(
             right_lines, right_box, frame_width, y_ref, right_preferred_index
+        )
+        left_hall, left_hall_selected = self._hall_update(
+            "left", left_candidates, left_preferred_index, frame_shape
+        )
+        right_hall, right_hall_selected = self._hall_update(
+            "right", right_candidates, right_preferred_index, frame_shape
         )
         left_hall["raw_hough_count"] = 0 if left_lines is None else len(left_lines)
         right_hall["raw_hough_count"] = 0 if right_lines is None else len(right_lines)
