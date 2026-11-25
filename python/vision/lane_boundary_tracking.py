@@ -23,6 +23,7 @@ class _BoundaryState:
     velocity_px: float = 0.0
     angle_deg: float = 0.0
     line_global: tuple[float, float, float, float] | None = None
+    reference_y_px: float | None = None
     missed_frames: int = 0
     age: int = 0
     pending: dict | None = None
@@ -73,6 +74,7 @@ class LaneBoundaryTracker:
             state.velocity_px = 0.0
             state.angle_deg = 0.0
             state.line_global = None
+            state.reference_y_px = None
             state.missed_frames = 0
             state.age = 0
             state.pending = None
@@ -820,6 +822,7 @@ class LaneBoundaryTracker:
             state.line_global = self._stable_line_from_candidate(
                 candidate, state.x_px, state.angle_deg
             )
+            state.reference_y_px = float(candidate["reference_y_px"])
             state.age = 1
             state.missed_frames = 0
             state.pending = None
@@ -842,6 +845,7 @@ class LaneBoundaryTracker:
         state.line_global = self._stable_line_from_candidate(
             candidate, state.x_px, state.angle_deg
         )
+        state.reference_y_px = float(candidate["reference_y_px"])
         state.age += 1
         state.missed_frames = 0
         state.pending = None
@@ -902,6 +906,7 @@ class LaneBoundaryTracker:
         state.line_global = self._stable_line_from_candidate(
             candidate, state.x_px, state.angle_deg
         )
+        state.reference_y_px = float(candidate["reference_y_px"])
         state.age = 1
         state.missed_frames = 0
         state.pending = None
@@ -1623,6 +1628,21 @@ class LaneBoundaryTracker:
         left_box = self._roi_tuple(left_roi)
         right_box = self._roi_tuple(right_roi)
         y_ref = self._reference_row(left_box, right_box)
+        # Handoff ROIs may use different vertical bounds from the normal lane
+        # ROIs. Keep each boundary's x/velocity reference at the current shared
+        # look-ahead row so a valid transferred line is not rejected simply
+        # because the active ROI changed the projection row.
+        for state in self._sides.values():
+            if (
+                state.track_id is None
+                or state.x_px is None
+                or state.line_global is None
+            ):
+                continue
+            projected_x = self._line_x_at(state.line_global, y_ref)
+            if projected_x is not None and math.isfinite(float(projected_x)):
+                state.x_px = float(projected_x)
+                state.reference_y_px = float(y_ref)
         if (
             enable_full_pair_reacquisition
             and self._lane_width_px is not None
