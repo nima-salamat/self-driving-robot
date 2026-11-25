@@ -116,7 +116,7 @@ function populate(s){
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
   ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
    "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable","hall-line-tracking",
-   "pid-enabled","pid-auto-kp","obstacle-avoidance-enabled","stop-line-enabled",
+   "pid-enabled","pid-auto-kp","obstacle-avoidance-enabled","obstacle-hall-handoff-enabled","stop-line-enabled",
    "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
