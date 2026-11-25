@@ -74,6 +74,7 @@ class RangeObstacleAvoidance:
         self._last_observed_track_ids = {}
         self._handoff_plan = None
         self._handoff_sequence = 0
+        self._handoff_missed_frames = 0
 
     def _number(self, key, default):
         try:
@@ -179,6 +180,7 @@ class RangeObstacleAvoidance:
     def _start_hall_handoff(self, source_side, target_side):
         self._handoff_sequence += 1
         expected_track_id = self._last_observed_track_ids.get(source_side)
+        self._handoff_missed_frames = 0
         self._handoff_plan = {
             "enabled": True,
             "source_side": source_side,
@@ -191,6 +193,20 @@ class RangeObstacleAvoidance:
             source_side, target_side, expected_track_id, self._handoff_sequence,
         )
         return self._handoff_plan
+
+    def _handoff_anchor_available(self, maneuver_roi, target_side):
+        """Allow a short detector gap, then fail closed if the handed-off line vanishes."""
+        locked = bool(
+            isinstance(maneuver_roi, dict)
+            and maneuver_roi.get("side") == target_side
+            and maneuver_roi.get("observed")
+            and maneuver_roi.get("handoff_locked")
+        )
+        if locked:
+            self._handoff_missed_frames = 0
+            return True
+        self._handoff_missed_frames += 1
+        return self._handoff_missed_frames <= 2
 
     def prepare_vision(self, now=None):
         """Publish the temporary ROI owner before the next camera frame is parsed."""
@@ -502,6 +518,12 @@ class RangeObstacleAvoidance:
             )
 
         if self.state == self.PASS_LANE_FOLLOW:
+            if hall_handoff and not self._handoff_anchor_available(maneuver_roi, "right"):
+                self._set_state(
+                    self.BLOCKED, now,
+                    "Hall right-ROI handoff lost the tracked boundary for too many frames; braking",
+                )
+                return self._brake(command, self.last_reason)
             if not perception_valid or command.brake >= 0.5:
                 self._set_state(
                     self.BLOCKED, now,
@@ -607,6 +629,12 @@ class RangeObstacleAvoidance:
             )
 
         if self.state == self.REJOIN_LANE_FOLLOW:
+            if hall_handoff and not self._handoff_anchor_available(maneuver_roi, "left"):
+                self._set_state(
+                    self.BLOCKED, now,
+                    "Hall left-ROI handoff lost the tracked boundary for too many frames; braking",
+                )
+                return self._brake(command, self.last_reason)
             if not perception_valid or command.brake >= 0.5:
                 self._set_state(
                     self.BLOCKED, now,
@@ -698,6 +726,7 @@ class RangeObstacleAvoidance:
             "active_maneuver_roi": active_roi,
             "hall_handoff_enabled": self._hall_handoff_enabled(),
             "hall_handoff": dict(self._handoff_plan) if self._handoff_plan else None,
+            "hall_handoff_missed_frames": int(self._handoff_missed_frames),
             "roi_confirmations": int(self.roi_confirmations),
             "roi_confirmations_required": max(
                 1, min(10, self._integer("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", 2))
