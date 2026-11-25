@@ -186,6 +186,50 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(stopped.brake, 1.0)
         self.assertEqual(controller.state, controller.BLOCKED)
 
+    def test_lane_geometry_guides_adjacent_lane_shift_and_rejoin(self):
+        config = obstacle_config(
+            KP=0.4,
+            SERVO_DIRECTION="rtl",
+            MIN_SERVO_ANGLE=55.0,
+            SERVO_CENTER=95.0,
+            MAX_SERVO_ANGLE=125.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+            SIMULATOR_STEERING_RATE=2.0,
+        )
+        controller = RangeObstacleAvoidance(config)
+        obstacle = {"left": 180.0, "front": 80.0, "right": 90.0}
+        geometry = {
+            "enabled": True,
+            "lane_error_px": 0.0,
+            "lane_width_px": 100.0,
+            "perception_valid": True,
+        }
+        controller.apply(
+            base_command(), obstacle, perception_valid=True,
+            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.0,
+        )
+        shifted = controller.apply(
+            base_command(), obstacle, perception_valid=True,
+            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.175,
+        )
+        self.assertTrue(controller.snapshot()["lane_geometry_active"])
+        self.assertEqual(controller.snapshot()["lane_width_px"], 100.0)
+        self.assertLess(shifted.steering, 0.0)
+
+        clear = {"left": 180.0, "front": 150.0, "right": 90.0}
+        for now in (1.5, 1.6, 1.7):
+            controller.apply(
+                base_command(), clear, perception_valid=True,
+                distance_delta_cm=30.0, lane_quality=0.9, lane_kp=0.4,
+                lane_tracking=geometry, now=now,
+            )
+        self.assertEqual(controller.state, controller.REJOIN)
+        returning = controller.apply(
+            base_command(), clear, perception_valid=True,
+            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.85,
+        )
+        self.assertIn("rejoining original lane", returning.reason)
+
     def test_lane_change_waits_for_valid_lane_and_reports_why(self):
         controller = RangeObstacleAvoidance(obstacle_config())
         command = base_command()
