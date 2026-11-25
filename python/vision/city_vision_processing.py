@@ -24,6 +24,8 @@ class VisionProcessor:
         self._morph_kernel = np.ones((3, 3), np.uint8)
         self._lsd = cv2.createLineSegmentDetector(0)
         self._lane_boundary_tracker = LaneBoundaryTracker()
+        self._last_obstacle_handoff_token = None
+        self._active_obstacle_handoff = None
 
     @staticmethod
     def _extract_line(line):
@@ -194,7 +196,13 @@ class VisionProcessor:
         active_maneuver_roi = str(getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_ROI", "")).lower()
         if active_maneuver_roi not in {"left", "right"}:
             active_maneuver_roi = None
-        if active_maneuver_roi:
+        handoff_request = getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF", None)
+        hall_handoff_requested = bool(
+            isinstance(handoff_request, dict)
+            and handoff_request.get("enabled")
+            and active_maneuver_roi in {"left", "right"}
+        )
+        if active_maneuver_roi and not hall_handoff_requested:
             prefix = "ML" if active_maneuver_roi == "left" else "MR"
             base = (ll_top, ll_bottom, ll_left, ll_right) if active_maneuver_roi == "left" else (rl_top, rl_bottom, rl_left, rl_right)
             bounds = []
@@ -467,6 +475,8 @@ class VisionProcessor:
         tracking_left_lines, tracking_right_lines = ll_lines, rl_lines
         perception_valid = False
         configured_roi_bounds = None
+        hall_handoff_active = False
+        hall_handoff_details = None
         if hall_requested and sobel_hough_active:
             max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
             self._lane_boundary_tracker.max_missed_frames = max_missed
@@ -504,14 +514,138 @@ class VisionProcessor:
                     "left": {"roi": base_left_roi, "expanded": False},
                     "right": {"roi": base_right_roi, "expanded": False},
                 }
+            hall_handoff_active = bool(
+                simulator_joint_tracking and hall_handoff_requested
+            )
+            hall_handoff_details = None
             tracking_left_roi = recovery["left"]["roi"]
             tracking_right_roi = recovery["right"]["roi"]
             tracking_left_lines = ll_lines
             tracking_right_lines = rl_lines
-            if simulator_joint_tracking:
-                # Use one deterministic detector path on every frame. Switching
-                # between normal ROI preprocessing and an unmasked recovery
-                # crop made the same physical line alternate DETECTED/INFERRED.
+            left_preferred_index = (
+                None if simulator_joint_tracking or recovery["left"]["expanded"]
+                else self._line_index_for_midpoint(ll_lines, ll_x_mid)
+            )
+            right_preferred_index = (
+                None if simulator_joint_tracking or recovery["right"]["expanded"]
+                else self._line_index_for_midpoint(rl_lines, rl_x_mid)
+            )
+            left_prediction_valid = bool(recovery["left"].get("prediction_valid", True))
+            right_prediction_valid = bool(recovery["right"].get("prediction_valid", True))
+
+            if hall_handoff_active:
+                source_side = str(handoff_request.get("source_side") or "").lower()
+                target_side = str(handoff_request.get("target_side") or "").lower()
+                token = handoff_request.get("token")
+                valid_pair = (
+                    (source_side, target_side) in {("left", "right"), ("right", "left")}
+                    and active_maneuver_roi == target_side
+                )
+
+                if token != self._last_obstacle_handoff_token:
+                    transfer = (
+                        self._lane_boundary_tracker.handoff_side(source_side, target_side)
+                        if valid_pair else {"ok": False, "reason": "invalid_handoff_request"}
+                    )
+                    self._last_obstacle_handoff_token = token
+                    self._active_obstacle_handoff = dict(transfer)
+                else:
+                    transfer = dict(self._active_obstacle_handoff or {})
+
+                inherited_track_id = transfer.get("track_id")
+                expected_track_id = handoff_request.get("expected_track_id")
+                if expected_track_id is not None:
+                    try:
+                        expected_track_id = int(expected_track_id)
+                    except (TypeError, ValueError, OverflowError):
+                        expected_track_id = None
+                if expected_track_id is None:
+                    expected_track_id = inherited_track_id
+                transfer_ok = bool(
+                    valid_pair
+                    and transfer.get("ok")
+                    and inherited_track_id is not None
+                    and expected_track_id is not None
+                    and int(inherited_track_id) == int(expected_track_id)
+                )
+
+                target_base_roi = (
+                    base_right_roi if target_side == "right" else base_left_roi
+                )
+                source_base_roi = (
+                    base_left_roi if source_side == "left" else base_right_roi
+                )
+                search = (
+                    self._lane_boundary_tracker.handoff_search_roi(
+                        target_side, target_base_roi, frame.shape
+                    )
+                    if transfer_ok else {
+                        "valid": False,
+                        "reason": str(transfer.get("reason") or "track_transfer_failed"),
+                        "roi": target_base_roi,
+                        "configured_roi": target_base_roi,
+                        "expanded": False,
+                        "track_id": inherited_track_id,
+                    }
+                )
+                search_valid = bool(transfer_ok and search.get("valid"))
+                tracking_left_roi = base_left_roi
+                tracking_right_roi = base_right_roi
+                tracking_left_lines = None
+                tracking_right_lines = None
+
+                if target_side == "right":
+                    recovery["left"] = {
+                        "roi": source_base_roi,
+                        "configured_roi": source_base_roi,
+                        "expanded": False,
+                        "prediction_valid": False,
+                        "recheck": False,
+                        "reason": "source_roi_disabled_during_hall_handoff",
+                    }
+                    recovery["right"] = search
+                    if search_valid:
+                        tracking_right_roi = search["roi"]
+                        _target_edges, tracking_right_lines = detect_recovery_lines(
+                            frame, tracking_right_roi, conf, self._morph_kernel,
+                            mirrored=rl_mirrored,
+                        )
+                else:
+                    recovery["right"] = {
+                        "roi": source_base_roi,
+                        "configured_roi": source_base_roi,
+                        "expanded": False,
+                        "prediction_valid": False,
+                        "recheck": False,
+                        "reason": "source_roi_disabled_during_hall_handoff",
+                    }
+                    recovery["left"] = search
+                    if search_valid:
+                        tracking_left_roi = search["roi"]
+                        _target_edges, tracking_left_lines = detect_recovery_lines(
+                            frame, tracking_left_roi, conf, self._morph_kernel,
+                            mirrored=ll_mirrored,
+                        )
+
+                left_preferred_index = None
+                right_preferred_index = None
+                left_prediction_valid = True
+                right_prediction_valid = True
+                hall_handoff_details = {
+                    "enabled": True,
+                    "source_side": source_side,
+                    "target_side": target_side,
+                    "token": token,
+                    "expected_track_id": expected_track_id,
+                    "inherited_track_id": inherited_track_id,
+                    "transfer_ok": transfer_ok,
+                    "search_valid": search_valid,
+                    "search": dict(search),
+                    "transfer_reason": transfer.get("reason"),
+                }
+            elif simulator_joint_tracking:
+                # Keep the same detector path on each frame so recovery does not
+                # alternate between masked normal ROIs and unmasked crops.
                 _left_edges, tracking_left_lines = detect_recovery_lines(
                     frame, tracking_left_roi, conf, self._morph_kernel,
                     side="left", mirrored=ll_mirrored,
@@ -529,6 +663,7 @@ class VisionProcessor:
                     _right_edges, tracking_right_lines = detect_recovery_lines(
                         frame, tracking_right_roi, conf, self._morph_kernel
                     )
+
             lane_tracking_result = self._lane_boundary_tracker.update(
                 left_lines=tracking_left_lines,
                 right_lines=tracking_right_lines,
@@ -537,28 +672,25 @@ class VisionProcessor:
                 right_roi=tracking_right_roi,
                 reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
                 geometry_mode=geometry_mode,
-                left_preferred_index=(
-                    None if simulator_joint_tracking or recovery["left"]["expanded"]
-                    else self._line_index_for_midpoint(ll_lines, ll_x_mid)
+                left_preferred_index=left_preferred_index,
+                right_preferred_index=right_preferred_index,
+                left_prediction_valid=left_prediction_valid,
+                right_prediction_valid=right_prediction_valid,
+                enable_full_pair_reacquisition=bool(
+                    simulator_joint_tracking and not hall_handoff_active
                 ),
-                right_preferred_index=(
-                    None if simulator_joint_tracking or recovery["right"]["expanded"]
-                    else self._line_index_for_midpoint(rl_lines, rl_x_mid)
-                ),
-                left_prediction_valid=bool(recovery["left"].get("prediction_valid", True)),
-                right_prediction_valid=bool(recovery["right"].get("prediction_valid", True)),
-                enable_full_pair_reacquisition=bool(simulator_joint_tracking),
                 max_inferred_frames=(
                     max(
                         self._lane_boundary_tracker.reacquire_frames * 2,
                         max_missed * 3,
                     )
-                    if simulator_joint_tracking else None
+                    if simulator_joint_tracking and not hall_handoff_active else None
                 ),
                 coast_frames=2 if simulator_joint_tracking else 0,
             )
-            # Keep the configured-vs-search ROI geometry and signed edge
-            # distances attached to the live diagnostics for each side.
+            if hall_handoff_details is not None:
+                lane_tracking_result["hall_handoff"] = hall_handoff_details
+            # Keep configured-vs-search geometry and signed edge distances in diagnostics.
             for side_name in ("left", "right"):
                 lane_tracking_result[side_name]["recovery"] = recovery[side_name]
             line_tracking = lane_tracking_result
@@ -705,6 +837,40 @@ class VisionProcessor:
                 "ll_offset": tracking_left_roi[:2],
             }
 
+        maneuver_roi_payload = {
+            "side": active_maneuver_roi,
+            "observed": bool(
+                ll_x_mid is not None if active_maneuver_roi == "left"
+                else rl_x_mid is not None
+            ) if active_maneuver_roi else False,
+        }
+        if hall_handoff_active and isinstance(hall_handoff_details, dict):
+            target_side = hall_handoff_details.get("target_side")
+            target_boundary = (
+                lane_tracking_result.get(target_side, {})
+                if isinstance(lane_tracking_result, dict) else {}
+            )
+            actual_track_id = target_boundary.get("track_id")
+            expected_track_id = hall_handoff_details.get("expected_track_id")
+            handoff_locked = bool(
+                hall_handoff_details.get("transfer_ok")
+                and hall_handoff_details.get("search_valid")
+                and target_boundary.get("observed")
+                and actual_track_id is not None
+                and expected_track_id is not None
+                and int(actual_track_id) == int(expected_track_id)
+            )
+            maneuver_roi_payload = {
+                "side": target_side,
+                "source_side": hall_handoff_details.get("source_side"),
+                "observed": bool(target_boundary.get("observed")),
+                "track_id": actual_track_id,
+                "expected_track_id": expected_track_id,
+                "handoff_locked": handoff_locked,
+                "search_valid": bool(hall_handoff_details.get("search_valid")),
+                "search_roi": hall_handoff_details.get("search", {}).get("roi"),
+            }
+
         return {
             "steering_angle": steering_angle,
             "error": error,
@@ -716,5 +882,5 @@ class VisionProcessor:
             ,"perception_quality": (float(lane_tracking_result["perception_quality"]) if lane_tracking_result is not None else min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0)))
             ,"observed_lane_boundaries": (int(lane_tracking_result["left"]["observed"]) + int(lane_tracking_result["right"]["observed"]) if lane_tracking_result is not None else (2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0))
             ,"line_tracking": line_tracking
-            ,"maneuver_roi": {"side": active_maneuver_roi, "observed": bool(ll_x_mid is not None if active_maneuver_roi == "left" else rl_x_mid is not None) if active_maneuver_roi else False}
+            ,"maneuver_roi": maneuver_roi_payload
         }
