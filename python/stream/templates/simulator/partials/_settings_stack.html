@@ -118,6 +118,7 @@
               <div class="field"><label for="obstacle-roi-timeout">Maneuver ROI search timeout (s)</label><input id="obstacle-roi-timeout" type="number" min=".5" max="15" step=".1" name="SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS"></div>
               <div class="field"><label for="obstacle-roi-frames">Valid ROI frames required</label><input id="obstacle-roi-frames" type="number" min="1" max="10" step="1" name="SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES"></div>
               <div class="field"><label for="obstacle-throttle-limit">Bypass throttle cap (0–0.25)</label><input id="obstacle-throttle-limit" type="number" min="0" max=".25" step=".01" name="SIMULATOR_OBSTACLE_THROTTLE_LIMIT"></div>
+              <p class="note">The trigger starts the bypass when the front sensor reads at or below this distance. “Path clear above” is only used to re-arm after a blocked state; its effective threshold is automatically kept at least 1 cm above the trigger.</p>
             </div>
             <p class="note">AVIS uses direct left steering → left ROI lock → lane-following pass → direct right steering → right ROI lock. The independent forward guard is always active: it brakes at the configured threshold (at least 20 cm) and also brakes when front-range telemetry is missing or invalid. Left and right direct steering are configured independently in AVIS percent; the global steering limit still bounds the command. Three range rays are not a 2D occupancy map; test at minimum speed and retain supervision.</p>
           </div>
