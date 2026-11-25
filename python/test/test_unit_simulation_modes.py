@@ -967,6 +967,11 @@ class VirtualControllerTests(unittest.TestCase):
                 self.assertFalse(runtime.set_run_enabled(False))
                 self.assertEqual(adapter.commands[-1].brake, 1.0)
                 self.assertEqual(adapter.commands[-1].throttle, 0.0)
+                previous_commands = len(adapter.commands)
+                self.assertFalse(runtime.set_run_enabled(False))
+                self.assertEqual(len(adapter.commands), previous_commands + 1)
+                self.assertEqual(adapter.commands[-1].brake, 1.0)
+                self.assertEqual(adapter.commands[-1].throttle, 0.0)
 
     def test_carla_bev_blank_frame_falls_back_to_raw_camera(self):
         import time
