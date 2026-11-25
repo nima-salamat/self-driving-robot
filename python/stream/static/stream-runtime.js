@@ -408,13 +408,13 @@ function mirrorLaneRoi(source,destination){
 }
 document.getElementById('mirror_selected_to_opposite').addEventListener('click',()=>{const st=info();if(st.kind!=='roi'||!['RL','LL'].includes(st.group))return showToast('Select RL or LL before mirroring.');mirrorLaneRoi(st.group,st.group==='RL'?'LL':'RL');});
 let keyboardRoiSaveTimer=null,keyboardRoiPendingGroup=null;
-function flushKeyboardRoiMove(){if(keyboardRoiSaveTimer){clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=null;}const g=keyboardRoiPendingGroup;keyboardRoiPendingGroup=null;if(!g||!['RL','LL','CW','ST','OBJ'].includes(g))return;const n=names(g);sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});}
+function flushKeyboardRoiMove(){if(keyboardRoiSaveTimer){clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=null;}const g=keyboardRoiPendingGroup;keyboardRoiPendingGroup=null;if(!g||!['RL','LL','CW','ST','OBJ','ML','MR'].includes(g))return;const n=names(g);sendUpdate({[n.top]:values[n.top],[n.bottom]:values[n.bottom],[n.left]:values[n.left],[n.right]:values[n.right]});}
 function scheduleKeyboardRoiMove(g){keyboardRoiPendingGroup=g;if(keyboardRoiSaveTimer)clearTimeout(keyboardRoiSaveTimer);keyboardRoiSaveTimer=setTimeout(flushKeyboardRoiMove,220);}
 document.addEventListener('keydown',function(e){
  const dirs={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};const d=dirs[e.code]||dirs[e.key];if(!d)return;
  const target=e.target,tag=target&&target.tagName?target.tagName.toLowerCase():'';
  if(['input','textarea','select','button'].includes(tag)||target?.isContentEditable||document.getElementById('roi_settings_dialog').classList.contains('is-open'))return;
- if(workspaceTool!=='select'||!STREAM_CONTROL_ALLOWED||!syncActive)return;const g=markerHighlight;if(!['RL','LL','CW','ST','OBJ'].includes(g))return;
+ if(workspaceTool!=='select'||!STREAM_CONTROL_ALLOWED||!syncActive)return;const g=markerHighlight;if(!['RL','LL','CW','ST','OBJ','ML','MR'].includes(g))return;
  const n=names(g),l=Number(values[n.left]),r=Number(values[n.right]),t=Number(values[n.top]),b=Number(values[n.bottom]);if(![l,r,t,b].every(Number.isFinite))return;e.preventDefault();
  const source=getSourceFrameSize();
  const pixelStep=(typeof window.__getStreamKeyboardNudgePx==='function'?window.__getStreamKeyboardNudgePx():5)*(e.shiftKey?5:1);
@@ -451,7 +451,7 @@ function updateCadReadout(e){
 canvas.addEventListener('mousemove',updateCadReadout,{passive:true});
 canvas.addEventListener('mouseleave',clearCadReadout,{passive:true});
 window.addEventListener('blur',clearCadReadout,{passive:true});
-select.addEventListener('change',()=>{flushKeyboardRoiMove();const t=select.value;if(t==='NONE'){markerHighlight=null;selectedVar='NONE';document.getElementById('prop_target').value='NONE';window.syncPropertiesSelection('NONE');}else if(t.startsWith('BEV_')){markerHighlight='BEV';selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}else if(['RL','LL','CW','ST','OBJ'].includes(t)){markerHighlight=t;selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}readout.area.textContent='Object: '+(t==='NONE'?'NONE':t.startsWith('BEV_')?'BEV '+t.slice(4):t);renderWorkspaceCanvas();});
+select.addEventListener('change',()=>{flushKeyboardRoiMove();const t=select.value;if(t==='NONE'){markerHighlight=null;selectedVar='NONE';document.getElementById('prop_target').value='NONE';window.syncPropertiesSelection('NONE');}else if(t.startsWith('BEV_')){markerHighlight='BEV';selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}else if(['RL','LL','CW','ST','OBJ','ML','MR'].includes(t)){markerHighlight=t;selectedVar=t;document.getElementById('prop_target').value=t;window.syncPropertiesSelection(t);}readout.area.textContent='Object: '+(t==='NONE'?'NONE':t.startsWith('BEV_')?'BEV '+t.slice(4):t);renderWorkspaceCanvas();});
 noteWorkspaceEvent('info','Workspace initialized; middle mouse pans and wheel zooms at cursor');renderWorkspaceEventLog('events');renderWorkspaceEventLog('api');window.syncPropertiesSelection('NONE');updateZoomStatus();
 }
 
@@ -481,11 +481,7 @@ function initApp(){
 initApp();
 
 function mapGroupToDefaultVar(g){ 
-    if(g==='RL') return 'RL_TOP_ROI'; 
-    if(g==='LL') return 'LL_TOP_ROI'; 
-    if(g==='CW') return 'CW_TOP_ROI'; 
-    if(g==='ST') return 'ST_TOP_ROI'; 
-    if(g==='OBJ') return 'OBJ_TOP_ROI'; 
+    if(['RL','LL','CW','ST','OBJ','ML','MR'].includes(g)) return g+'_TOP_ROI';
     return 'RL_TOP_ROI'; 
 }
 
