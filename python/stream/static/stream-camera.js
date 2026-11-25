@@ -21,7 +21,9 @@ function computeRects(){
         LL: rectFromVars('LL_TOP_ROI','LL_BOTTOM_ROI','LL_LEFT_ROI','LL_RIGHT_ROI'),
         CW: rectFromVars('CW_TOP_ROI','CW_BOTTOM_ROI','CW_LEFT_ROI','CW_RIGHT_ROI'),
         ST: rectFromVars('ST_TOP_ROI','ST_BOTTOM_ROI','ST_LEFT_ROI','ST_RIGHT_ROI'),
-        OBJ: rectFromVars('OBJ_TOP_ROI','OBJ_BOTTOM_ROI','OBJ_LEFT_ROI','OBJ_RIGHT_ROI')
+        OBJ: rectFromVars('OBJ_TOP_ROI','OBJ_BOTTOM_ROI','OBJ_LEFT_ROI','OBJ_RIGHT_ROI'),
+        ML: rectFromVars('ML_TOP_ROI','ML_BOTTOM_ROI','ML_LEFT_ROI','ML_RIGHT_ROI'),
+        MR: rectFromVars('MR_TOP_ROI','MR_BOTTOM_ROI','MR_LEFT_ROI','MR_RIGHT_ROI')
     };
 }
 
