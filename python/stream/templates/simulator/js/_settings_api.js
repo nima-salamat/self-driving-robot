@@ -28,7 +28,6 @@ async function loadSettings(){
   $("save-settings").disabled=!data.controls_enabled;
   if($("open-camera-editor"))$("open-camera-editor").disabled=!data.controls_enabled;
   $("save-settings").title=data.controls_enabled?"Save this simulator mode's settings":"Dashboard is read-only; enable stream control to edit settings";
-  $("editor-description").textContent=mode+" · "+caps.vision_profile+" vision · settings isolated from physical mode JSON";
   if(data.option_groups){
     const parent=$("option-groups");
     // This optional panel is not part of the AVIS view.
