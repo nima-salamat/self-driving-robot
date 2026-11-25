@@ -341,6 +341,13 @@ class StreamConfigurationMixin:
             raise ValueError("WITH_SIGN and WITH_APRILTAG cannot both be enabled")
 
         ui = json.loads(json.dumps(self.ui_settings))
+        # Backfill the maneuver layers for UI profiles saved before these ROIs existed.
+        ui.setdefault("colors", {}).setdefault("ML", "#38bdf8")
+        ui.setdefault("colors", {}).setdefault("MR", "#f59e0b")
+        ui.setdefault("visible", {}).setdefault("ML", True)
+        ui.setdefault("visible", {}).setdefault("MR", True)
+        ui.setdefault("opacity", {}).setdefault("ML", 1.0)
+        ui.setdefault("opacity", {}).setdefault("MR", 1.0)
         colors, visible, opacity = raw_ui.get("colors", {}), raw_ui.get("visible", {}), raw_ui.get("opacity", {})
         frame_overlay = raw_ui.get("frame_overlay", ui.get("frame_overlay", {}))
         if not all(isinstance(obj, dict) for obj in (colors, visible, opacity, frame_overlay)):
