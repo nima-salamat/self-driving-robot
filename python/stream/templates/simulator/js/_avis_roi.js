@@ -526,8 +526,8 @@ function bindSimRoiEditor(){
     });
   });
   restoreSimRoiVisibility();
-  document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",function(){persistSimRoiVisibility();drawSimRoiOverlay();});});
-  $("sim-roi-overlay-toggle").addEventListener("change",function(){persistSimRoiVisibility();simRoiUpdateSelection();drawSimRoiOverlay();});
+  document.querySelectorAll("[data-sim-roi-visible]").forEach(function(input){input.addEventListener("change",function(){persistSimRoiVisibility();if(input.dataset.simRoiVisible==="BEV")fitSimulatorCameraFrame();else drawSimRoiOverlay();});});
+  $("sim-roi-overlay-toggle").addEventListener("change",function(){persistSimRoiVisibility();simRoiUpdateSelection();fitSimulatorCameraFrame();});
   $("sim-roi-mirror-selected").addEventListener("change",function(){
     if(simRoiSelected!=="RL"&&simRoiSelected!=="LL")return;
     simRoiMirrors[simRoiSelected]=this.checked;scheduleSimRoiSave(100);
