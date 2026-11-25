@@ -383,6 +383,23 @@ class SimulationRuntime:
             self._record_event("info", self.backend.upper() + " autonomous run disabled; explicit stop requested.")
         return self._run_enabled
 
+    def _latch_avis_range_stop(self):
+        """Disarm AVIS and issue the Engine stop token on a forward safety fault."""
+        status = str(self._last_range_safety.get("status", ""))
+        if (
+            self.backend != "avis" or not self._run_enabled
+            or status not in {"sensor_unavailable", "obstacle_detected"}
+        ):
+            return False
+        self._record_event(
+            "warning",
+            str(self._last_range_safety.get("reason", "AVIS forward safety stop"))
+            + "; issuing AVIS Engine stop and disarming autonomous run.",
+        )
+        self.set_run_enabled(False)
+        self._last_range_safety["stop_latched"] = True
+        return True
+
     def request_reconnect(self):
         """Force an AVIS socket reconnect while keeping the vehicle disarmed."""
         if self.backend != "avis":
@@ -700,20 +717,9 @@ class SimulationRuntime:
                     command, ranges, backend=self.backend,
                     stop_distance_cm=obstacle_limit,
                 )
-                if (
-                    self.backend == "avis" and self._run_enabled
-                    and self._last_range_safety.get("status")
-                    in {"sensor_unavailable", "obstacle_detected"}
-                ):
-                    # Use the Engine's explicit stop token and disarm the run.
-                    # It closes the active control session; reconnect may happen
-                    # in the background, but motion requires a fresh Start click.
-                    self._record_event(
-                        "warning",
-                        str(self._last_range_safety.get("reason", "AVIS forward safety stop"))
-                        + "; issuing AVIS Engine stop and disarming autonomous run.",
-                    )
-                    self.set_run_enabled(False)
+                if self._latch_avis_range_stop():
+                    # The Engine stop token closes the active control session.
+                    # Motion requires a fresh Start click after reconnect.
                     self.shutdown_event.wait(0.05)
                     continue
                 if (self.backend != "avis" and self.vision_profile == "city" and bool(result.get("crosswalk", False))
