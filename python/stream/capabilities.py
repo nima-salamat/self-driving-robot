@@ -59,13 +59,21 @@ def set_marker_mode(config: Any, mode: str) -> str:
 
 
 def mode_capabilities(config: Any) -> dict[str, Any]:
-    mode = str(getattr(config, "MODE", "city")).lower()
+    mode = str(getattr(config, "MODE", "city") or "city").strip().lower()
     try:
         spec = get_mode_spec(mode)
     except ValueError:
         spec = get_mode_spec("city")
-    simulation = is_simulation_mode(mode)
-    profile = str(getattr(config, "SIMULATION_VISION_PROFILE", spec.vision_profile)).lower()
+    # The backend is the authoritative simulator signal. Older launch wrappers
+    # may leave MODE at city/race while still selecting the AVIS backend, and
+    # config values can arrive with mixed casing from external launchers.
+    backend_hint = str(
+        getattr(config, "SIMULATOR_BACKEND", None) or spec.simulator_backend or ""
+    ).strip().lower()
+    simulation = is_simulation_mode(mode) or backend_hint in {"avis", "carla"}
+    profile = str(
+        getattr(config, "SIMULATION_VISION_PROFILE", None) or spec.vision_profile
+    ).strip().lower()
     if profile not in {"city", "race"}:
         profile = spec.vision_profile
     base = dict(MODE_CAPABILITIES.get(mode, MODE_CAPABILITIES.get(profile, {})))
@@ -77,13 +85,14 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
     elif profile == "race" and bool(getattr(config, "USE_ML_LANE_DETECTOR", False)):
         lane_detector = "ml"
     ml_active = bool(profile == "race" and getattr(config, "USE_ML_LANE_DETECTOR", False))
-    backend = str(getattr(config, "SIMULATOR_BACKEND", spec.simulator_backend)) if simulation else None
+    backend = backend_hint if simulation else None
     base.update({
         "mode": mode, "vision_profile": profile,
         "editor_profile": "simulator" if simulation else "standard",
         "simulator_backend": backend, "uses_virtual_io": simulation,
-        "supports_lidar": bool(simulation and spec.supports_lidar),
-        "supports_range_sensors": bool(simulation and spec.supports_range_sensors),
+        "supports_lidar": bool(simulation and backend == "carla"),
+        "supports_range_sensors": bool(simulation and backend == "avis"),
+        "is_avis_engine": bool(simulation and backend == "avis"),
         "lane_detector": lane_detector, "ml_lane_detector": ml_active,
         "supports_lane_roi": bool(base.get("supports_lane_roi", False) and not ml_active
                                   and not (simulation and lane_detector == "blsf-beta")),
@@ -110,7 +119,7 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         # AVIS uses the shared sign/light detectors through a simulator-only
         # behavior coordinator. No Arduino, physical race gate or actuator
         # sequence is reused by the simulator runtime.
-        avis_backend = backend == "avis"
+        avis_backend = bool(backend == "avis")
         base["supports_sign"] = avis_backend
         base["supports_apriltag"] = False
         base["supports_object_detection"] = False

@@ -93,7 +93,7 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
           <div class="metric"><div class="eyebrow">Vehicle speed</div><div id="speed-value" class="value">— <span class="unit">km/h</span></div><div class="unit">Reported by simulator</div></div>
           <div class="metric"><div class="eyebrow">Steering command</div><div id="steer-value" class="value">—</div><div class="unit">Virtual servo scale and normalized steering</div></div>
           <div class="metric"><div class="eyebrow">Throttle / brake</div><div id="motion-value" class="value">—</div><div id="motion-reason" class="unit">Safe stop until perception is valid</div></div>
-          {% if caps.supports_obstacle_avoidance or caps.supports_stop_line or caps.supports_sign_actions %}
+          {% if caps.is_avis_engine or caps.supports_stop_line or caps.supports_sign_actions %}
           <div class="metric"><div class="eyebrow">AVIS behavior</div><div id="avis-behavior-value" class="value">IDLE</div><div id="avis-behavior-detail" class="unit">Waiting for AVIS behavior state</div></div>
           {% endif %}
         </div>
@@ -254,9 +254,9 @@ a{color:var(--sim-accent)}button,input,select{font:inherit;color:inherit}button{
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step=".01" name="ENCODER_PULSE_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-stop-distance">Forward emergency brake threshold (cm; bypass retains an independent 20 cm hard stop)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="1" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
             </div>
-            {% if caps.supports_obstacle_avoidance %}
-            <div class="setting-block">
-              <h3 class="section-title">AVIS · Optional range-based obstacle bypass</h3>
+            {% if caps.is_avis_engine %}
+            <div class="setting-block avis-obstacle-settings" id="avis-obstacle-settings">
+              <h3 class="section-title">AVIS · Obstacle avoidance <span class="pill">Optional · Off by default</span></h3>
               <label class="check-field"><input id="obstacle-avoidance-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"> Enable bounded obstacle avoidance (left/front/right sensors)</label>
               <div class="grid-two">
                 <div class="field"><label for="obstacle-trigger-distance">Start bypass below (cm)</label><input id="obstacle-trigger-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"></div>
@@ -1057,7 +1057,7 @@ async function poll(){
       const state=obstacle.state||"CLEAR";
       setText("avis-behavior-value",String(state).replace(/_/g," ").toUpperCase());
       const details=[];
-      if(caps.supports_obstacle_avoidance)details.push("Obstacle "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
+      if(caps.is_avis_engine)details.push("Obstacle "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
       if(caps.supports_stop_line)details.push("Stop line "+(!behavior.stop_line_enabled?"off":behavior.stop_line_waiting?"HOLD":behavior.stop_line_armed?"armed":"passed"));
       if(caps.supports_traffic_lights)details.push("Light "+(!behavior.traffic_light_enabled?"off":behavior.traffic_light||"unknown"));
       if(caps.supports_sign_actions)details.push("Sign "+(behavior.sign_label||"none"));
@@ -1168,7 +1168,7 @@ $("settings-form").addEventListener("submit",async function(event){
     s.SIMULATOR_CAMERA_FOV=Number($("camera-fov").value);
   }
   if(caps.supports_range_sensors)s.SIMULATOR_AVIS_SENSOR_ANGLE=Number($("avis-angle").value);
-  if(caps.supports_obstacle_avoidance){
+  if(caps.is_avis_engine){
     s.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED=$("obstacle-avoidance-enabled").checked;
     s.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=Number($("obstacle-trigger-distance").value);
     s.SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=Number($("obstacle-clear-distance").value);

@@ -134,6 +134,12 @@ def register_simulator_routes(app, streamer):
             settings=_get_config_values(streamer.config),
             roi_geometry=_roi_geometry(streamer.config) if caps.get("supports_lane_roi") else {},
             option_groups=caps.get("option_groups", []),
+            capabilities={
+                "is_avis_engine": bool(caps.get("is_avis_engine")),
+                "supports_obstacle_avoidance": bool(caps.get("supports_obstacle_avoidance")),
+                "supports_stop_line": bool(caps.get("supports_stop_line")),
+                "supports_traffic_lights": bool(caps.get("supports_traffic_lights")),
+            },
         )
 
     @app.post("/api/simulation/settings")
@@ -149,8 +155,12 @@ def register_simulator_routes(app, streamer):
         unknown = set(patch) - SIMULATOR_KEYS
         if unknown:
             return jsonify(success=False, message="unsupported settings: " + ", ".join(sorted(unknown))), 400
-        backend = str(getattr(streamer.config, "SIMULATOR_BACKEND", ""))
         caps = mode_capabilities(streamer.config)
+        backend = str(
+            caps.get("simulator_backend")
+            or getattr(streamer.config, "SIMULATOR_BACKEND", "")
+            or ""
+        ).strip().lower()
         profile = caps.get("vision_profile", "city")
         carla_only = {
             "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",

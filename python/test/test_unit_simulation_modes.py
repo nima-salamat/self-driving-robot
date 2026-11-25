@@ -20,7 +20,41 @@ from modes.simulation.settings import (
     _validate_settings, load_simulator_settings, save_simulator_settings,
 )
 from modes.simulation.avis_adapter import AvisAdapter
+from stream.capabilities import mode_capabilities
 from utils.parser import parse_args
+
+
+class AVISStreamCapabilityTests(unittest.TestCase):
+    def test_avis_backend_is_normalized_and_exposes_obstacle_settings(self):
+        for mode, profile in (("avis", "city"), ("avis-race", "race")):
+            config = SimpleNamespace(
+                MODE=mode,
+                SIMULATOR_BACKEND="AVIS",
+                SIMULATION_VISION_PROFILE=profile,
+                CITY_LANE_DETECTOR="default",
+                USE_ML_LANE_DETECTOR=False,
+            )
+            caps = mode_capabilities(config)
+            self.assertEqual(caps["simulator_backend"], "avis")
+            self.assertEqual(caps["editor_profile"], "simulator")
+            self.assertTrue(caps["is_avis_engine"])
+            self.assertTrue(caps["supports_range_sensors"])
+            self.assertTrue(caps["supports_obstacle_avoidance"])
+            self.assertTrue(caps["supports_sign_actions"])
+            self.assertEqual(caps["supports_stop_line"], profile == "city")
+
+    def test_avis_backend_can_select_simulator_editor_with_legacy_city_mode(self):
+        config = SimpleNamespace(
+            MODE="city",
+            SIMULATOR_BACKEND="avis",
+            SIMULATION_VISION_PROFILE="city",
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+        )
+        caps = mode_capabilities(config)
+        self.assertEqual(caps["editor_profile"], "simulator")
+        self.assertTrue(caps["is_avis_engine"])
+        self.assertTrue(caps["supports_obstacle_avoidance"])
 
 
 class ModeRegistryTests(unittest.TestCase):
@@ -354,7 +388,12 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="avis-sensor-view"', page_text)
                         self.assertIn('id="avis-sensor-expand"', page_text)
                         self.assertIn("No valid reading", page_text)
+                        self.assertIn('id="avis-obstacle-settings"', page_text)
+                        self.assertIn("AVIS · Obstacle avoidance", page_text)
                         self.assertIn('id="obstacle-avoidance-enabled"', page_text)
+                        self.assertIn('id="obstacle-trigger-distance"', page_text)
+                        self.assertIn('id="obstacle-clear-distance"', page_text)
+                        self.assertIn('id="obstacle-side-clearance"', page_text)
                         self.assertIn('id="sign-actions-enabled"', page_text)
                         self.assertNotIn('id="crosswalk-threshold"', page_text)
                         self.assertNotIn('id="stop-crosswalk"', page_text)
@@ -373,6 +412,9 @@ class SimulatorEditorTests(unittest.TestCase):
                     payload = state.get_json()
                     self.assertEqual(payload["backend"], backend)
                     self.assertEqual(payload["vision_profile"], profile)
+                    if backend == "avis":
+                        self.assertTrue(payload["capabilities"]["is_avis_engine"])
+                        self.assertTrue(payload["capabilities"]["supports_obstacle_avoidance"])
                     if backend == "carla":
                         self.assertEqual(payload["roi_geometry"]["lane_roi_mode"], "trapezoid")
                         self.assertTrue(payload["roi_geometry"]["cw_trapezoid_mode"])
