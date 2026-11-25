@@ -140,363 +140,215 @@ class StopLineDetectorTests(unittest.TestCase):
 
 
 class RangeObstacleAvoidanceTests(unittest.TestCase):
-    def test_selects_clearer_side_and_limits_bypass_motion(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        ranges = {"left": 150.0, "front": 80.0, "right": 60.0}
-        controller.apply(base_command(), ranges, perception_valid=True, now=0.1)
-        command = controller.apply(
-            base_command(), ranges, perception_valid=True, now=0.2,
-        )
-        self.assertEqual(controller.state, controller.SHIFT)
-        self.assertEqual(controller.direction, -1.0)
-        self.assertLess(command.steering, 0.0)
-        self.assertLessEqual(command.throttle, 0.12)
-        self.assertEqual(command.brake, 0.0)
-
-    def test_lane_change_requires_front_and_side_ranges_and_uses_clearer_side(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        first = controller.apply(
-            base_command(),
-            {"left": 180.0, "front": 80.0, "right": 90.0},
-            perception_valid=True,
-            now=1.0,
-        )
-        self.assertEqual(controller.state, controller.SHIFT)
-        self.assertEqual(controller.direction, -1.0)
-        self.assertIn("shifting left", first.reason)
-
-    def test_inverted_steering_does_not_swap_the_selected_range_sensor(self):
+    def test_direct_left_steering_is_negative_and_roi_waits_for_delay(self):
         controller = RangeObstacleAvoidance(obstacle_config(
-            SIMULATOR_STEERING_INVERTED=True,
-        ))
-        controller.apply(
-            base_command(),
-            {"left": 180.0, "front": 80.0, "right": 90.0},
-            perception_valid=True,
-            now=1.0,
-        )
-        self.assertEqual(controller.selected_side, "left")
-        self.assertEqual(controller.direction, 1.0)
-        stopped = controller.apply(
-            base_command(),
-            {"left": 40.0, "front": 80.0, "right": 90.0},
-            perception_valid=True,
-            now=1.1,
-        )
-        self.assertEqual(stopped.brake, 1.0)
-        self.assertEqual(controller.state, controller.BLOCKED)
-
-    def test_lane_geometry_guides_adjacent_lane_shift_and_rejoin(self):
-        config = obstacle_config(
-            KP=0.4,
-            SERVO_DIRECTION="rtl",
-            MIN_SERVO_ANGLE=55.0,
-            SERVO_CENTER=95.0,
-            MAX_SERVO_ANGLE=125.0,
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=92.0,
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
             SIMULATOR_STEERING_LIMIT=1.0,
-            SIMULATOR_STEERING_RATE=2.0,
-        )
-        controller = RangeObstacleAvoidance(config)
-        obstacle = {"left": 180.0, "front": 80.0, "right": 90.0}
-        geometry = {
-            "enabled": True,
-            "lane_error_px": 0.0,
-            "lane_width_px": 100.0,
-            "perception_valid": True,
-        }
-        controller.apply(
-            base_command(), obstacle, perception_valid=True,
-            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.0,
-        )
-        shifted = controller.apply(
-            base_command(), obstacle, perception_valid=True,
-            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.175,
-        )
-        self.assertTrue(controller.snapshot()["lane_geometry_active"])
-        self.assertEqual(controller.snapshot()["lane_width_px"], 100.0)
-        self.assertLess(shifted.steering, 0.0)
-
-        clear = {"left": 180.0, "front": 150.0, "right": 90.0}
-        for now in (1.5, 1.6, 1.7, 1.8):
-            controller.apply(
-                base_command(), clear, perception_valid=True,
-                distance_delta_cm=30.0, lane_quality=0.9, lane_kp=0.4,
-                lane_tracking=geometry, now=now,
-            )
-        self.assertEqual(controller.state, controller.REJOIN)
-        returning = controller.apply(
-            base_command(), clear, perception_valid=True,
-            lane_quality=0.9, lane_kp=0.4, lane_tracking=geometry, now=1.95,
-        )
-        self.assertIn("rejoining original lane", returning.reason)
-
-    def test_lane_geometry_steers_toward_both_sides_and_back_for_servo_orientations(self):
-        for servo_direction in ("ltr", "rtl"):
-            for side, lane_direction, return_error in (
-                ("left", -1.0, 100.0),
-                ("right", 1.0, -100.0),
-            ):
-                with self.subTest(servo_direction=servo_direction, side=side):
-                    controller = RangeObstacleAvoidance(obstacle_config(
-                        SERVO_DIRECTION=servo_direction,
-                        KP=0.4,
-                        MIN_SERVO_ANGLE=55.0,
-                        SERVO_CENTER=95.0,
-                        MAX_SERVO_ANGLE=125.0,
-                        SIMULATOR_STEERING_INVERTED=False,
-                    ))
-                    controller.lane_direction = lane_direction
-                    controller.last_lane_quality = 0.9
-                    controller.last_lane_kp = 0.4
-                    geometry = {
-                        "enabled": True,
-                        "lane_error_px": 0.0,
-                        "lane_width_px": 100.0,
-                    }
-                    shifting = controller._target_lane_steering(
-                        base_command(), geometry, 0.5, 0.0,
-                        steering_authority=1.0,
-                    )
-                    returning_geometry = {
-                        **geometry,
-                        "lane_error_px": return_error,
-                    }
-                    returning = controller._target_lane_steering(
-                        base_command(), returning_geometry, 0.5, 0.0,
-                        steering_authority=1.0,
-                    )
-                    self.assertGreater(
-                        shifting * lane_direction, 0.0,
-                        f"must steer toward the {side} lane",
-                    )
-                    self.assertLess(
-                        returning * lane_direction, 0.0,
-                        f"must steer back toward the original lane from {side}",
-                    )
-
-    def test_lane_change_authority_can_use_full_range_in_both_fallback_directions(self):
-        for side, ranges, expected_sign in (
-            ("left", {"left": 180.0, "front": 80.0, "right": 90.0}, -1.0),
-            ("right", {"left": 90.0, "front": 80.0, "right": 180.0}, 1.0),
-        ):
-            with self.subTest(side=side):
-                controller = RangeObstacleAvoidance(obstacle_config(
-                    SIMULATOR_OBSTACLE_STEERING_OFFSET=1.0,
-                    SIMULATOR_STEERING_LIMIT=1.0,
-                    SIMULATOR_STEERING_RATE=10.0,
-                ))
-                controller.apply(
-                    base_command(), ranges, perception_valid=True, now=1.0,
-                )
-                shifted = controller.apply(
-                    base_command(), ranges, perception_valid=True, now=1.175,
-                )
-                self.assertGreater(
-                    shifted.steering * expected_sign, 0.35,
-                    f"{side} fallback maneuver should exceed the former 0.35 cap",
-                )
-
-    def test_lane_change_setting_accepts_full_normalized_authority(self):
-        clean = _validate_settings(
-            {"SIMULATOR_OBSTACLE_STEERING_OFFSET": 1.0},
-            backend="avis",
-        )
-        self.assertEqual(clean["SIMULATOR_OBSTACLE_STEERING_OFFSET"], 1.0)
-        with self.assertRaises(ValueError):
-            _validate_settings(
-                {"SIMULATOR_OBSTACLE_STEERING_OFFSET": 1.01},
-                backend="avis",
-            )
-
-    def test_lane_change_waits_for_valid_lane_and_reports_why(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        command = base_command()
-        result = controller.apply(
-            command,
-            {"left": 180.0, "front": 160.0, "right": 90.0},
-            perception_valid=False,
-            now=1.0,
-        )
-        self.assertIs(result, command)
-        self.assertEqual(controller.state, controller.CLEAR)
-        self.assertIn("waiting for valid lane perception", controller.snapshot()["reason"])
-
-    def test_obstacle_inside_bypass_trigger_brakes_when_lane_perception_is_invalid(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        result = controller.apply(
-            base_command(),
-            {"left": 180.0, "front": 80.0, "right": 90.0},
-            perception_valid=False,
-            now=1.0,
-        )
-        self.assertEqual(result.throttle, 0.0)
-        self.assertEqual(result.brake, 1.0)
-        self.assertEqual(controller.state, controller.BLOCKED)
-        self.assertIn("lane perception is invalid", controller.snapshot()["reason"])
-
-    def test_rejoin_requires_three_clear_frames_and_minimum_travel_distance(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        obstacle = {"left": 180.0, "front": 80.0, "right": 90.0}
-        controller.apply(
-            base_command(), obstacle, perception_valid=True,
-            distance_delta_cm=0.0, now=1.0,
-        )
-        controller.apply(
-            base_command(), obstacle, perception_valid=True,
-            distance_delta_cm=0.0, now=1.5,
-        )
-        self.assertEqual(controller.state, controller.PASS)
-
-        clear = {"left": 180.0, "front": 150.0, "right": 90.0}
-        for now in (1.6, 1.7, 1.8):
-            controller.apply(
-                base_command(), clear, perception_valid=True,
-                distance_delta_cm=10.0, now=now,
-            )
-        self.assertEqual(controller.state, controller.PASS)
-        self.assertEqual(controller.snapshot()["front_clear_observations"], 3)
-
-        controller.apply(
-            base_command(), clear, perception_valid=True,
-            distance_delta_cm=60.0, now=1.9,
-        )
-        self.assertEqual(controller.state, controller.REJOIN)
-
-    def test_lane_rejoin_is_smooth_and_returns_to_clear(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        obstacle = {"left": 180.0, "front": 80.0, "right": 90.0}
-        controller.apply(base_command(), obstacle, perception_valid=True, now=1.0)
-        controller.apply(base_command(), obstacle, perception_valid=True, now=1.5)
-        clear = {"left": 180.0, "front": 150.0, "right": 90.0}
-        for now in (1.6, 1.7, 1.8):
-            controller.apply(
-                base_command(), clear, perception_valid=True,
-                distance_delta_cm=30.0, now=now,
-            )
-        self.assertEqual(controller.state, controller.REJOIN)
-        returning = controller.apply(
-            base_command(), clear, perception_valid=True, now=2.1,
-        )
-        self.assertIn("rejoining original lane", returning.reason)
-        completed = controller.apply(
-            base_command(), clear, perception_valid=True, now=2.3,
-        )
-        self.assertEqual(controller.state, controller.CLEAR)
-        self.assertEqual(completed.reason, "lane following")
-
-    def test_missing_sensor_tag_is_unknown_not_fake_clearance(self):
-        from avisengine import Car
-
-        class FakeSocket:
-            def __init__(self, payload):
-                self.payload = payload
-
-            def sendall(self, _data):
-                pass
-
-            def recv(self, _size):
-                payload, self.payload = self.payload, b""
-                return payload
-
-        car = Car()
-        car.sock = FakeSocket(b"<speed>0</speed><EOF>")
-        self.assertFalse(car.getData())
-        self.assertEqual(car.getSensors(), [None, None, None])
-        car.sock = None
-
-    def test_unknown_front_or_insufficient_side_clearance_brakes(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        unknown = controller.apply(
-            base_command(),
-            {"left": 150.0, "front": None, "right": 130.0},
-            perception_valid=True,
-            now=0.1,
-        )
-        self.assertEqual(unknown.brake, 1.0)
-        self.assertEqual(controller.state, controller.BLOCKED)
-
-        controller = RangeObstacleAvoidance(obstacle_config())
-        blocked = controller.apply(
-            base_command(),
-            {"left": 40.0, "front": 80.0, "right": 60.0},
-            perception_valid=True,
-            now=0.1,
-        )
-        self.assertEqual(blocked.brake, 1.0)
-        self.assertEqual(controller.state, controller.BLOCKED)
-
-    def test_invalid_lane_never_gets_overridden_by_avoidance(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        stopped = VehicleCommand(0, 0, 1, 95, 0, "lane lost")
-        result = controller.apply(
-            stopped,
-            {"left": 150, "front": 70, "right": 120},
-            perception_valid=False,
-            now=0.1,
-        )
-        self.assertIs(result, stopped)
-        self.assertEqual(controller.state, controller.CLEAR)
-
-    def test_pass_timeout_enters_a_braked_blocked_state(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        ranges = {"left": 150, "front": 80, "right": 50}
-        controller.apply(base_command(), ranges, perception_valid=True, now=0.1)
-        controller.apply(base_command(), ranges, perception_valid=True, now=0.6)
-        self.assertEqual(controller.state, controller.PASS)
-        result = controller.apply(base_command(), ranges, perception_valid=True, now=5.0)
-        self.assertEqual(controller.state, controller.BLOCKED)
-        self.assertEqual(result.brake, 1.0)
-
-    def test_disabling_bypass_during_a_maneuver_latches_braking(self):
-        config = obstacle_config()
-        controller = RangeObstacleAvoidance(config)
-        controller.apply(
-            base_command(), {"left": 150, "front": 80, "right": 50},
-            perception_valid=True, now=0.1,
-        )
-        config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED = False
-        stopped = controller.apply(
-            base_command(), {"left": 150, "front": 80, "right": 50},
-            perception_valid=True, now=0.2,
-        )
-        self.assertEqual(controller.state, controller.BLOCKED)
-        self.assertEqual(stopped.brake, 1.0)
-
-    def test_losing_selected_side_clearance_during_a_bypass_brakes(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        controller.apply(
-            base_command(), {"left": 150, "front": 80, "right": 50},
-            perception_valid=True, now=0.1,
-        )
-        stopped = controller.apply(
-            base_command(), {"left": 40, "front": 80, "right": 50},
-            perception_valid=True, now=0.2,
-        )
-        self.assertEqual(controller.state, controller.BLOCKED)
-        self.assertEqual(stopped.brake, 1.0)
-
-    def test_losing_lane_during_a_bypass_latches_braking(self):
-        controller = RangeObstacleAvoidance(obstacle_config())
-        ranges = {"left": 150, "front": 80, "right": 50}
-        controller.apply(base_command(), ranges, perception_valid=True, now=0.1)
-        stopped = controller.apply(
-            base_command(), ranges, perception_valid=False, now=0.2
-        )
-        self.assertEqual(controller.state, controller.BLOCKED)
-        self.assertEqual(stopped.brake, 1.0)
-
-    def test_disabling_bypass_preserves_lane_following_command(self):
-        controller = RangeObstacleAvoidance(obstacle_config(
-            SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED=False
         ))
-        command = base_command()
-        result = controller.apply(
-            command,
-            {"left": 30, "front": 60, "right": 30},
-            perception_valid=True,
-            now=0.1,
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+
+        command = controller.apply(
+            base_command(), ranges, perception_valid=True, now=1.0,
         )
-        self.assertIs(result, command)
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertAlmostEqual(command.steering, -0.92)
+        self.assertIsNone(controller.prepare_vision())
+
+        command = controller.apply(
+            base_command(), ranges, perception_valid=True, now=1.9,
+        )
+        self.assertLess(command.steering, 0.0)
+        self.assertIsNone(controller.prepare_vision())
+
+        controller.apply(
+            base_command(), ranges, perception_valid=True, now=2.05,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
+        self.assertEqual(controller.prepare_vision(), "left")
+
+    def test_left_roi_needs_confirmed_frames_then_pid_tracks_passing_lane(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
+            SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES=2,
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=80.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=65.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        controller.apply(
+            base_command(), ranges, perception_valid=True, now=1.0,
+        )
+        controller.apply(
+            base_command(), ranges, perception_valid=True, now=2.05,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
+        self.assertEqual(controller.prepare_vision(), "left")
+
+        first = controller.apply(
+            base_command(), ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": True}, now=2.10,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
+        self.assertLess(first.steering, 0.0)
+
+        lane_pid_command = VehicleCommand(
+            steering=0.12, throttle=0.10, brake=0.0,
+            servo_angle=100.0, target_speed=12.0, reason="lane PID",
+        )
+        followed = controller.apply(
+            lane_pid_command, ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": True}, now=2.20,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertIs(followed, lane_pid_command)
+        self.assertEqual(controller.prepare_vision(), "left")
+
+        controller.apply(
+            lane_pid_command, ranges, perception_valid=True, now=2.69,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+
+        returning = controller.apply(
+            lane_pid_command, ranges, perception_valid=True, now=2.71,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertAlmostEqual(returning.steering, 0.65)
+        self.assertIsNone(controller.prepare_vision())
+
+    def test_right_roi_confirmation_restores_normal_lane_following(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.2,
+            SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES=2,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=73.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        lane_pid_command = VehicleCommand(
+            steering=-0.1, throttle=0.08, brake=0.0,
+            servo_angle=90.0, target_speed=10.0, reason="lane PID",
+        )
+        controller.apply(base_command(), ranges, perception_valid=True, now=1.0)
+        controller.apply(base_command(), ranges, perception_valid=True, now=1.6)
+        controller.apply(
+            lane_pid_command, ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": True}, now=1.7,
+        )
+        controller.apply(
+            lane_pid_command, ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": True}, now=1.8,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        controller.apply(lane_pid_command, ranges, perception_valid=True, now=2.01)
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertAlmostEqual(
+            controller.last_reason.startswith("obstacle lane change"), True,
+        )
+        direct = controller.apply(
+            lane_pid_command, ranges, perception_valid=True, now=2.6,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_RIGHT_ROI)
+        self.assertAlmostEqual(direct.steering, 0.73)
+        self.assertEqual(controller.prepare_vision(), "right")
+
+        controller.apply(
+            lane_pid_command, ranges, perception_valid=True,
+            maneuver_roi={"side": "right", "observed": True}, now=2.7,
+        )
+        restored = controller.apply(
+            lane_pid_command, ranges, perception_valid=True,
+            maneuver_roi={"side": "right", "observed": True}, now=2.8,
+        )
+        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertIs(restored, lane_pid_command)
+        self.assertIsNone(controller.prepare_vision())
+
+    def test_direct_steering_is_clamped_by_global_authority_and_keeps_signs(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=100.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=100.0,
+            SIMULATOR_STEERING_LIMIT=0.45,
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=4.0,
+        ))
+        left_ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        left = controller.apply(
+            base_command(), left_ranges, perception_valid=True, now=1.0,
+        )
+        self.assertAlmostEqual(left.steering, -0.45)
+
+        # Put a separate controller directly into the right departure phase.
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=100.0,
+            SIMULATOR_STEERING_LIMIT=0.45,
+        ))
+        controller.state = controller.SHIFT_RIGHT_DIRECT
+        controller.state_since = 1.0
+        right = controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 80.0, "right": 180.0},
+            perception_valid=True, now=1.1,
+        )
+        self.assertAlmostEqual(right.steering, 0.45)
+
+    def test_search_timeout_brakes_instead_of_steering_forever(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS=0.5,
+        ))
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        controller.apply(base_command(), ranges, perception_valid=True, now=1.0)
+        controller.apply(base_command(), ranges, perception_valid=True, now=1.6)
+        self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
+        stopped = controller.apply(
+            base_command(), ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": False}, now=2.2,
+        )
+        self.assertEqual(controller.state, controller.BLOCKED)
+        self.assertEqual(stopped.brake, 1.0)
+        self.assertEqual(stopped.throttle, 0.0)
+
+    def test_missing_front_range_and_unclear_departure_side_fail_closed(self):
+        controller = RangeObstacleAvoidance(obstacle_config())
+        missing_front = controller.apply(
+            base_command(), {"left": 180.0, "front": None, "right": 180.0},
+            perception_valid=True, now=1.0,
+        )
+        self.assertEqual(missing_front.brake, 1.0)
+        self.assertEqual(controller.state, controller.BLOCKED)
+
+        controller = RangeObstacleAvoidance(obstacle_config())
+        unclear_left = controller.apply(
+            base_command(), {"left": 40.0, "front": 80.0, "right": 180.0},
+            perception_valid=True, now=1.0,
+        )
+        self.assertEqual(unclear_left.brake, 1.0)
+        self.assertEqual(controller.state, controller.BLOCKED)
+
+    def test_missing_lane_during_passing_lane_follow_brakes(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=0.1,
+        ))
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        controller.apply(base_command(), ranges, perception_valid=True, now=1.0)
+        controller.apply(base_command(), ranges, perception_valid=True, now=1.2)
+        command = controller.apply(
+            base_command(), ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": True}, now=1.3,
+        )
+        self.assertEqual(command.brake, 0.0)
+        command = controller.apply(
+            base_command(), ranges, perception_valid=True,
+            maneuver_roi={"side": "left", "observed": True}, now=1.4,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        stopped = controller.apply(
+            base_command(), ranges, perception_valid=False, now=1.5,
+        )
+        self.assertEqual(controller.state, controller.BLOCKED)
+        self.assertEqual(stopped.brake, 1.0)
+
 
 
 class AVISCitySignalGateTests(unittest.TestCase):
