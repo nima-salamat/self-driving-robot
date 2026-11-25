@@ -397,7 +397,11 @@ class SimulatorSettingsTests(unittest.TestCase):
             self.assertEqual(config.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM, 120.0)
             self.assertEqual(config.SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM, 150.0)
             saved = json.loads(legacy_path.read_text(encoding="utf-8"))
-            self.assertEqual(saved["SIMULATOR_AVIS_SAFETY_PROFILE_VERSION"], 1)
+            self.assertEqual(saved["SIMULATOR_AVIS_SAFETY_PROFILE_VERSION"], 2)
+            self.assertTrue(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"])
+            self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT"], 10)
+            self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT"], -10.0)
+            self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"], 10.0)
             self.assertTrue(saved["SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"])
 
     def test_avis_uses_configured_tcp_timeout_without_one_second_cap(self):
