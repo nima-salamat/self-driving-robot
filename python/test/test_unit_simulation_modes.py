@@ -2409,10 +2409,13 @@ class ForwardRangeSafetyTests(unittest.TestCase):
 
         runtime = object.__new__(SimulationRuntime)
         runtime.backend = "avis"
+        runtime.config = SimpleNamespace(SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS=0.0)
         runtime._run_enabled = True
+        runtime._front_range_unavailable_since = None
+        runtime._front_range_grace_notified = False
         runtime._last_range_safety = {
             "status": "sensor_unavailable",
-            "reason": "AVIS front range sensor missing/invalid; fail-safe stop",
+            "reason": "AVIS front range sensor missing/invalid; temporary safety brake",
         }
         runtime._state_lock = threading.RLock()
         runtime._events = []
@@ -2425,11 +2428,67 @@ class ForwardRangeSafetyTests(unittest.TestCase):
         runtime.controller = SimpleNamespace(last_servo=95.0)
         runtime.adapter = FakeAdapter()
 
-        self.assertTrue(SimulationRuntime._latch_avis_range_stop(runtime))
+        self.assertTrue(SimulationRuntime._latch_avis_range_stop(runtime, now=1.0))
         self.assertEqual(runtime.adapter.stop_calls, 1)
         self.assertFalse(runtime._run_enabled)
         self.assertEqual(runtime._last_command.throttle, 0.0)
         self.assertEqual(runtime._last_command.brake, 1.0)
+        self.assertTrue(runtime._last_range_safety["stop_latched"])
+
+    def test_avis_transient_front_sensor_gap_brakes_without_disarming(self):
+        import threading
+        from modes.simulation.runtime import SimulationRuntime
+
+        class FakeAdapter:
+            def __init__(self):
+                self.stop_calls = 0
+            def stop_vehicle(self):
+                self.stop_calls += 1
+                return True
+
+        runtime = object.__new__(SimulationRuntime)
+        runtime.backend = "avis"
+        runtime.config = SimpleNamespace(SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS=1.5)
+        runtime._run_enabled = True
+        runtime._front_range_unavailable_since = None
+        runtime._front_range_grace_notified = False
+        runtime._last_range_safety = {
+            "status": "sensor_unavailable",
+            "reason": "AVIS front range sensor missing/invalid; temporary safety brake",
+            "sensor_tag_present": False,
+            "range_sensor_count": 0,
+        }
+        runtime._state_lock = threading.RLock()
+        runtime._events = []
+        runtime._last_error = None
+        runtime._last_safe_stop_reason = None
+        runtime._last_safe_stop_log_at = 0.0
+        runtime._last_safe_stop_command_at = 0.0
+        runtime._stop_event_active = False
+        runtime._last_command = VehicleCommand(0.0, 0.2, 0.0, 95.0, 20.0, "lane following")
+        runtime.controller = SimpleNamespace(last_servo=95.0)
+        runtime.adapter = FakeAdapter()
+
+        self.assertFalse(SimulationRuntime._latch_avis_range_stop(runtime, now=10.0))
+        self.assertTrue(runtime._run_enabled)
+        self.assertEqual(runtime.adapter.stop_calls, 0)
+        self.assertAlmostEqual(runtime._last_range_safety["unavailable_for_seconds"], 0.0)
+
+        # A healthy front sample resets the continuous-outage timer.
+        runtime._last_range_safety = {"status": "clear", "front_range_cm": 180.0}
+        self.assertFalse(SimulationRuntime._latch_avis_range_stop(runtime, now=10.8))
+        self.assertIsNone(runtime._front_range_unavailable_since)
+
+        runtime._last_range_safety = {
+            "status": "sensor_unavailable",
+            "reason": "AVIS front range sensor missing/invalid; temporary safety brake",
+        }
+        self.assertFalse(SimulationRuntime._latch_avis_range_stop(runtime, now=11.0))
+        self.assertFalse(SimulationRuntime._latch_avis_range_stop(runtime, now=12.4))
+        self.assertTrue(runtime._run_enabled)
+        self.assertTrue(SimulationRuntime._latch_avis_range_stop(runtime, now=12.6))
+        self.assertEqual(runtime.adapter.stop_calls, 1)
+        self.assertFalse(runtime._run_enabled)
         self.assertTrue(runtime._last_range_safety["stop_latched"])
 
     def test_carla_forward_range_guard_keeps_legacy_missing_sensor_behavior(self):
