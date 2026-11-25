@@ -493,10 +493,10 @@ class VisionProcessor:
                     and maneuver_bounds[1] < maneuver_bounds[3]
                 ):
                     target_base_roi = (
-                        int(round(maneuver_bounds[0] * width)),
-                        int(round(maneuver_bounds[1] * height)),
-                        int(round(maneuver_bounds[2] * width)),
-                        int(round(maneuver_bounds[3] * height)),
+                        int(math.floor(maneuver_bounds[0] * width)),
+                        int(math.floor(maneuver_bounds[1] * height)),
+                        int(math.ceil(maneuver_bounds[2] * width)),
+                        int(math.ceil(maneuver_bounds[3] * height)),
                     )
                     target_base_roi = (
                         max(0, min(width - 1, target_base_roi[0])),
@@ -505,6 +505,13 @@ class VisionProcessor:
                         max(1, min(height, target_base_roi[3])),
                     )
                 else:
+                    target_base_roi = (
+                        base_right_roi if target_side == "right" else base_left_roi
+                    )
+                if (
+                    target_base_roi[2] <= target_base_roi[0]
+                    or target_base_roi[3] <= target_base_roi[1]
+                ):
                     target_base_roi = (
                         base_right_roi if target_side == "right" else base_left_roi
                     )
