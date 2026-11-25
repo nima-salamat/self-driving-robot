@@ -411,6 +411,59 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertAlmostEqual(resumed.steering, 0.70)
         self.assertEqual(resumed.brake, 0.0)
 
+    def test_hall_without_identity_handoff_keeps_passing_roi_until_timed_return(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_BACKEND="avis",
+            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
+            OLD_METHOD=False,
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=True,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT=3,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT=-10.0,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT=10.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=70.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        controller.state = controller.PASS_LANE_FOLLOW
+        controller.pass_started_at = 10.0
+        controller.state_since = 10.0
+        ranges = {"left": 180.0, "front": 180.0, "right": 180.0}
+        lane_command = VehicleCommand(
+            steering=0.30, throttle=0.1, brake=0.0,
+            servo_angle=95.0, target_speed=12.0, reason="Hall lane PID",
+        )
+
+        # With identity handoff disabled, Hall must keep tracking the newly
+        # entered left lane throughout PASS; reverting to the original LL/RL
+        # pair here can lose the passing lane before the steering gate fires.
+        self.assertEqual(controller.prepare_vision(), "left")
+        waiting = controller.apply(
+            lane_command, ranges, perception_valid=True, now=10.6,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertIs(waiting, lane_command)
+        self.assertEqual(controller.config.SIMULATOR_ACTIVE_OBSTACLE_ROI, "left")
+        self.assertTrue(controller.snapshot()["return_steering_gate_waiting"])
+
+        waiting = controller.apply(
+            lane_command, ranges, perception_valid=True, now=10.8,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertIs(waiting, lane_command)
+        self.assertEqual(controller.prepare_vision(), "left")
+
+        returning = controller.apply(
+            lane_command, ranges, perception_valid=True, now=11.2,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertGreater(returning.steering, 0.0)
+        self.assertIn("steering gate timed out", returning.reason.lower())
+        self.assertIsNone(controller.prepare_vision())
+
     def test_return_steering_gate_timeout_releases_right_return_with_hall_tracking(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_BACKEND="avis",
