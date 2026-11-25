@@ -655,6 +655,11 @@ class BLSFLaneDetector:
 
     def detect(self, frame, debug_frame=None):
         started = time.monotonic()
+        active_maneuver_roi = str(
+            self._cfg("SIMULATOR_ACTIVE_OBSTACLE_ROI", "")
+        ).lower()
+        if active_maneuver_roi not in {"left", "right"}:
+            active_maneuver_roi = None
 
         if frame is None or frame.size == 0:
             return {
@@ -667,10 +672,83 @@ class BLSFLaneDetector:
                 "kp": 0,
                 "lane_detector": "blsf-beta",
                 "lane_latency_ms": 0.0,
+                "maneuver_roi": {
+                    "side": active_maneuver_roi,
+                    "observed": False,
+                },
             }
 
         bev = self._bev(frame)
-        gray = self._weighted_gray(bev)
+        lane_frame = bev
+        roi_bounds = None
+        roi_left_offset = 0
+        if active_maneuver_roi:
+            prefix = "ML" if active_maneuver_roi == "left" else "MR"
+            height, width = bev.shape[:2]
+            coordinates = []
+            for suffix, dimension, default in (
+                ("TOP_ROI", height, 0.62),
+                ("BOTTOM_ROI", height, 0.98),
+                ("LEFT_ROI", width, 0.02 if active_maneuver_roi == "left" else 0.58),
+                ("RIGHT_ROI", width, 0.42 if active_maneuver_roi == "left" else 0.98),
+            ):
+                try:
+                    value = float(self._cfg(prefix + "_" + suffix, default))
+                except (TypeError, ValueError, OverflowError):
+                    value = default
+                if not math.isfinite(value):
+                    value = default
+                coordinates.append(max(0.0, min(1.0, value)))
+            top, bottom = sorted((
+                int(coordinates[0] * height),
+                int(coordinates[1] * height),
+            ))
+            left, right = sorted((
+                int(coordinates[2] * width),
+                int(coordinates[3] * width),
+            ))
+            roi_bounds = (left, top, right, bottom)
+            if bottom - top < 2 or right - left < 2:
+                return {
+                    "steering_angle": int(self.last_steering),
+                    "error": self.last_error,
+                    "lane_type": "none",
+                    "perception_valid": False,
+                    "crosswalk": False,
+                    "debug": None,
+                    "kp": 0,
+                    "lane_detector": "blsf-beta",
+                    "lane_latency_ms": (time.monotonic() - started) * 1000.0,
+                    "maneuver_roi": {
+                        "side": active_maneuver_roi,
+                        "observed": False,
+                    },
+                }
+            lane_frame = bev[top:bottom, left:right].copy()
+            if lane_frame.size == 0:
+                return {
+                    "steering_angle": int(self.last_steering),
+                    "error": self.last_error,
+                    "lane_type": "none",
+                    "perception_valid": False,
+                    "crosswalk": False,
+                    "debug": None,
+                    "kp": 0,
+                    "lane_detector": "blsf-beta",
+                    "lane_latency_ms": (time.monotonic() - started) * 1000.0,
+                    "maneuver_roi": {
+                        "side": active_maneuver_roi,
+                        "observed": False,
+                    },
+                }
+            roi_left_offset = left
+
+        previous_roi = getattr(self, "_active_maneuver_roi", None)
+        if previous_roi != active_maneuver_roi:
+            self._hall_line_tracker.reset()
+            self._active_maneuver_roi = active_maneuver_roi
+
+        gray = self._weighted_gray(lane_frame)
         thresholded = self._median_local_threshold(gray)
 
         segments = self._segments(thresholded)
@@ -680,7 +758,9 @@ class BLSFLaneDetector:
             self._hall_line_tracker.max_missed_frames = max(
                 1, int(self._cfg("HALL_LINE_TRACKING_MAX_MISSED", 4))
             )
-            tracking_info = self._hall_line_tracker.update(segments, frame.shape[1], frame.shape[0])
+            tracking_info = self._hall_line_tracker.update(
+                segments, lane_frame.shape[1], lane_frame.shape[0]
+            )
             stable_segments = tracking_info["stable_lines"]
             if len(stable_segments) >= 3:
                 stable_band, stable_votes = self._blsf_band(stable_segments)
@@ -699,59 +779,34 @@ class BLSFLaneDetector:
         left_seed, right_seed, histogram = self._seeds(binary)
 
         if left_seed is not None and right_seed is not None:
-            lane_width = max(
-                1.0,
-                float(right_seed - left_seed),
-            )
+            lane_width = max(1.0, float(right_seed - left_seed))
         else:
-            lane_width = frame.shape[1] * float(
-                self._cfg(
-                    "BLSF_DEFAULT_LANE_WIDTH",
-                    0.40,
-                )
+            lane_width = lane_frame.shape[1] * float(
+                self._cfg("BLSF_DEFAULT_LANE_WIDTH", 0.40)
             )
 
-        window_width = (
-            self.window_width_factor
-            * lane_width
-        )
+        window_width = self.window_width_factor * lane_width
+        left_points = self._track(binary, left_seed, window_width)
+        right_points = self._track(binary, right_seed, window_width)
+        left_model = self._ransac_parabola(left_points)
+        right_model = self._ransac_parabola(right_points)
 
-        left_points = self._track(
-            binary,
-            left_seed,
-            window_width,
+        lane_center, lane_type, left_x, right_x = self._lane_state(
+            left_model,
+            right_model,
+            lane_frame.shape[1],
+            lane_frame.shape[0],
         )
-        right_points = self._track(
-            binary,
-            right_seed,
-            window_width,
-        )
-
-        left_model = self._ransac_parabola(
-            left_points
-        )
-        right_model = self._ransac_parabola(
-            right_points
-        )
-
-        lane_center, lane_type, left_x, right_x = (
-            self._lane_state(
-                left_model,
-                right_model,
-                frame.shape[1],
-                frame.shape[0],
-            )
-        )
-
         steering_angle, error = self._steering(
             lane_center,
             lane_type,
-            frame.shape[1],
+            lane_frame.shape[1],
         )
 
-        crosswalk, crosswalk_lines, crosswalk_roi = (
-            self._detect_crosswalk(bev)
-        )
+        if active_maneuver_roi is None:
+            crosswalk, crosswalk_lines, crosswalk_roi = self._detect_crosswalk(bev)
+        else:
+            crosswalk, crosswalk_lines, crosswalk_roi = False, [], None
 
         tracking_summary = {"enabled": False, "state": "DISABLED"}
         if tracking_info is not None:
@@ -762,6 +817,7 @@ class BLSFLaneDetector:
                 )
             }
             tracking_summary["enabled"] = True
+
         debug = None
         if self._cfg("DEBUG", False) or self._cfg("STREAM", False):
             debug = {
@@ -772,12 +828,17 @@ class BLSFLaneDetector:
                     "frame_height": int(bev.shape[0]),
                     "left_model": left_model,
                     "right_model": right_model,
-                    "lane_center_x": lane_center,
+                    "lane_center_x": (
+                        None if lane_center is None
+                        else float(lane_center) + roi_left_offset
+                    ),
                     "lane_type": lane_type,
                     "crosswalk": crosswalk,
                     "crosswalk_lines": crosswalk_lines,
                     "crosswalk_roi": crosswalk_roi,
                     "lane_error": self.last_error,
+                    "maneuver_roi": active_maneuver_roi,
+                    "maneuver_roi_bounds": roi_bounds,
                 },
                 "binary": binary,
                 "histogram": histogram,
@@ -788,6 +849,9 @@ class BLSFLaneDetector:
                 "right_model": right_model,
             }
 
+        shift_x = lambda value: (
+            None if value is None else float(value) + roi_left_offset
+        )
         return {
             "steering_angle": steering_angle,
             "error": error,
@@ -795,24 +859,29 @@ class BLSFLaneDetector:
             "perception_valid": lane_type != "none",
             "crosswalk": crosswalk,
             "debug": debug,
-            "kp": float(
-                self._cfg(
-                    "BLSF_STEERING_KP",
-                    0.45,
-                )
-            ),
+            "kp": float(self._cfg("BLSF_STEERING_KP", 0.45)),
             "lane_detector": "blsf-beta",
-            "lane_latency_ms": (
-                time.monotonic() - started
-            ) * 1000.0,
+            "lane_latency_ms": (time.monotonic() - started) * 1000.0,
             "lane_segment_count": len(segments),
-            "lane_left_x": left_x,
-            "lane_right_x": right_x,
+            "lane_left_x": shift_x(left_x),
+            "lane_right_x": shift_x(right_x),
             "lane_angle_band": band,
             "lane_angle_votes": votes,
-            "perception_quality": min(1.0, (len(segments) / 20.0) * 0.4 + (0.6 if lane_type == "both" else 0.25 if lane_type in ("only_left", "only_right") else 0.0)),
-            "observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0,
+            "perception_quality": min(
+                1.0,
+                (len(segments) / 20.0) * 0.4
+                + (0.6 if lane_type == "both" else 0.25 if lane_type in ("only_left", "only_right") else 0.0),
+            ),
+            "observed_lane_boundaries": (
+                2 if lane_type == "both"
+                else 1 if lane_type in ("only_left", "only_right")
+                else 0
+            ),
             "line_tracking": tracking_summary,
+            "maneuver_roi": {
+                "side": active_maneuver_roi,
+                "observed": bool(active_maneuver_roi and lane_type != "none"),
+            },
         }
 
 
