@@ -214,7 +214,9 @@ class RangeObstacleAvoidance:
         """Publish the temporary ROI owner before the next camera frame is parsed."""
         hall_handoff = self._hall_handoff_enabled()
         pair = None
-        if self.state in {self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW}:
+        if self.state in {
+            self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW, self.SHIFT_RIGHT_DIRECT
+        }:
             pair = ("left", "right")
         elif self.state in {self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW}:
             pair = ("right", "left")
@@ -598,6 +600,12 @@ class RangeObstacleAvoidance:
             return command
 
         if self.state == self.SHIFT_RIGHT_DIRECT:
+            if hall_handoff and not self._handoff_anchor_available(maneuver_roi, "right"):
+                self._set_state(
+                    self.BLOCKED, now,
+                    "Hall right-ROI handoff was lost during the return steer; braking",
+                )
+                return self._brake(command, self.last_reason)
             return self._direct_phase(
                 command, "right", now, roi_delay, self.SEARCH_RIGHT_ROI
             )
