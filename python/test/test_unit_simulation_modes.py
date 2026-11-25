@@ -23,7 +23,7 @@ from modes.registry import (
 from modes.simulation.base_adapter import VehicleCommand
 from modes.simulation.controller import VirtualVehicleController
 from modes.simulation.settings import (
-    SIMULATOR_KEYS, _validate_settings, load_simulator_settings, save_simulator_settings,
+    SIMULATOR_KEYS, _defaults, _validate_settings, load_simulator_settings, save_simulator_settings,
 )
 from modes.simulation.avis_adapter import AvisAdapter
 from utils.parser import parse_args
@@ -314,6 +314,24 @@ class ModeRegistryTests(unittest.TestCase):
 
 
 class SimulatorSettingsTests(unittest.TestCase):
+    def test_every_simulator_default_is_supported_by_the_shared_settings_schema(self):
+        for mode, backend in (("carla", "carla"), ("avis", "avis"), ("avis-race", "avis")):
+            with self.subTest(mode=mode):
+                defaults = _defaults(mode, backend)
+                self.assertFalse(set(defaults) - SIMULATOR_KEYS)
+                validated = _validate_settings(defaults, backend=backend)
+                self.assertEqual(set(validated), set(defaults))
+                self.assertFalse(defaults["SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"])
+                self.assertFalse(defaults["SIMULATOR_SIGN_ACTIONS_ENABLED"])
+                if backend == "avis":
+                    self.assertFalse(defaults["SIMULATOR_STOP_ON_CROSSWALK"])
+                if mode == "avis":
+                    self.assertTrue(defaults["SIMULATOR_STOP_LINE_ENABLED"])
+                    self.assertTrue(defaults["SIMULATOR_TRAFFIC_LIGHTS_ENABLED"])
+                if mode == "avis-race":
+                    self.assertFalse(defaults["SIMULATOR_STOP_LINE_ENABLED"])
+                    self.assertFalse(defaults["SIMULATOR_TRAFFIC_LIGHTS_ENABLED"])
+
     def test_avis_uses_configured_tcp_timeout_without_one_second_cap(self):
         self.assertEqual(AvisAdapter(SimpleNamespace())._request_timeout(), 5.0)
         self.assertEqual(
