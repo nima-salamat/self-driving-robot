@@ -120,12 +120,12 @@ class HallLineMatchingTests(unittest.TestCase):
         for frame_index in range(12):
             lines = []
             for line_index in range(32):
-                if line_index == 0:
+                if line_index == 31:
                     x = 42.0
                 else:
                     x = float(70 + ((line_index * 37 + frame_index * 53) % 540))
                 lines.append(np.asarray([x, 20.0, x + 4.0, 140.0]))
-            result = tracker.update(lines, 640, 480, preferred_index=0)
+            result = tracker.update(lines, 640, 480, preferred_index=31)
             if selected_track_id is None:
                 selected_track_id = result["selected_track_id"]
             self.assertEqual(result["selected_track_id"], selected_track_id)
