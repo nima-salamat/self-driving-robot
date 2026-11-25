@@ -3,7 +3,7 @@
 'use strict';
 const $ = function(id){return document.getElementById(id)};
 const jsonClone = function(value){return JSON.parse(JSON.stringify(value));};
-const EXT_LAYERS = ['RL','LL','CW','ST','OBJ','BEV'];
+const EXT_LAYERS = ['RL','LL','CW','ST','OBJ','ML','MR','BEV'];
 let extGrid=false, extSnap=false, extCrosshair=false, crosshairPinned=false, extAnnotationsVisible=true, extCrosshairPoint=null;
 let mmPerSourcePixel=0;
 let lastVisibleGridMode='grid';
