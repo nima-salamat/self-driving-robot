@@ -21,7 +21,7 @@ import numpy as np
 class HallLineTracker:
     """Keep line identities stable across camera frames."""
 
-    def __init__(self, max_missed_frames: int = 4, max_candidates: int = 48, max_tracks: int = 96):
+    def __init__(self, max_missed_frames: int = 4, max_candidates: int = 32, max_tracks: int = 64):
         self.max_missed_frames = max(1, int(max_missed_frames))
         self.max_candidates = max(8, int(max_candidates))
         self.max_tracks = max(16, int(max_tracks))
