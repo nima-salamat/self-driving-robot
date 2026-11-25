@@ -64,6 +64,7 @@ function populate(s){
     "obstacle-roi-timeout":"SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS",
     "obstacle-roi-frames":"SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
     "obstacle-return-steering-samples":"SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT",
+    "obstacle-return-steering-max-wait":"SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS",
     "obstacle-return-steering-min":"SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
     "obstacle-return-steering-max":"SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
     "obstacle-throttle-limit":"SIMULATOR_OBSTACLE_THROTTLE_LIMIT",

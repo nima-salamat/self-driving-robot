@@ -417,6 +417,10 @@ class RangeObstacleAvoidance:
 
         self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = active_roi
         self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = descriptor
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_BYPASS = bool(
+            getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)
+            and self.state not in {self.CLEAR, self.BLOCKED}
+        )
         return active_roi
 
     def _direct_command(self, command, side, reason):
@@ -725,8 +729,22 @@ class RangeObstacleAvoidance:
             self._record_passing_lane_steering(command)
             hold_complete = now - self.pass_started_at >= lane_hold
             gate = self._return_steering_gate_stats()
+            gate_max_wait = max(
+                0.5,
+                min(30.0, self._number(
+                    "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS", 4.0
+                )),
+            )
+            gate_wait_elapsed = max(0.0, now - self.pass_started_at - lane_hold)
+            gate_timed_out = bool(
+                hold_complete and gate["enabled"] and not gate["ready"]
+                and gate_wait_elapsed >= gate_max_wait
+            )
 
-            if hold_complete and gate["enabled"] and not gate["ready"]:
+            if (
+                hold_complete and gate["enabled"] and not gate["ready"]
+                and not gate_timed_out
+            ):
                 mean_text = (
                     "collecting samples" if gate["mean_percent"] is None
                     else f"{gate['mean_percent']:+.1f}%"
@@ -735,7 +753,8 @@ class RangeObstacleAvoidance:
                     f"minimum passing-lane time complete; waiting for the mean of "
                     f"the last {gate['window']} lane steering commands to enter "
                     f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]% "
-                    f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples)"
+                    f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples; "
+                    f"{gate_wait_elapsed:.1f}/{gate_max_wait:.1f}s maximum wait)"
                 )
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
@@ -749,10 +768,15 @@ class RangeObstacleAvoidance:
                     )
                     return self._brake(command, self.last_reason)
                 return_reason = "passing-lane hold completed"
-                if gate["enabled"]:
+                if gate["enabled"] and gate["ready"]:
                     return_reason += (
                         f"; mean steering {gate['mean_percent']:+.1f}% is inside "
                         f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]%"
+                    )
+                elif gate_timed_out:
+                    return_reason += (
+                        f"; steering-mean gate timed out after {gate_max_wait:.1f}s "
+                        f"(mean {gate['mean_percent'] if gate['mean_percent'] is not None else 'unavailable'}%)"
                     )
                 if hall_handoff and self._last_observed_track_ids.get("right") is None:
                     self._set_state(
@@ -764,9 +788,12 @@ class RangeObstacleAvoidance:
                 self._set_state(self.SHIFT_RIGHT_DIRECT, now, return_reason)
                 self.selected_side = "right"
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
-                return self._direct_command(
-                    command, "right", "obstacle lane change: direct right steering"
-                )
+                direct_reason = "obstacle lane change: direct right steering"
+                if gate_timed_out:
+                    direct_reason += (
+                        f" (return steering gate timed out after {gate_max_wait:.1f}s)"
+                    )
+                return self._direct_command(command, "right", direct_reason)
 
             self.last_reason = (
                 "obstacle lane change: following the passing lane with normal lane PID"
@@ -840,7 +867,21 @@ class RangeObstacleAvoidance:
             self._record_passing_lane_steering(command)
             hold_complete = now - self.pass_started_at >= lane_hold
             gate = self._return_steering_gate_stats()
-            if hold_complete and gate["enabled"] and not gate["ready"]:
+            gate_max_wait = max(
+                0.5,
+                min(30.0, self._number(
+                    "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS", 4.0
+                )),
+            )
+            gate_wait_elapsed = max(0.0, now - self.pass_started_at - lane_hold)
+            gate_timed_out = bool(
+                hold_complete and gate["enabled"] and not gate["ready"]
+                and gate_wait_elapsed >= gate_max_wait
+            )
+            if (
+                hold_complete and gate["enabled"] and not gate["ready"]
+                and not gate_timed_out
+            ):
                 mean_text = (
                     "collecting samples" if gate["mean_percent"] is None
                     else f"{gate['mean_percent']:+.1f}%"
@@ -849,7 +890,8 @@ class RangeObstacleAvoidance:
                     f"minimum original-lane follow time complete; waiting for the mean of "
                     f"the last {gate['window']} steering commands to enter "
                     f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]% "
-                    f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples)"
+                    f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples; "
+                    f"{gate_wait_elapsed:.1f}/{gate_max_wait:.1f}s maximum wait)"
                 )
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
@@ -857,11 +899,13 @@ class RangeObstacleAvoidance:
 
             if hold_complete:
                 reason = "original-lane follow interval completed"
-                if gate["enabled"]:
+                if gate["enabled"] and gate["ready"]:
                     reason += (
                         f"; mean steering {gate['mean_percent']:+.1f}% is inside "
                         f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]%"
                     )
+                elif gate_timed_out:
+                    reason += f"; steering-mean gate timed out after {gate_max_wait:.1f}s"
                 reason += "; restoring both normal lane ROIs"
                 self.awaiting_clear = True
                 self.clear_observations = 0
@@ -908,11 +952,26 @@ class RangeObstacleAvoidance:
             max(0.0, time.monotonic() - self.pass_started_at)
             if self.state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW} else 0.0
         )
+        return_gate_max_wait = max(
+            0.5,
+            min(30.0, self._number(
+                "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS", 4.0
+            )),
+        )
+        return_gate_wait_elapsed = max(0.0, hold_elapsed - lane_hold)
+        return_gate_timed_out = bool(
+            self.state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW}
+            and hold_elapsed >= lane_hold
+            and return_gate["enabled"]
+            and not return_gate["ready"]
+            and return_gate_wait_elapsed >= return_gate_max_wait
+        )
         return_gate_waiting = bool(
             self.state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW}
             and hold_elapsed >= lane_hold
             and return_gate["enabled"]
             and not return_gate["ready"]
+            and not return_gate_timed_out
         )
         return {
             "enabled": bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),
@@ -943,8 +1002,11 @@ class RangeObstacleAvoidance:
             "return_steering_max_percent": return_gate["maximum_percent"],
             "return_steering_gate_ready": return_gate["ready"],
             "return_steering_gate_waiting": return_gate_waiting,
+            "return_steering_gate_timed_out": return_gate_timed_out,
+            "return_steering_gate_max_wait_seconds": return_gate_max_wait,
             "return_steering_gate_wait_seconds": (
-                max(0.0, hold_elapsed - lane_hold) if return_gate_waiting else 0.0
+                min(return_gate_max_wait, return_gate_wait_elapsed)
+                if return_gate_waiting else 0.0
             ),
             "ranges_cm": dict(self.last_ranges),
             "front_clear_observations": int(self.clear_observations),

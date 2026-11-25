@@ -508,9 +508,15 @@ class VisionProcessor:
                 base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
             self._lane_boundary_tracker.set_geometry_mode(geometry_mode)
             if simulator_backend in ("carla", "avis"):
+                preserve_lane_width = bool(
+                    simulator_backend == "avis"
+                    and getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_BYPASS", False)
+                    and not hall_handoff_requested
+                )
                 recovery = self._lane_boundary_tracker.recovery_rois(
                     base_left_roi, base_right_roi, frame.shape,
                     geometry_mode=geometry_mode,
+                    preserve_lane_width=preserve_lane_width,
                 )
             else:
                 recovery = {
@@ -692,16 +698,31 @@ class VisionProcessor:
                     "transfer_reason": transfer.get("reason"),
                 }
             elif simulator_joint_tracking:
-                # Keep the same detector path on each frame so recovery does not
-                # alternate between masked normal ROIs and unmasked crops.
-                _left_edges, tracking_left_lines = detect_recovery_lines(
-                    frame, tracking_left_roi, conf, self._morph_kernel,
-                    side="left", mirrored=ll_mirrored,
-                )
-                _right_edges, tracking_right_lines = detect_recovery_lines(
-                    frame, tracking_right_roi, conf, self._morph_kernel,
-                    side="right", mirrored=rl_mirrored,
-                )
+                # Keep a consistent detector path. Without cross-ROI identity
+                # handoff, validate the active maneuver ROI independently and
+                # infer its opposite boundary from the retained lane-width model.
+                if active_maneuver_roi in {"left", "right"} and not hall_handoff_requested:
+                    if active_maneuver_roi == "left":
+                        _left_edges, tracking_left_lines = detect_recovery_lines(
+                            frame, tracking_left_roi, conf, self._morph_kernel,
+                            side="left", mirrored=ll_mirrored,
+                        )
+                        tracking_right_lines = None
+                    else:
+                        tracking_left_lines = None
+                        _right_edges, tracking_right_lines = detect_recovery_lines(
+                            frame, tracking_right_roi, conf, self._morph_kernel,
+                            side="right", mirrored=rl_mirrored,
+                        )
+                else:
+                    _left_edges, tracking_left_lines = detect_recovery_lines(
+                        frame, tracking_left_roi, conf, self._morph_kernel,
+                        side="left", mirrored=ll_mirrored,
+                    )
+                    _right_edges, tracking_right_lines = detect_recovery_lines(
+                        frame, tracking_right_roi, conf, self._morph_kernel,
+                        side="right", mirrored=rl_mirrored,
+                    )
             else:
                 if recovery["left"]["expanded"] or recovery["left"].get("recheck", False):
                     _left_edges, tracking_left_lines = detect_recovery_lines(

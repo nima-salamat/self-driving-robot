@@ -64,6 +64,44 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             right_prediction_valid=right_prediction_valid,
         )
 
+    def test_roi_switch_can_preserve_lane_width_without_reusing_old_line_ids(self):
+        self.tracker.set_roi_configuration(
+            self.LEFT_ROI, self.RIGHT_ROI, self.FRAME_SHAPE
+        )
+        self.update(left_x=220.0, right_x=420.0)
+        learned_width = self.tracker._lane_width_px
+        self.assertIsNotNone(learned_width)
+        self.assertIsNotNone(self.tracker._sides["left"].track_id)
+
+        maneuver_left_roi = (20, 300, 250, 440)
+        self.tracker.recovery_rois(
+            maneuver_left_roi,
+            self.RIGHT_ROI,
+            self.FRAME_SHAPE,
+            geometry_mode="perspective",
+            preserve_lane_width=True,
+        )
+
+        self.assertAlmostEqual(self.tracker._lane_width_px, learned_width, delta=0.01)
+        self.assertIsNone(self.tracker._sides["left"].track_id)
+        self.assertIsNone(self.tracker._sides["right"].track_id)
+
+        left_lines = self.line_for_global_x(maneuver_left_roi, 230.0, dx=-8.0)
+        result = self.tracker.update(
+            left_lines=left_lines,
+            right_lines=None,
+            frame_shape=self.FRAME_SHAPE,
+            left_roi=maneuver_left_roi,
+            right_roi=self.RIGHT_ROI,
+            reference_center_x=320.0,
+            geometry_mode="perspective",
+            left_preferred_index=0,
+        )
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["lane_type"], "only_left")
+        self.assertTrue(result["left"]["observed"])
+        self.assertAlmostEqual(result["lane_width_px"], learned_width, delta=1.0)
+
     def test_candidate_limit_preserves_preferred_index_and_original_hough_index(self):
         tracker = LaneBoundaryTracker(max_candidates=8)
         lines = [

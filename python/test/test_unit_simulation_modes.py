@@ -400,6 +400,7 @@ class SimulatorSettingsTests(unittest.TestCase):
             saved = json.loads(legacy_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["SIMULATOR_AVIS_SAFETY_PROFILE_VERSION"], 2)
             self.assertTrue(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"])
+            self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS"], 4.0)
             self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT"], 10)
             self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT"], -10.0)
             self.assertEqual(saved["SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"], 10.0)

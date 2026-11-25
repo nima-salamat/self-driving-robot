@@ -106,8 +106,10 @@ class LaneBoundaryTracker:
         self._geometry_mode = normalized
         return normalized
 
-    def set_roi_configuration(self, left_roi, right_roi, frame_shape):
-        """Invalidate old tracks if the user's ROI geometry or frame size changes."""
+    def set_roi_configuration(
+        self, left_roi, right_roi, frame_shape, preserve_lane_width=False
+    ):
+        """Invalidate ROI-specific tracks while optionally retaining calibrated width."""
         height, width = map(int, frame_shape[:2])
         signature = (
             self._roi_tuple(left_roi),
@@ -117,8 +119,16 @@ class LaneBoundaryTracker:
         )
         if self._roi_signature is not None and signature != self._roi_signature:
             geometry_mode = self._geometry_mode
+            lane_width = self._lane_width_px if preserve_lane_width else None
+            lane_width_profile = (
+                copy.deepcopy(self._lane_width_profile)
+                if preserve_lane_width else None
+            )
             self.reset()
             self._geometry_mode = geometry_mode
+            if lane_width is not None and math.isfinite(float(lane_width)) and lane_width > 0:
+                self._lane_width_px = float(lane_width)
+                self._lane_width_profile = lane_width_profile
         self._roi_signature = signature
         return signature
 
@@ -1221,8 +1231,11 @@ class LaneBoundaryTracker:
             ),
         }
 
-    def recovery_rois(self, left_roi, right_roi, frame_shape,
-                     max_expansion_fraction=0.18, geometry_mode=None):
+    def recovery_rois(
+        self, left_roi, right_roi, frame_shape,
+        max_expansion_fraction=0.18, geometry_mode=None,
+        preserve_lane_width=False,
+    ):
         """Return bounded recovery crops justified by the current lane geometry.
 
         The user's configured ROI is never modified. While one boundary is
@@ -1243,7 +1256,10 @@ class LaneBoundaryTracker:
         frame_height, frame_width = map(int, frame_shape[:2])
         frame_height = max(1, frame_height)
         frame_width = max(1, frame_width)
-        self.set_roi_configuration(left_roi, right_roi, frame_shape)
+        self.set_roi_configuration(
+            left_roi, right_roi, frame_shape,
+            preserve_lane_width=preserve_lane_width,
+        )
         boxes = {
             "left": self._roi_tuple(left_roi),
             "right": self._roi_tuple(right_roi),
