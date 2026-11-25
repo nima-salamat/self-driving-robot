@@ -387,8 +387,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("HALL_LINE_TRACKING_REACQUIRE_FRAMES must be between 1 and 10")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
                 raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
-            if key == "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION" and value not in {0, 1}:
-                raise ValueError("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION must be 0 or 1")
+            if key == "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION" and value not in {0, 1, 2}:
+                raise ValueError("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION must be 0, 1, or 2")
         elif key in NUMERIC_KEYS:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be a finite number")
