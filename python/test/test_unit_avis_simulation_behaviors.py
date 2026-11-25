@@ -220,6 +220,10 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
             SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES=2,
+        SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=False,
+        SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT=10,
+        SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT=-10.0,
+        SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT=10.0,
             SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.5,
             SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=80.0,
             SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=65.0,
@@ -265,6 +269,82 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
         self.assertAlmostEqual(returning.steering, 0.65)
         self.assertIsNone(controller.prepare_vision())
+
+    def test_return_steering_gate_waits_for_mean_band_after_minimum_lane_hold(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=True,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT=3,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT=-10.0,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT=10.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=70.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        controller.state = controller.PASS_LANE_FOLLOW
+        controller.pass_started_at = 10.0
+        controller.state_since = 10.0
+        ranges = {"left": 180.0, "front": 180.0, "right": 180.0}
+
+        def lane_command(steering):
+            return VehicleCommand(
+                steering=steering, throttle=0.1, brake=0.0,
+                servo_angle=95.0, target_speed=12.0, reason="lane PID",
+            )
+
+        # Time is already elapsed but the configured sample window is still filling.
+        for index in range(2):
+            command = lane_command(0.30)
+            result = controller.apply(command, ranges, perception_valid=True, now=10.6 + index * 0.1)
+            self.assertIs(result, command)
+            self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+
+        # A complete window outside the configured band must keep following the curve.
+        command = lane_command(0.30)
+        result = controller.apply(command, ranges, perception_valid=True, now=10.8)
+        self.assertIs(result, command)
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        stats = controller._return_steering_gate_stats()
+        self.assertEqual(stats["sample_count"], 3)
+        self.assertAlmostEqual(stats["mean_percent"], 30.0)
+        self.assertFalse(stats["ready"])
+
+        controller.apply(lane_command(-0.08), ranges, perception_valid=True, now=10.9)
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        returning = controller.apply(lane_command(0.04), ranges, perception_valid=True, now=11.0)
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertAlmostEqual(returning.steering, 0.70)
+        self.assertIn("mean steering", controller.last_reason)
+
+    def test_return_steering_gate_uses_signed_avis_percent_and_inclusive_band(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=True,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT=2,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT=-10.0,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT=10.0,
+        ))
+        controller.return_steering_history.extend([-10.0, 10.0])
+        stats = controller._return_steering_gate_stats()
+        self.assertAlmostEqual(stats["mean_percent"], 0.0)
+        self.assertTrue(stats["ready"])
+
+    def test_return_steering_gate_settings_are_validated(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED": True,
+            "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT": 10,
+            "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT": -10.0,
+            "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT": 10.0,
+        }, backend="avis")
+        self.assertTrue(clean["SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"])
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT"], 10)
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            _validate_settings({"SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT": 0}, backend="avis")
+        with self.assertRaisesRegex(ValueError, "minimum must be smaller"):
+            _validate_settings({
+                "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT": 10.0,
+                "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT": -10.0,
+            }, backend="avis")
+        with self.assertRaises(ValueError):
+            _validate_settings({"SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT": 100.1}, backend="avis")
 
     def test_right_roi_confirmation_restores_normal_lane_following(self):
         controller = RangeObstacleAvoidance(obstacle_config(
