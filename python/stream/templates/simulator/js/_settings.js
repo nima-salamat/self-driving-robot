@@ -52,6 +52,8 @@ function populate(s){
     "avis-angle":"SIMULATOR_AVIS_SENSOR_ANGLE","obstacle-stop-distance":"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "obstacle-trigger-distance":"SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
     "obstacle-clear-distance":"SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
+    "obstacle-clear-confirm-frames":"SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES",
+    "avis-front-range-grace":"SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS",
     "obstacle-side-clearance":"SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
     "obstacle-left-steering":"SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT",
     "obstacle-right-steering":"SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT",
