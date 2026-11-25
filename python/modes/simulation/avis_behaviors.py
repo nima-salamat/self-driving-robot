@@ -157,7 +157,7 @@ class RangeObstacleAvoidance:
 
     def _hall_handoff_enabled(self):
         """Whether this AVIS profile can use the paired Hall/Hough handoff path."""
-        return bool(getattr(self.config, "HALL_LINE_TRACKING_ENABLED", False)) and not bool(
+        return bool(getattr(self.config, "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED", False)) and not bool(
             getattr(self.config, "OLD_METHOD", False)
         ) and str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() == "avis" and str(
             getattr(self.config, "CITY_LANE_DETECTOR", "default")
