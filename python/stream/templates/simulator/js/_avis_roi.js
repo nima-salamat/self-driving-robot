@@ -19,6 +19,11 @@ let simRoiZoom=100;
 let simRoiMirrors={RL:false,LL:false};
 let simRoiSaveTimer=null,simRoiSaveInFlight=false,simRoiSaveQueued=false;
 const simRoiCanvas=$("sim-roi-canvas");
+const simRoiCameraStage=$("camera-stage");
+if(caps.simulator_backend==="avis"&&simRoiCanvas&&simRoiCameraStage&&simRoiCanvas.parentElement!==simRoiCameraStage){
+  // Keep the overlay in stage coordinates, independent from the fitted image box.
+  simRoiCameraStage.appendChild(simRoiCanvas);
+}
 function simRoiBounds(id){
   const def=simRoiDefs.find(function(item){return item.id===id;});if(!def)return null;
   const b={};Object.keys(def.fields).forEach(function(key){const el=$(def.fields[key]);b[key]=el&&el.value!==""?Number(el.value):NaN;});
@@ -116,11 +121,19 @@ function restoreSimRoiVisibility(){
   }
 }
 function fitSimulatorCameraFrame(){
-  const frame=$("sim-camera-frame"),wrap=frame&&frame.parentElement;
+  const frame=$("sim-camera-frame"),wrap=simRoiCameraStage||frame&&frame.parentElement;
   if(!frame||!wrap)return;
   const isAvis=caps.simulator_backend==="avis";
-  const editingBev=isAvis&&caps.supports_bev&&simRoiSelected==="BEV";
-  const margin=editingBev?0.17:0;
+  const master=$("sim-roi-overlay-toggle");
+  const bevVisible=document.querySelector('[data-sim-roi-visible="BEV"]');
+  const reserveBevSpace=!!(
+    isAvis&&caps.supports_bev
+    &&(!master||master.checked)
+    &&(!bevVisible||bevVisible.checked)
+  );
+  // Reserve a 17% margin on every side so BEV handles can sit outside the image
+  // without being clipped by the camera stage.
+  const margin=reserveBevSpace?0.17:0;
   if(!camera.naturalWidth||!camera.naturalHeight){
     if(isAvis&&simRoiCanvas){
       simRoiCanvas.style.visibility="hidden";
@@ -131,14 +144,19 @@ function fitSimulatorCameraFrame(){
   const ratio=camera.naturalWidth/camera.naturalHeight;
   if(!Number.isFinite(ratio)||ratio<=0)return;
   const fitScale=1+margin*2;
-  const maxWidth=Math.max(1,wrap.clientWidth/fitScale);
-  const maxHeight=isAvis
-    ? Math.max(1,wrap.clientHeight/fitScale)
-    : Math.max(180,window.innerHeight*0.68);
-  let width=maxWidth,height=width/ratio;
-  if(height>maxHeight){height=maxHeight;width=height*ratio;}
+  const availableWidth=Math.max(1,wrap.clientWidth);
+  const availableHeight=isAvis
+    ?Math.max(1,wrap.clientHeight)
+    :Math.max(180,window.innerHeight*0.68);
+  let width=availableWidth/fitScale;
+  let height=width/ratio;
+  if(height>availableHeight/fitScale){
+    height=availableHeight/fitScale;
+    width=height*ratio;
+  }
   const zoom=Math.max(50,Math.min(100,Number(simRoiZoom)||100))/100;
-  width*=zoom;height*=zoom;
+  width*=zoom;
+  height*=zoom;
   if(isAvis){
     frame.style.position="absolute";
     frame.style.left="50%";
@@ -146,18 +164,25 @@ function fitSimulatorCameraFrame(){
     frame.style.right="auto";
     frame.style.bottom="auto";
     frame.style.transform="translate(-50%, -50%)";
-    frame.style.overflow=editingBev?"visible":"hidden";
+    frame.style.margin="0";
+    frame.style.maxWidth="none";
+    frame.style.maxHeight="none";
+    frame.style.overflow="visible";
   }
   frame.style.width=width+"px";
   frame.style.height=height+"px";
   if(isAvis&&simRoiCanvas){
+    // The canvas spans the whole camera stage. All ROI coordinates are mapped
+    // from the actual fitted image rectangle into this stable stage rectangle.
     simRoiCanvas.style.position="absolute";
-    simRoiCanvas.style.left=(-margin*100)+"%";
-    simRoiCanvas.style.top=(-margin*100)+"%";
-    simRoiCanvas.style.right="auto";
-    simRoiCanvas.style.bottom="auto";
-    simRoiCanvas.style.width=(fitScale*100)+"%";
-    simRoiCanvas.style.height=(fitScale*100)+"%";
+    simRoiCanvas.style.inset="0";
+    simRoiCanvas.style.left="0";
+    simRoiCanvas.style.top="0";
+    simRoiCanvas.style.right="0";
+    simRoiCanvas.style.bottom="0";
+    simRoiCanvas.style.width="100%";
+    simRoiCanvas.style.height="100%";
+    simRoiCanvas.style.zIndex="2";
     simRoiCanvas.style.visibility="visible";
     simRoiUpdateSelection();
   }
@@ -511,7 +536,7 @@ function bindSimRoiEditor(){
   simRoiCanvas.addEventListener("pointermove",simRoiPointerMove);
   simRoiCanvas.addEventListener("pointerup",simRoiPointerUp);
   simRoiCanvas.addEventListener("pointercancel",simRoiPointerUp);
-  window.addEventListener("resize",drawSimRoiOverlay);camera.addEventListener("load",drawSimRoiOverlay);
-  simRoiUpdateSelection();drawSimRoiOverlay();
+  window.addEventListener("resize",fitSimulatorCameraFrame);camera.addEventListener("load",fitSimulatorCameraFrame);
+  simRoiUpdateSelection();fitSimulatorCameraFrame();
 }
 bindSimRoiEditor();
