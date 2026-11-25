@@ -350,3 +350,17 @@ body.avis-workbench .settings-search-result:focus-visible{outline:2px solid #79b
 }
 
 </style>
+
+/* Keep the Settings title and its primary actions visible without scrolling. */
+body.avis-workbench .sim-settings-panel>.sim-settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px}
+body.avis-workbench .sim-settings-head>h2{flex:0 0 auto;margin:0;font-size:14px;font-weight:750;color:#edf6ff}
+body.avis-workbench .sim-settings-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex:0 0 auto;margin-left:auto}
+body.avis-workbench .sim-settings-head-actions button{min-height:32px;height:32px;padding:6px 10px;border-radius:7px;font-size:11px;font-weight:700;white-space:nowrap}
+body.avis-workbench .sim-settings-head-actions #reload-settings{border-color:#40566b;background:#1b2937;color:#c9d9e7}
+body.avis-workbench .sim-settings-head-actions #save-settings{background:#24516f;border-color:#477fa3;color:#f0f8ff}
+body.avis-workbench .sim-settings-head-actions button:disabled{opacity:.42}
+@media(max-width:520px){
+ body.avis-workbench .sim-settings-panel>.sim-settings-head{gap:7px;padding:10px}
+ body.avis-workbench .sim-settings-head-actions{gap:5px}
+ body.avis-workbench .sim-settings-head-actions button{height:30px;min-height:30px;padding:5px 7px;font-size:10px}
+}
