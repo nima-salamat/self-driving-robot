@@ -90,6 +90,14 @@ def _apply_forward_range_guard(command, ranges, *, backend, stop_distance_cm):
 
 
 class SimulationRuntime:
+    @staticmethod
+    def _should_auto_start_without_stream(config, backend):
+        """AVIS has no Start button without Stream, so arm it on process launch."""
+        return (
+            str(backend or "").strip().lower() == "avis"
+            and not bool(getattr(config, "STREAM", False))
+        )
+
     def __init__(self, config):
         self.config = config
         self.mode = str(getattr(config, "MODE", "carla"))
@@ -140,8 +148,18 @@ class SimulationRuntime:
         self._last_safe_stop_reason = None
         self._camera_editor_active = False
         self._scene_edit_active = False
-        # Every simulator starts disarmed. Reconnecting never auto-resumes motion.
-        self._run_enabled = False
+        # AVIS has no Start/Stop controls when Stream is disabled. In that
+        # headless mode, arm the initial run automatically; Stream-enabled AVIS
+        # and CARLA retain the explicit Start Run interlock.
+        self._run_enabled = self._should_auto_start_without_stream(
+            config, self.backend
+        )
+        if self._run_enabled:
+            self._record_event(
+                "info",
+                "AVIS autonomous run auto-armed because Stream is disabled; "
+                "sensor, perception and range safety stops remain active.",
+            )
         self._last_image_diagnostics = {}
         self._cycle_times = deque(maxlen=120)
         self._detection_times_ms = deque(maxlen=120)
@@ -695,9 +713,15 @@ class SimulationRuntime:
                         if not bool(getattr(self.adapter, "connected", False)):
                             if self._run_enabled:
                                 self._run_enabled = False
+                                recovery_action = (
+                                    "restart the AVIS process after camera frames return; "
+                                    "this run has no Stream controls."
+                                    if not bool(getattr(self.config, "STREAM", False))
+                                    else "press Start after camera frames return."
+                                )
                                 self._record_event(
                                     "info",
-                                    "AVIS link lost; autonomy disarmed. Press Start after camera frames return.",
+                                    "AVIS link lost; autonomy disarmed. " + recovery_action,
                                 )
                             stop_reason = "AVIS camera link is reconnecting; vehicle braked and run disarmed."
                         else:
@@ -709,10 +733,16 @@ class SimulationRuntime:
                             missing_age = float(camera_diag.get("missing_image_duration_s") or 0.0)
                             if self._run_enabled and missing_count >= 30 and missing_age >= 5.0:
                                 self._run_enabled = False
+                                recovery_action = (
+                                    "restart the AVIS process after the camera stream is healthy; "
+                                    "this run has no Stream controls."
+                                    if not bool(getattr(self.config, "STREAM", False))
+                                    else "an explicit Start Run command is required."
+                                )
                                 self._record_event(
                                     "error",
                                     "AVIS camera stream stayed unavailable for at least 5 seconds; "
-                                    "autonomy was disarmed and will require an explicit Start Run.",
+                                    "autonomy was disarmed and " + recovery_action,
                                     log=False,
                                 )
                         self._safe_stop(stop_reason, level="info", set_error=False)
