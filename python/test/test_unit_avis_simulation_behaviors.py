@@ -167,6 +167,28 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
         self.assertEqual(controller.prepare_vision(), "left")
 
+    def test_sensor_gated_direct_departure_can_start_after_normal_lane_is_lost(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=88.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        lost_lane = VehicleCommand(
+            steering=0.0, throttle=0.0, brake=1.0,
+            servo_angle=95.0, target_speed=0.0,
+            reason="no valid lane; simulator braking",
+        )
+        command = controller.apply(
+            lost_lane,
+            {"left": 180.0, "front": 80.0, "right": 180.0},
+            perception_valid=False,
+            now=1.0,
+        )
+
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertAlmostEqual(command.steering, -0.88)
+        self.assertEqual(command.brake, 0.0)
+        self.assertGreater(command.throttle, 0.0)
+
     def test_left_roi_needs_confirmed_frames_then_pid_tracks_passing_lane(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
