@@ -182,7 +182,6 @@ def _defaults(mode, backend):
         "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race" and backend != "avis",
         # AVIS City has a solid stop line rather than a crosswalk. Keep the
         # existing City processor's crosswalk path active for CARLA and physical City.
-        "SIMULATOR_CROSSWALK_DETECTION_ENABLED": backend != "avis",
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
         "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": False,
         "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 100.0,
