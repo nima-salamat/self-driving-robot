@@ -21,13 +21,39 @@ import numpy as np
 class HallLineTracker:
     """Keep line identities stable across camera frames."""
 
-    def __init__(self, max_missed_frames: int = 4, max_candidates: int = 128):
+    def __init__(self, max_missed_frames: int = 4, max_candidates: int = 48, max_tracks: int = 96):
         self.max_missed_frames = max(1, int(max_missed_frames))
         self.max_candidates = max(8, int(max_candidates))
+        self.max_tracks = max(16, int(max_tracks))
         self._tracks = {}
         self._next_track_id = 1
         self._selected_track_id = None
         self._ever_selected = False
+
+    def _prune_tracks(self):
+        """Bound history growth while never evicting the currently selected line."""
+        if len(self._tracks) <= self.max_tracks:
+            return []
+        selected_id = self._selected_track_id
+        ranked = sorted(
+            self._tracks.items(),
+            key=lambda item: (
+                0 if item[0] == selected_id else 1,
+                int(item[1].get("missed", 0)),
+                -int(item[1].get("hits", 0)),
+                -int(item[1].get("age", 0)),
+                int(item[0]),
+            ),
+        )
+        keep = {track_id for track_id, _track in ranked[:self.max_tracks]}
+        if selected_id in self._tracks:
+            keep.add(selected_id)
+        removed = []
+        for track_id in list(self._tracks):
+            if track_id not in keep:
+                self._tracks.pop(track_id, None)
+                removed.append(int(track_id))
+        return removed
 
     def reset(self):
         self._tracks.clear()
@@ -293,6 +319,7 @@ class HallLineTracker:
         matching = self._maximum_matching(adjacency, len(detections))
         detection_to_track = {}
         matched_track_ids = set()
+        matched_detection_indices = set(matching.values())
         stable_lines = []
 
         for track_index, detection_index in matching.items():
@@ -311,6 +338,7 @@ class HallLineTracker:
             track["age"] += 1
             detection_to_track[detection_index] = track_id
             matched_track_ids.add(track_id)
+            matched_detection_indices.add(detection_index)
             stable_lines.append(detection["line"])
 
         expired_track_ids = []
@@ -332,6 +360,8 @@ class HallLineTracker:
                 "vx": 0.0, "vy": 0.0, "hits": 1, "age": 1, "missed": 0,
             }
             detection_to_track[detection_index] = track_id
+
+        budget_pruned_track_ids = self._prune_tracks()
 
         selected_track = self._tracks.get(self._selected_track_id)
         state, selected_line, selected_midpoint = "LOST", None, None
@@ -389,7 +419,6 @@ class HallLineTracker:
             for index, (track_id, _track) in enumerate(previous)
             if index not in matching
         ]
-        matched_detection_indices = set(matching.values())
         unmatched_candidate_indices = [
             int(item["original_index"])
             for index, item in enumerate(detections)
@@ -399,7 +428,7 @@ class HallLineTracker:
             {
                 "candidate_index": int(item["original_index"]),
                 "track_id": int(detection_to_track[index]),
-                "matched": index in matching.values(),
+                "matched": index in matched_detection_indices,
                 "hits": int(self._tracks[detection_to_track[index]]["hits"]),
             }
             for index, item in enumerate(detections)
@@ -431,7 +460,7 @@ class HallLineTracker:
             "unmatched_track_ids": unmatched_track_ids,
             "unmatched_candidate_indices": unmatched_candidate_indices,
             "matched_track_ids": sorted(int(track_id) for track_id in matched_track_ids),
-            "expired_track_ids": sorted(set(expired_track_ids)),
+            "expired_track_ids": sorted(set(expired_track_ids + budget_pruned_track_ids)),
             "missed_frames": missed,
             "candidate_tracks": candidate_tracks,
             "stable_lines": stable_lines,
