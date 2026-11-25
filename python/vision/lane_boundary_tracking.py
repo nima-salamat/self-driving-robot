@@ -119,6 +119,151 @@ class LaneBoundaryTracker:
         self._roi_signature = signature
         return signature
 
+    def handoff_side(self, source_side, target_side):
+        """Move one confirmed physical boundary track to the opposite ROI owner.
+
+        The learned lane-width model is deliberately preserved. That lets the
+        target ROI infer the other boundary while the source ROI is disabled.
+        """
+        source_side = str(source_side or "").strip().lower()
+        target_side = str(target_side or "").strip().lower()
+        if source_side not in self._sides or target_side not in self._sides:
+            return {"ok": False, "reason": "invalid_side"}
+        if source_side == target_side:
+            return {"ok": False, "reason": "source_and_target_are_identical"}
+
+        source = self._sides[source_side]
+        if source.track_id is None or source.x_px is None or source.line_global is None:
+            return {"ok": False, "reason": "source_boundary_has_no_confirmed_track"}
+        if self._lane_width_px is None or not math.isfinite(float(self._lane_width_px)):
+            return {"ok": False, "reason": "lane_width_model_unavailable"}
+
+        inherited_state = copy.deepcopy(source)
+        inherited_hall = copy.deepcopy(self._hall[source_side])
+        self._sides[target_side] = inherited_state
+        self._hall[target_side] = inherited_hall
+
+        self._sides[source_side] = _BoundaryState()
+        self._hall[source_side].reset()
+        self._reacquiring_pair = False
+        self._pair_pending = None
+        self._reacquisition_diagnostics = {
+            side: {"attempted": False, "reason": "hall_handoff"}
+            for side in ("left", "right")
+        }
+        return {
+            "ok": True,
+            "source_side": source_side,
+            "target_side": target_side,
+            "track_id": int(inherited_state.track_id),
+            "x_px": float(inherited_state.x_px),
+            "lane_width_px": float(self._lane_width_px),
+        }
+
+    def handoff_search_roi(
+        self,
+        target_side,
+        base_roi,
+        frame_shape,
+        max_expansion_fraction=0.50,
+    ):
+        """Expand only the target ROI's inner edge until it covers its inherited line.
+
+        A right-side ROI expands leftward; a left-side ROI expands rightward.
+        The user's configured ROI remains untouched and expansion is bounded.
+        """
+        target_side = str(target_side or "").strip().lower()
+        if target_side not in self._sides:
+            return {
+                "valid": False,
+                "reason": "invalid_target_side",
+                "roi": base_roi,
+                "expanded": False,
+            }
+
+        frame_height, frame_width = map(int, frame_shape[:2])
+        frame_height = max(1, frame_height)
+        frame_width = max(1, frame_width)
+        box = self._roi_tuple(base_roi)
+        left, top, right, bottom = box
+        state = self._sides[target_side]
+        if state.track_id is None or state.line_global is None or self._lane_width_px is None:
+            return {
+                "valid": False,
+                "reason": "inherited_boundary_unavailable",
+                "roi": box,
+                "configured_roi": box,
+                "expanded": False,
+                "expected_x": None,
+                "track_id": state.track_id,
+            }
+
+        rows = np.linspace(float(top), float(max(top, bottom - 1)), 7)
+        sample_x = [
+            self._line_x_at(state.line_global, float(row))
+            for row in rows
+        ]
+        if (
+            len(sample_x) != len(rows)
+            or any(value is None or not math.isfinite(float(value)) for value in sample_x)
+            or min(sample_x) < 0.0
+            or max(sample_x) >= float(frame_width)
+        ):
+            return {
+                "valid": False,
+                "reason": "inherited_boundary_outside_frame",
+                "roi": box,
+                "configured_roi": box,
+                "expanded": False,
+                "expected_x": float(state.x_px),
+                "track_id": int(state.track_id),
+            }
+
+        try:
+            expansion_fraction = float(max_expansion_fraction)
+        except (TypeError, ValueError, OverflowError):
+            expansion_fraction = 0.50
+        if not math.isfinite(expansion_fraction):
+            expansion_fraction = 0.50
+        expansion_fraction = max(0.05, min(0.75, expansion_fraction))
+        max_extra = max(1, int(round(frame_width * expansion_fraction)))
+        margin = max(4, int(round((right - left) * 0.08)))
+        minimum_x = float(min(sample_x))
+        maximum_x = float(max(sample_x))
+
+        search_left, search_right = left, right
+        if target_side == "right":
+            desired_left = int(math.floor(minimum_x - margin))
+            lower_limit = max(0, left - max_extra)
+            search_left = max(lower_limit, min(left, desired_left))
+            contained = search_left <= minimum_x - margin + 1.0
+        else:
+            desired_right = int(math.ceil(maximum_x + margin)) + 1
+            upper_limit = min(frame_width, right + max_extra)
+            search_right = min(upper_limit, max(right, desired_right))
+            contained = search_right >= maximum_x + margin
+
+        search_roi = (search_left, top, search_right, bottom)
+        valid = bool(
+            contained
+            and search_right > search_left
+            and search_left <= minimum_x
+            and maximum_x < search_right
+        )
+        return {
+            "valid": valid,
+            "reason": "inherited_line_inside_expanded_roi" if valid else "handoff_expansion_limit_reached",
+            "roi": search_roi if valid else box,
+            "configured_roi": box,
+            "expanded": search_roi != box if valid else False,
+            "expected_x": float(state.x_px),
+            "expected_x_min": minimum_x,
+            "expected_x_max": maximum_x,
+            "track_id": int(state.track_id),
+            "max_expansion_px": int(max_extra),
+            "margin_px": int(margin),
+        }
+
     @staticmethod
     def _angle_delta(a, b):
         return abs(float(a) - float(b))
