@@ -24,8 +24,16 @@ SIMULATOR_KEYS = {
     "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
     "SIMULATOR_OBSTACLE_THROTTLE_LIMIT", "SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT",
     "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT", "SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
     "SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS", "SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS",
-    "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", "ML_TOP_ROI", "ML_BOTTOM_ROI", "ML_LEFT_ROI", "ML_RIGHT_ROI",
+    "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
+    "ML_TOP_ROI", "ML_BOTTOM_ROI", "ML_LEFT_ROI", "ML_RIGHT_ROI",
     "MR_TOP_ROI", "MR_BOTTOM_ROI", "MR_LEFT_ROI", "MR_RIGHT_ROI", "SIMULATOR_STOP_LINE_ENABLED",
     "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_STOP_LINE_THRESHOLD",
     "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO", "SIMULATOR_STOP_LINE_MIN_AREA",
@@ -64,7 +72,9 @@ SIMULATOR_KEYS = {
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
-    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_STOP_LINE_ENABLED",
+    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED",
+    "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED",
+    "SIMULATOR_STOP_LINE_ENABLED",
     "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_SIGN_ACTIONS_ENABLED",
     "HALL_LINE_TRACKING_ENABLED", "USE_PID", "AUTO_UPDATE_KP",
     "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
@@ -219,6 +229,10 @@ def _defaults(mode, backend):
         "SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS": 3.0,
         "SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS": 4.0,
         "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES": 2,
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED": False,
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT": 10,
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT": -10.0,
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT": 10.0,
         "ML_TOP_ROI": 0.62, "ML_BOTTOM_ROI": 0.98,
         "ML_LEFT_ROI": 0.02, "ML_RIGHT_ROI": 0.42,
         "MR_TOP_ROI": 0.62, "MR_BOTTOM_ROI": 0.98,
@@ -347,6 +361,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("SIMULATOR_SIGN_SCAN_INTERVAL must be between 1 and 120")
             if key == "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES" and not 1 <= value <= 10:
                 raise ValueError("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES must be between 1 and 10")
+            if key == "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT" and not 1 <= value <= 100:
+                raise ValueError("SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT must be between 1 and 100")
             if key in {"TL_MIN_SATURATION", "TL_MIN_VALUE"} and not 0 <= value <= 255:
                 raise ValueError(f"{key} must be between 0 and 255")
             if key in {"TL_RED_HUE_MIN", "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN",
@@ -399,6 +415,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("SIMULATOR_OBSTACLE_STEERING_OFFSET must be between 0.05 and 1")
             if key in {"SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT", "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT"} and not 0 <= value <= 100:
                 raise ValueError(f"{key} must be between 0 and 100 percent")
+            if key in {"SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT", "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"} and not -100 <= value <= 100:
+                raise ValueError(f"{key} must be between -100 and 100 AVIS percent")
             if key == "SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS" and not 0 <= value <= 5:
                 raise ValueError("SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS must be between 0 and 5 seconds")
             if key == "SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS" and not 0.2 <= value <= 10:
@@ -477,6 +495,13 @@ def _validate_settings(data, backend=None):
     if "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM" in clean and "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in clean:
         if clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"] <= clean["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"]:
             raise ValueError("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM must exceed the emergency stop distance")
+    steering_band = (
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
+        "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
+    )
+    if all(key in clean for key in steering_band):
+        if clean[steering_band[0]] >= clean[steering_band[1]]:
+            raise ValueError("return steering minimum must be smaller than its maximum")
     # Clear-distance hysteresis is clamped at runtime to at least
     # trigger_distance + 1 cm. Do not reject a high trigger setting merely
     # because the editable clear-distance field has a 500 cm upper bound.
