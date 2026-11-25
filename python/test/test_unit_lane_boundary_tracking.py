@@ -1261,5 +1261,35 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
         self.assertEqual(selected_candidate["candidate_index"], 9)
 
+    def test_handoff_rebases_reference_row_when_maneuver_roi_is_taller(self):
+        initial = self.update(left_x=220.0, right_x=420.0)
+        original_track_id = initial["left"]["track_id"]
+        inherited_line = self.tracker._sides["left"].line_global
+        self.assertEqual(self.tracker._sides["left"].reference_y_px, 370.0)
+
+        transfer = self.tracker.handoff_side("left", "right")
+        self.assertTrue(transfer["ok"])
+        search_roi = (200, 250, 560, 400)
+        top, bottom = search_roi[1], search_roi[3]
+        x_top = self.tracker._line_x_at(inherited_line, top)
+        x_bottom = self.tracker._line_x_at(inherited_line, bottom)
+        lines = np.asarray(
+            [[[x_top - search_roi[0], 0.0,
+               x_bottom - search_roi[0], float(bottom - top)]]],
+            dtype=np.float32,
+        )
+
+        result = self.tracker.update(
+            left_lines=None,
+            right_lines=lines,
+            frame_shape=self.FRAME_SHAPE,
+            left_roi=self.LEFT_ROI,
+            right_roi=search_roi,
+            reference_center_x=320.0,
+        )
+        self.assertTrue(result["right"]["observed"])
+        self.assertEqual(result["right"]["track_id"], original_track_id)
+        self.assertEqual(self.tracker._sides["right"].reference_y_px, 350.0)
+
 if __name__ == "__main__":
     unittest.main()
