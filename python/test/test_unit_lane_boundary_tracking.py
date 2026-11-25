@@ -1203,3 +1203,36 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_hall_handoff_transfers_track_identity_and_expands_opposite_roi(self):
+        initial = self.update(left_x=220.0, right_x=420.0)
+        original_track_id = initial["left"]["track_id"]
+        self.assertIsNotNone(original_track_id)
+
+        transfer = self.tracker.handoff_side("left", "right")
+        self.assertTrue(transfer["ok"])
+        self.assertEqual(transfer["track_id"], original_track_id)
+
+        search = self.tracker.handoff_search_roi(
+            "right", self.RIGHT_ROI, self.FRAME_SHAPE,
+        )
+        self.assertTrue(search["valid"])
+        self.assertTrue(search["expanded"])
+        self.assertLess(search["roi"][0], self.RIGHT_ROI[0])
+        self.assertLessEqual(search["roi"][0], 220.0)
+        self.assertGreater(search["roi"][2], 220.0)
+
+        handed_off_lines = self.line_for_global_x(search["roi"], 220.0, dx=-8.0)
+        result = self.tracker.update(
+            left_lines=None,
+            right_lines=handed_off_lines,
+            frame_shape=self.FRAME_SHAPE,
+            left_roi=self.LEFT_ROI,
+            right_roi=search["roi"],
+            reference_center_x=320.0,
+        )
+        self.assertTrue(result["right"]["observed"])
+        self.assertEqual(result["right"]["track_id"], original_track_id)
+        self.assertFalse(result["left"]["observed"])
+        self.assertEqual(result["lane_type"], "only_right")
+
