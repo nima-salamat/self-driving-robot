@@ -433,6 +433,7 @@ class HallLineTracker:
                 "hits": int(self._tracks[detection_to_track[index]]["hits"]),
             }
             for index, item in enumerate(detections)
+            if detection_to_track[index] in self._tracks
         ]
         return {
             "state": state,
