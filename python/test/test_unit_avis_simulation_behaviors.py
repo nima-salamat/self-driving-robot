@@ -230,6 +230,84 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         )
         self.assertIn("rejoining original lane", returning.reason)
 
+    def test_lane_geometry_steers_toward_both_sides_and_back_for_servo_orientations(self):
+        for servo_direction in ("ltr", "rtl"):
+            for side, lane_direction, return_error in (
+                ("left", -1.0, 100.0),
+                ("right", 1.0, -100.0),
+            ):
+                with self.subTest(servo_direction=servo_direction, side=side):
+                    controller = RangeObstacleAvoidance(obstacle_config(
+                        SERVO_DIRECTION=servo_direction,
+                        KP=0.4,
+                        MIN_SERVO_ANGLE=55.0,
+                        SERVO_CENTER=95.0,
+                        MAX_SERVO_ANGLE=125.0,
+                        SIMULATOR_STEERING_INVERTED=False,
+                    ))
+                    controller.lane_direction = lane_direction
+                    controller.last_lane_quality = 0.9
+                    controller.last_lane_kp = 0.4
+                    geometry = {
+                        "enabled": True,
+                        "lane_error_px": 0.0,
+                        "lane_width_px": 100.0,
+                    }
+                    shifting = controller._target_lane_steering(
+                        base_command(), geometry, 0.5, 0.0,
+                        steering_authority=1.0,
+                    )
+                    returning_geometry = {
+                        **geometry,
+                        "lane_error_px": return_error,
+                    }
+                    returning = controller._target_lane_steering(
+                        base_command(), returning_geometry, 0.5, 0.0,
+                        steering_authority=1.0,
+                    )
+                    self.assertGreater(
+                        shifting * lane_direction, 0.0,
+                        f"must steer toward the {side} lane",
+                    )
+                    self.assertLess(
+                        returning * lane_direction, 0.0,
+                        f"must steer back toward the original lane from {side}",
+                    )
+
+    def test_lane_change_authority_can_use_full_range_in_both_fallback_directions(self):
+        for side, ranges, expected_sign in (
+            ("left", {"left": 180.0, "front": 80.0, "right": 90.0}, -1.0),
+            ("right", {"left": 90.0, "front": 80.0, "right": 180.0}, 1.0),
+        ):
+            with self.subTest(side=side):
+                controller = RangeObstacleAvoidance(obstacle_config(
+                    SIMULATOR_OBSTACLE_STEERING_OFFSET=1.0,
+                    SIMULATOR_STEERING_LIMIT=1.0,
+                    SIMULATOR_STEERING_RATE=10.0,
+                ))
+                controller.apply(
+                    base_command(), ranges, perception_valid=True, now=1.0,
+                )
+                shifted = controller.apply(
+                    base_command(), ranges, perception_valid=True, now=1.175,
+                )
+                self.assertGreater(
+                    shifted.steering * expected_sign, 0.35,
+                    f"{side} fallback maneuver should exceed the former 0.35 cap",
+                )
+
+    def test_lane_change_setting_accepts_full_normalized_authority(self):
+        clean = _validate_settings(
+            {"SIMULATOR_OBSTACLE_STEERING_OFFSET": 1.0},
+            backend="avis",
+        )
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_STEERING_OFFSET"], 1.0)
+        with self.assertRaises(ValueError):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_STEERING_OFFSET": 1.01},
+                backend="avis",
+            )
+
     def test_lane_change_waits_for_valid_lane_and_reports_why(self):
         controller = RangeObstacleAvoidance(obstacle_config())
         command = base_command()
