@@ -59,6 +59,9 @@ function populate(s){
     "obstacle-lane-hold":"SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS",
     "obstacle-roi-timeout":"SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS",
     "obstacle-roi-frames":"SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
+    "obstacle-return-steering-samples":"SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT",
+    "obstacle-return-steering-min":"SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
+    "obstacle-return-steering-max":"SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
     "obstacle-throttle-limit":"SIMULATOR_OBSTACLE_THROTTLE_LIMIT",
     "stop-line-threshold":"SIMULATOR_STOP_LINE_THRESHOLD",
     "stop-line-width":"SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO",
@@ -110,7 +113,7 @@ function populate(s){
   ["lidar-enabled","stop-lost-lane","stop-crosswalk","steering-inverted","use-bev","debug-overlay","ml-lane-enabled",
    "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable","hall-line-tracking",
    "pid-enabled","pid-auto-kp","obstacle-avoidance-enabled","stop-line-enabled",
-   "traffic-lights-enabled","sign-actions-enabled"].forEach(function(id){
+   "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
