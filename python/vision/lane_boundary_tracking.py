@@ -8,6 +8,7 @@ because it is the best Hough line in that ROI.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
 import math
 
 import numpy as np
