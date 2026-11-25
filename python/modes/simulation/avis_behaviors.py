@@ -55,7 +55,11 @@ class RangeObstacleAvoidance:
         self.config = config
         self.state = self.CLEAR
         self.direction = 0.0
+        self.lane_direction = 0.0
         self.selected_side = None
+        self.lane_geometry_active = False
+        self.last_lane_error_px = None
+        self.last_lane_width_px = None
         self.state_since = 0.0
         self.pass_started_at = 0.0
         self.distance_since_shift_cm = 0.0
@@ -86,7 +90,9 @@ class RangeObstacleAvoidance:
         self.last_reason = reason
         if state == self.CLEAR:
             self.direction = 0.0
+            self.lane_direction = 0.0
             self.selected_side = None
+            self.lane_geometry_active = False
         if state == self.SHIFT:
             self.distance_since_shift_cm = 0.0
         if state == self.PASS:
@@ -97,6 +103,58 @@ class RangeObstacleAvoidance:
     def _brake(self, command, reason):
         self.last_reason = reason
         return _brake(command, reason)
+
+
+    def _target_lane_steering(self, command, lane_tracking, progress, fallback):
+        """Track the adjacent-lane center when the vision tracker has geometry."""
+        self.lane_geometry_active = False
+        if not isinstance(lane_tracking, dict) or not lane_tracking.get("enabled"):
+            return fallback
+        if self.last_lane_quality is not None:
+            try:
+                if float(self.last_lane_quality) < 0.25:
+                    return fallback
+            except (TypeError, ValueError, OverflowError):
+                return fallback
+        try:
+            lane_error = float(lane_tracking.get("lane_error_px"))
+            lane_width = float(lane_tracking.get("lane_width_px"))
+            kp = float(getattr(self.config, "KP", 0.35))
+            minimum = float(getattr(self.config, "MIN_SERVO_ANGLE", 55.0))
+            center = float(getattr(self.config, "SERVO_CENTER", 95.0))
+            maximum = float(getattr(self.config, "MAX_SERVO_ANGLE", 125.0))
+        except (TypeError, ValueError, OverflowError):
+            return fallback
+        if not all(math.isfinite(value) for value in (
+            lane_error, lane_width, kp, minimum, center, maximum
+        )):
+            return fallback
+        if lane_width <= 1.0 or kp <= 0.0 or not minimum < center < maximum:
+            return fallback
+
+        # The current lane center moves in the image opposite to vehicle
+        # motion. A one-lane-width target offset therefore tracks progress
+        # toward the neighboring lane instead of applying a fixed steering
+        # nudge for the entire maneuver.
+        target_error = lane_error + self.lane_direction * lane_width * max(
+            0.0, min(1.0, float(progress))
+        )
+        servo_direction = str(
+            getattr(self.config, "SERVO_DIRECTION", "ltr")
+        ).lower()
+        correction = kp * target_error
+        target_angle = center - correction if servo_direction == "ltr" else center + correction
+        target_angle = max(minimum, min(maximum, target_angle))
+        if target_angle < center:
+            steering = (target_angle - center) / max(1.0, center - minimum)
+        else:
+            steering = (target_angle - center) / max(1.0, maximum - center)
+        if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
+            steering = -steering
+        self.lane_geometry_active = True
+        self.last_lane_error_px = round(lane_error, 2)
+        self.last_lane_width_px = round(lane_width, 2)
+        return max(-1.0, min(1.0, steering))
 
     def _steer_command(self, command, steering, throttle_cap, reason, now):
         steering_limit = max(
@@ -136,6 +194,7 @@ class RangeObstacleAvoidance:
         perception_valid,
         distance_delta_cm=0.0,
         lane_quality=None,
+        lane_tracking=None,
         now=None,
     ):
         now = time.monotonic() if now is None else float(now)
@@ -265,6 +324,7 @@ class RangeObstacleAvoidance:
             self.selected_side = side_name
             if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
                 direction = -direction
+            self.lane_direction = -1.0 if side_name == "left" else 1.0
             self.direction = direction
             self._set_state(
                 self.SHIFT, now,
@@ -277,9 +337,13 @@ class RangeObstacleAvoidance:
             if elapsed >= shift_duration:
                 self._set_state(self.PASS, now, "lane-change shift completed; holding bypass path")
                 progress = 1.0
+            target_steering = self._target_lane_steering(
+                command, lane_tracking, progress,
+                command.steering + self.direction * offset * progress,
+            )
             return self._steer_command(
                 command,
-                command.steering + self.direction * offset * progress,
+                target_steering,
                 throttle_cap,
                 f"obstacle lane change: shifting {('left' if self.direction < 0 else 'right')} ({progress:.0%})",
                 now,
@@ -313,9 +377,13 @@ class RangeObstacleAvoidance:
                     if front >= clear_distance
                     else "obstacle lane change: passing beside obstacle"
                 )
+                target_steering = self._target_lane_steering(
+                    command, lane_tracking, 1.0,
+                    command.steering + self.direction * offset * 0.78,
+                )
                 return self._steer_command(
                     command,
-                    command.steering + self.direction * offset * 0.78,
+                    target_steering,
                     throttle_cap,
                     reason,
                     now,
@@ -327,9 +395,13 @@ class RangeObstacleAvoidance:
                     self.PASS, now,
                     "obstacle re-entered forward range; holding bypass path",
                 )
+                target_steering = self._target_lane_steering(
+                    command, lane_tracking, 1.0,
+                    command.steering + self.direction * offset * 0.78,
+                )
                 return self._steer_command(
                     command,
-                    command.steering + self.direction * offset * 0.78,
+                    target_steering,
                     throttle_cap,
                     "obstacle lane change: obstacle remains ahead",
                     now,
@@ -341,9 +413,13 @@ class RangeObstacleAvoidance:
                 self._last_output_steering = command.steering
                 self._last_output_at = now
                 return command
+            target_steering = self._target_lane_steering(
+                command, lane_tracking, 1.0 - progress,
+                command.steering + self.direction * offset * 0.78 * (1.0 - progress),
+            )
             return self._steer_command(
                 command,
-                command.steering + self.direction * offset * 0.78 * (1.0 - progress),
+                target_steering,
                 throttle_cap,
                 f"obstacle lane change: rejoining original lane ({progress:.0%})",
                 now,
@@ -366,6 +442,13 @@ class RangeObstacleAvoidance:
                 "left" if self.direction < 0 else "right" if self.direction > 0 else None
             ) if self.state != self.CLEAR else None,
             "selected_side_sensor": self.selected_side,
+            "lane_direction": (
+                "left" if self.lane_direction < 0
+                else "right" if self.lane_direction > 0 else None
+            ),
+            "lane_geometry_active": bool(self.lane_geometry_active),
+            "lane_error_px": self.last_lane_error_px,
+            "lane_width_px": self.last_lane_width_px,
             "ranges_cm": dict(self.last_ranges),
             "lane_quality": self.last_lane_quality,
             "distance_since_shift_cm": round(self.distance_since_shift_cm, 1),
@@ -567,12 +650,14 @@ class AVISBehaviorCoordinator:
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
         lane_quality = (perception or {}).get("perception_quality")
+        lane_tracking = (perception or {}).get("line_tracking")
         obstacle_command = self.obstacles.apply(
             command,
             ranges,
             perception_valid=perception_valid,
             distance_delta_cm=distance_delta_cm,
             lane_quality=lane_quality,
+            lane_tracking=lane_tracking,
             now=now,
         )
         if self.obstacles.state != RangeObstacleAvoidance.CLEAR or obstacle_command is not command:
