@@ -126,6 +126,15 @@ async function poll(){
       const state=String(obstacle.state||"CLEAR").toUpperCase();
       setText("avis-behavior-value",state.replace(/_/g," "));
       const details=[];
+      const approach=behavior.approach_speed_control||{};
+      if(approach.state==="approach_speed_control"){
+        details.push("Approach speed "+numeric(approach.measured_speed_kmh,1)+
+          " → "+numeric(approach.target_speed_kmh,1)+" km/h · nearest "+
+          String(approach.nearest_sensor||"sensor").toUpperCase()+" "+
+          numeric(approach.nearest_distance_cm,0)+" cm");
+      }else if(approach.state==="speed_unavailable"){
+        details.push("Approach speed control · safe stop · AVIS speed feedback unavailable");
+      }
       if(caps.supports_obstacle_avoidance){
         details.push("Lane change "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
         const ranges=obstacle.ranges_cm||{};
