@@ -131,6 +131,13 @@ async function poll(){
         const ranges=obstacle.ranges_cm||{};
         const rangeText=value=>value==null?"—":numeric(value,0);
         details.push("Ranges L/F/R "+rangeText(ranges.left)+"/"+rangeText(ranges.front)+"/"+rangeText(ranges.right)+" cm");
+        const rangeSafety=(d.sensors||{}).range_safety||{};
+        if(caps.simulator_backend==="avis"&&rangeSafety.status){
+          const frontState=rangeSafety.status==="clear"
+            ? "CLEAR"
+            : "BRAKE · "+(rangeSafety.reason||rangeSafety.status);
+          details.push("Independent front guard "+frontState);
+        }
         if(obstacle.minimum_pass_distance_cm!=null){
           details.push("Pass "+numeric(obstacle.distance_since_shift_cm,0)+"/"+numeric(obstacle.minimum_pass_distance_cm,0)+" cm");
         }
