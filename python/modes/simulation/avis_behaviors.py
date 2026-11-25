@@ -161,7 +161,7 @@ class RangeObstacleAvoidance:
             getattr(self.config, "OLD_METHOD", False)
         ) and str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() == "avis" and str(
             getattr(self.config, "CITY_LANE_DETECTOR", "default")
-        ).lower() != "blsf-beta"
+        ).lower().find("blsf") < 0
 
     def _remember_lane_tracking(self, lane_tracking):
         if not isinstance(lane_tracking, dict):
