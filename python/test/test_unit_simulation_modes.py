@@ -47,6 +47,29 @@ class AvisEngineProtocolTests(unittest.TestCase):
         self.assertIn("ImageStatus:0,SensorStatus:0", sock.sent[0])
         car.sock = None
 
+    def test_get_data_preserves_fractional_range_sensor_values(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        source = np.full((12, 16, 3), 127, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", source)
+        self.assertTrue(ok)
+        payload = (
+            b"<image>" + base64.b64encode(encoded.tobytes()) + b"</image>"
+            + b"<sensor>21.5,30.75,-1</sensor><speed>0</speed><EOF>"
+        )
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertEqual(car.getSensors(), [21.5, 30.75, -1])
+        car.sock = None
+
     def test_get_data_decodes_tagged_jpeg_using_legacy_avis_protocol(self):
         class FakeSocket:
             def __init__(self, payload):
@@ -1834,6 +1857,7 @@ class VirtualControllerTests(unittest.TestCase):
             self.assertEqual(frame.image.shape, (12, 16, 3))
             self.assertEqual(frame.ranges_cm, {"left": 21.0, "front": 30.5, "right": None})
             self.assertFalse(frame.sensor_status["ranges_available"])
+            self.assertTrue(frame.sensor_status["front_range_available"])
             self.assertEqual(frame.sensor_status["range_sensor_count"], 3)
             self.assertIsNone(frame.lidar_points)
             command = VehicleCommand(0.25, 0.2, 0.0, 105, 20, "test")
