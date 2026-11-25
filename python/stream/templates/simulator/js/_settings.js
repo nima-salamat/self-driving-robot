@@ -109,6 +109,8 @@ function populate(s){
     "bev-bl-x":"BEV_SRC_BL_X","bev-bl-y":"BEV_SRC_BL_Y",
     "rl-top":"RL_TOP_ROI","rl-bottom":"RL_BOTTOM_ROI","rl-left":"RL_LEFT_ROI","rl-right":"RL_RIGHT_ROI",
     "ll-top":"LL_TOP_ROI","ll-bottom":"LL_BOTTOM_ROI","ll-left":"LL_LEFT_ROI","ll-right":"LL_RIGHT_ROI",
+    "ml-top":"ML_TOP_ROI","ml-bottom":"ML_BOTTOM_ROI","ml-left":"ML_LEFT_ROI","ml-right":"ML_RIGHT_ROI",
+    "mr-top":"MR_TOP_ROI","mr-bottom":"MR_BOTTOM_ROI","mr-left":"MR_LEFT_ROI","mr-right":"MR_RIGHT_ROI",
     "cw-top":"CW_TOP_ROI","cw-bottom":"CW_BOTTOM_ROI","cw-left":"CW_LEFT_ROI","cw-right":"CW_RIGHT_ROI"
   };
   Object.keys(fields).forEach(function(id){ if($(id)&&s[fields[id]]!==undefined) $(id).value=s[fields[id]]; });
