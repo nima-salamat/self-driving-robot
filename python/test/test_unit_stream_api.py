@@ -45,6 +45,43 @@ class StreamApiTests(unittest.TestCase):
             OUTPUT_DIR="output",
         )
 
+    def test_maneuver_roi_selectors_are_available_in_stream_workspace(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1] / "stream"
+        workspace = (root / "templates" / "stream" / "partials" / "_workspace.html").read_text(encoding="utf-8")
+        runtime = (root / "static" / "stream-runtime.js").read_text(encoding="utf-8")
+        overlays = (root / "static" / "stream-overlays.js").read_text(encoding="utf-8")
+        self.assertIn('option value="ML">Maneuver Left ROI (ML)</option>', workspace)
+        self.assertIn('option value="MR">Maneuver Right ROI (MR)</option>', workspace)
+        self.assertIn("ML:'Maneuver Left ROI',MR:'Maneuver Right ROI'", runtime)
+        self.assertIn("const prefix=group+'_';", overlays)
+        self.assertIn("'ML','MR'", overlays)
+
+    def test_avis_maneuver_roi_updates_are_saved_to_mode_specific_profile(self):
+        from modes.simulation.settings import load_simulator_settings
+
+        config = self.make_config()
+        config.MODE = "avis"
+        config.SIMULATOR_BACKEND = "avis"
+        config.BASE_DIR = self._stream_test_directory.name
+        config.STREAM_ALLOW_CONTROL = True
+        load_simulator_settings(config, "avis", "avis")
+        client = WebStreamer(config).app.test_client()
+
+        response = client.post(
+            "/update_conf",
+            json={"ML_LEFT_ROI": 0.08, "ML_RIGHT_ROI": 0.46},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        persisted_path = Path(self._stream_test_directory.name) / "avis.sim.json"
+        persisted = json.loads(persisted_path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["ML_LEFT_ROI"], 0.08)
+        self.assertEqual(persisted["ML_RIGHT_ROI"], 0.46)
+        self.assertEqual(config.ML_LEFT_ROI, 0.08)
+        self.assertEqual(config.ML_RIGHT_ROI, 0.46)
+
     def test_roi_updates_reject_inverted_rectangles_before_mutation(self):
         config = self.make_config()
         config.STREAM_ALLOW_CONTROL = True
