@@ -161,7 +161,9 @@ class RangeObstacleAvoidance:
             getattr(self.config, "OLD_METHOD", False)
         ) and str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() == "avis" and str(
             getattr(self.config, "CITY_LANE_DETECTOR", "default")
-        ).lower().find("blsf") < 0
+).lower().find("blsf") < 0 and not bool(
+            getattr(self.config, "USE_ML_LANE_DETECTOR", False)
+        )
 
     def _remember_lane_tracking(self, lane_tracking):
         if not isinstance(lane_tracking, dict):
@@ -329,6 +331,13 @@ class RangeObstacleAvoidance:
         front = self.last_ranges["front"]
         left = self.last_ranges["left"]
         right = self.last_ranges["right"]
+
+        if self._handoff_plan is not None and not hall_handoff:
+            self._set_state(
+                self.BLOCKED, now,
+                "Hall tracking was disabled or the active detector changed during a lane handoff; braking",
+            )
+            return self._brake(command, self.last_reason)
 
         if not bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)):
             if self.state != self.CLEAR:
