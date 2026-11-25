@@ -1046,7 +1046,7 @@ async function poll(){
       setText("simulator-run-state",enabled?"AUTONOMOUS RUNNING":"STOPPED · PRESS START TO MOVE");
       $("simulator-run-state").className="pill simulator-run-state "+(enabled?"running":"stopped");
       if($("simulator-run-start"))$("simulator-run-start").disabled=!simRoiControlsEnabled||!d.connected||enabled;
-      if($("simulator-run-stop"))$("simulator-run-stop").disabled=!simRoiControlsEnabled||!enabled;
+      if($("simulator-run-stop"))$("simulator-run-stop").disabled=!simRoiControlsEnabled||!d.connected;
     }
     setText("lane-value",d.lane_type||"none");
     setText("lane-valid",d.perception_valid?"Perception valid":"Invalid lane estimate · safety policy applies");
