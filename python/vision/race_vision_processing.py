@@ -475,9 +475,43 @@ class VisionProcessor:
                 target_base_roi = (
                     base_right_roi if target_side == "right" else base_left_roi
                 )
+                maneuver_prefix = "MR" if target_side == "right" else "ML"
+                try:
+                    maneuver_bounds = (
+                        float(getattr(conf, maneuver_prefix + "_LEFT_ROI")),
+                        float(getattr(conf, maneuver_prefix + "_TOP_ROI")),
+                        float(getattr(conf, maneuver_prefix + "_RIGHT_ROI")),
+                        float(getattr(conf, maneuver_prefix + "_BOTTOM_ROI")),
+                    )
+                except (AttributeError, TypeError, ValueError, OverflowError):
+                    maneuver_bounds = None
+                if (
+                    maneuver_bounds is not None
+                    and all(math.isfinite(value) and 0.0 <= value <= 1.0
+                            for value in maneuver_bounds)
+                    and maneuver_bounds[0] < maneuver_bounds[2]
+                    and maneuver_bounds[1] < maneuver_bounds[3]
+                ):
+                    target_base_roi = (
+                        int(round(maneuver_bounds[0] * width)),
+                        int(round(maneuver_bounds[1] * height)),
+                        int(round(maneuver_bounds[2] * width)),
+                        int(round(maneuver_bounds[3] * height)),
+                    )
+                    target_base_roi = (
+                        max(0, min(width - 1, target_base_roi[0])),
+                        max(0, min(height - 1, target_base_roi[1])),
+                        max(1, min(width, target_base_roi[2])),
+                        max(1, min(height, target_base_roi[3])),
+                    )
+                else:
+                    target_base_roi = (
+                        base_right_roi if target_side == "right" else base_left_roi
+                    )
                 source_base_roi = (
                     base_left_roi if source_side == "left" else base_right_roi
                 )
+
                 search = (
                     self._lane_boundary_tracker.handoff_search_roi(
                         target_side, target_base_roi, frame.shape
