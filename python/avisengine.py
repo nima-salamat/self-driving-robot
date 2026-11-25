@@ -282,6 +282,16 @@ class Car():
         return bytes(data)
 
         
+    def setDriveCommand(self, steering, speed):
+        """Send steering and motor speed together in one AVIS protocol packet."""
+        self.steering_value = int(steering)
+        self.speed_value = int(speed)
+        self.image_mode = 0
+        self.sensor_status = 0
+        self.updateData()
+        self.sock.sendall(self.data_str.encode("utf-8"))
+        time.sleep(0.01)
+
     def setSteering(self,steering):
         '''
         Setting the steering of the car
@@ -430,11 +440,20 @@ class Car():
             info["decode_error"] = decode_failure or "AVIS response contained no recognized image payload"
 
         if sensor_match is not None:
-            sensor_values = re.findall(rb"-?\d+", sensor_match.group(1))
-            self.sensors = list(map(int, sensor_values))
+            # Preserve fractional readings instead of silently truncating them.
+            sensor_values = re.findall(
+                rb"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?",
+                sensor_match.group(1),
+            )
+            parsed_sensors = [float(value) for value in sensor_values]
+            self.sensors = [
+                int(value) if value.is_integer() else value for value in parsed_sensors
+            ]
+            info["sensor_values_count"] = len(self.sensors)
         else:
             # Missing telemetry is unknown, not an infinitely clear path.
             self.sensors = [None, None, None]
+            info["sensor_values_count"] = 0
 
         if speed_match is not None:
             try:
