@@ -8,6 +8,7 @@ hold, or invalid lane perception.
 import logging
 import math
 import time
+from collections import deque
 
 from modes.simulation.base_adapter import VehicleCommand
 from vision.stop_line import StopLineDetector
@@ -68,6 +69,7 @@ class RangeObstacleAvoidance:
         self.last_ranges = {"left": None, "front": None, "right": None}
         self.last_reason = "obstacle avoidance idle"
         self.last_maneuver_roi = None
+        self.return_steering_history = deque(maxlen=100)
 
     def _number(self, key, default):
         try:
@@ -91,10 +93,57 @@ class RangeObstacleAvoidance:
         self.last_reason = reason
         if state == self.PASS_LANE_FOLLOW:
             self.pass_started_at = now
+            self.return_steering_history.clear()
         if state == self.CLEAR:
             self.selected_side = None
         if previous != state:
             logger.info("AVIS obstacle maneuver: %s -> %s (%s)", previous, state, reason)
+
+    def _record_passing_lane_steering(self, command):
+        """Record the lane controller's normalized output as signed AVIS percent."""
+        try:
+            steering = float(command.steering)
+        except (TypeError, ValueError, OverflowError):
+            return
+        if math.isfinite(steering):
+            self.return_steering_history.append(
+                max(-1.0, min(1.0, steering)) * 100.0
+            )
+
+    def _return_steering_gate_stats(self):
+        enabled = bool(getattr(
+            self.config, "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED", False
+        ))
+        window = max(1, min(
+            100,
+            self._integer("SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT", 10),
+        ))
+        minimum = max(-100.0, min(
+            100.0,
+            self._number("SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT", -10.0),
+        ))
+        maximum = max(-100.0, min(
+            100.0,
+            self._number("SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT", 10.0),
+        ))
+        if minimum >= maximum:
+            minimum, maximum = -10.0, 10.0
+        samples = list(self.return_steering_history)[-window:]
+        mean = sum(samples) / len(samples) if samples else None
+        enough_samples = len(samples) >= window
+        ready = bool(
+            enough_samples and mean is not None and minimum <= mean <= maximum
+        )
+        return {
+            "enabled": enabled,
+            "window": window,
+            "sample_count": len(samples),
+            "mean_percent": mean,
+            "minimum_percent": minimum,
+            "maximum_percent": maximum,
+            "ready": ready,
+            "enough_samples": enough_samples,
+        }
 
     def prepare_vision(self, now=None):
         """Select the temporary lane ROI before the next camera frame is parsed."""
@@ -333,6 +382,7 @@ class RangeObstacleAvoidance:
                     self.PASS_LANE_FOLLOW, now,
                     "left maneuver ROI confirmed a lane; handing steering back to lane PID",
                 )
+                self._record_passing_lane_steering(command)
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
                 return command
             return self._direct_phase(
@@ -346,22 +396,48 @@ class RangeObstacleAvoidance:
                     "passing-lane perception was lost; stopping instead of driving blind",
                 )
                 return self._brake(command, self.last_reason)
-            if now - self.pass_started_at >= lane_hold:
+
+            # Only normal lane-following outputs enter this history; direct
+            # bypass steering is never included in the return-stability mean.
+            self._record_passing_lane_steering(command)
+            hold_complete = now - self.pass_started_at >= lane_hold
+            gate = self._return_steering_gate_stats()
+
+            if hold_complete and gate["enabled"] and not gate["ready"]:
+                mean_text = (
+                    "collecting samples" if gate["mean_percent"] is None
+                    else f"{gate['mean_percent']:+.1f}%"
+                )
+                self.last_reason = (
+                    f"minimum passing-lane time complete; waiting for the mean of "
+                    f"the last {gate['window']} lane steering commands to enter "
+                    f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]% "
+                    f"(current mean {mean_text}, {gate['sample_count']}/{gate['window']} samples)"
+                )
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                return command
+
+            if hold_complete:
                 if right is None or right < minimum_side:
                     self._set_state(
                         self.BLOCKED, now,
                         "passing interval ended but right-side clearance is not proven; braking",
                     )
                     return self._brake(command, self.last_reason)
-                self._set_state(
-                    self.SHIFT_RIGHT_DIRECT, now,
-                    "passing-lane hold completed; beginning direct right return",
-                )
+                return_reason = "passing-lane hold completed"
+                if gate["enabled"]:
+                    return_reason += (
+                        f"; mean steering {gate['mean_percent']:+.1f}% is inside "
+                        f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]%"
+                    )
+                return_reason += "; beginning direct right return"
+                self._set_state(self.SHIFT_RIGHT_DIRECT, now, return_reason)
                 self.selected_side = "right"
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 return self._direct_command(
                     command, "right", "obstacle lane change: direct right steering"
                 )
+
             self.last_reason = (
                 "obstacle lane change: following the passing lane with normal lane PID"
             )
@@ -422,6 +498,17 @@ class RangeObstacleAvoidance:
         lane_hold = max(
             0.2, min(10.0, self._number("SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS", 3.0))
         )
+        return_gate = self._return_steering_gate_stats()
+        hold_elapsed = (
+            max(0.0, time.monotonic() - self.pass_started_at)
+            if self.state == self.PASS_LANE_FOLLOW else 0.0
+        )
+        return_gate_waiting = bool(
+            self.state == self.PASS_LANE_FOLLOW
+            and hold_elapsed >= lane_hold
+            and return_gate["enabled"]
+            and not return_gate["ready"]
+        )
         return {
             "enabled": bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),
             "state": self.state,
@@ -439,9 +526,17 @@ class RangeObstacleAvoidance:
                 if direct_side else None
             ),
             "lane_hold_seconds": lane_hold,
-            "lane_hold_elapsed_seconds": (
-                max(0.0, min(lane_hold, time.monotonic() - self.pass_started_at))
-                if self.state == self.PASS_LANE_FOLLOW else 0.0
+            "lane_hold_elapsed_seconds": min(lane_hold, hold_elapsed),
+            "return_steering_gate_enabled": return_gate["enabled"],
+            "return_steering_sample_window": return_gate["window"],
+            "return_steering_sample_count": return_gate["sample_count"],
+            "return_steering_mean_percent": return_gate["mean_percent"],
+            "return_steering_min_percent": return_gate["minimum_percent"],
+            "return_steering_max_percent": return_gate["maximum_percent"],
+            "return_steering_gate_ready": return_gate["ready"],
+            "return_steering_gate_waiting": return_gate_waiting,
+            "return_steering_gate_wait_seconds": (
+                max(0.0, hold_elapsed - lane_hold) if return_gate_waiting else 0.0
             ),
             "ranges_cm": dict(self.last_ranges),
             "front_clear_observations": int(self.clear_observations),
