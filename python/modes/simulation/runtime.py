@@ -694,6 +694,9 @@ class SimulationRuntime:
                     self._queue_frame_for_stream(frame, self._last_result, self._last_command)
                     self.shutdown_event.wait(0.05)
                     continue
+                if self.avis_behaviors is not None:
+                    # Prepare the requested temporary lane ROI before processing this frame.
+                    self.avis_behaviors.prepare_vision(now=now)
                 detection_started = time.perf_counter()
                 result = self.vision.detect(frame.image)
                 detection_ms = (time.perf_counter() - detection_started) * 1000.0
