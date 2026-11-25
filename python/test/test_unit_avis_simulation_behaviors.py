@@ -362,7 +362,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         )
         self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
         self.assertAlmostEqual(returning.steering, 0.70)
-        self.assertIn("clearance confirmed", controller.last_reason.lower())
+        self.assertIn("clearance confirmed", returning.reason.lower())
 
     def test_right_return_pauses_and_resumes_without_permanently_blocking(self):
         controller = RangeObstacleAvoidance(obstacle_config(

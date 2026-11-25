@@ -819,6 +819,8 @@ class RangeObstacleAvoidance:
                 self.selected_side = "right"
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 direct_reason = "obstacle lane change: direct right steering"
+                if self.return_clear_observations >= clear_confirm_frames:
+                    direct_reason += "; right-side clearance confirmed"
                 if gate_timed_out:
                     direct_reason += (
                         f" (return steering gate timed out after {gate_max_wait:.1f}s)"
