@@ -127,7 +127,14 @@ async function poll(){
       setText("avis-behavior-value",state.replace(/_/g," "));
       const details=[];
       if(caps.supports_obstacle_avoidance){
-        details.push("Bypass "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
+        details.push("Lane change "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
+        const ranges=obstacle.ranges_cm||{};
+        const rangeText=value=>value==null?"—":numeric(value,0);
+        details.push("Ranges L/F/R "+rangeText(ranges.left)+"/"+rangeText(ranges.front)+"/"+rangeText(ranges.right)+" cm");
+        if(obstacle.minimum_pass_distance_cm!=null){
+          details.push("Pass "+numeric(obstacle.distance_since_shift_cm,0)+"/"+numeric(obstacle.minimum_pass_distance_cm,0)+" cm");
+        }
+        if(obstacle.reason)details.push(obstacle.reason);
       }
       if(caps.supports_stop_line){
         details.push("Stop line "+(!behavior.stop_line_enabled?"off":behavior.stop_line_waiting?"HOLD":behavior.stop_line_armed?"armed":"passed"));
