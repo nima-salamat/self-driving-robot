@@ -35,6 +35,7 @@ def obstacle_config(**overrides):
         SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED=True,
         SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=100.0,
         SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=125.0,
+        SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=3,
         SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM=75.0,
         SIMULATOR_OBSTACLE_STOP_DISTANCE_CM=35.0,
         SIMULATOR_OBSTACLE_SHIFT_SECONDS=0.35,
@@ -437,6 +438,40 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.BLOCKED)
         self.assertEqual(stopped.brake, 1.0)
         self.assertEqual(stopped.throttle, 0.0)
+
+    def test_clear_front_confirmation_count_is_configurable(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=4,
+        ))
+        controller.state = controller.BLOCKED
+        ranges = {"left": 180.0, "front": 180.0, "right": 180.0}
+
+        for observed in range(1, 4):
+            stopped = controller.apply(
+                base_command(), ranges, perception_valid=True, now=10.0 + observed * 0.1,
+            )
+            self.assertEqual(stopped.brake, 1.0)
+            self.assertEqual(controller.state, controller.BLOCKED)
+            self.assertIn(f"({observed}/4 observations)", stopped.reason)
+
+        recovered = controller.apply(
+            base_command(), ranges, perception_valid=True, now=10.4,
+        )
+        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertEqual(recovered.brake, 0.0)
+        self.assertEqual(controller.snapshot()["front_clear_observations_required"], 4)
+
+    def test_clear_confirmation_count_settings_are_validated(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES": 5,
+            "SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS": 2.5,
+        }, backend="avis")
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES"], 5)
+        self.assertEqual(clean["SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS"], 2.5)
+        with self.assertRaisesRegex(ValueError, "between 1 and 20"):
+            _validate_settings({"SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES": 0}, backend="avis")
+        with self.assertRaisesRegex(ValueError, "between 0 and 10"):
+            _validate_settings({"SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS": 10.1}, backend="avis")
 
     def test_missing_front_range_and_unclear_departure_side_fail_closed(self):
         controller = RangeObstacleAvoidance(obstacle_config())

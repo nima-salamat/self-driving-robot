@@ -133,11 +133,21 @@ async function poll(){
         details.push("Ranges L/F/R "+rangeText(ranges.left)+"/"+rangeText(ranges.front)+"/"+rangeText(ranges.right)+" cm");
         const rangeSafety=(d.sensors||{}).range_safety||{};
         if(caps.simulator_backend==="avis"&&rangeSafety.status){
-          const frontState=rangeSafety.status==="clear"
-            ? "CLEAR"
-            : "BRAKE · "+(rangeSafety.reason||rangeSafety.status)
-              +(rangeSafety.stop_latched?" · run disarmed":"");
-          details.push("Independent front guard "+frontState);
+          let frontState="CLEAR";
+          if(rangeSafety.status==="sensor_unavailable"){
+            frontState="BRAKE · sensor data unavailable "+
+              numeric(rangeSafety.unavailable_for_seconds,1)+"/"+
+              numeric(rangeSafety.invalid_grace_seconds,1)+" s grace";
+          }else if(rangeSafety.status!=="clear"){
+            frontState="BRAKE · "+(rangeSafety.reason||rangeSafety.status);
+          }
+          details.push("Independent front guard "+frontState+
+            (rangeSafety.stop_latched?" · run disarmed":""));
+          if(rangeSafety.status==="sensor_unavailable"){
+            details.push("AVIS sensor telemetry · tag "+
+              (rangeSafety.sensor_tag_present?"present":"missing")+
+              " · values "+(rangeSafety.range_sensor_count??"unknown"));
+          }
         }
         if(obstacle.direct_steering_percent!=null){
           details.push("Direct "+(obstacle.direction||"")+" steering "+numeric(obstacle.direct_steering_percent,0)+"%");
