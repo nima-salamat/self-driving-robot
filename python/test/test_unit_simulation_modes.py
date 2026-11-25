@@ -845,7 +845,7 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         # The editor is assembled from Jinja partials; inspect the actual
         # fragments as well as the entry template instead of testing only
         # the include directives.
-        template = "\\n".join(
+        template = "\n".join(
             path.read_text(encoding="utf-8") for path in template_files
         )
         self.assertIn("function readSettingNumber(id)", template)
