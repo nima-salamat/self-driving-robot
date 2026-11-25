@@ -358,6 +358,14 @@ class AvisAdapter(SimulatorAdapter):
             "max_intensity": int(np.max(sample)) if sample.size else 0,
             "looks_black": bool(not sample.size or float(np.mean(sample)) < 1.0 or int(np.max(sample)) < 4),
         }
+        response_info = dict(getattr(car, "last_response_info", {}) or {})
+        sensor_status = {
+            "ranges_available": bool(response_info.get("sensor_tag"))
+            and len(values) >= 3
+            and all(value is not None for value in ranges.values()),
+            "range_sensor_count": len(values),
+            "sensor_tag_present": bool(response_info.get("sensor_tag")),
+        }
         return SensorFrame(
             image=image,
             captured_at=now,
@@ -366,6 +374,7 @@ class AvisAdapter(SimulatorAdapter):
             ranges_cm=ranges,
             lidar_points=None,
             distance_delta_cm=distance_delta,
+            sensor_status=sensor_status,
         )
 
     def apply_control(self, command):
