@@ -365,6 +365,7 @@ class SimulatorSettingsTests(unittest.TestCase):
                     defaults["SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"],
                     backend == "avis",
                 )
+                self.assertFalse(defaults["SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED"])
                 self.assertEqual(
                     defaults["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"],
                     60.0 if backend == "avis" else 35.0,
@@ -720,6 +721,12 @@ class SimulatorSettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "CROSSWALK_THRESHOLD"):
             _validate_settings({"CROSSWALK_THRESHOLD": 300})
         self.assertEqual(_validate_settings({"BEV_SRC_TL_X": 0.25})["BEV_SRC_TL_X"], 0.25)
+        self.assertEqual(_validate_settings({"BEV_SRC_TL_X": -0.15})["BEV_SRC_TL_X"], -0.15)
+        self.assertEqual(_validate_settings({"BEV_SRC_BR_Y": 1.15})["BEV_SRC_BR_Y"], 1.15)
+        with self.assertRaisesRegex(ValueError, "BEV_SRC_TL_X"):
+            _validate_settings({"BEV_SRC_TL_X": -0.151})
+        with self.assertRaisesRegex(ValueError, "BEV_SRC_BR_Y"):
+            _validate_settings({"BEV_SRC_BR_Y": 1.151})
         self.assertEqual(
             _validate_settings({
                 "SIMULATOR_CAMERA_X": 1.45,
@@ -844,6 +851,10 @@ class SimulatorSettingsApiTests(unittest.TestCase):
         self.assertIn("function bindSettingsSearch()", template)
         self.assertIn('querySelectorAll("input[name],select[name],textarea[name]")', template)
         self.assertIn('item.searchable.includes(query)', template)
+        self.assertIn('function simRoiVisibilityStorageKey()', template)
+        self.assertIn('window.localStorage.setItem(simRoiVisibilityStorageKey()', template)
+        self.assertIn('window.localStorage.getItem(simRoiVisibilityStorageKey())', template)
+        self.assertIn('restoreSimRoiVisibility();', template)
         self.assertIn('id="settings-search-modal"', template)
         self.assertIn('id="settings-search-results"', template)
         self.assertIn('</header>\n{% if caps.simulator_backend == \'avis\' %}\n<div id="settings-search-modal"', template)
@@ -991,6 +1002,9 @@ class SimulatorEditorTests(unittest.TestCase):
                         self.assertIn('id="obstacle-return-steering-max"', page_text)
                         self.assertIn('id="avis-obstacle-settings"', page_text)
                         self.assertIn('id="obstacle-avoidance-enabled"', page_text)
+                        self.assertIn('id="obstacle-hall-handoff-enabled"', page_text)
+                        self.assertIn('name="SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED"', page_text)
+                        self.assertIn('id="bev-tl-x" type="number" min="-0.15" max="1.15"', page_text)
                         self.assertIn('id="avis-sign-settings"', page_text)
                         self.assertIn('id="sign-actions-enabled"', page_text)
                         self.assertIn('id="avis-behavior-value"', page_text)
