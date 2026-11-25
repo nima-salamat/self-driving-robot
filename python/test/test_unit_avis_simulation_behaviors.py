@@ -447,7 +447,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
         self.assertIs(waiting, lane_command)
         self.assertEqual(controller.config.SIMULATOR_ACTIVE_OBSTACLE_ROI, "left")
-        self.assertTrue(controller.snapshot()["return_steering_gate_waiting"])
+        self.assertIn("waiting for the mean", controller.last_reason.lower())
 
         waiting = controller.apply(
             lane_command, ranges, perception_valid=True, now=10.8,
