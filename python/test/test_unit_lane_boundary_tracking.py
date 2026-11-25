@@ -1201,9 +1201,6 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(result["pair_reacquire_required"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
     def test_hall_handoff_transfers_track_identity_and_expands_opposite_roi(self):
         initial = self.update(left_x=220.0, right_x=420.0)
         original_track_id = initial["left"]["track_id"]
@@ -1236,3 +1233,6 @@ if __name__ == "__main__":
         self.assertFalse(result["left"]["observed"])
         self.assertEqual(result["lane_type"], "only_right")
 
+
+if __name__ == "__main__":
+    unittest.main()
