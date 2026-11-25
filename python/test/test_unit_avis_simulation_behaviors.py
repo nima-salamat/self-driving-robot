@@ -596,12 +596,28 @@ class AVISModeSettingsTests(unittest.TestCase):
             self.assertTrue(config.SIMULATOR_STOP_ON_CROSSWALK)
             self.assertTrue((Path(directory) / "avis.sim.json").is_file())
 
-    def test_validation_rejects_unsafe_ordering_and_invalid_hue_ranges(self):
-        with self.assertRaisesRegex(ValueError, "trigger distance"):
-            _validate_settings({
-                "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 100.0,
-                "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 90.0,
+    def test_maximum_trigger_distance_is_valid_with_default_clear_hysteresis(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 500.0,
+            "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 150.0,
+        }, backend="avis")
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 500.0)
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"], 150.0)
+
+    def test_500_cm_trigger_setting_is_persisted_without_changing_clear_field(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(config, "avis", "avis")
+            saved = save_simulator_settings(config, "avis", {
+                "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 500.0,
+                "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 150.0,
             })
+            persisted = json.loads((Path(directory) / "avis.sim.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 500.0)
+            self.assertEqual(persisted["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 500.0)
+            self.assertEqual(config.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM, 500.0)
+
+    def test_validation_rejects_invalid_hue_ranges(self):
         with self.assertRaisesRegex(ValueError, "TL_RED_HUE_MIN"):
             _validate_settings({"TL_RED_HUE_MIN": 30, "TL_RED_HUE_MAX": 10})
         with self.assertRaisesRegex(ValueError, "TL_RED_HUE_WRAP_MIN"):
