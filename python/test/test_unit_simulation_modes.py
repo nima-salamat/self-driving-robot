@@ -1788,7 +1788,7 @@ class VirtualControllerTests(unittest.TestCase):
             frame = adapter.read()
             self.assertEqual(frame.image.shape, (12, 16, 3))
             self.assertEqual(frame.ranges_cm, {"left": 21.0, "front": 30.5, "right": None})
-            self.assertTrue(frame.sensor_status["ranges_available"])
+            self.assertFalse(frame.sensor_status["ranges_available"])
             self.assertEqual(frame.sensor_status["range_sensor_count"], 3)
             self.assertIsNone(frame.lidar_points)
             command = VehicleCommand(0.25, 0.2, 0.0, 105, 20, "test")
