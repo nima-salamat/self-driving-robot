@@ -91,7 +91,7 @@ function drawOverlays(){
         }
         // 2. Draw ROIs
         for(const key of roiOrder){
-            if(!ui.visible[key]) continue;
+            if(ui.visible[key] === false) continue;
             const r = rects[key];
             if(!r) continue;
             
@@ -194,7 +194,7 @@ function hitTest(px, py){
 
     const rects = computeRects();
     for(const key of ['RL','LL','CW','ST','OBJ','ML','MR']){
-        if(!ui.visible[key]) continue;
+        if(ui.visible[key] === false) continue;
         const r = rects[key];
         if(!r) continue;
         
