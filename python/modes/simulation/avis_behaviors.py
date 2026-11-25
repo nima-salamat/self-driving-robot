@@ -241,6 +241,11 @@ class RangeObstacleAvoidance:
             self.last_reason = "obstacle avoidance disabled"
             return command
 
+        front = self.last_ranges["front"]
+        left = self.last_ranges["left"]
+        right = self.last_ranges["right"]
+        trigger = max(36.0, self._number("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 100.0))
+
         if command.brake >= 0.5 or not perception_valid:
             if self.state != self.CLEAR:
                 self._set_state(
@@ -248,16 +253,20 @@ class RangeObstacleAvoidance:
                     "lane perception or another safety rule requested braking during bypass",
                 )
                 return self._brake(command, self.last_reason)
+            if (
+                not perception_valid and command.brake < 0.5
+                and front is not None and front <= trigger
+            ):
+                self._set_state(
+                    self.BLOCKED, now,
+                    "obstacle inside bypass trigger distance but lane perception is invalid; braking",
+                )
+                return self._brake(command, self.last_reason)
             self.last_reason = (
                 "waiting for valid lane perception before starting a lane change"
                 if not perception_valid else command.reason or "another safety rule owns braking"
             )
             return command
-
-        front = self.last_ranges["front"]
-        left = self.last_ranges["left"]
-        right = self.last_ranges["right"]
-        trigger = max(36.0, self._number("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 100.0))
         clear_distance = max(
             trigger + 1.0,
             self._number("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", 125.0),
