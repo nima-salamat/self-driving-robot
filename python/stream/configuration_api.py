@@ -33,7 +33,7 @@ class StreamConfigurationMixin:
                 raise ValueError(f"{key} must be between 0 and 1")
             effective[key] = number
 
-        for prefix in ("RL", "LL", "CW", "ST", "OBJ"):
+        for prefix in ("RL", "LL", "CW", "ST", "OBJ", "ML", "MR"):
             top, bottom = effective[prefix + "_TOP_ROI"], effective[prefix + "_BOTTOM_ROI"]
             left, right = effective[prefix + "_LEFT_ROI"], effective[prefix + "_RIGHT_ROI"]
             if not top < bottom:
