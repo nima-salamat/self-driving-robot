@@ -363,6 +363,7 @@ class AvisAdapter(SimulatorAdapter):
             "ranges_available": bool(response_info.get("sensor_tag"))
             and len(values) >= 3
             and all(value is not None for value in ranges.values()),
+            "front_range_available": ranges["front"] is not None,
             "range_sensor_count": len(values),
             "sensor_tag_present": bool(response_info.get("sensor_tag")),
         }
@@ -398,8 +399,15 @@ class AvisAdapter(SimulatorAdapter):
                 0, min(100, int(round(float(command.throttle) * 100.0)))
             )
             try:
-                self.car.setSteering(steering)
-                self.car.setSpeed(speed)
+                # Prefer one packet containing both values. Sending steering
+                # and speed separately can briefly resend the previous throttle
+                # between the two legacy calls during an emergency stop.
+                drive_setter = getattr(self.car, "setDriveCommand", None)
+                if callable(drive_setter):
+                    drive_setter(steering, speed)
+                else:
+                    self.car.setSteering(steering)
+                    self.car.setSpeed(speed)
                 return True
             except Exception as exc:
                 self._schedule_reconnect_locked(
