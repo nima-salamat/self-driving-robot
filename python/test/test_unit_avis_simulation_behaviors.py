@@ -1,4 +1,5 @@
 """Hardware-free AVIS behavior, stop-line and profile-setting tests."""
+import json
 import sys
 import tempfile
 import time
