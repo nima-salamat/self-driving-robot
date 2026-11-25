@@ -941,6 +941,18 @@ class VirtualControllerTests(unittest.TestCase):
             def control_ready(self): return True
             def apply_control(self, command): self.commands.append(command); return True
 
+        class FakeVision:
+            def detect(self, frame): return {"perception_valid": False}
+
+        def fake_vision_module(name):
+            module = types.ModuleType(name)
+            module.VisionProcessor = FakeVision
+            return module
+
+        fake_vision_modules = {
+            "vision.city_vision_processing": fake_vision_module("vision.city_vision_processing"),
+            "vision.race_vision_processing": fake_vision_module("vision.race_vision_processing"),
+        }
         for mode, backend, profile in (
             ("carla", "carla", "city"),
             ("avis", "avis", "city"),
@@ -957,7 +969,9 @@ class VirtualControllerTests(unittest.TestCase):
                 })
                 config = SimpleNamespace(**config_values)
                 adapter = FakeAdapter()
-                with patch("modes.simulation.runtime.create_adapter", return_value=adapter):
+                with patch.dict(sys.modules, fake_vision_modules), patch(
+                    "modes.simulation.runtime.create_adapter", return_value=adapter
+                ):
                     runtime = SimulationRuntime(config)
 
                 self.assertFalse(runtime.snapshot()["run_enabled"])
