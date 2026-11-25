@@ -274,10 +274,14 @@ class RangeObstacleAvoidance:
                 self.last_reason = "armed; no obstacle inside the lane-change trigger distance"
                 self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
                 return command
-            if command.brake >= 0.5 or not perception_valid:
+            normal_lane_lost_stop = (
+                not perception_valid
+                and "no valid lane" in str(getattr(command, "reason", "")).lower()
+            )
+            if command.brake >= 0.5 and not normal_lane_lost_stop:
                 self._set_state(
                     self.BLOCKED, now,
-                    "obstacle inside bypass trigger distance but normal lane perception is invalid; braking",
+                    "an explicit non-lane safety hold is active; obstacle lane change remains inhibited",
                 )
                 return self._brake(command, self.last_reason)
             if left is None or left < minimum_side:
