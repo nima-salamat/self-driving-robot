@@ -149,6 +149,19 @@ async function poll(){
         if(state==="PASS_LANE_FOLLOW"){
           details.push("Passing lane hold "+numeric(obstacle.lane_hold_elapsed_seconds,1)+"/"+
             numeric(obstacle.lane_hold_seconds,1)+" s");
+          if(obstacle.return_steering_gate_enabled){
+            const mean=obstacle.return_steering_mean_percent;
+            const meanText=mean===null||mean===undefined?"collecting":numeric(mean,1)+"%";
+            const gateState=obstacle.return_steering_gate_ready?"READY":
+              obstacle.return_steering_gate_waiting?"WAITING":"SAMPLING";
+            details.push("Return steering "+gateState+" · mean "+meanText+" ("+
+              numeric(obstacle.return_steering_sample_count,0)+"/"+
+              numeric(obstacle.return_steering_sample_window,0)+") · band ["+
+              numeric(obstacle.return_steering_min_percent,0)+", "+
+              numeric(obstacle.return_steering_max_percent,0)+"]%");
+          }else{
+            details.push("Steering return gate off · timed return");
+          }
         }
         if(obstacle.reason)details.push(obstacle.reason);
       }
