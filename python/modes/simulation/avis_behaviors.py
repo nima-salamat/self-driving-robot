@@ -242,6 +242,7 @@ class RangeObstacleAvoidance:
         self.selected_side = None
         self.state_since = 0.0
         self.pass_started_at = 0.0
+        self.return_clear_observations = 0
         self.roi_confirmations = 0
         self.clear_observations = 0
         self.awaiting_clear = False
@@ -279,6 +280,7 @@ class RangeObstacleAvoidance:
         if state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW}:
             self.pass_started_at = now
             self.return_steering_history.clear()
+            self.return_clear_observations = 0
         if state == self.CLEAR:
             self.selected_side = None
             self._handoff_plan = None
@@ -762,12 +764,31 @@ class RangeObstacleAvoidance:
 
             if hold_complete:
                 if right is None or right < minimum_side:
-                    self._set_state(
-                        self.BLOCKED, now,
-                        "passing interval ended but right-side clearance is not proven; braking",
+                    self.return_clear_observations = 0
+                    self.last_reason = (
+                        "passing-lane hold complete; continuing to follow the passing lane "
+                        "until right-side clearance is proven "
+                        f"(right range {right if right is not None else 'unavailable'} cm; "
+                        f"required at least {minimum_side:.1f} cm)"
                     )
-                    return self._brake(command, self.last_reason)
-                return_reason = "passing-lane hold completed"
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
+                    return command
+
+                self.return_clear_observations += 1
+                if self.return_clear_observations < clear_confirm_frames:
+                    self.last_reason = (
+                        "right-side clearance detected; confirming before return "
+                        f"({self.return_clear_observations}/{clear_confirm_frames} observations)"
+                    )
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                    self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
+                    return command
+
+                return_reason = (
+                    "passing-lane hold and right-side clearance confirmed "
+                    f"({self.return_clear_observations} observations)"
+                )
                 if gate["enabled"] and gate["ready"]:
                     return_reason += (
                         f"; mean steering {gate['mean_percent']:+.1f}% is inside "
@@ -973,6 +994,19 @@ class RangeObstacleAvoidance:
             and not return_gate["ready"]
             and not return_gate_timed_out
         )
+        minimum_side = max(
+            1.0, self._number("SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", 75.0)
+        )
+        clear_confirmations = max(
+            1, min(20, self._integer("SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES", 3))
+        )
+        right_range = self.last_ranges.get("right")
+        return_clearance_waiting = bool(
+            self.state == self.PASS_LANE_FOLLOW
+            and hold_elapsed >= lane_hold
+            and (right_range is None or right_range < minimum_side
+                 or self.return_clear_observations < clear_confirmations)
+        )
         return {
             "enabled": bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),
             "state": self.state,
@@ -1008,6 +1042,10 @@ class RangeObstacleAvoidance:
                 min(return_gate_max_wait, return_gate_wait_elapsed)
                 if return_gate_waiting else 0.0
             ),
+            "return_clearance_waiting": return_clearance_waiting,
+            "return_clear_observations": int(self.return_clear_observations),
+            "return_clear_observations_required": clear_confirmations,
+            "return_minimum_side_clearance_cm": minimum_side,
             "ranges_cm": dict(self.last_ranges),
             "front_clear_observations": int(self.clear_observations),
             "front_clear_observations_required": max(

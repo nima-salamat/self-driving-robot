@@ -36,7 +36,7 @@ def obstacle_config(**overrides):
         SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
         SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=100.0,
         SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=125.0,
-        SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=3,
+        SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=1,
         SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM=75.0,
         SIMULATOR_OBSTACLE_STOP_DISTANCE_CM=35.0,
         SIMULATOR_OBSTACLE_SHIFT_SECONDS=0.35,
@@ -316,6 +316,53 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
         self.assertAlmostEqual(returning.steering, 0.70)
         self.assertTrue(controller._return_steering_gate_stats()["ready"])
+
+    def test_pass_lane_waits_for_right_clearance_then_retries_return(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_BACKEND="avis",
+            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.5,
+            SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED=False,
+            SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=3,
+            SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM=75.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=70.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        controller.state = controller.PASS_LANE_FOLLOW
+        controller.pass_started_at = 10.0
+        controller.state_since = 10.0
+        lane_command = VehicleCommand(
+            steering=0.04, throttle=0.1, brake=0.0,
+            servo_angle=95.0, target_speed=12.0, reason="lane PID",
+        )
+        ranges_blocked = {"left": 180.0, "front": 180.0, "right": 55.0}
+
+        waiting = controller.apply(
+            lane_command, ranges_blocked,
+            perception_valid=True, now=10.6,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertIs(waiting, lane_command)
+        self.assertIn("until right-side clearance", controller.last_reason.lower())
+        self.assertEqual(controller.return_clear_observations, 0)
+
+        ranges_clear = {"left": 180.0, "front": 180.0, "right": 120.0}
+        for index in range(2):
+            result = controller.apply(
+                lane_command, ranges_clear,
+                perception_valid=True, now=10.7 + index * 0.1,
+            )
+            self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+            self.assertIs(result, lane_command)
+
+        returning = controller.apply(
+            lane_command, ranges_clear,
+            perception_valid=True, now=10.9,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertAlmostEqual(returning.steering, 0.70)
+        self.assertIn("clearance confirmed", controller.last_reason.lower())
 
     def test_return_steering_gate_timeout_releases_right_return_with_hall_tracking(self):
         controller = RangeObstacleAvoidance(obstacle_config(
