@@ -18,6 +18,7 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
         config = types.SimpleNamespace(
             SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=120.0,
             SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH=10.0,
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM=1500.0,
             SIMULATOR_THROTTLE_LIMIT=0.35,
         )
         return AVISObstacleApproachSpeedController(config)
@@ -81,12 +82,31 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
         controller = self.make_controller()
         command = self.make_command()
         result = controller.apply(
-            self.make_frame({"left": 160, "front": 140, "right": 180}, speed=12.0),
+            self.make_frame({"left": 1600, "front": 1500, "right": 1800}, speed=12.0),
             command,
             now=10.0,
         )
         self.assertIs(result, command)
         self.assertEqual(controller.snapshot()["state"], "clear")
+
+    def test_speed_limit_activates_only_below_independent_1500_cm_threshold(self):
+        controller = self.make_controller()
+        command = self.make_command()
+        at_boundary = controller.apply(
+            self.make_frame({"left": 1800, "front": 1500, "right": 1800}, speed=12.0),
+            command,
+            now=10.0,
+        )
+        self.assertIs(at_boundary, command)
+        inside = controller.apply(
+            self.make_frame({"left": 1800, "front": 1499, "right": 1800}, speed=12.0),
+            command,
+            now=10.1,
+        )
+        self.assertEqual(controller.snapshot()["state"], "approach_speed_control")
+        self.assertEqual(controller.snapshot()["speed_limit_distance_cm"], 1500.0)
+        self.assertEqual(controller.snapshot()["nearest_sensor"], "front")
+        self.assertLess(inside.throttle, command.throttle)
 
     def test_missing_speed_feedback_holds_a_safe_stop_near_an_object(self):
         controller = self.make_controller()
@@ -114,11 +134,16 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
     def test_approach_target_is_separate_from_avis_percentage_speed_command(self):
         defaults = _defaults("avis", "avis")
         self.assertEqual(defaults["SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH"], 10.0)
+        self.assertEqual(defaults["SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM"], 1500.0)
         self.assertEqual(defaults["SIMULATOR_TARGET_SPEED"], 25.0)
         clean = _validate_settings(
             {"SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH": 10.0}, backend="avis"
         )
         self.assertEqual(clean["SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH"], 10.0)
+        distance = _validate_settings(
+            {"SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM": 1500.0}, backend="avis"
+        )
+        self.assertEqual(distance["SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM"], 1500.0)
         with self.assertRaises(ValueError):
             _validate_settings(
                 {"SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH": 101.0}, backend="avis"
