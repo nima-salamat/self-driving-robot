@@ -49,6 +49,43 @@ class BLSFLaneDetectorTests(unittest.TestCase):
         self.assertEqual(angle, 111)
         self.assertEqual(error, 0.0)
 
+    def test_active_maneuver_roi_crops_the_requested_window_and_reports_line_lock(self):
+        class ManeuverConfig(self.Config):
+            SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
+            ML_TOP_ROI = 0.25
+            ML_BOTTOM_ROI = 0.75
+            ML_LEFT_ROI = 0.10
+            ML_RIGHT_ROI = 0.50
+
+        detector = BLSFLaneDetector(ManeuverConfig())
+        seen_shapes = []
+        detector._weighted_gray = lambda crop: (
+            seen_shapes.append(crop.shape) or np.zeros(crop.shape[:2], dtype=np.uint8)
+        )
+        detector._median_local_threshold = lambda gray: gray
+        detector._segments = lambda _binary: []
+        detector._blsf_band = lambda _segments: (None, 0)
+        detector._blsf_binary = lambda thresholded, _segments, _band: thresholded
+        detector._seeds = lambda binary: (
+            None, None, np.zeros(binary.shape[1], dtype=np.int32)
+        )
+        detector._track = lambda _binary, _seed, _window: np.empty((0, 2))
+        detector._ransac_parabola = lambda _points: None
+        detector._lane_state = lambda _left, _right, width, _height: (
+            width / 2.0, "only_left", width / 2.0, None
+        )
+        detector._steering = lambda _center, _lane_type, _width: (95, 0.0)
+        detector._detect_crosswalk = lambda _frame: self.fail(
+            "Crosswalk detection must not run against a cropped maneuver ROI"
+        )
+
+        result = detector.detect(np.zeros((120, 160, 3), dtype=np.uint8))
+
+        self.assertEqual(seen_shapes, [(60, 64, 3)])
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["maneuver_roi"], {"side": "left", "observed": True})
+
+
     def test_weighted_grayscale(self):
         frame = np.zeros((1, 1, 3), dtype=np.uint8)
         frame[0, 0] = (10, 20, 30)
