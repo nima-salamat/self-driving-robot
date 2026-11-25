@@ -66,6 +66,7 @@ class RangeObstacleAvoidance:
         self.clear_observations = 0
         self.last_ranges = {"left": None, "front": None, "right": None}
         self.last_lane_quality = None
+        self.last_lane_kp = None
         self.last_reason = "obstacle avoidance idle"
         self._last_output_steering = None
         self._last_output_at = None
@@ -119,7 +120,11 @@ class RangeObstacleAvoidance:
         try:
             lane_error = float(lane_tracking.get("lane_error_px"))
             lane_width = float(lane_tracking.get("lane_width_px"))
-            kp = float(getattr(self.config, "KP", 0.35))
+            kp = float(
+                self.last_lane_kp
+                if self.last_lane_kp is not None
+                else getattr(self.config, "KP", 0.35)
+            )
             minimum = float(getattr(self.config, "MIN_SERVO_ANGLE", 55.0))
             center = float(getattr(self.config, "SERVO_CENTER", 95.0))
             maximum = float(getattr(self.config, "MAX_SERVO_ANGLE", 125.0))
@@ -194,6 +199,7 @@ class RangeObstacleAvoidance:
         perception_valid,
         distance_delta_cm=0.0,
         lane_quality=None,
+        lane_kp=None,
         lane_tracking=None,
         now=None,
     ):
@@ -204,6 +210,7 @@ class RangeObstacleAvoidance:
             for key in ("left", "front", "right")
         }
         self.last_lane_quality = lane_quality
+        self.last_lane_kp = lane_kp
 
         if not bool(getattr(self.config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)):
             if self.state != self.CLEAR:
@@ -451,6 +458,7 @@ class RangeObstacleAvoidance:
             "lane_width_px": self.last_lane_width_px,
             "ranges_cm": dict(self.last_ranges),
             "lane_quality": self.last_lane_quality,
+            "lane_kp": self.last_lane_kp,
             "distance_since_shift_cm": round(self.distance_since_shift_cm, 1),
             "minimum_pass_distance_cm": round(minimum_pass_distance, 1),
             "front_clear_observations": int(self.clear_observations),
@@ -650,6 +658,7 @@ class AVISBehaviorCoordinator:
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
         lane_quality = (perception or {}).get("perception_quality")
+        lane_kp = (perception or {}).get("kp")
         lane_tracking = (perception or {}).get("line_tracking")
         obstacle_command = self.obstacles.apply(
             command,
@@ -657,6 +666,7 @@ class AVISBehaviorCoordinator:
             perception_valid=perception_valid,
             distance_delta_cm=distance_delta_cm,
             lane_quality=lane_quality,
+            lane_kp=lane_kp,
             lane_tracking=lane_tracking,
             now=now,
         )
