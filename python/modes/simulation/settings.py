@@ -369,8 +369,10 @@ def _validate_settings(data, backend=None):
                 raise ValueError(f"{key} must be between 0.05 and 2 seconds")
             if key == "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS" and not 0.2 <= value <= 10.0:
                 raise ValueError("SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS must be between 0.2 and 10 seconds")
-            if key in {"SIMULATOR_OBSTACLE_STEERING_OFFSET", "SIMULATOR_SIGN_STEERING_OFFSET"} and not 0.05 <= value <= 0.35:
-                raise ValueError(f"{key} must be between 0.05 and 0.35")
+            if key == "SIMULATOR_OBSTACLE_STEERING_OFFSET" and not 0.05 <= value <= 1.0:
+                raise ValueError("SIMULATOR_OBSTACLE_STEERING_OFFSET must be between 0.05 and 1")
+            if key == "SIMULATOR_SIGN_STEERING_OFFSET" and not 0.05 <= value <= 0.35:
+                raise ValueError("SIMULATOR_SIGN_STEERING_OFFSET must be between 0.05 and 0.35")
             if key == "SIMULATOR_OBSTACLE_THROTTLE_LIMIT" and not 0 <= value <= 0.25:
                 raise ValueError("SIMULATOR_OBSTACLE_THROTTLE_LIMIT must be between 0 and 0.25")
             if key == "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG" and not 1 <= value <= 45:
