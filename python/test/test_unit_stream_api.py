@@ -57,6 +57,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn("ML:'Maneuver Left ROI',MR:'Maneuver Right ROI'", runtime)
         self.assertIn("const prefix=group+'_';", overlays)
         self.assertIn("'ML','MR'", overlays)
+        self.assertIn("['RL','LL','CW','ST','OBJ','ML','MR'].includes(t)", runtime)
+        self.assertIn("['RL','LL','CW','ST','OBJ','ML','MR'].includes(g)", runtime)
 
     def test_avis_maneuver_roi_updates_are_saved_to_mode_specific_profile(self):
         from modes.simulation.settings import load_simulator_settings
