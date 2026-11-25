@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 SIMULATOR_KEYS = {
-    "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S", "SIMULATOR_TUNING_PROFILE_VERSION",
+    "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S", "SIMULATOR_TUNING_PROFILE_VERSION", "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION",
     "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
     "SIMULATOR_SPAWN_POINT_INDEX", "CITY_LANE_DETECTOR", "SIMULATOR_LIDAR_ENABLED",
     "SIMULATOR_LIDAR_RANGE_M", "SIMULATOR_LIDAR_CHANNELS",
@@ -67,7 +67,7 @@ BOOL_KEYS = {
     "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD", "ROI_RESIZABLE",
 }
 INT_KEYS = {
-    "SIMULATOR_PORT", "SIMULATOR_TUNING_PROFILE_VERSION", "SIMULATOR_LIDAR_CHANNELS",
+    "SIMULATOR_PORT", "SIMULATOR_TUNING_PROFILE_VERSION", "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION", "SIMULATOR_LIDAR_CHANNELS",
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_AVIS_SENSOR_ANGLE",
     "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
@@ -132,6 +132,7 @@ def _defaults(mode, backend):
     return {
         "SIMULATOR_HOST": "127.0.0.1",
         "SIMULATOR_TUNING_PROFILE_VERSION": 2,
+        "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 1 if avis else 0,
         "SIMULATOR_PORT": 25001 if avis else 2000,
         # Legacy AVIS camera responses need a realistic TCP read window.
         "SIMULATOR_TIMEOUT_S": 5.0,
@@ -190,11 +191,12 @@ def _defaults(mode, backend):
         "BEV_SRC_BL_X": 0.00, "BEV_SRC_BL_Y": 1.00,
         "SIMULATOR_STOP_ON_LOST_LANE": True,
         "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race" and backend != "avis",
-        "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
-        # Optional AVIS range bypass is intentionally disabled until calibrated.
-        "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": False,
-        "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 100.0,
-        "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 125.0,
+        "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 60.0 if avis else 35.0,
+        # AVIS enables range-based bypass by default; an independent fail-safe
+        # forward guard brakes whenever its front reading is missing or unsafe.
+        "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": avis,
+        "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 120.0 if avis else 100.0,
+        "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 150.0 if avis else 125.0,
         "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 75.0,
         "SIMULATOR_OBSTACLE_SHIFT_SECONDS": 0.35,
         "SIMULATOR_OBSTACLE_REJOIN_SECONDS": 0.35,
@@ -340,6 +342,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("HALL_LINE_TRACKING_REACQUIRE_FRAMES must be between 1 and 10")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
                 raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
+            if key == "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION" and value not in {0, 1}:
+                raise ValueError("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION must be 0 or 1")
         elif key in NUMERIC_KEYS:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be a finite number")
@@ -480,6 +484,33 @@ def load_simulator_settings(config, mode, backend):
         for key, (old_limit, safe_default) in legacy_limits.items():
             if float(getattr(config, key, safe_default)) > old_limit:
                 migration[key] = safe_default
+        save_simulator_settings(config, mode, migration)
+
+    if backend == "avis" and path.is_file() and int(
+        saved_values.get("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION", 0)
+    ) < 1:
+        # Previous AVIS profiles inherited a disabled bypass and a 35/100/125 cm
+        # stop/trigger/clear profile. Upgrade that legacy default once; preserve
+        # custom distances unless they conflict with the new safety envelope.
+        migration = {
+            "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 1,
+            "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": True,
+        }
+        old_stop = float(saved_values.get("SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", 35.0))
+        new_stop = old_stop
+        if math.isclose(old_stop, 35.0) or old_stop < 20.0:
+            new_stop = 60.0 if math.isclose(old_stop, 35.0) else 20.0
+            migration["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"] = new_stop
+
+        old_trigger = float(saved_values.get("SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", 100.0))
+        new_trigger = old_trigger
+        if math.isclose(old_trigger, 100.0) or old_trigger <= new_stop:
+            new_trigger = max(120.0, new_stop + 20.0)
+            migration["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"] = new_trigger
+
+        old_clear = float(saved_values.get("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", 125.0))
+        if math.isclose(old_clear, 125.0) or old_clear <= new_trigger:
+            migration["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"] = max(150.0, new_trigger + 30.0)
         save_simulator_settings(config, mode, migration)
     return path
 
