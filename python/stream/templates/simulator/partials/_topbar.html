@@ -1,0 +1,39 @@
+<header class="sim-top">
+  <div class="sim-brand">SDR / SIMULATOR WORKBENCH</div>
+  <span class="sim-mode">{{ mode|upper }}</span>
+  <span class="pill">{{ caps.simulator_backend|upper }} API</span>
+  <span class="pill">{{ caps.vision_profile|upper }} VISION</span>
+  <span class="sim-spacer"></span>
+  <div class="sim-status"><span id="connection-led" class="led"></span><span id="connection-label">Connecting…</span></div>
+  {% if caps.simulator_backend == 'avis' %}
+  <button id="settings-search-open" class="topbar-search" type="button" title="Search settings · Ctrl+K" aria-haspopup="dialog" aria-controls="settings-search-modal"><svg class="topbar-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
+  <div class="sim-run-controls sim-run-controls-top" role="group" aria-label="AVIS autonomous run controls">
+    <span class="pill carla-run-state stopped" id="carla-run-state">STOPPED</span>
+    <button type="button" id="carla-run-start" class="carla-run-start" disabled>▶ START</button>
+    <button type="button" id="carla-run-stop" class="carla-run-stop" disabled>■ STOP</button>
+    <span id="carla-run-message" class="sim-run-feedback" role="status" aria-live="polite"></span>
+  </div>
+  {% endif %}
+  {% if caps.supports_range_sensors %}<button id="avis-reconnect" type="button">↻ Reconnect AVIS</button>{% endif %}
+  <button id="refresh" type="button">Refresh</button>
+</header>
+{% if caps.simulator_backend == 'avis' %}
+<div id="settings-search-modal" class="settings-search-modal" aria-hidden="true">
+ <section class="settings-search-window" role="dialog" aria-modal="true" aria-labelledby="settings-search-title">
+  <header class="settings-search-header">
+   <div><div class="eyebrow">QUICK NAVIGATION</div><h2 id="settings-search-title">Find a setting</h2></div>
+   <span class="sim-spacer"></span><kbd>ESC</kbd>
+   <button type="button" id="settings-search-close" class="settings-search-close" aria-label="Close settings search">×</button>
+  </header>
+  <div class="settings-search-input-wrap"><span aria-hidden="true">⌕</span>
+   <input id="settings-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search by setting name, key or category…" aria-label="Search simulator settings">
+   <kbd>CTRL K</kbd>
+  </div>
+  <div class="settings-search-meta"><span id="settings-search-count">Search settings by name or key</span><span>Click a result to jump to it</span></div>
+  <div id="settings-search-results" class="settings-search-results" role="listbox" aria-label="Matching settings">
+   <div class="settings-search-empty">Start typing to find connection, sensors, motion, vision, ROI, calibration or PID settings.</div>
+  </div>
+  <footer class="settings-search-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open setting</span><span><kbd>ESC</kbd> Close</span></footer>
+ </section>
+</div>
+{% endif %}

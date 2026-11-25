@@ -1,0 +1,352 @@
+.avis-sensor-canvas{display:block;width:100%;height:390px;background:#081018;border:1px solid var(--sim-border);border-radius:9px}
+.avis-sensor-panel .sensor-columns{margin-top:12px}
+.avis-distance-card{border:1px solid var(--sim-border);background:var(--sim-panel2);border-radius:8px;padding:10px;min-width:0}
+.avis-distance-card .range-number{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}.avis-distance-card .range-number .unit{font-size:11px;color:var(--sim-muted);font-weight:500}
+.avis-distance-card .range-fill{transition:width .16s ease,background .16s ease}
+.avis-legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--sim-muted)}
+.avis-legend span{display:inline-flex;align-items:center;gap:5px}.avis-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}.avis-legend .safe{background:#75d6ff}.avis-legend .near{background:#ffd079}.avis-legend .danger{background:#ff8178}.avis-legend .unknown{background:#7d8b9b}
+.sensor-panel-expanded{position:fixed!important;inset:12px!important;z-index:90!important;display:flex!important;flex-direction:column;box-shadow:0 20px 80px #000c}.sensor-panel-expanded .panel-content{flex:1;display:flex;flex-direction:column;min-height:0}.sensor-panel-expanded .avis-sensor-canvas{height:auto;flex:1;min-height:320px}
+@media(max-width:650px){.avis-sensor-canvas{height:310px}.avis-distance-card{padding:7px}.avis-legend{gap:6px}}
+@media(max-width:520px){.avis-sensor-panel .sensor-columns{grid-template-columns:1fr}.avis-distance-card{display:grid;grid-template-columns:1fr auto;column-gap:8px}.avis-distance-card .range-track,.avis-distance-card .unit{grid-column:1/3}}
+
+.avis-control-map{display:grid;gap:7px}
+.avis-control-map p+p{margin-top:0}
+
+/* AVIS editor uses a single two-column grid. Its right-hand stack always ends
+   at the content edge; no sticky panel floats over a sibling control panel. */
+.sim-layout.avis-layout{
+  width:100%;max-width:100%;min-width:0;
+  grid-template-columns:minmax(0,1fr) minmax(420px,min(560px,42vw));
+  gap:12px;align-items:start;
+}
+.sim-layout.avis-layout>.stack{width:100%;max-width:100%;min-width:0}
+.sim-layout.avis-layout>.stack:last-child{justify-self:stretch}
+.sim-layout.avis-layout .sim-settings-panel{width:100%;max-width:100%;min-width:0;margin:0}
+.sim-layout.avis-layout .sim-settings-panel>.panel-content{
+  width:100%;max-width:100%;min-width:0;overflow-x:hidden;overflow-y:auto;padding:12px 16px;
+}
+.avis-layout .sim-settings-panel #settings-form{width:100%;max-width:100%;min-width:0}
+.avis-layout .sim-settings-panel .grid-two{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:13px;row-gap:14px}
+.avis-layout .sim-settings-panel .setting-block{min-width:0;padding:15px 0}
+.avis-layout .sim-settings-panel .section-title{font-size:14px;line-height:1.4;color:#e6f0fa}
+.avis-layout .sim-settings-panel .field{min-width:0}
+.avis-layout .sim-settings-panel .field label{font-size:13px;font-weight:600;line-height:1.4;color:#c5d5e5}
+.avis-layout .sim-settings-panel .field input,.avis-layout .sim-settings-panel .field select{
+  width:100%;min-width:0;min-height:42px;padding:9px 10px;
+  border-color:#40546a;background:#0d1722;font-size:14px;
+}
+.avis-layout .sim-settings-panel .check-field{
+  min-width:0;min-height:40px;align-items:flex-start;margin-top:7px;padding:9px 10px;
+  border:1px solid #2e4052;border-radius:8px;background:#1a2633;
+  color:#e5edf5;font-size:13px;line-height:1.45;
+}
+.avis-layout .sim-settings-panel .check-field input{flex:0 0 auto;margin-top:3px}
+.avis-layout .sim-settings-panel .note{font-size:12px;line-height:1.55;color:#a9bbcd}
+.avis-layout .avis-control-map{margin-top:12px;border-color:#3e5d78;background:#172838}
+.avis-layout .avis-control-map h4{font-size:13px;color:#e5f2ff}
+.avis-layout .avis-control-map p{font-size:12px;line-height:1.6}
+.avis-layout .sim-settings-panel .pill{color:#b8d7ee;border-color:#415a70}
+.avis-layout .avis-settings-toolbar{
+  position:sticky;top:0;z-index:4;margin:0 -16px 12px;padding:12px 16px 10px;
+  background:#171e28;border-bottom:1px solid #34475b;display:grid;gap:9px;
+}
+.avis-layout .avis-settings-toolbar>div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.avis-layout .avis-settings-toolbar strong{font-size:14px;color:#edf6ff}
+.avis-layout .avis-settings-toolbar span{font-size:11px;color:#9fb5c8}
+.avis-layout .avis-settings-toolbar nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.avis-layout .avis-settings-toolbar nav a{
+  display:inline-flex;align-items:center;padding:6px 9px;border:1px solid #38536a;
+  border-radius:7px;background:#1b2b3a;color:#c8e4f9;text-decoration:none;font-size:11px;font-weight:650;
+}
+.avis-layout .avis-settings-toolbar nav a:hover{background:#28455e;border-color:#72b8e7;color:#fff}
+.avis-layout .settings-filter-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
+.avis-layout .settings-filter-row label{font-size:11px;font-weight:700;color:#9fb5c8}
+.avis-layout .settings-filter-row input{min-width:0;width:100%;min-height:36px;padding:7px 10px;border:1px solid #38536a;border-radius:7px;background:#0d1722;color:#eaf4ff;font-size:12px}
+.avis-layout .settings-filter-row input:focus{outline:2px solid #4b91bf;outline-offset:1px}
+.avis-layout .settings-filter-row button{min-height:34px;padding:6px 10px;border:1px solid #38536a;border-radius:7px;background:#1b2b3a;color:#c8e4f9;font-size:11px}
+.avis-layout .settings-filter-row button:disabled{opacity:.45;cursor:not-allowed}
+.avis-layout .settings-filter-row span{grid-column:2/4;min-height:14px;font-size:10px;color:#8fa9bf}
+.settings-search-hidden{display:none!important}
+.avis-layout .avis-settings-toolbar nav a.search-hidden{display:none!important}
+@media(max-width:520px){.avis-layout .settings-filter-row{grid-template-columns:1fr auto}.avis-layout .settings-filter-row label{grid-column:1/-1}.avis-layout .settings-filter-row span{grid-column:1/-1}}
+@media(max-width:1020px){
+  .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr)}
+  .sim-layout.avis-layout .sim-settings-panel{position:static;height:min(76vh,760px);min-height:260px;max-height:calc(100vh - 120px)}
+  .sim-layout.avis-layout .sim-settings-panel>.panel-content{overflow-x:hidden;overflow-y:auto}
+}
+@media(max-width:520px){
+  .avis-layout .sim-settings-panel .grid-two{grid-template-columns:minmax(0,1fr)}
+  .avis-layout .avis-settings-toolbar nav a{flex:1;justify-content:center}
+}
+
+
+/* AVIS desktop workbench: one top bar, scrollable work area, full-height settings rail. */
+body.avis-workbench{height:100dvh;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+body.avis-workbench .sim-top{position:relative;top:auto;z-index:20;flex:0 0 64px;height:64px;min-height:64px;gap:9px;padding:8px 12px;flex-wrap:nowrap}
+body.avis-workbench .sim-layout.avis-layout{flex:1 1 auto;height:auto;min-height:0;max-height:none;overflow:hidden;grid-template-columns:minmax(0,1fr) minmax(390px,450px);gap:12px;padding:10px;align-items:stretch}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child{height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;align-content:start;padding:0 5px 10px 0;overscroll-behavior:contain;scrollbar-gutter:stable}
+body.avis-workbench .sim-layout.avis-layout>.stack:last-child{height:100%;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:0}
+body.avis-workbench .sim-layout.avis-layout .sim-settings-panel{position:relative;flex:1 1 auto;width:100%;height:100%;min-height:0;max-height:none;align-self:stretch;margin:0}
+body.avis-workbench .sim-layout.avis-layout .sim-settings-panel>.panel-head{flex:0 0 auto}
+body.avis-workbench .sim-layout.avis-layout .sim-settings-panel>.panel-content{flex:1 1 auto;height:0;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+body.avis-workbench .sim-layout.avis-layout .avis-settings-toolbar{top:0}
+body.avis-workbench .sim-settings-panel #save-message{height:22px;min-height:22px;max-height:22px;margin:0 0 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+body.avis-workbench .topbar-search{white-space:nowrap}
+body.avis-workbench .sim-run-controls-top{display:flex;align-items:center;gap:6px;flex:0 0 auto;min-width:0}
+body.avis-workbench .sim-run-controls-top button{height:34px;padding:6px 10px;font-size:11px;font-weight:800;letter-spacing:.035em;white-space:nowrap}
+body.avis-workbench .sim-run-controls-top .carla-run-start{background:linear-gradient(135deg,#176b4d,#1e805b);border-color:#399b74;color:#eafff4}
+body.avis-workbench .sim-run-controls-top .carla-run-stop{background:linear-gradient(135deg,#71373b,#8e4147);border-color:#b85d65;color:#fff0f0}
+body.avis-workbench .sim-run-controls-top .carla-run-state{white-space:nowrap}
+body.avis-workbench .sim-run-feedback{display:block;min-width:0;max-width:160px;height:30px;overflow:hidden;align-content:center;color:var(--sim-muted);font-size:10px;line-height:1.25}
+body.avis-workbench .sim-run-feedback.bad{color:var(--sim-red)}
+body.avis-workbench .sim-run-feedback.good{color:var(--sim-green)}
+body.avis-workbench .camera-status-stack{display:grid;gap:5px;min-width:0;margin-bottom:10px}
+body.avis-workbench .runtime-error-slot{display:flex;align-items:center;width:100%;height:28px;min-height:28px;max-height:28px;padding:3px 10px;border:1px solid transparent;border-radius:7px;background:transparent;visibility:hidden;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;line-height:18px}
+body.avis-workbench .runtime-error-slot.visible{visibility:visible;border-color:#895056;background:#2a191e;color:#ffb7bd}
+body.avis-workbench .camera-feed-status{height:22px;min-height:22px;max-height:22px;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;align-content:center}
+body.avis-workbench .camera-status-meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,1.15fr);gap:7px;min-width:0}
+body.avis-workbench .camera-diagnostic{display:flex;align-items:center;height:30px;min-height:30px;max-height:30px;margin:0;padding:5px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-color:#2b4358;background:#121e2a;color:#b9d1e4;font-size:10px}
+body.avis-workbench .camera-diagnostic.error{border-color:#79504b;background:#261e1a;color:#ffca9d}
+body.avis-workbench .camera-performance{display:flex;align-items:center;height:30px;min-height:30px;max-height:30px;padding:5px 9px;border:1px solid #2b3747;border-radius:8px;background:#121a24;color:#93a9bc;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:10px ui-monospace,Consolas,monospace}
+body.avis-workbench .avis-sensor-stage{border:1px solid #2c4053;border-radius:12px;overflow:hidden;background:radial-gradient(ellipse at 50% 36%,#162638 0%,#0b141e 68%,#081018 100%);box-shadow:inset 0 1px #ffffff08}
+body.avis-workbench .avis-sensor-stage-head{height:34px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 12px;border-bottom:1px solid #243749;color:#8faac0;font:700 10px ui-monospace,Consolas,monospace;letter-spacing:.09em}
+body.avis-workbench .avis-sensor-canvas{display:block;width:100%;height:320px;border:0;border-radius:0;background:transparent}
+body.avis-workbench .avis-sensor-legend{display:flex;align-items:center;gap:15px;flex-wrap:wrap;margin:10px 2px 12px;color:#96aabd;font-size:10px}
+body.avis-workbench .avis-sensor-legend span{display:inline-flex;align-items:center;gap:6px}
+body.avis-workbench .avis-sensor-legend i{width:7px;height:7px;border-radius:50%;display:inline-block}
+body.avis-workbench .avis-sensor-legend .safe{background:#70d8eb;box-shadow:0 0 8px #70d8eb66}
+body.avis-workbench .avis-sensor-legend .near{background:#f6bd64}
+body.avis-workbench .avis-sensor-legend .danger{background:#ff7c82}
+body.avis-workbench .avis-sensor-legend .unknown{background:#72869a}
+body.avis-workbench .avis-distance-card{padding:11px 12px;border-radius:10px;background:linear-gradient(145deg,#1b2b3b,#15212e);box-shadow:inset 0 1px #ffffff08}
+body.avis-workbench .avis-distance-card .eyebrow{font-size:9px;letter-spacing:.12em}
+body.avis-workbench .avis-distance-card .range-number{font:750 21px ui-monospace,Consolas,monospace;color:#e7f4ff;margin-top:4px}
+body.avis-workbench .avis-distance-card .range-track{height:4px;margin-top:9px;background:#0b141e}
+body.avis-workbench .avis-distance-card .unit:last-child{display:block;margin-top:6px;min-height:15px;font-size:10px;color:#8fa5b8}
+body.avis-workbench .avis-sensor-note{height:28px;min-height:28px;max-height:28px;margin:9px 1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px}
+@media(max-width:1250px) and (min-width:1021px){
+ body.avis-workbench .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr) minmax(360px,410px)}
+ body.avis-workbench .sim-top{gap:7px}
+ body.avis-workbench .sim-brand{font-size:12px}
+ body.avis-workbench .sim-top>.pill{display:none}
+ body.avis-workbench .sim-run-feedback{display:none}
+}
+@media(max-width:1020px){
+ body.avis-workbench{height:auto;min-height:100dvh;overflow:auto;display:block}
+ body.avis-workbench .sim-top{position:sticky;top:0;height:auto;min-height:56px;flex-wrap:wrap}
+ body.avis-workbench .sim-layout.avis-layout{height:auto;min-height:0;max-height:none;overflow:visible;grid-template-columns:minmax(0,1fr)}
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child,body.avis-workbench .sim-layout.avis-layout>.stack:last-child{height:auto;min-height:0;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout .sim-settings-panel{height:min(76vh,760px);min-height:420px;max-height:760px}
+ body.avis-workbench .camera-status-meta{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:650px){
+ body.avis-workbench .sim-run-controls-top{order:5;width:100%;justify-content:flex-end}
+ body.avis-workbench .avis-sensor-canvas{height:280px}
+ body.avis-workbench .avis-sensor-legend{gap:9px}
+ body.avis-workbench .sensor-columns{gap:6px}
+ body.avis-workbench .avis-distance-card{padding:8px}
+ body.avis-workbench .avis-distance-card .range-number{font-size:17px}
+}
+@media(max-width:520px){
+ body.avis-workbench .sim-run-controls-top .carla-run-state{margin-right:auto}
+ body.avis-workbench .sim-run-feedback{display:none}
+ body.avis-workbench .avis-sensor-canvas{height:250px}
+ body.avis-workbench .avis-sensor-panel .sensor-columns{grid-template-columns:repeat(3,minmax(0,1fr))}
+ body.avis-workbench .avis-distance-card .eyebrow{font-size:8px}
+ body.avis-workbench .avis-distance-card .range-number{font-size:15px}
+}
+
+
+body.avis-workbench .avis-settings-toolbar{display:none!important}
+body.avis-workbench .settings-search-modal{position:fixed;inset:0;z-index:1500;display:none;align-items:flex-start;justify-content:center;padding:clamp(32px,9vh,92px) 18px 24px;background:#030811c9;backdrop-filter:blur(12px)}
+body.avis-workbench .settings-search-modal.is-open{display:flex}
+body.avis-workbench .settings-search-window{display:flex;flex-direction:column;width:min(720px,100%);max-height:min(720px,82vh);overflow:hidden;border:1px solid #3b5268;border-radius:16px;background:linear-gradient(155deg,#1a2735,#111923 64%);box-shadow:0 28px 110px #000e}
+body.avis-workbench .settings-search-header{display:flex;align-items:center;gap:12px;padding:17px 19px 12px}
+body.avis-workbench .settings-search-header h2{margin:2px 0 0;font-size:18px}
+body.avis-workbench .settings-search-close{width:34px;height:34px;padding:0;border-radius:9px;font-size:22px;line-height:1}
+body.avis-workbench .settings-search-input-wrap{display:flex;align-items:center;gap:12px;margin:4px 18px 12px;padding:0 13px;height:54px;border:1px solid #52718b;border-radius:11px;background:#0b141e}
+body.avis-workbench .settings-search-input-wrap>span{font-size:23px;color:#84bfe5}
+body.avis-workbench .settings-search-input-wrap input{width:100%;min-width:0;height:100%;border:0;outline:0;background:transparent;color:#edf7ff;font-size:15px}
+body.avis-workbench .settings-search-input-wrap kbd,body.avis-workbench .settings-search-header kbd,body.avis-workbench .settings-search-footer kbd{padding:3px 6px;border:1px solid #344a5f;border-radius:5px;background:#172635;color:#9bb6cb;font:10px ui-monospace,Consolas,monospace;white-space:nowrap}
+body.avis-workbench .settings-search-meta{display:flex;justify-content:space-between;gap:12px;padding:0 20px 9px;color:#849aaf;font-size:10px}
+body.avis-workbench .settings-search-results{overflow:auto;min-height:100px;max-height:min(480px,55vh);padding:3px 10px 12px}
+body.avis-workbench .settings-search-result{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;margin:2px 0;text-align:left;border:1px solid transparent;border-radius:9px;background:transparent}
+body.avis-workbench .settings-search-result:hover,body.avis-workbench .settings-search-result.active{border-color:#3a5a74;background:#1c3142}
+body.avis-workbench .settings-search-result-text{display:grid;gap:3px;min-width:0}
+body.avis-workbench .settings-search-result-text strong{overflow:hidden;color:#e7f2fa;font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+body.avis-workbench .settings-search-result-text small{overflow:hidden;color:#8ea6ba;font:10px ui-monospace,Consolas,monospace;text-overflow:ellipsis;white-space:nowrap}
+body.avis-workbench .settings-search-result-kind{color:#7caacb;font:9px ui-monospace,Consolas,monospace}
+body.avis-workbench .settings-search-empty{padding:27px 18px;text-align:center;color:#8298ac;font-size:12px}
+body.avis-workbench .settings-search-footer{display:flex;justify-content:center;gap:18px;padding:10px 14px;border-top:1px solid #293a4b;color:#8298ac;font-size:10px}
+body.avis-workbench .settings-search-footer span{display:flex;align-items:center;gap:4px}
+body.avis-workbench .setting-search-highlight{animation:avis-setting-focus 1.45s ease}
+@keyframes avis-setting-focus{0%,100%{background:transparent}18%,72%{background:#24516a70;box-shadow:0 0 0 2px #69b9e955;border-radius:8px}}
+
+body.avis-workbench .sim-settings-panel{scroll-margin-top:72px}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;gap:0;padding:0}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{display:flex;flex:1 1 auto;flex-direction:column;height:100%;min-height:0;overflow:hidden}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child>.panel-head{flex:0 0 auto}
+body.avis-workbench .sim-layout.avis-layout .camera-wrap{position:relative;display:block;flex:1 1 0;width:100%;height:auto;min-height:220px;overflow:hidden;background:radial-gradient(ellipse at center,#101d2a,#05090e 78%)}
+body.avis-workbench .sim-layout.avis-layout .sim-camera-frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;width:100%;height:100%;max-width:none;overflow:hidden}
+body.avis-workbench .sim-layout.avis-layout .sim-camera-frame img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;background:transparent}
+body.avis-workbench .sim-layout.avis-layout .sim-camera-frame .sim-roi-canvas{z-index:2}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child>.panel-content{flex:0 0 220px;min-height:160px;max-height:240px;overflow:auto;overscroll-behavior:contain}
+body.avis-workbench .sim-layout.avis-layout .camera-status-stack{margin-bottom:8px}
+
+body.avis-workbench .avis-bottom-dock{position:absolute;z-index:8;left:12px;right:12px;bottom:12px;height:var(--avis-dock-height,76px);display:flex;flex-direction:column;overflow:hidden;border:1px solid #486278;border-radius:12px;background:#0a121bef;box-shadow:0 12px 42px #000b;backdrop-filter:blur(14px);transition:height .12s ease}
+body.avis-workbench .avis-dock-handle{flex:0 0 24px;display:flex;align-items:center;gap:10px;padding:3px 9px 1px;cursor:ns-resize;touch-action:none;user-select:none;border-bottom:1px solid #273a4c}
+body.avis-workbench .avis-dock-grip{display:block;width:34px;height:4px;border-radius:9px;background:#5e7d96}
+body.avis-workbench .avis-dock-title{display:flex;align-items:baseline;gap:9px;min-width:0}
+body.avis-workbench .avis-dock-title strong{color:#d9e9f5;font-size:9px;letter-spacing:.13em}
+body.avis-workbench .avis-dock-title small{color:#829bb0;font-size:9px}
+body.avis-workbench .avis-dock-toggle{width:25px;height:22px;min-height:22px;padding:0;border:0;background:transparent;color:#9fc5df;font-size:18px;line-height:1}
+body.avis-workbench .avis-dock-tabs{flex:0 0 38px;display:flex;align-items:stretch;gap:5px;padding:3px 8px;border-bottom:1px solid #273a4c;background:#0c1721}
+body.avis-workbench .avis-dock-tabs button{min-width:98px;padding:5px 12px;border:1px solid transparent;border-radius:7px;background:transparent;color:#8098ab;font-size:11px}
+body.avis-workbench .avis-dock-tabs button.active{border-color:#355a75;background:#1b3448;color:#dcf1ff}
+body.avis-workbench .avis-dock-body{display:none;flex:1 1 auto;min-height:0;overflow:hidden}
+body.avis-workbench .avis-bottom-dock.is-expanded .avis-dock-body{display:block}
+body.avis-workbench .avis-dock-pane{width:100%;height:100%;min-height:0;overflow:auto;padding:9px 11px}
+body.avis-workbench .avis-dock-pane[hidden]{display:none!important}
+body.avis-workbench .avis-dock-sensor-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(230px,1fr);gap:12px;align-items:stretch;min-height:0}
+body.avis-workbench .avis-dock-sensor-visual{min-width:0;overflow:hidden;border:1px solid #263b4e;border-radius:8px;background:#0b1520}
+body.avis-workbench .avis-dock-section-label{height:23px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#7795ad;font:9px ui-monospace,Consolas,monospace}
+body.avis-workbench .avis-dock-sensor-visual .avis-sensor-canvas{display:block;width:100%;height:160px;border:0;border-radius:0;background:transparent}
+body.avis-workbench .avis-dock-sensor-readings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;align-content:center}
+body.avis-workbench .avis-dock-sensor-readings .avis-distance-card{padding:8px;border:1px solid #2e4357;border-radius:8px;background:#152330;min-width:0}
+body.avis-workbench .avis-dock-sensor-readings .eyebrow{font-size:8px;letter-spacing:.07em}
+body.avis-workbench .avis-dock-sensor-readings .range-number{display:flex;align-items:baseline;gap:3px;margin-top:4px;font:700 15px ui-monospace,Consolas,monospace;white-space:nowrap}
+body.avis-workbench .avis-dock-sensor-readings .range-number .unit{font-size:9px}
+body.avis-workbench .avis-dock-sensor-readings .range-track{height:3px;margin-top:7px}
+body.avis-workbench .avis-dock-sensor-readings .unit:last-child{display:block;margin-top:5px;min-height:22px;color:#8297aa;font-size:9px;line-height:1.25}
+body.avis-workbench .avis-dock-foot{display:flex;align-items:center;gap:12px;min-width:0;margin-top:7px;color:#8aa0b3;font-size:9px}
+body.avis-workbench .avis-dock-foot #avis-sensor-note{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+body.avis-workbench .avis-dock-legend{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:#9bb0c1}
+body.avis-workbench .avis-dock-legend i{display:inline-block;width:6px;height:6px;margin-left:5px;border-radius:50%}
+body.avis-workbench .avis-dock-legend .safe{background:#70d8eb}
+body.avis-workbench .avis-dock-legend .near{background:#f6bd64}
+body.avis-workbench .avis-dock-legend .danger{background:#ff7c82}
+body.avis-workbench .avis-dock-legend .unknown{background:#72869a}
+body.avis-workbench .avis-encoder-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:780px;margin:10px auto}
+body.avis-workbench .avis-encoder-card{display:grid;gap:7px;padding:15px 18px;border:1px solid #2e465a;border-radius:10px;background:linear-gradient(145deg,#162a3b,#101c29)}
+body.avis-workbench .avis-encoder-card>strong{color:#e5f4ff;font:750 28px ui-monospace,Consolas,monospace}
+body.avis-workbench .avis-encoder-card>strong small{font-size:13px;color:#9bb4c8}
+body.avis-workbench .avis-encoder-card>small{color:#849db1;font-size:10px}
+body.avis-workbench .avis-dock-log-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+body.avis-workbench .avis-dock-log-head button{padding:4px 9px;font-size:10px}
+body.avis-workbench .avis-dock-console{height:calc(100% - 26px);max-height:none;min-height:100px;border:1px solid #263b4e;background:#070d13}
+@media(max-width:1020px){
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child{height:auto;min-height:0;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{height:calc(100dvh - 90px);min-height:620px}
+ body.avis-workbench .sim-layout.avis-layout .camera-wrap{flex:1 1 auto;min-height:360px}
+ body.avis-workbench .sim-layout.avis-layout .sim-camera-frame{height:100%}
+}
+@media(max-width:650px){
+ body.avis-workbench .settings-search-modal{padding:18px 9px}
+ body.avis-workbench .settings-search-window{max-height:88vh;border-radius:12px}
+ body.avis-workbench .settings-search-meta{font-size:9px}
+ body.avis-workbench .settings-search-footer{gap:8px;font-size:9px}
+ body.avis-workbench .avis-bottom-dock{left:7px;right:7px;bottom:7px}
+ body.avis-workbench .avis-dock-sensor-layout{grid-template-columns:minmax(0,1fr)}
+ body.avis-workbench .avis-dock-sensor-visual .avis-sensor-canvas{height:115px}
+ body.avis-workbench .avis-dock-sensor-readings{gap:5px}
+ body.avis-workbench .avis-dock-sensor-readings .avis-distance-card{padding:6px}
+ body.avis-workbench .avis-dock-sensor-readings .range-number{font-size:13px}
+ body.avis-workbench .avis-dock-foot{gap:5px}
+ body.avis-workbench .avis-dock-legend{display:none}
+}
+
+
+/* AVIS workbench: clear camera stage, slim footer and VS Code-style bottom dock. */
+body.avis-workbench .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr) minmax(360px,400px);gap:10px;padding:10px 12px 12px}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child{padding:0;overflow:hidden}
+body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{min-height:0}
+body.avis-workbench .sim-layout.avis-layout .camera-wrap{flex:1 1 0;min-height:180px;border-bottom:1px solid #26394b}
+body.avis-workbench .avis-camera-footer{position:relative;z-index:5;display:flex;align-items:center;flex:0 0 38px;min-width:0;min-height:38px;padding:3px 9px;border-bottom:1px solid #26394b;background:linear-gradient(180deg,#111c28,#0e1721)}
+body.avis-workbench .avis-camera-footer .camera-status-stack{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr);align-items:center;gap:8px;width:100%;min-width:0;margin:0}
+body.avis-workbench .avis-camera-footer .runtime-error-slot{position:absolute;z-index:6;left:0;right:0;bottom:calc(100% + 5px);display:none;width:100%;height:25px;min-height:25px;max-height:25px;padding:3px 8px;box-shadow:0 5px 18px #0009}
+body.avis-workbench .avis-camera-footer .runtime-error-slot.visible{display:flex}
+body.avis-workbench .avis-camera-footer .camera-feed-status{min-width:0;height:25px;min-height:25px;max-height:25px;margin:0;padding:4px 8px;border:1px solid #2a4054;border-radius:7px;background:#121f2b;font-size:10px}
+body.avis-workbench .avis-camera-footer .camera-status-meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:6px;min-width:0}
+body.avis-workbench .avis-camera-footer .camera-diagnostic,body.avis-workbench .avis-camera-footer .camera-performance{min-width:0;height:25px;min-height:25px;max-height:25px;padding:4px 7px;border-radius:7px;font-size:9px}
+body.avis-workbench .avis-bottom-dock{position:relative!important;inset:auto!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;z-index:4;display:flex;flex:0 0 var(--avis-dock-height,76px);width:100%;height:var(--avis-dock-height,76px);min-height:76px;max-height:460px;margin:0;overflow:hidden;border:0;border-top:1px solid #2b4053;border-radius:0 0 10px 10px;background:#0b141e;box-shadow:none;backdrop-filter:none;transition:height .14s ease,flex-basis .14s ease}
+body.avis-workbench .avis-dock-handle{flex:0 0 26px;min-height:26px;padding:2px 10px;background:#0d1721;border-bottom:1px solid #26394b;cursor:row-resize}
+body.avis-workbench .avis-dock-grip{width:31px;height:4px;background:#64839d}
+body.avis-workbench .avis-dock-title{align-items:center;gap:9px}
+body.avis-workbench .avis-dock-title strong{font-size:9px;letter-spacing:.12em;color:#c8dbea}
+body.avis-workbench .avis-dock-title small{font-size:10px;color:#7f9bb1}
+body.avis-workbench .avis-dock-toggle{display:inline-flex;align-items:center;justify-content:center;width:27px;height:23px;border:1px solid #31485d;border-radius:6px;background:#142231;color:#b8d7ed;font-size:15px}
+body.avis-workbench .avis-dock-tabs{flex:0 0 38px;min-width:0;gap:5px;padding:3px 9px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;background:#0c1721}
+body.avis-workbench .avis-dock-tabs::-webkit-scrollbar{display:none}
+body.avis-workbench .avis-dock-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:94px;height:31px;padding:4px 11px;border:1px solid transparent;border-radius:7px;background:transparent;color:#8da4b8;font-size:11px;white-space:nowrap;transition:background .14s ease,border-color .14s ease,color .14s ease}
+body.avis-workbench .avis-dock-tabs button:hover{background:#142536;color:#e1effa}
+body.avis-workbench .avis-dock-tabs button.active{border-color:#385b76;background:linear-gradient(180deg,#1c3549,#172b3b);color:#e4f4ff;box-shadow:inset 0 1px #ffffff0b}
+body.avis-workbench .avis-dock-icon{width:14px;height:14px;flex:0 0 14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+body.avis-workbench .avis-dock-body{display:none;flex:1 1 auto;min-width:0;min-height:0;overflow:hidden;background:#0a131d}
+body.avis-workbench .avis-bottom-dock.is-expanded .avis-dock-body{display:flex}
+body.avis-workbench .avis-dock-pane{flex:1 1 auto;min-width:0;min-height:0;width:100%;height:100%;padding:10px 12px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#344b60 transparent}
+body.avis-workbench .avis-dock-pane[hidden]{display:none!important}
+body.avis-workbench .avis-overview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 9px}
+body.avis-workbench .avis-overview-head>div{display:flex;align-items:baseline;flex-wrap:wrap;gap:9px;min-width:0}
+body.avis-workbench .avis-overview-head strong{font-size:12px;color:#dceaf5}
+body.avis-workbench .avis-overview-head>div span{font-size:10px;color:#8299ad}
+body.avis-workbench .avis-dock-overview .metrics{grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
+body.avis-workbench .avis-dock-overview .metric{min-width:0;padding:8px 9px;border-radius:8px;background:linear-gradient(145deg,#182838,#121e2a)}
+body.avis-workbench .avis-dock-overview .metric .eyebrow{font-size:8px;letter-spacing:.09em}
+body.avis-workbench .avis-dock-overview .metric .value{margin-top:4px;font-size:16px;line-height:1.2}
+body.avis-workbench .avis-dock-overview .metric .unit{font-size:9px;line-height:1.35}
+body.avis-workbench .avis-dock-overview .sim-roi-editor{margin-top:8px;padding-top:9px}
+body.avis-workbench .avis-dock-overview .sim-roi-editor-head{margin-bottom:7px}
+body.avis-workbench .avis-dock-overview .sim-roi-hint{margin-top:4px;line-height:1.4}
+body.avis-workbench .avis-dock-overview .sim-roi-actions button,body.avis-workbench .avis-dock-overview .sim-roi-selectors button{min-height:28px}
+body.avis-workbench .avis-dock-sensor-layout{grid-template-columns:minmax(0,1.25fr) minmax(230px,1fr);gap:10px}
+body.avis-workbench .avis-dock-sensor-visual{min-height:0}
+body.avis-workbench .avis-dock-sensor-visual .avis-sensor-canvas{height:154px}
+body.avis-workbench .avis-encoder-grid{margin:4px 0;max-width:none}
+body.avis-workbench .avis-dock-console{height:calc(100% - 26px);min-height:90px}
+body.avis-workbench .topbar-search{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:6px 10px;border:1px solid #2f4357;border-radius:8px;background:#172330;color:#d9eaf7;font-size:11px}
+body.avis-workbench .topbar-search:hover{border-color:#5b8aaf;background:#1c3041}
+body.avis-workbench .topbar-search-icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+body.avis-workbench .settings-search-modal{position:fixed!important;inset:0!important;z-index:1500;display:none;align-items:center!important;justify-content:center!important;width:100vw;height:100vh;height:100dvh;min-height:100dvh;box-sizing:border-box;padding:18px;overflow:auto;background:rgba(3,8,17,.76);backdrop-filter:blur(13px) saturate(125%);-webkit-backdrop-filter:blur(13px) saturate(125%)}
+body.avis-workbench .settings-search-modal.is-open{display:flex!important}
+body.avis-workbench .settings-search-window{flex:0 1 auto;width:min(740px,calc(100vw - 36px));max-height:min(760px,86dvh);margin:auto;border:1px solid #3d5870;border-radius:15px;background:linear-gradient(155deg,#1a2837 0%,#111b26 66%,#0e1721 100%);box-shadow:0 28px 110px #000e,0 1px #ffffff0c inset}
+body.avis-workbench .settings-search-header{padding:16px 18px 12px}
+body.avis-workbench .settings-search-header h2{font-size:18px;letter-spacing:-.02em}
+body.avis-workbench .settings-search-input-wrap{height:52px;margin:4px 17px 12px;border-color:#47677f;box-shadow:inset 0 1px 4px #0005}
+body.avis-workbench .settings-search-results{max-height:min(500px,55dvh)}
+body.avis-workbench .settings-search-footer{padding:10px 12px;color:#92a9bd}
+body.avis-workbench .settings-search-result{min-height:43px}
+body.avis-workbench .settings-search-result:focus-visible{outline:2px solid #79b8e5;outline-offset:1px}
+@media(max-width:1020px){
+ body.avis-workbench .sim-layout.avis-layout{grid-template-columns:minmax(0,1fr);height:auto;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child{height:auto;min-height:0;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout>.stack:first-child>.panel:first-child{height:auto;min-height:0}
+ body.avis-workbench .sim-layout.avis-layout .camera-wrap{flex:0 0 clamp(300px,58dvh,620px);min-height:260px}
+ body.avis-workbench .sim-layout.avis-layout>.stack:last-child{height:auto;min-height:0;overflow:visible}
+ body.avis-workbench .sim-layout.avis-layout .sim-settings-panel{height:min(78dvh,740px);min-height:420px;max-height:740px}
+}
+@media(max-width:760px){
+ body.avis-workbench .sim-layout.avis-layout{padding:8px}
+ body.avis-workbench .avis-dock-overview .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.avis-workbench .avis-dock-sensor-layout{grid-template-columns:minmax(0,1fr)}
+ body.avis-workbench .avis-dock-sensor-visual .avis-sensor-canvas{height:130px}
+}
+@media(max-width:650px){
+ body.avis-workbench .sim-top{gap:6px;padding:9px;flex-wrap:wrap}
+ body.avis-workbench .avis-camera-footer{flex-basis:48px;min-height:48px}
+ body.avis-workbench .avis-camera-footer .camera-status-stack{grid-template-columns:minmax(0,1fr);gap:3px}
+ body.avis-workbench .avis-camera-footer .camera-feed-status{height:21px;min-height:21px;max-height:21px}
+ body.avis-workbench .avis-camera-footer .camera-status-meta{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px}
+ body.avis-workbench .avis-camera-footer .camera-diagnostic,body.avis-workbench .avis-camera-footer .camera-performance{height:21px;min-height:21px;max-height:21px;font-size:8px}
+ body.avis-workbench .avis-dock-tabs{gap:2px;padding:3px 5px}
+ body.avis-workbench .avis-dock-tabs button{min-width:78px;padding:4px 7px;gap:5px;font-size:10px}
+ body.avis-workbench .avis-dock-pane{padding:8px}
+ body.avis-workbench .avis-dock-sensor-readings{grid-template-columns:repeat(3,minmax(0,1fr))}
+ body.avis-workbench .avis-dock-foot{align-items:flex-start;flex-wrap:wrap}
+ body.avis-workbench .settings-search-modal{padding:10px}
+ body.avis-workbench .settings-search-window{width:100%;max-height:92dvh;border-radius:12px}
+ body.avis-workbench .settings-search-meta{padding:0 14px 8px}
+ body.avis-workbench .settings-search-meta>span:last-child{display:none}
+ body.avis-workbench .settings-search-footer{gap:7px;font-size:9px}
+}
+
+</style>

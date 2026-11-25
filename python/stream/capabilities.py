@@ -8,8 +8,6 @@ MODE_CAPABILITIES = {
         "lane_detectors": ("default", "blsf-beta"), "supports_ml_lane": False,
         "supports_bev": True, "supports_lane_roi": True,
         "supports_crosswalk": True, "supports_crosswalk_trapezoid": True,
-        "supports_stop_line": False, "supports_traffic_lights": False,
-        "supports_obstacle_avoidance": False, "supports_sign_actions": False,
         "supports_sign": True, "supports_apriltag": True,
         "supports_object_detection": True, "supports_recording": True,
     },
@@ -22,16 +20,8 @@ MODE_CAPABILITIES = {
     },
 }
 MODE_CAPABILITIES["carla"] = {**MODE_CAPABILITIES["city"], "supports_lidar": True, "supports_range_sensors": False}
-MODE_CAPABILITIES["avis"] = {
-    **MODE_CAPABILITIES["city"], "supports_lidar": False, "supports_range_sensors": True,
-    "supports_crosswalk": False, "supports_crosswalk_trapezoid": False,
-    "supports_stop_line": True, "supports_traffic_lights": True,
-    "supports_obstacle_avoidance": True, "supports_sign_actions": True,
-}
-MODE_CAPABILITIES["avis-race"] = {
-    **MODE_CAPABILITIES["race"], "supports_lidar": False, "supports_range_sensors": True,
-    "supports_obstacle_avoidance": True, "supports_sign_actions": True,
-}
+MODE_CAPABILITIES["avis"] = {**MODE_CAPABILITIES["city"], "supports_lidar": False, "supports_range_sensors": True}
+MODE_CAPABILITIES["avis-race"] = {**MODE_CAPABILITIES["race"], "supports_lidar": False, "supports_range_sensors": True}
 
 
 def marker_mode(config: Any) -> str:
@@ -59,21 +49,13 @@ def set_marker_mode(config: Any, mode: str) -> str:
 
 
 def mode_capabilities(config: Any) -> dict[str, Any]:
-    mode = str(getattr(config, "MODE", "city") or "city").strip().lower()
+    mode = str(getattr(config, "MODE", "city")).lower()
     try:
         spec = get_mode_spec(mode)
     except ValueError:
         spec = get_mode_spec("city")
-    # The backend is the authoritative simulator signal. Older launch wrappers
-    # may leave MODE at city/race while still selecting the AVIS backend, and
-    # config values can arrive with mixed casing from external launchers.
-    backend_hint = str(
-        getattr(config, "SIMULATOR_BACKEND", None) or spec.simulator_backend or ""
-    ).strip().lower()
-    simulation = is_simulation_mode(mode) or backend_hint in {"avis", "carla"}
-    profile = str(
-        getattr(config, "SIMULATION_VISION_PROFILE", None) or spec.vision_profile
-    ).strip().lower()
+    simulation = is_simulation_mode(mode)
+    profile = str(getattr(config, "SIMULATION_VISION_PROFILE", spec.vision_profile)).lower()
     if profile not in {"city", "race"}:
         profile = spec.vision_profile
     base = dict(MODE_CAPABILITIES.get(mode, MODE_CAPABILITIES.get(profile, {})))
@@ -85,14 +67,16 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
     elif profile == "race" and bool(getattr(config, "USE_ML_LANE_DETECTOR", False)):
         lane_detector = "ml"
     ml_active = bool(profile == "race" and getattr(config, "USE_ML_LANE_DETECTOR", False))
-    backend = backend_hint if simulation else None
+    backend = (
+        str(getattr(config, "SIMULATOR_BACKEND", spec.simulator_backend)).strip().lower()
+        if simulation else None
+    )
     base.update({
         "mode": mode, "vision_profile": profile,
         "editor_profile": "simulator" if simulation else "standard",
         "simulator_backend": backend, "uses_virtual_io": simulation,
-        "supports_lidar": bool(simulation and backend == "carla"),
-        "supports_range_sensors": bool(simulation and backend == "avis"),
-        "is_avis_engine": bool(simulation and backend == "avis"),
+        "supports_lidar": bool(simulation and spec.supports_lidar),
+        "supports_range_sensors": bool(simulation and spec.supports_range_sensors),
         "lane_detector": lane_detector, "ml_lane_detector": ml_active,
         "supports_lane_roi": bool(base.get("supports_lane_roi", False) and not ml_active
                                   and not (simulation and lane_detector == "blsf-beta")),
@@ -108,39 +92,28 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         "encoder_map_enabled": bool(getattr(config, "ENCODER_MAP_ENABLED", False)),
         "confidence_aware_enabled": bool(getattr(config, "CONFIDENCE_AWARE_ENABLED", False)),
         "adaptive_obstacle_avoidance_enabled": bool(getattr(config, "ADAPTIVE_OBSTACLE_AVOIDANCE_ENABLED", False)),
-        "simulator_obstacle_avoidance_enabled": bool(getattr(config, "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", False)),
-        "simulator_stop_line_enabled": bool(getattr(config, "SIMULATOR_STOP_LINE_ENABLED", False)),
-        "simulator_traffic_lights_enabled": bool(getattr(config, "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", False)),
-        "simulator_sign_actions_enabled": bool(getattr(config, "SIMULATOR_SIGN_ACTIONS_ENABLED", False)),
         "stream_control_enabled": bool(getattr(config, "STREAM_ALLOW_CONTROL", False)),
         "marker_runtime_control": callable(getattr(config, "apply_marker_mode", None)),
     })
     if simulation:
-        # AVIS uses the shared sign/light detectors through a simulator-only
-        # behavior coordinator. No Arduino, physical race gate or actuator
-        # sequence is reused by the simulator runtime.
-        avis_backend = bool(backend == "avis")
-        base["supports_sign"] = avis_backend
+        # The simulator runtime shares lane/crosswalk vision, not the complete
+        # physical orchestration for signs, actuator sequences or video output.
+        base["supports_sign"] = False
         base["supports_apriltag"] = False
         base["supports_object_detection"] = False
         base["supports_recording"] = False
-        base["supports_sign_actions"] = avis_backend
-        base["supports_obstacle_avoidance"] = avis_backend
-        base["supports_traffic_lights"] = bool(avis_backend and profile == "city")
-        base["supports_stop_line"] = bool(avis_backend and profile == "city")
-        if avis_backend and profile == "city":
-            base["supports_crosswalk"] = False
-            base["supports_crosswalk_trapezoid"] = False
         profile_description = (
-            "City lane and stop-line perception" if profile == "city" and avis_backend
-            else "City lane and crosswalk image processing" if profile == "city"
+            "City line and crosswalk image processing" if profile == "city"
             else "Race lane image processing; physical Race sign/phase orchestration is not copied"
         )
         base["option_groups"] = [
             {"title": "Shared vision", "description": profile_description + ". The image processor and steering semantics are shared with the corresponding physical mode."},
-            {"title": "Mode-specific vision", "description": "AVIS City stop-line and traffic-light ROIs; crosswalk detection is disabled in this environment." if profile == "city" and avis_backend else "City lane ROI, BEV and crosswalk tuning." if profile == "city" else "Race lane geometry and optional ML lane model; no City crosswalk processing."},
-            {"title": "AVIS behavior layer", "description": "Optional range-based obstacle bypass and asynchronous STOP, PARK, STRAIGHT and TURN sign actions." if avis_backend else "No AVIS behavior layer is available for this backend."},
-            {"title": "Virtual vehicle I/O", "description": "Normalized steering, throttle and brake replace serial commands. A motion-derived virtual encoder replaces unavailable hardware telemetry."},
+            {"title": "Mode-specific vision", "description": "City lane ROI, BEV and crosswalk tuning." if profile == "city" else "Race lane geometry and optional ML lane model; no City crosswalk processing."},
+            {"title": "Virtual vehicle I/O", "description": (
+                "Vision steering is converted to the legacy AVIS signed range (-100 left to +100 right); speed is sent as a 0-100 percentage. A motion-derived virtual encoder replaces unavailable hardware telemetry."
+                if backend == "avis" else
+                "Normalized steering, throttle and brake replace serial commands. A motion-derived virtual encoder replaces unavailable hardware telemetry."
+            )},
             {"title": "Simulator sensors", "description": "CARLA camera and ray-cast LiDAR." if backend == "carla" else "AVIS camera and its native left/front/right distance sensors; no LiDAR point cloud is exposed by this adapter."},
         ]
     else:

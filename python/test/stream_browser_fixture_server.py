@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from flask import render_template, request
 
 PYTHON_ROOT = Path(__file__).resolve().parents[1]
 if str(PYTHON_ROOT) not in sys.path:
@@ -44,6 +45,25 @@ def main():
     )
     streamer = WebStreamer(config)
     app = streamer.app
+
+    @app.get("/__test/simulator-editor")
+    def simulator_editor_fixture():
+        backend = request.args.get("backend", "avis")
+        if backend not in ("avis", "carla"):
+            return "Unsupported simulator backend", 400
+        profile = request.args.get("profile", "city")
+        if profile not in ("city", "race"):
+            return "Unsupported simulator profile", 400
+        caps = {
+            "simulator_backend": backend,
+            "vision_profile": profile,
+            "supports_lane_roi": True,
+            "supports_lidar": backend == "carla",
+            "supports_range_sensors": True,
+        }
+        return render_template(
+            "simulator_editor.html", mode=profile, caps=caps, auth_enabled=False
+        )
     print(f"STREAM_BROWSER_TEST_READY:{port}", flush=True)
     try:
         app.run(host="127.0.0.1", port=port, threaded=True, use_reloader=False)

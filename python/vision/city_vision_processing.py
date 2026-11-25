@@ -9,6 +9,9 @@ import math
 import cv2
 import numpy as np
 
+from vision.lane_boundary_tracking import LaneBoundaryTracker
+from vision.lane_recovery_detection import detect_recovery_lines
+
 class VisionProcessor:
     def __init__(self):
         self.last_steering = float(getattr(conf, "SERVO_CENTER", SERVO_CENTER))
@@ -20,6 +23,7 @@ class VisionProcessor:
         self._bev_matrix = None
         self._morph_kernel = np.ones((3, 3), np.uint8)
         self._lsd = cv2.createLineSegmentDetector(0)
+        self._lane_boundary_tracker = LaneBoundaryTracker()
 
     @staticmethod
     def _extract_line(line):
@@ -129,6 +133,18 @@ class VisionProcessor:
         points[:, [0, 2]] = (max(0, int(roi_width)) - 1) - points[:, [0, 2]]
         return restored
 
+    @staticmethod
+    def _line_index_for_midpoint(lines, midpoint):
+        if lines is None or midpoint is None:
+            return None
+        best_index, best_distance = None, float("inf")
+        for index, line in enumerate(lines):
+            x1, _y1, x2, _y2 = VisionProcessor._extract_line(line)
+            distance = abs(float((x1 + x2) * 0.5) - float(midpoint))
+            if distance < best_distance:
+                best_index, best_distance = index, distance
+        return best_index
+
     def detect(self, frame, debug_frame=None):
         if frame is None:
             return {
@@ -169,16 +185,39 @@ class VisionProcessor:
                 self._bev_cache_key = cache_key
             frame = cv2.warpPerspective(frame, self._bev_matrix, (width, height), flags=cv2.INTER_LINEAR)
             
-        debug_frame = frame.copy() if conf.DEBUG or conf.STREAM else None
+        debug_frame = frame.copy() if (conf.DEBUG or getattr(conf, "STREAM", False) or bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))) else None
 
         rl_top, rl_bottom = int(conf.RL_TOP_ROI * height), int(conf.RL_BOTTOM_ROI * height)
         rl_left, rl_right = int(conf.RL_LEFT_ROI * width), int(conf.RL_RIGHT_ROI * width)
         ll_top, ll_bottom = int(conf.LL_TOP_ROI * height), int(conf.LL_BOTTOM_ROI * height)
         ll_left, ll_right = int(conf.LL_LEFT_ROI * width), int(conf.LL_RIGHT_ROI * width)
         
-        if bool(getattr(conf, "ROI_RESIZABLE", ROI_RESIZABLE)):
-            rl_right_ = rl_right + int((1 - conf.RL_RIGHT_ROI) * width * 1 / self.max_unseen_counter * self.rroi_unseen_counter)
-            ll_left_ = ll_left + int((0 - conf.LL_LEFT_ROI) * width * 1 / self.max_unseen_counter * self.lroi_unseen_counter)
+        hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
+        sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
+        simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
+        simulator_joint_tracking = (
+            hall_requested
+            and sobel_hough_active
+            and simulator_backend in ("carla", "avis")
+        )
+
+        # The user-configured rectangle is the detector's primary ROI. The
+        # legacy ROI_RESIZABLE edge-growth behavior is kept for the old pipeline
+        # only; simulator Hall tracking has its own prediction-centred recovery
+        # window and must not silently rewrite the configured coordinates.
+        legacy_roi_resizing = (
+            bool(getattr(conf, "ROI_RESIZABLE", ROI_RESIZABLE))
+            and not simulator_joint_tracking
+        )
+        if legacy_roi_resizing:
+            rl_right_ = rl_right + int(
+                (1 - conf.RL_RIGHT_ROI) * width
+                / self.max_unseen_counter * self.rroi_unseen_counter
+            )
+            ll_left_ = ll_left + int(
+                (0 - conf.LL_LEFT_ROI) * width
+                / self.max_unseen_counter * self.lroi_unseen_counter
+            )
         else:
             rl_right_ = rl_right
             ll_left_ = ll_left
@@ -314,8 +353,7 @@ class VisionProcessor:
         crosswalk = False
         cw_lines = []
 
-        crosswalk_enabled = bool(getattr(conf, "SIMULATOR_CROSSWALK_DETECTION_ENABLED", True))
-        if cw_frame is not None and crosswalk_enabled:
+        if cw_frame is not None and simulator_backend != "avis":
             if bool(getattr(conf, "CW_OLD_METHOD", CW_OLD_METHOD)):
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
@@ -388,41 +426,177 @@ class VisionProcessor:
                 ll_edge = cv2.flip(ll_edge, 1)
             ll_lines = self._restore_lane_roi_lines(ll_lines, ll_current_w, True)
 
-        rl_x_mid_full = rl_x_mid
-        ll_x_mid_full = ll_x_mid
-
-        frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2
-
-        if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):
-            lane_type = "both"
-            self.rroi_unseen_counter -= 1
-            self.lroi_unseen_counter -= 1
-        elif (rl_x_mid_full is None) and (ll_x_mid_full is not None):
-            lane_type = "only_left"
-            self.rroi_unseen_counter += 2
-        elif (rl_x_mid_full is not None) and (ll_x_mid_full is None):
-            lane_type = "only_right"
-            self.lroi_unseen_counter += 2
+        geometry_mode = (
+            "bev" if bool(getattr(conf, "USE_BEV", False))
+            else "perspective"
+        )
+        line_tracking = {"enabled": False, "state": "DISABLED"}
+        lane_tracking_result = None
+        tracking_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
+        tracking_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
+        tracking_left_lines, tracking_right_lines = ll_lines, rl_lines
+        perception_valid = False
+        configured_roi_bounds = None
+        if hall_requested and sobel_hough_active:
+            max_missed = max(1, int(getattr(conf, "HALL_LINE_TRACKING_MAX_MISSED", 4)))
+            self._lane_boundary_tracker.max_missed_frames = max_missed
+            if simulator_joint_tracking:
+                # Simulator lane edges are already gated by the shared lane
+                # width, side-of-road ROI, and tangent checks. One geometrically
+                # valid Hough segment is enough; requiring repeated hits makes
+                # a perfectly visible boundary flicker between LOST/REACQUIRING.
+                # One Hough segment per ROI is enough; require the same
+                # geometry on two consecutive frames to reject single-frame
+                # texture and shadow detections without demanding three hits.
+                self._lane_boundary_tracker.reacquire_frames = 2
+            else:
+                self._lane_boundary_tracker.reacquire_frames = max(
+                    1, int(getattr(conf, "HALL_LINE_TRACKING_REACQUIRE_FRAMES", 1))
+                )
+            if simulator_joint_tracking:
+                base_left_roi = (ll_left, ll_top, ll_right, ll_bottom)
+                base_right_roi = (rl_left, rl_top, rl_right, rl_bottom)
+                configured_roi_bounds = {
+                    "LL": base_left_roi,
+                    "RL": base_right_roi,
+                }
+            else:
+                base_left_roi = (ll_left_, ll_top, ll_right, ll_bottom)
+                base_right_roi = (rl_left, rl_top, rl_right_, rl_bottom)
+            self._lane_boundary_tracker.set_geometry_mode(geometry_mode)
+            if simulator_backend in ("carla", "avis"):
+                recovery = self._lane_boundary_tracker.recovery_rois(
+                    base_left_roi, base_right_roi, frame.shape,
+                    geometry_mode=geometry_mode,
+                )
+            else:
+                recovery = {
+                    "left": {"roi": base_left_roi, "expanded": False},
+                    "right": {"roi": base_right_roi, "expanded": False},
+                }
+            tracking_left_roi = recovery["left"]["roi"]
+            tracking_right_roi = recovery["right"]["roi"]
+            tracking_left_lines = ll_lines
+            tracking_right_lines = rl_lines
+            if simulator_joint_tracking:
+                # Use one deterministic detector path on every frame. Switching
+                # between normal ROI preprocessing and an unmasked recovery
+                # crop made the same physical line alternate DETECTED/INFERRED.
+                _left_edges, tracking_left_lines = detect_recovery_lines(
+                    frame, tracking_left_roi, conf, self._morph_kernel,
+                    side="left", mirrored=ll_mirrored,
+                )
+                _right_edges, tracking_right_lines = detect_recovery_lines(
+                    frame, tracking_right_roi, conf, self._morph_kernel,
+                    side="right", mirrored=rl_mirrored,
+                )
+            else:
+                if recovery["left"]["expanded"] or recovery["left"].get("recheck", False):
+                    _left_edges, tracking_left_lines = detect_recovery_lines(
+                        frame, tracking_left_roi, conf, self._morph_kernel
+                    )
+                if recovery["right"]["expanded"] or recovery["right"].get("recheck", False):
+                    _right_edges, tracking_right_lines = detect_recovery_lines(
+                        frame, tracking_right_roi, conf, self._morph_kernel
+                    )
+            lane_tracking_result = self._lane_boundary_tracker.update(
+                left_lines=tracking_left_lines,
+                right_lines=tracking_right_lines,
+                frame_shape=frame.shape,
+                left_roi=tracking_left_roi,
+                right_roi=tracking_right_roi,
+                reference_center_x=(conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0,
+                geometry_mode=geometry_mode,
+                left_preferred_index=(
+                    None if simulator_joint_tracking or recovery["left"]["expanded"]
+                    else self._line_index_for_midpoint(ll_lines, ll_x_mid)
+                ),
+                right_preferred_index=(
+                    None if simulator_joint_tracking or recovery["right"]["expanded"]
+                    else self._line_index_for_midpoint(rl_lines, rl_x_mid)
+                ),
+                left_prediction_valid=bool(recovery["left"].get("prediction_valid", True)),
+                right_prediction_valid=bool(recovery["right"].get("prediction_valid", True)),
+                enable_full_pair_reacquisition=bool(simulator_joint_tracking),
+                max_inferred_frames=(
+                    max(
+                        self._lane_boundary_tracker.reacquire_frames * 2,
+                        max_missed * 3,
+                    )
+                    if simulator_joint_tracking else None
+                ),
+                coast_frames=2 if simulator_joint_tracking else 0,
+            )
+            # Keep the configured-vs-search ROI geometry and signed edge
+            # distances attached to the live diagnostics for each side.
+            for side_name in ("left", "right"):
+                lane_tracking_result[side_name]["recovery"] = recovery[side_name]
+            line_tracking = lane_tracking_result
+            perception_valid = bool(lane_tracking_result["perception_valid"])
+            lane_type = str(lane_tracking_result["lane_type"])
+            rl_x_mid = (
+                lane_tracking_result["right"]["x_px"] - tracking_right_roi[0]
+                if lane_tracking_result["right"]["observed"] else None
+            )
+            ll_x_mid = (
+                lane_tracking_result["left"]["x_px"] - tracking_left_roi[0]
+                if lane_tracking_result["left"]["observed"] else None
+            )
+            self.rroi_unseen_counter += -1 if lane_tracking_result["right"]["observed"] else 2
+            self.lroi_unseen_counter += -1 if lane_tracking_result["left"]["observed"] else 2
         else:
-            lane_type = "none"
-            self.rroi_unseen_counter += 2
-            self.lroi_unseen_counter += 2  
-        
+            self._lane_boundary_tracker.reset()
+            if hall_requested:
+                line_tracking = {
+                    "enabled": False,
+                    "state": "UNSUPPORTED_LEGACY",
+                    "reason": "Joint lane tracking is available only with the Sobel + Hough detector (OLD_METHOD=False).",
+                }
+            rl_x_mid_full = rl_x_mid
+            ll_x_mid_full = ll_x_mid
+            if (rl_x_mid_full is not None) and (ll_x_mid_full is not None):
+                lane_type = "both"
+                self.rroi_unseen_counter -= 1
+                self.lroi_unseen_counter -= 1
+            elif (rl_x_mid_full is None) and (ll_x_mid_full is not None):
+                lane_type = "only_left"
+                self.rroi_unseen_counter += 2
+            elif (rl_x_mid_full is not None) and (ll_x_mid_full is None):
+                lane_type = "only_right"
+                self.lroi_unseen_counter += 2
+            else:
+                lane_type = "none"
+                self.rroi_unseen_counter += 2
+                self.lroi_unseen_counter += 2
+
         self.rroi_unseen_counter = max(0, min(self.max_unseen_counter, self.rroi_unseen_counter))
         self.lroi_unseen_counter = max(0, min(self.max_unseen_counter, self.lroi_unseen_counter))
 
-        rl_roi_center = abs(rl_left - rl_right_) / 2.0
-        ll_roi_center = abs(ll_left_ - ll_right) / 2.0
+        frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
 
-        if rl_x_mid_full is None and ll_x_mid_full is not None:
-            rl_x_mid_full = ll_x_mid_full
-        if ll_x_mid_full is None and rl_x_mid_full is not None:
-            ll_x_mid_full = rl_x_mid_full
-
-        if lane_type in ("both", "only_right", "only_left"):
-            lane_center = (rl_roi_center - rl_x_mid_full + ll_roi_center - ll_x_mid_full) / 2.0
+        if lane_tracking_result is not None:
+            lane_center_px = lane_tracking_result.get("steering_center_px")
+            if lane_center_px is None:
+                lane_center_px = lane_tracking_result["lane_center_px"]
+            lane_center = (
+                frame_center - float(lane_center_px)
+                if perception_valid and lane_center_px is not None
+                else 0.0
+            )
         else:
-            lane_center = frame_center
+            rl_x_mid_full = rl_x_mid
+            ll_x_mid_full = ll_x_mid
+            rl_roi_center = abs(rl_left - rl_right_) / 2.0
+            ll_roi_center = abs(ll_left_ - ll_right) / 2.0
+            if rl_x_mid_full is None and ll_x_mid_full is not None:
+                rl_x_mid_full = ll_x_mid_full
+            if ll_x_mid_full is None and rl_x_mid_full is not None:
+                ll_x_mid_full = rl_x_mid_full
+            if lane_type in ("both", "only_right", "only_left"):
+                lane_center = (rl_roi_center - rl_x_mid_full + ll_roi_center - ll_x_mid_full) / 2.0
+            else:
+                lane_center = frame_center
+            perception_valid = lane_type != "none"
             
         min_error = frame_center - (ll_right + rl_right) / 2
         max_error = frame_center - (ll_left + rl_left) / 2 
@@ -460,46 +634,56 @@ class VisionProcessor:
         
         # Package geometry only; the optional visualization layer draws it later.
         debug = None
-        if (conf.DEBUG or conf.STREAM) and debug_frame is not None:
+        if (conf.DEBUG or getattr(conf, "STREAM", False) or bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))) and debug_frame is not None:
             frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
             draw_data = {
                 "kind": "classical",
                 "frame_width": int(width),
                 "frame_height": int(height),
                 "roi_bounds": {
-                    "RL": (rl_left, rl_top, rl_right_, rl_bottom),
-                    "LL": (ll_left_, ll_top, ll_right, ll_bottom),
+                    "RL": tracking_right_roi,
+                    "LL": tracking_left_roi,
+                    "CW": (cw_left, cw_top, cw_right, cw_bottom),
+                },
+                "configured_roi_bounds": configured_roi_bounds,
+                "geometry_mode": geometry_mode,
+                "legacy_roi_resizable_applied": bool(legacy_roi_resizing),
+                "search_roi_bounds": {
+                    "RL": tracking_right_roi,
+                    "LL": tracking_left_roi,
                     "CW": (cw_left, cw_top, cw_right, cw_bottom),
                 },
                 "line_offsets": {
-                    "RL": (rl_left, rl_top),
-                    "LL": (ll_left_, ll_top),
+                    "RL": tracking_right_roi[:2],
+                    "LL": tracking_left_roi[:2],
                     "CW": (cw_left, cw_top),
                 },
-                "lines": {"RL": rl_lines, "LL": ll_lines, "CW": cw_lines},
+                "lines": {"RL": tracking_right_lines, "LL": tracking_left_lines, "CW": cw_lines},
                 "midpoints": {"RL": rl_x_mid, "LL": ll_x_mid},
                 "frame_center_x": float(frame_center),
                 "lane_center_offset_px": float(lane_center),
+                "lane_tracking": lane_tracking_result,
             }
             debug = {
                 "combined": debug_frame,
                 "draw_data": draw_data,
                 "rl_edges": rl_edge,
                 "ll_edges": ll_edge,
-                "rl_lines": rl_lines,
-                "ll_lines": ll_lines,
-                "rl_offset": (rl_left, rl_top),
-                "ll_offset": (ll_left_, ll_top),
+                "rl_lines": tracking_right_lines,
+                "ll_lines": tracking_left_lines,
+                "rl_offset": tracking_right_roi[:2],
+                "ll_offset": tracking_left_roi[:2],
             }
 
         return {
             "steering_angle": steering_angle,
             "error": error,
             "lane_type": lane_type,
-            "perception_valid": lane_type != "none",
+            "perception_valid": bool(perception_valid),
             "crosswalk": crosswalk,
             "debug": debug,
             "kp": kp
-            ,"perception_quality": min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0))
-            ,"observed_lane_boundaries": 2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0
+            ,"perception_quality": (float(lane_tracking_result["perception_quality"]) if lane_tracking_result is not None else min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0)))
+            ,"observed_lane_boundaries": (int(lane_tracking_result["left"]["observed"]) + int(lane_tracking_result["right"]["observed"]) if lane_tracking_result is not None else (2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0))
+            ,"line_tracking": line_tracking
         }

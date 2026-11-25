@@ -206,6 +206,99 @@ class LaneDebugOverlayTests(unittest.TestCase):
                 self.assertFalse(any("BLSF-BETA" in str(label) for label in labels))
                 self.assertFalse(any("crosswalk:" in str(label) for label in labels))
 
+    def test_lane_tracking_overlay_marks_observed_and_inferred_boundaries(self):
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        draw_data = {
+            "kind": "classical",
+            "frame_width": 160,
+            "frame_height": 120,
+            "roi_bounds": {
+                "RL": (90, 30, 150, 110),
+                "LL": (10, 30, 70, 110),
+            },
+            "line_offsets": {"RL": (90, 30), "LL": (10, 30)},
+            "lines": {"RL": None, "LL": None},
+            "midpoints": {"RL": None, "LL": None},
+            "lane_center_offset_px": 4.0,
+            "lane_tracking": {
+                "enabled": True,
+                "state": "SINGLE_SIDE_RIGHT",
+                "y_ref_px": 70.0,
+                "lane_center_px": 80.0,
+                "lane_width_px": 60.0,
+                "left": {
+                    "status": "LOST · INFERRED",
+                    "observed": False,
+                    "inferred": True,
+                    "track_id": 1,
+                    "missed_frames": 7,
+                    "predicted_line": [35.0, 30.0, 38.0, 110.0],
+                },
+                "right": {
+                    "status": "DETECTED",
+                    "observed": True,
+                    "inferred": False,
+                    "track_id": 2,
+                    "missed_frames": 0,
+                    "line": [100.0, 30.0, 104.0, 110.0],
+                },
+            },
+        }
+
+        with patch("visualization.lane_debug_overlay.cv2.putText") as put_text:
+            render_lane_debug_overlay(frame, draw_data, self.config, steering_angle=None)
+
+        labels = [str(call.args[1]) for call in put_text.call_args_list]
+        self.assertTrue(any("LEFT INFERRED 7f" in label for label in labels))
+        self.assertTrue(any("RIGHT DETECTED #2" in label for label in labels))
+        self.assertTrue(any("LANE TRACK: SINGLE_SIDE_RIGHT" in label for label in labels))
+
+    def test_lane_tracking_overlay_keeps_recent_dropout_as_track_hold(self):
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        draw_data = {
+            "kind": "classical",
+            "frame_width": 160,
+            "frame_height": 120,
+            "roi_bounds": {"LL": (10, 30, 70, 110), "RL": (90, 30, 150, 110)},
+            "configured_roi_bounds": {"LL": (10, 30, 70, 110), "RL": (90, 30, 150, 110)},
+            "lane_tracking": {
+                "enabled": True,
+                "state": "SINGLE_SIDE_RIGHT",
+                "y_ref_px": 70.0,
+                "left": {
+                    "status": "COASTING",
+                    "observed": False,
+                    "coasting": True,
+                    "inferred": False,
+                    "missed_frames": 1,
+                    "predicted_line": [32.0, 30.0, 36.0, 110.0],
+                    "raw_hough_count": 4,
+                    "candidate_count": 1,
+                    "ranked_count": 1,
+                },
+                "right": {
+                    "status": "DETECTED",
+                    "observed": True,
+                    "inferred": False,
+                    "missed_frames": 0,
+                    "line": [100.0, 30.0, 104.0, 110.0],
+                    "raw_hough_count": 3,
+                    "candidate_count": 1,
+                    "ranked_count": 1,
+                },
+            },
+        }
+        with patch("visualization.lane_debug_overlay.cv2.putText") as put_text:
+            render_lane_debug_overlay(frame, draw_data, self.config, steering_angle=None)
+        labels = [str(call.args[1]) for call in put_text.call_args_list]
+        self.assertTrue(any("LEFT TRACK HOLD 1f" in label for label in labels))
+        self.assertTrue(any("H4/C1/T1" in label for label in labels))
+        self.assertTrue(any("RIGHT DETECTED" in label for label in labels))
+
     def test_renderer_handles_missing_frame(self):
         self.assertIsNone(render_lane_debug_overlay(None, {}, self.config, 95))
 

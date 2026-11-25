@@ -119,6 +119,250 @@ def _draw_segment_list(canvas, segments, offset, sx, sy, color, thickness):
         cv2.line(canvas, p1, p2, color, thickness, cv2.LINE_AA)
 
 
+def _draw_dashed_line(canvas, p1, p2, color, thickness=2, dash=10, gap=7):
+    x1, y1 = map(float, p1)
+    x2, y2 = map(float, p2)
+    length = math.hypot(x2 - x1, y2 - y1)
+    if length < 1.0:
+        return
+    ux = (x2 - x1) / length
+    uy = (y2 - y1) / length
+    position = 0.0
+    while position < length:
+        end = min(length, position + dash)
+        start_point = (
+            int(round(x1 + ux * position)),
+            int(round(y1 + uy * position)),
+        )
+        end_point = (
+            int(round(x1 + ux * end)),
+            int(round(y1 + uy * end)),
+        )
+        cv2.line(canvas, start_point, end_point, color, thickness, cv2.LINE_AA)
+        position = end + gap
+
+def _draw_dashed_rectangle(canvas, box, sx, sy, color, thickness=1):
+    """Show an adaptive recovery window without replacing the configured ROI."""
+    left, top, right, bottom = _scaled_box(box, sx, sy)
+    _draw_dashed_line(canvas, (left, top), (right, top), color, thickness, 7, 5)
+    _draw_dashed_line(canvas, (right, top), (right, bottom), color, thickness, 7, 5)
+    _draw_dashed_line(canvas, (right, bottom), (left, bottom), color, thickness, 7, 5)
+    _draw_dashed_line(canvas, (left, bottom), (left, top), color, thickness, 7, 5)
+
+
+
+def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
+    if not isinstance(tracking, dict) or not tracking.get("enabled"):
+        return
+    height, width = canvas.shape[:2]
+    y_ref = _finite_number(tracking.get("y_ref_px"))
+    if y_ref is not None:
+        y = int(round(y_ref * sy))
+        cv2.line(canvas, (0, y), (width - 1, y), (115, 115, 115), 1, cv2.LINE_AA)
+
+    side_specs = (
+        ("left", "LL", (80, 235, 150), (0, 185, 255)),
+        ("right", "RL", (255, 220, 80), (0, 185, 255)),
+    )
+    for side_name, roi_name, observed_color, inferred_color in side_specs:
+        side = tracking.get(side_name) or {}
+        line = side.get("line") if side.get("observed") else None
+        predicted = side.get("predicted_line")
+        pending = side.get("reacquiring_line")
+        if isinstance(line, (list, tuple)) and len(line) >= 4:
+            x1, y1, x2, y2 = map(float, line[:4])
+            cv2.line(
+                canvas,
+                _scaled_point(x1, y1, sx, sy),
+                _scaled_point(x2, y2, sx, sy),
+                observed_color,
+                max(2, thickness + 1),
+                cv2.LINE_AA,
+            )
+        elif isinstance(side.get("predicted_points"), (list, tuple)) and len(side.get("predicted_points")) >= 2:
+            points = [
+                _scaled_point(point[0], point[1], sx, sy)
+                for point in side["predicted_points"]
+                if isinstance(point, (list, tuple)) and len(point) >= 2
+            ]
+            for start, end in zip(points, points[1:]):
+                _draw_dashed_line(
+                    canvas, start, end, inferred_color,
+                    max(2, thickness + 1), dash=9, gap=6,
+                )
+        elif isinstance(predicted, (list, tuple)) and len(predicted) >= 4:
+            x1, y1, x2, y2 = map(float, predicted[:4])
+            if side.get("coasting"):
+                # A one/two-frame Hough dropout keeps the last measured
+                # geometry solid; it is not yet a new inferred boundary.
+                cv2.line(
+                    canvas,
+                    _scaled_point(x1, y1, sx, sy),
+                    _scaled_point(x2, y2, sx, sy),
+                    observed_color,
+                    max(2, thickness),
+                    cv2.LINE_AA,
+                )
+            else:
+                _draw_dashed_line(
+                    canvas,
+                    _scaled_point(x1, y1, sx, sy),
+                    _scaled_point(x2, y2, sx, sy),
+                    inferred_color,
+                    max(2, thickness + 1),
+                )
+        if isinstance(pending, (list, tuple)) and len(pending) >= 4:
+            x1, y1, x2, y2 = map(float, pending[:4])
+            _draw_dashed_line(canvas, _scaled_point(x1, y1, sx, sy),
+                              _scaled_point(x2, y2, sx, sy), (0, 220, 255),
+                              max(2, thickness + 1), dash=5, gap=4)
+
+        status = str(side.get("status") or "UNKNOWN").upper()
+        track_id = side.get("track_id")
+        if status == "DETECTED":
+            label = f"{side_name.upper()} DETECTED"
+            if track_id is not None:
+                label += f" #{int(track_id)}"
+            color = observed_color
+        elif status == "REACQUIRING":
+            reacquiring_label = "REACQUIRING {}/{}".format(
+                int(side.get("pending_hits", 0)),
+                int(side.get("pending_required", 3)),
+            )
+            label = (
+                f"{side_name.upper()} INFERRED · {reacquiring_label}"
+                if side.get("inferred") else f"{side_name.upper()} {reacquiring_label}"
+            )
+            color = (0, 220, 255)
+        elif "INFERRED" in status:
+            missed = int(side.get("missed_frames", 0))
+            label = "{} INFERRED {}f".format(side_name.upper(), missed)
+            color = inferred_color
+        elif status == "COASTING":
+            label = "{} TRACK HOLD {}f".format(
+                side_name.upper(), int(side.get("missed_frames", 0))
+            )
+            color = observed_color
+
+        elif status == "PREDICTED":
+            label = "{} PREDICTED {}f".format(
+                side_name.upper(), int(side.get("missed_frames", 0))
+            )
+            color = inferred_color
+        else:
+            label = f"{side_name.upper()} LOST"
+            color = (60, 70, 255)
+
+        detector_stats = "H{}/C{}/T{}".format(
+            int(side.get("raw_hough_count", 0)),
+            int(side.get("candidate_count", 0)),
+            int(side.get("ranked_count", 0)),
+        )
+        label += " [" + detector_stats + "]"
+
+        recovery = side.get("recovery") or {}
+        if recovery and not recovery.get("prediction_valid", True):
+            distances = recovery.get("edge_distances_px") or {}
+            outside = max(
+                _finite_number(distances.get("outside_left_px")) or 0.0,
+                _finite_number(distances.get("outside_right_px")) or 0.0,
+            )
+            reason = str(recovery.get("reason") or "")
+            if reason == "predicted_boundary_outside_recovery_limit":
+                label += " · OUTSIDE ROI {:.0f}px".format(outside)
+
+        configured_box = boxes.get(roi_name)
+        search_box = side.get("search_roi") or configured_box
+        if configured_box:
+            left, top, _right, _bottom = _scaled_box(configured_box, sx, sy)
+            text_x = max(4, min(width - 4, left + 4))
+            text_y = max(14, min(height - 4, top + 17))
+        elif search_box:
+            left, top, _right, _bottom = _scaled_box(search_box, sx, sy)
+            text_x = max(4, min(width - 4, left + 4))
+            text_y = max(14, min(height - 4, top + 17))
+        else:
+            text_x = 6 if side_name == "left" else max(6, width // 2)
+            text_y = 18
+
+        # The solid rectangle is always the exact configured ROI. An expanded
+        # temporal search corridor is shown separately with a dashed outline.
+        if search_box and configured_box:
+            if tuple(map(int, search_box)) != tuple(map(int, configured_box)):
+                _draw_dashed_rectangle(
+                    canvas, search_box, sx, sy, inferred_color, 1
+                )
+                label += " · RECOVERY SEARCH"
+        expected_x = _finite_number(side.get("expected_x"))
+        if expected_x is not None and y_ref is not None:
+            expected_point = _scaled_point(expected_x, y_ref, sx, sy)
+            cv2.drawMarker(canvas, expected_point, (0, 220, 255),
+                           cv2.MARKER_CROSS, max(7, int(10 * min(sx, sy))),
+                           max(1, thickness), cv2.LINE_AA)
+        cv2.putText(
+            canvas, label, (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+            (0, 0, 0), max(2, thickness + 2), cv2.LINE_AA,
+        )
+        cv2.putText(
+            canvas, label, (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+            color, thickness, cv2.LINE_AA,
+        )
+
+    lane_center = _finite_number(tracking.get("lane_center_px"))
+    if lane_center is not None and y_ref is not None:
+        point = _scaled_point(lane_center, y_ref, sx, sy)
+        cv2.circle(canvas, point, max(4, int(round(5 * min(sx, sy)))),
+                   (255, 255, 255), -1, cv2.LINE_AA)
+        cv2.circle(canvas, point, max(5, int(round(7 * min(sx, sy)))),
+                   (0, 210, 255), 2, cv2.LINE_AA)
+
+    center_points = tracking.get("center_points") or ()
+    scaled_centers = [
+        _scaled_point(float(point[0]), float(point[1]), sx, sy)
+        for point in center_points
+        if isinstance(point, (list, tuple)) and len(point) >= 2
+    ]
+    if len(scaled_centers) >= 2:
+        cv2.polylines(canvas, [np.asarray(scaled_centers, dtype=np.int32)],
+                      False, (255, 255, 255), max(1, thickness), cv2.LINE_AA)
+        for point in scaled_centers:
+            cv2.circle(canvas, point, max(3, thickness + 1), (0, 210, 255), -1, cv2.LINE_AA)
+
+    steering_center = _finite_number(tracking.get("steering_center_px"))
+    if steering_center is not None and y_ref is not None:
+        control_point = _scaled_point(steering_center, y_ref, sx, sy)
+        cv2.drawMarker(canvas, control_point, (255, 255, 255), cv2.MARKER_TILTED_CROSS,
+                       max(9, int(13 * min(sx, sy))), max(2, thickness), cv2.LINE_AA)
+
+    state = str(tracking.get("state") or "UNKNOWN").upper()
+    lane_width = _finite_number(tracking.get("lane_width_px"))
+    geometry_mode = str(tracking.get("geometry_mode") or "perspective").upper()
+    width_model = str(tracking.get("lane_width_model") or "perspective_profile").upper()
+    summary = f"LANE TRACK: {state} | {geometry_mode} / {width_model}"
+    confidence = _finite_number(tracking.get("perception_quality"))
+    if lane_width is not None:
+        summary += f" | WIDTH {lane_width:.0f}px"
+    if confidence is not None:
+        summary += f" | CONF {confidence:.2f}"
+    if tracking.get("pair_reacquire_required"):
+        pending_hits = int(tracking.get("pair_pending_hits", 0))
+        pending_required = int(tracking.get("pair_pending_required", 3))
+        summary += f" | PAIR REACQUIRE {pending_hits}/{pending_required}"
+    summary_scale = max(0.30, min(0.48, font_scale + 0.05))
+    cv2.putText(
+        canvas, summary, (7, max(16, int(20 * sy))),
+        cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
+        (0, 0, 0), max(2, thickness + 2), cv2.LINE_AA,
+    )
+    cv2.putText(
+        canvas, summary, (7, max(16, int(20 * sy))),
+        cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
+        (255, 255, 255), thickness, cv2.LINE_AA,
+    )
+
+
 def _scaled_box(box, sx, sy):
     left, top, right, bottom = box
     return (
@@ -134,7 +378,14 @@ def _draw_classical(canvas, data, config):
     source_width = max(1, int(data.get("frame_width", width)))
     source_height = max(1, int(data.get("frame_height", height)))
     sx, sy = width / source_width, height / source_height
+    # roi_bounds describes the actual detector crop (which can be a
+    # temporary recovery window); configured_roi_bounds is the user's exact
+    # persisted rectangle and remains the solid ROI outline.
     boxes = data.get("roi_bounds") or {}
+    configured = data.get("configured_roi_bounds")
+    display_boxes = dict(boxes)
+    if isinstance(configured, dict):
+        display_boxes.update(configured)
     if config is None:
         return
 
@@ -145,9 +396,9 @@ def _draw_classical(canvas, data, config):
     lane_is_trapezoid = lane_mode == "trapezoid"
     cw_is_trapezoid = bool(getattr(config, "CW_TRAPEZOID_MODE", False))
 
-    rl_box = boxes.get("RL")
-    ll_box = boxes.get("LL")
-    cw_box = boxes.get("CW")
+    rl_box = display_boxes.get("RL")
+    ll_box = display_boxes.get("LL")
+    cw_box = display_boxes.get("CW")
     if rl_box:
         left, top, right, bottom = _scaled_box(rl_box, sx, sy)
         if lane_is_trapezoid:
@@ -197,13 +448,23 @@ def _draw_classical(canvas, data, config):
 
     for key, color in (("RL", rl_color), ("LL", ll_color)):
         mid_x = _finite_number((data.get("midpoints") or {}).get(key))
-        box = boxes.get(key)
+        box = boxes.get(key) or display_boxes.get(key)
         if mid_x is None or not box:
             continue
         left, top, right, bottom = box
         local_x = left + mid_x
         point = _scaled_point(local_x, (top + bottom) / 2.0, sx, sy)
         cv2.circle(canvas, point, max(3, int(round(4 * min(sx, sy)))), color, -1)
+
+    _draw_lane_tracking(
+        canvas,
+        data.get("lane_tracking"),
+        display_boxes,
+        sx,
+        sy,
+        max(0.30, min(0.48, height / 1200.0)),
+        max(1, int(round(height / 720.0))),
+    )
 
     font_scale = max(0.24, min(0.38, height / 1400.0))
     thickness = max(1, int(round(height / 720.0)))
@@ -214,7 +475,7 @@ def _draw_classical(canvas, data, config):
     (_, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
     candidate_label_items = (("RL", rl_color), ("LL", ll_color)) if show_candidate_labels else ()
     for key, color in candidate_label_items:
-        box = boxes.get(key)
+        box = display_boxes.get(key)
         if not box:
             continue
         left, top, _, _ = _scaled_box(box, sx, sy)

@@ -2,7 +2,7 @@ name: Python tests
 
 on:
   push:
-    branches: [main, system-hardening, multiprocessing]
+    branches: [main, system-hardening, multiprocessing, feat/hall-line-tracking]
   pull_request:
     branches: [main]
 
@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: "20"
       - name: Check JavaScript syntax
-        run: node --check python/stream/static/stream-state.js && node --check python/stream/static/stream-core.js && node --check python/stream/static/stream-extensions.js && node --check python/stream/static/stream-workbench.js
+        run: for file in python/stream/static/*.js; do node --check "$file" || exit 1; done
       - name: Test browser-side state helpers
         run: node --test python/test/test_stream_state.test.js
       - name: Compile Python

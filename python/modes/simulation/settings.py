@@ -27,14 +27,12 @@ SIMULATOR_KEYS = {
     "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO", "SIMULATOR_STOP_LINE_MIN_AREA",
     "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG", "SIMULATOR_STOP_LINE_CONFIRM_FRAMES",
     "SIMULATOR_STOP_LINE_DWELL_SECONDS", "SIMULATOR_SIGN_ACTIONS_ENABLED",
-    "SIMULATOR_SIGN_CONFIDENCE",
-
-    "SIMULATOR_SIGN_SCAN_INTERVAL", "SIMULATOR_SIGN_STOP_HOLD_SECONDS",
-    "SIMULATOR_SIGN_TURN_HOLD_SECONDS", "SIMULATOR_SIGN_STEERING_OFFSET",
-    "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
-    "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_MIN_CONTOUR_AREA",
-    "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
-    "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
+    "SIMULATOR_SIGN_CONFIDENCE", "SIMULATOR_SIGN_SCAN_INTERVAL",
+    "SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS",
+    "SIMULATOR_SIGN_STEERING_OFFSET", "TL_TOP_ROI", "TL_BOTTOM_ROI",
+    "TL_LEFT_ROI", "TL_RIGHT_ROI", "TL_MIN_SATURATION", "TL_MIN_VALUE",
+    "TL_MIN_CONTOUR_AREA", "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN",
+    "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
     "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
     "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
     "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI",
@@ -54,12 +52,17 @@ SIMULATOR_KEYS = {
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI", "RL_MIRRORED",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
+    "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
+    "HALL_LINE_TRACKING_REACQUIRE_FRAMES",
+    "USE_PID", "AUTO_UPDATE_KP", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS",
+    "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER",
 }
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
     "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_STOP_LINE_ENABLED",
     "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_SIGN_ACTIONS_ENABLED",
+    "HALL_LINE_TRACKING_ENABLED", "USE_PID", "AUTO_UPDATE_KP",
     "USE_ML_LANE_DETECTOR", "DEBUG", "HOUGH_MORPH_CLOSE",
     "CW_TRAPEZOID_MODE", "OLD_METHOD", "CW_OLD_METHOD", "ROI_RESIZABLE",
 }
@@ -69,7 +72,8 @@ INT_KEYS = {
     "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
-    "CROSSWALK_HORIZONTAL_MIN_LINES", "SIMULATOR_STOP_LINE_THRESHOLD",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "HALL_LINE_TRACKING_MAX_MISSED",
+    "HALL_LINE_TRACKING_REACQUIRE_FRAMES", "SIMULATOR_STOP_LINE_THRESHOLD",
     "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_SIGN_SCAN_INTERVAL",
     "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
     "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
@@ -78,7 +82,6 @@ INT_KEYS = {
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
     "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL", "LANE_ROI_MODE", "SERVO_DIRECTION",
-
 }
 POSITIVE_KEYS = {
     "SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
@@ -88,8 +91,9 @@ POSITIVE_KEYS = {
     "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "ENCODER_PULSE_DISTANCE_CM", "CAMERA_HEIGHT", "LANE_WIDTH",
+    "PID_MIN_DT", "PID_MAX_DT",
 }
-NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"}
+NONNEGATIVE_KEYS = {"SIMULATOR_TARGET_SPEED", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "KT"}
 ROI_KEYS = {"RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
             "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
             "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
@@ -110,6 +114,7 @@ NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACT
     "TL_MIN_ACTIVE_BRIGHTNESS", "SIMULATOR_SIGN_CONFIDENCE",
     "SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS",
     "SIMULATOR_SIGN_STEERING_OFFSET",
+    "KP", "KI", "KD", "PID_DERIVATIVE_FILTER",
     "ENCODER_WHEELBASE_CM", "SIMULATOR_CAMERA_X",
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
@@ -128,7 +133,8 @@ def _defaults(mode, backend):
         "SIMULATOR_HOST": "127.0.0.1",
         "SIMULATOR_TUNING_PROFILE_VERSION": 2,
         "SIMULATOR_PORT": 25001 if avis else 2000,
-        "SIMULATOR_TIMEOUT_S": 1.0 if avis else 5.0,
+        # Legacy AVIS camera responses need a realistic TCP read window.
+        "SIMULATOR_TIMEOUT_S": 5.0,
         "SIMULATOR_VEHICLE_FILTER": "vehicle.*",
         "SIMULATOR_VEHICLE_BLUEPRINT": "auto",
         "SIMULATOR_MAP": "current",
@@ -149,11 +155,14 @@ def _defaults(mode, backend):
         "SIMULATOR_TARGET_SPEED": 25.0 if avis else 5.0,
         "SIMULATOR_THROTTLE_LIMIT": 0.35 if avis else 0.12,
         "SIMULATOR_STEERING_LIMIT": 1.0 if avis else 0.28,
-        "SIMULATOR_STEERING_RATE": 5.0 if avis else 0.80,
+        "SIMULATOR_STEERING_RATE": 2.0 if avis else 0.80,
         "SIMULATOR_THROTTLE_RISE_RATE": 1.0 if avis else 0.12,
         # Simulator City vision starts in the raw camera frame. BEV can be
         # enabled and tuned explicitly after checking the camera perspective.
         "USE_BEV": False,
+        "HALL_LINE_TRACKING_ENABLED": False,
+        "HALL_LINE_TRACKING_MAX_MISSED": 4,
+        "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 2,
         "DEBUG": False,
         "LANE_THRESHOLD": 180,
         "HOUGH_THRESHOLD": 15,
@@ -181,9 +190,8 @@ def _defaults(mode, backend):
         "BEV_SRC_BL_X": 0.00, "BEV_SRC_BL_Y": 1.00,
         "SIMULATOR_STOP_ON_LOST_LANE": True,
         "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race" and backend != "avis",
-        # AVIS City has a solid stop line rather than a crosswalk. Keep the
-        # existing City processor's crosswalk path active for CARLA and physical City.
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 35.0,
+        # Optional AVIS range bypass is intentionally disabled until calibrated.
         "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": False,
         "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 100.0,
         "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 125.0,
@@ -193,6 +201,7 @@ def _defaults(mode, backend):
         "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS": 4.0,
         "SIMULATOR_OBSTACLE_STEERING_OFFSET": 0.28,
         "SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 0.12,
+        # AVIS City uses a solid stop line, not the physical crosswalk pipeline.
         "SIMULATOR_STOP_LINE_ENABLED": avis and mode == "avis",
         "SIMULATOR_TRAFFIC_LIGHTS_ENABLED": avis and mode == "avis",
         "SIMULATOR_STOP_LINE_THRESHOLD": 190,
@@ -214,7 +223,6 @@ def _defaults(mode, backend):
         "SIMULATOR_TL_CONFIRMATION_WINDOW": 10,
         "SIMULATOR_TL_GREEN_REQUIRED": 8,
         "SIMULATOR_SIGN_ACTIONS_ENABLED": False,
-
         "SIMULATOR_SIGN_CONFIDENCE": 0.45,
         "SIMULATOR_SIGN_SCAN_INTERVAL": 6,
         "SIMULATOR_SIGN_STOP_HOLD_SECONDS": 2.0,
@@ -224,10 +232,17 @@ def _defaults(mode, backend):
         "USE_ML_LANE_DETECTOR": False,
         "ML_LANE_MODEL": "unet_depthwise_nano",
         "SIMULATOR_STEERING_INVERTED": False,
-        "MIN_SERVO_ANGLE": 50.0,
+        "MIN_SERVO_ANGLE": 55.0,
         "SERVO_CENTER": 95.0,
-        "MAX_SERVO_ANGLE": 130.0,
+        "MAX_SERVO_ANGLE": 125.0,
         "SERVO_DIRECTION": "ltr",
+        # Match the City/Race Stream PID defaults. The simulator applies this
+        # controller to lane-centering error before virtual steering output.
+        "USE_PID": True, "AUTO_UPDATE_KP": False,
+        "KP": 0.35, "KI": 0.0, "KD": 0.01, "KT": 0.01,
+        "OUTPUT_LIMITS": [-80.0, 80.0],
+        "PID_MIN_DT": 0.001, "PID_MAX_DT": 0.2,
+        "PID_DERIVATIVE_FILTER": 0.25,
         "RL_MIRRORED": False, "LL_MIRRORED": False,
         "RL_TOP_ROI": 0.8, "RL_BOTTOM_ROI": 1.0, "RL_LEFT_ROI": 0.6, "RL_RIGHT_ROI": 0.9,
         "LL_TOP_ROI": 0.8, "LL_BOTTOM_ROI": 1.0, "LL_LEFT_ROI": 0.2, "LL_RIGHT_ROI": 0.5,
@@ -237,13 +252,28 @@ def _defaults(mode, backend):
     }
 
 
-def _validate_settings(data):
+def _validate_settings(data, backend=None):
     if not isinstance(data, dict):
         raise ValueError("simulator settings must be a JSON object")
     clean = {}
     for key, value in data.items():
         if key not in SIMULATOR_KEYS:
             raise ValueError(f"unsupported simulator setting: {key}")
+        if key == "OUTPUT_LIMITS":
+            if not isinstance(value, (list, tuple)) or len(value) != 2:
+                raise ValueError("OUTPUT_LIMITS must contain two numeric values")
+            if any(
+                isinstance(item, bool)
+                or not isinstance(item, (int, float))
+                or not math.isfinite(float(item))
+                for item in value
+            ):
+                raise ValueError("OUTPUT_LIMITS must contain two finite numbers")
+            low, high = float(value[0]), float(value[1])
+            if not -255.0 <= low < high <= 255.0:
+                raise ValueError("OUTPUT_LIMITS must be ordered and within -255..255")
+            clean[key] = [low, high]
+            continue
         if key in BOOL_KEYS:
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be boolean")
@@ -260,7 +290,6 @@ def _validate_settings(data):
                 raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
             if key == "SERVO_DIRECTION" and value not in {"ltr", "rtl"}:
                 raise ValueError("SERVO_DIRECTION must be ltr or rtl")
-
         elif key in INT_KEYS:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError(f"{key} must be an integer")
@@ -305,6 +334,10 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_TL_GREEN_REQUIRED must be between 1 and 60")
             if key == "SIMULATOR_SPAWN_POINT_INDEX" and not -1 <= value <= 100000:
                 raise ValueError("SIMULATOR_SPAWN_POINT_INDEX must be -1 (automatic) or a valid non-negative index")
+            if key == "HALL_LINE_TRACKING_MAX_MISSED" and not 1 <= value <= 12:
+                raise ValueError("HALL_LINE_TRACKING_MAX_MISSED must be between 1 and 12")
+            if key == "HALL_LINE_TRACKING_REACQUIRE_FRAMES" and not 1 <= value <= 10:
+                raise ValueError("HALL_LINE_TRACKING_REACQUIRE_FRAMES must be between 1 and 10")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
                 raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
         elif key in NUMERIC_KEYS:
@@ -320,8 +353,13 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_CAMERA_FOV must be between 10 and 150 degrees")
             if key == "SIMULATOR_LIDAR_ROTATION_FREQUENCY" and value > 50:
                 raise ValueError("SIMULATOR_LIDAR_ROTATION_FREQUENCY must be at most 50 Hz")
-            if key == "SIMULATOR_TARGET_SPEED" and value > 200:
-                raise ValueError("SIMULATOR_TARGET_SPEED must be at most 200")
+            if key == "SIMULATOR_TARGET_SPEED":
+                maximum = 100 if str(backend or "").lower() == "avis" else 200
+                if value > maximum:
+                    label = "AVIS percentage" if maximum == 100 else "200 km/h"
+                    raise ValueError(
+                        f"SIMULATOR_TARGET_SPEED must be between 0 and {maximum} ({label})"
+                    )
             if key == "SIMULATOR_LIDAR_RANGE_M" and value > 500:
                 raise ValueError("SIMULATOR_LIDAR_RANGE_M must be at most 500 meters")
             if key in {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
@@ -351,6 +389,16 @@ def _validate_settings(data):
                 raise ValueError("SIMULATOR_STEERING_RATE must be at most 10 normalized units per second")
             if key == "SIMULATOR_THROTTLE_RISE_RATE" and value > 1:
                 raise ValueError("SIMULATOR_THROTTLE_RISE_RATE must be at most 1 throttle unit per second")
+            if key in {"KP", "KI", "KD"} and not -100 <= value <= 100:
+                raise ValueError(f"{key} must be between -100 and 100")
+            if key == "KT" and value > 10:
+                raise ValueError("KT must be at most 10 seconds")
+            if key == "PID_DERIVATIVE_FILTER" and not 0 <= value <= 1:
+                raise ValueError("PID_DERIVATIVE_FILTER must be between 0 and 1")
+            if key == "PID_MIN_DT" and value > 1:
+                raise ValueError("PID_MIN_DT must be at most 1 second")
+            if key == "PID_MAX_DT" and value > 5:
+                raise ValueError("PID_MAX_DT must be at most 5 seconds")
             if key in ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS and not 0 <= value <= 1:
                 raise ValueError(f"{key} must be between 0 and 1")
             if key == "CAMERA_PITCH_DEG" and not -90 <= value <= 90:
@@ -376,6 +424,9 @@ def _validate_settings(data):
                         ("SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI")):
         if left in clean and right in clean and clean[left] >= clean[right]:
             raise ValueError(f"{left} must be smaller than {right}")
+    if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
+        if not clean["MIN_SERVO_ANGLE"] < clean["SERVO_CENTER"] < clean["MAX_SERVO_ANGLE"]:
+            raise ValueError("MIN_SERVO_ANGLE must be smaller than SERVO_CENTER, which must be smaller than MAX_SERVO_ANGLE")
     for low, high in (("TL_RED_HUE_MIN", "TL_RED_HUE_MAX"), ("TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX")):
         if low in clean and high in clean and clean[low] >= clean[high]:
             raise ValueError(f"{low} must be smaller than {high}")
@@ -393,9 +444,10 @@ def _validate_settings(data):
     if "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM" in clean and "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM" in clean:
         if clean["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"] <= clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"]:
             raise ValueError("SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM must exceed the trigger distance")
-    if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
-        if not clean["MIN_SERVO_ANGLE"] < clean["SERVO_CENTER"] < clean["MAX_SERVO_ANGLE"]:
-            raise ValueError("MIN_SERVO_ANGLE must be smaller than SERVO_CENTER, which must be smaller than MAX_SERVO_ANGLE")
+    pid_min_dt = clean.get("PID_MIN_DT")
+    pid_max_dt = clean.get("PID_MAX_DT")
+    if pid_min_dt is not None and pid_max_dt is not None and pid_max_dt < pid_min_dt:
+        raise ValueError("PID_MAX_DT must be greater than or equal to PID_MIN_DT")
     return clean
 
 
@@ -408,8 +460,7 @@ def load_simulator_settings(config, mode, backend):
     saved_values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            saved_values = _validate_settings(json.load(handle))
-        _validate_settings({**_defaults(mode, backend), **saved_values})
+            saved_values = _validate_settings(json.load(handle), backend=backend)
         for key, value in saved_values.items():
             setattr(config, key, value)
     if backend == "carla" and path.is_file() and int(saved_values.get("SIMULATOR_TUNING_PROFILE_VERSION", 0)) < 2:
@@ -428,34 +479,24 @@ def load_simulator_settings(config, mode, backend):
             if float(getattr(config, key, safe_default)) > old_limit:
                 migration[key] = safe_default
         save_simulator_settings(config, mode, migration)
-    target = float(getattr(config, "SIMULATOR_TARGET_SPEED", 0))
-    if backend == "avis" and target > 100:
-        raise ValueError("AVIS Engine target speed must be between 0 and 100")
-    if backend == "avis" and float(getattr(config, "SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
-        raise ValueError("AVIS Engine request timeout must be at most 1 second")
     return path
 
 
 def save_simulator_settings(config, mode, patch):
     """Atomically persist whitelisted settings in a mode-specific file."""
+    backend = str(getattr(config, "SIMULATOR_BACKEND", "")).lower()
     path = settings_path(config, mode)
     path.parent.mkdir(parents=True, exist_ok=True)
     values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            values.update(_validate_settings(json.load(handle)))
-    values.update(_validate_settings(patch))
-    backend = str(getattr(config, "SIMULATOR_BACKEND", ""))
-    _validate_settings({**_defaults(mode, backend), **values})
-    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "carla":
+            values.update(_validate_settings(json.load(handle), backend=backend))
+    values.update(_validate_settings(patch, backend=backend))
+    if backend == "carla":
         # Mark all newly written CARLA profiles as migrated. This prevents a
         # future restart from applying the one-time legacy safety clamp again.
         values["SIMULATOR_TUNING_PROFILE_VERSION"] = 2
-    values = _validate_settings(values)
-    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TARGET_SPEED", 0)) > 100:
-        raise ValueError("AVIS Engine target speed must be between 0 and 100")
-    if str(getattr(config, "SIMULATOR_BACKEND", "")) == "avis" and float(values.get("SIMULATOR_TIMEOUT_S", 1.0)) > 1.0:
-        raise ValueError("AVIS Engine request timeout must be at most 1 second")
+    values = _validate_settings(values, backend=backend)
     fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

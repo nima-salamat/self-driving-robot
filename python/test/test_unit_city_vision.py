@@ -59,6 +59,123 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         self.assertIn("lane_center_offset_px", overlay_source)
         self.assertIn("steering_marker_x", overlay_source)
 
+    def test_hall_tracking_forces_debug_payload_for_simulator_stream(self):
+        import modes.city.config_city as city_config
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        with patch.object(city_config, "HALL_LINE_TRACKING_ENABLED", True), patch.object(
+            city_config, "DEBUG", False
+        ), patch.object(city_config, "STREAM", False):
+            result = VisionProcessor().detect(frame)
+
+        self.assertFalse(result["perception_valid"])
+        self.assertTrue(result["line_tracking"]["enabled"])
+        self.assertIsNotNone(result["debug"])
+        self.assertIn("lane_tracking", result["debug"]["draw_data"])
+
+    def test_hall_sobel_hough_pipeline_tracks_synthetic_city_lane_pair(self):
+        import modes.city.config_city as config
+        from unittest.mock import patch
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        import cv2
+        cv2.line(frame, (250, 240), (205, 479), (255, 255, 255), 4)
+        cv2.line(frame, (390, 240), (435, 479), (255, 255, 255), 4)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True, "HALL_LINE_TRACKING_MAX_MISSED": 4,
+            "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 2,
+            "SIMULATOR_BACKEND": "carla",
+            "USE_BEV": False, "OLD_METHOD": False, "LANE_THRESHOLD": 70,
+            "HOUGH_THRESHOLD": 10, "HOUGH_MIN_LINE_LENGTH": 20,
+            "HOUGH_MAX_LINE_GAP": 10, "HOUGH_BLUR_KERNEL": 3,
+            "HOUGH_MORPH_CLOSE": True, "DEBUG": False, "STREAM": False,
+            "LANE_ROI_MODE": "rectangle", "RL_TOP_ROI": .5, "RL_BOTTOM_ROI": 1.,
+            "RL_LEFT_ROI": .55, "RL_RIGHT_ROI": .9,
+            "LL_TOP_ROI": .5, "LL_BOTTOM_ROI": 1.,
+            "LL_LEFT_ROI": .1, "LL_RIGHT_ROI": .45,
+        }
+        with patch.multiple(config, create=True, **values):
+            processor = VisionProcessor()
+            processor.detect(frame)  # First consistent frame is only pending.
+            result = processor.detect(frame)
+
+        self.assertTrue(result["line_tracking"]["enabled"])
+        self.assertEqual(result["lane_type"], "both")
+        self.assertTrue(result["perception_valid"])
+        self.assertEqual(result["observed_lane_boundaries"], 2)
+        self.assertEqual(result["line_tracking"]["reacquire_frames"], 2)
+
+    def test_hall_tracker_receives_bev_geometry_mode_from_city_processor(self):
+        import modes.city.config_city as config
+        from unittest.mock import patch
+
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True,
+            "SIMULATOR_BACKEND": "carla",
+            "USE_BEV": True,
+            "OLD_METHOD": False,
+            "DEBUG": False,
+            "STREAM": False,
+        }
+        with patch.multiple(config, create=True, **values):
+            result = VisionProcessor().detect(frame)
+
+        self.assertEqual(result["line_tracking"]["geometry_mode"], "bev")
+        self.assertEqual(result["debug"]["draw_data"]["geometry_mode"], "bev")
+        self.assertEqual(result["line_tracking"]["lane_width_model"], "constant_bev")
+
+    def test_simulator_hall_uses_exact_configured_rois_when_legacy_resizing_is_enabled(self):
+        import modes.city.config_city as config
+        from unittest.mock import patch
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        values = {
+            "HALL_LINE_TRACKING_ENABLED": True,
+            "HALL_LINE_TRACKING_MAX_MISSED": 4,
+            "HALL_LINE_TRACKING_REACQUIRE_FRAMES": 3,
+            "SIMULATOR_BACKEND": "carla",
+            "USE_BEV": False,
+            "OLD_METHOD": False,
+            "ROI_RESIZABLE": True,
+            "LANE_THRESHOLD": 70,
+            "HOUGH_THRESHOLD": 10,
+            "HOUGH_MIN_LINE_LENGTH": 20,
+            "HOUGH_MAX_LINE_GAP": 10,
+            "HOUGH_BLUR_KERNEL": 3,
+            "HOUGH_MORPH_CLOSE": True,
+            "DEBUG": False,
+            "STREAM": False,
+            "LANE_ROI_MODE": "rectangle",
+            "RL_TOP_ROI": .5,
+            "RL_BOTTOM_ROI": 1.0,
+            "RL_LEFT_ROI": .55,
+            "RL_RIGHT_ROI": .90,
+            "LL_TOP_ROI": .5,
+            "LL_BOTTOM_ROI": 1.0,
+            "LL_LEFT_ROI": .12,
+            "LL_RIGHT_ROI": .45,
+        }
+        with patch.multiple(config, create=True, **values):
+            processor = VisionProcessor()
+            # Simulate the legacy counters being non-zero. Hall mode must not
+            # silently feed their edge-expanded rectangle to the detector.
+            processor.lroi_unseen_counter = 10
+            processor.rroi_unseen_counter = 10
+            result = processor.detect(frame)
+
+        draw = result["debug"]["draw_data"]
+        expected_left = (int(.12 * 640), int(.5 * 480), int(.45 * 640), 480)
+        expected_right = (int(.55 * 640), int(.5 * 480), int(.90 * 640), 480)
+        self.assertEqual(draw["configured_roi_bounds"]["LL"], expected_left)
+        self.assertEqual(draw["configured_roi_bounds"]["RL"], expected_right)
+        self.assertEqual(draw["roi_bounds"]["LL"], expected_left)
+        self.assertEqual(draw["roi_bounds"]["RL"], expected_right)
+        self.assertFalse(draw["legacy_roi_resizable_applied"])
+        self.assertEqual(result["line_tracking"]["left"]["search_roi"], list(expected_left))
+        self.assertEqual(result["line_tracking"]["right"]["search_roi"], list(expected_right))
+
     def test_debug_payload_is_none_when_debug_and_stream_are_disabled(self):
         import modes.city.config_city as city_config
         from unittest.mock import patch

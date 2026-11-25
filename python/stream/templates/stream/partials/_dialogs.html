@@ -1,0 +1,97 @@
+<div id="ext_stream_exit_dialog" class="settings-modal" aria-hidden="true">
+  <section class="settings-card stream-exit-card" role="dialog" aria-modal="true" aria-labelledby="ext_stream_exit_title" aria-describedby="ext_stream_exit_message">
+    <header class="settings-header"><div><h2 id="ext_stream_exit_title">Exit Stream?</h2><p>Stop the web dashboard server</p></div><button type="button" class="ghost" id="ext_stream_exit_close" aria-label="Close dialog">×</button></header>
+    <div class="settings-section">
+      <p id="ext_stream_exit_message" class="stream-exit-message">This stops the Stream HTTP server and sets STREAM=False in the current process, like running without --stream. The robot’s main City/Race loop, perception, and motion control keep running. This does not stop the robot.</p>
+      <p class="settings-note">Once stopped, this dashboard will disconnect. To open it again, restart the program with --stream.</p>
+      <p id="ext_stream_exit_error" class="stream-exit-error" role="alert" hidden></p>
+    </div>
+    <footer class="settings-footer"><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="ext_stream_exit_cancel">Cancel</button><button type="button" class="btn stream-exit-danger" id="ext_stream_exit_confirm">Stop Stream</button></footer>
+  </section>
+</div>
+
+<div id="roi_settings_dialog" class="settings-modal" aria-hidden="true">
+  <section class="settings-card" role="dialog" aria-modal="true" aria-labelledby="roi_settings_title">
+    <header class="settings-header"><div><h2 id="roi_settings_title">Editor Settings</h2><p>Grid, snapping, stream display rate, and ROI appearance</p></div><button type="button" class="ghost" id="roi_settings_close" aria-label="Close settings">×</button></header>
+    <div class="settings-section"><h3>Grid & Snap</h3>
+      <label>Overlay mode<select id="roi_setting_grid_mode"><option value="off">Off</option><option value="grid">Grid</option><option value="dots">Dots</option></select></label>
+      <label>Cell height <span id="roi_setting_grid_spacing_value">5% of frame height</span><input id="roi_setting_grid_spacing" type="range" min="0.025" max="0.25" step="0.025" value="0.05"></label>
+      <label>Grid color <input id="roi_setting_grid_color" class="settings-color-input" type="color" value="#69bed2" aria-label="Grid and dots color"></label>
+      <label>Grid opacity<input id="roi_setting_grid_opacity" type="range" min="0.05" max="1" step="0.05" value="0.35"></label>
+      <label>Grid line thickness<input id="roi_setting_grid_thickness" type="range" min="0.5" max="3" step="0.5" value="1"></label>
+      <label>Dot size<input id="roi_setting_grid_dot_size" type="range" min="1" max="6" step="0.5" value="2"></label>
+      <label>Arrow-key nudge distance (source pixels) <input id="roi_setting_keyboard_nudge" type="number" min="1" max="100" step="1" value="5" aria-label="Arrow-key nudge distance in source image pixels"></label>
+      <label class="settings-check"><input id="roi_setting_snap" type="checkbox"> Snap mouse-drag and resize handles to the square grid</label>
+      <p class="settings-note">Grid spacing is measured relative to image height; horizontal spacing is corrected for the frame aspect ratio so grid cells remain square. Arrow keys move the selected ROI by the configured number of source-image pixels; Shift + Arrow moves 5× farther.</p>
+    </div>
+    <div class="settings-section"><h3>Stream Display Performance</h3>
+      <label>Stream display FPS <span id="roi_setting_stream_fps_value">8.3 FPS target</span><input id="roi_setting_stream_fps" type="number" min="1" max="30" step="0.1" value="8.3" aria-label="Stream display refresh rate in frames per second"></label>
+      <p class="settings-note">Controls how often this page requests a new frame. It is separate from target processing FPS and the camera sensor FPS; the actual display rate can be lower when frames, network, or browser rendering are slower.</p>
+      <label>JPEG image quality <span id="roi_setting_jpeg_quality_value">85 / 100</span><input id="roi_setting_jpeg_quality" type="range" min="30" max="100" step="5" value="85" aria-label="Stream JPEG image quality" {% if not stream_control %}disabled{% endif %}></label>
+      <p class="settings-note">Lower quality generally reduces image size and network bandwidth; higher quality preserves more detail. This only changes JPEG encoding for dashboard frames—not camera resolution, sensor FPS, or the robot's vision/control processing. Changing it requires dashboard controls to be enabled.</p>
+    </div>
+    <div class="settings-section"><h3>ROI Appearance</h3>
+      <label>Label font size <span id="roi_setting_label_size_value">12 px at 100%</span><input id="roi_setting_label_size" type="range" min="6" max="32" step="1" value="12"></label>
+      <label>Label weight<select id="roi_setting_label_weight"><option value="400">Normal</option><option value="500">Medium</option><option value="600">Semi-bold</option><option value="700" selected>Bold</option></select></label>
+      <label class="settings-check"><input id="roi_setting_label_shape" type="checkbox"> Show shape type in ROI labels (e.g. RL (Rectangle))</label>
+      <label>Outline thickness<input id="roi_setting_outline_thickness" type="range" min="0.5" max="6" step="0.5" value="2"></label>
+      <label>Corner / handle size<input id="roi_setting_handle_size" type="range" min="4" max="24" step="1" value="10"></label>
+      <p class="settings-note">Appearance values are base sizes at 100% zoom; overlays scale with the camera image.</p>
+    </div>
+    <footer class="settings-footer"><button type="button" class="ghost" id="roi_settings_reset">Reset defaults</button><span class="settings-footer-spacer"></span><button type="button" class="ghost" id="roi_settings_cancel">Cancel</button><button type="button" class="btn" id="roi_settings_apply">Apply</button></footer>
+  </section>
+</div>
+<div id="shortcut_dialog" class="shortcut-modal" aria-hidden="true">
+  <section class="shortcut-card" role="dialog" aria-modal="true" aria-labelledby="shortcut_title">
+    <header class="shortcut-header">
+      <div><p class="shortcut-eyebrow">STREAM EDITOR GUIDE</p><h2 id="shortcut_title">Keyboard & Mouse Shortcuts</h2><p>Fast navigation, precise ROI editing, and workspace controls.</p></div>
+      <button type="button" class="ghost shortcut-close" id="shortcut_close" aria-label="Close shortcuts">×</button>
+    </header>
+    <div class="shortcut-groups">
+      <section class="shortcut-group"><h3>Navigate the frame</h3>
+        <div class="shortcut-row"><span>Fit frame to available space</span><kbd>0</kbd></div>
+        <div class="shortcut-row"><span>Zoom in / out</span><kbd>+</kbd><kbd>−</kbd></div>
+        <div class="shortcut-row"><span>Zoom around pointer</span><kbd>Mouse wheel</kbd></div>
+        <div class="shortcut-row"><span>Pan the workspace</span><kbd>H</kbd><kbd>Middle mouse drag</kbd></div>
+        <div class="shortcut-row"><span>Return to select / edit tool</span><kbd>V</kbd></div>
+        <div class="shortcut-row"><span>Camera fullscreen</span><kbd>F</kbd></div>
+      </section>
+      <section class="shortcut-group"><h3>ROI & precision tools</h3>
+        <div class="shortcut-row"><span>Show / hide operational ROI overlays</span><kbd>O</kbd></div>
+        <div class="shortcut-row"><span>Move selected ROI by configured pixel step</span><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></div>
+        <div class="shortcut-row"><span>Move ROI 5× farther</span><kbd>Shift</kbd><kbd>Arrow</kbd></div>
+        <div class="shortcut-row"><span>Toggle grid</span><kbd>G</kbd></div>
+        <div class="shortcut-row"><span>Crosshair: click to copy U,V point</span><kbd>X</kbd></div>
+        <div class="shortcut-row"><span>Place annotation / marker</span><kbd>N</kbd></div>
+        <div class="shortcut-row"><span>Pixel ruler: click two points</span><kbd>R</kbd></div>
+        <div class="shortcut-row"><span>Draw custom rectangle / trapezoid ROI</span><kbd>Command Palette</kbd></div>
+        <div class="shortcut-note">Paste a copied pair such as <code>0.325, 0.640</code> into Left/Top for the first ROI corner or Right/Bottom for the second corner. Press Apply to save.</div>
+      </section>
+      <section class="shortcut-group"><h3>Workspace & configuration</h3>
+        <div class="shortcut-row"><span>Command palette</span><kbd>Ctrl</kbd><kbd>K</kbd></div>
+        <div class="shortcut-row"><span>Open this shortcut guide</span><kbd>F1</kbd><kbd>?</kbd></div>
+        <div class="shortcut-row"><span>Event Console open / close</span><kbd>Ctrl</kbd><kbd>`</kbd></div>
+        <div class="shortcut-row"><span>Toggle settings panels</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>P</kbd></div>
+        <div class="shortcut-row"><span>Focus panel navigation; use ↑/↓, Space or Enter</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd></div>
+        <div class="shortcut-row"><span>Toggle Event Console</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>C</kbd></div>
+        <div class="shortcut-row"><span>Increase / decrease console height by one step</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>W</kbd><span class="shortcut-or">/</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>S</kbd></div>
+        <div class="shortcut-row"><span>Widen / narrow settings panel</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>A</kbd><span class="shortcut-or">/</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>D</kbd></div>
+        <div class="shortcut-row"><span>Refresh configuration values &amp; advanced settings</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>R</kbd></div>
+        <div class="shortcut-row"><span>Open File / Edit / View / Tools / Help menu</span><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>F</kbd><span class="shortcut-or">/</span><kbd>E</kbd><span class="shortcut-or">/</span><kbd>V</kbd><span class="shortcut-or">/</span><kbd>T</kbd><span class="shortcut-or">/</span><kbd>H</kbd></div>
+        <div class="shortcut-row"><span>Undo</span><kbd>Ctrl</kbd><kbd>Z</kbd></div>
+        <div class="shortcut-row"><span>Redo</span><kbd>Ctrl</kbd><kbd>Y</kbd><span class="shortcut-or">or</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></div>
+        <div class="shortcut-row"><span>Save workspace layout</span><kbd>Ctrl</kbd><kbd>S</kbd></div>
+        <div class="shortcut-row"><span>Export full configuration</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>E</kbd></div>
+        <div class="shortcut-row"><span>Close dialog / dropdown</span><kbd>Esc</kbd></div>
+      </section>
+      <section class="shortcut-group shortcut-safety"><h3>Runtime & safety</h3>
+        <div class="shortcut-row"><span>Request software STOP (no confirmation)</span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Space</kbd></div>
+        <p class="shortcut-note">This shortcut requests a software stop through the dashboard API. It is <strong>not</strong> a hardware emergency stop; use the physical cutoff when required. Resume motion remains confirmation-gated.</p>
+      </section>
+    </div>
+    <footer class="shortcut-footer"><span>Letter shortcuts use physical key positions and work across keyboard language layouts. Ctrl+Alt menu letters are underlined while the modifier keys are held. In an open menu use ↑/↓ to move, Enter/Space to activate, and Esc to return to the menu label. Other shortcuts are disabled while typing in a field.</span><button type="button" class="btn" id="shortcut_done">Done</button></footer>
+  </section>
+</div>
+<input id="ext_config_file" type="file" accept=".json,application/json" hidden aria-label="Import full configuration JSON">
+<div id="toast" class="toast" style="display:none"></div>
+

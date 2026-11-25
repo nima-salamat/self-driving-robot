@@ -22,6 +22,7 @@ COMMON_DEFAULTS = {
     "LANE_THRESHOLD": 180, "HOUGH_THRESHOLD": 15, "HOUGH_MIN_LINE_LENGTH": 5,
     "HOUGH_MAX_LINE_GAP": 20, "HOUGH_BLUR_KERNEL": 3, "HOUGH_MORPH_CLOSE": True,
     "SIGN_AREA_FILTER_ENABLED": True, "SIGN_AREA_FILTER_TARGETS": ["STOP"], "SIGN_AREA_MIN_PX2": 900,
+    "HALL_LINE_TRACKING_ENABLED": False, "HALL_LINE_TRACKING_MAX_MISSED": 4,
 }
 BLSF_DEFAULTS = {
     "BLSF_RANDOM_SEED": (42, 0, 1000000, int),
@@ -46,6 +47,7 @@ INTEGER_RANGES = {
     "LANE_THRESHOLD": (0, 255), "HOUGH_THRESHOLD": (1, 255),
     "HOUGH_MIN_LINE_LENGTH": (1, 500), "HOUGH_MAX_LINE_GAP": (0, 100),
     "HOUGH_BLUR_KERNEL": (1, 15),
+    "HALL_LINE_TRACKING_MAX_MISSED": (1, 12),
 }
 RESTART_ONLY = {"CITY_LANE_DETECTOR", "USE_ML_LANE_DETECTOR"}
 
@@ -66,8 +68,13 @@ class StreamVisionMixin:
         module, result = self._vision_mode_module(), {}
         for name, default in COMMON_DEFAULTS.items():
             value = getattr(module, name, getattr(self.config, name, default))
-            if name in {"HOUGH_MORPH_CLOSE", "SIGN_AREA_FILTER_ENABLED"}:
+            if name in {"HOUGH_MORPH_CLOSE", "SIGN_AREA_FILTER_ENABLED", "HALL_LINE_TRACKING_ENABLED"}:
                 result[name] = bool(value)
+            elif name == "HALL_LINE_TRACKING_MAX_MISSED":
+                try:
+                    result[name] = int(value)
+                except (TypeError, ValueError, OverflowError):
+                    result[name] = 4
             elif name == "SIGN_AREA_FILTER_TARGETS":
                 result[name] = list(value) if isinstance(value, (list, tuple)) else list(default)
             else:
@@ -110,10 +117,20 @@ class StreamVisionMixin:
                 if name == "HOUGH_BLUR_KERNEL" and number != 1 and number % 2 == 0:
                     raise ValueError("HOUGH_BLUR_KERNEL must be 1 or an odd integer")
                 clean[name] = int(number)
-            elif name in {"HOUGH_MORPH_CLOSE", "SIGN_AREA_FILTER_ENABLED", "USE_ML_LANE_DETECTOR"}:
+            elif name in {"HOUGH_MORPH_CLOSE", "SIGN_AREA_FILTER_ENABLED", "USE_ML_LANE_DETECTOR", "HALL_LINE_TRACKING_ENABLED"}:
                 if not isinstance(value, bool):
                     raise ValueError(name + " must be boolean")
                 clean[name] = value
+            elif name == "HALL_LINE_TRACKING_MAX_MISSED":
+                if isinstance(value, bool):
+                    raise ValueError(name + " must be an integer")
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    raise ValueError(name + " must be an integer") from None
+                if not math.isfinite(number) or not number.is_integer() or not 1 <= number <= 12:
+                    raise ValueError(name + " must be an integer between 1 and 12")
+                clean[name] = int(number)
             elif name == "SIGN_AREA_FILTER_TARGETS":
                 from traffic_sign_detector.area_filter import validate_sign_area_filter
                 validate_sign_area_filter(name, value)
@@ -190,6 +207,7 @@ class StreamVisionMixin:
         return {
             "settings": current, "changed": changed, "restart_required": sorted(set(restart)),
             "live_hough_settings": active == "default" and any(key in changed for key in ("LANE_THRESHOLD","HOUGH_THRESHOLD","HOUGH_MIN_LINE_LENGTH","HOUGH_MAX_LINE_GAP","HOUGH_BLUR_KERNEL","HOUGH_MORPH_CLOSE")),
+            "live_line_tracking_settings": any(key in changed for key in ("HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED")),
             "run_level": str(getattr(self.config, "RUN_LVL", "UNKNOWN")),
         }
 
@@ -201,7 +219,8 @@ class StreamVisionMixin:
                 lane_detector_options=["default","blsf-beta"] if mode == "city" else ["default","ml"],
                 setting_semantics={"BLSF":"BLSF caches constructor parameters; process restart required when active.",
                     "detector":"Detector selection is saved for startup; active motion pipeline is never hot-swapped.",
-                    "HOUGH":"Classical Hough reads these settings while processing frames."})
+                    "HOUGH":"Classical Hough reads these settings while processing frames.",
+                    "HALL_LINE_TRACKING":"Hall matching and the missed-frame limit are read live by the City/Race Hough processor."})
         if not self._control_allowed():
             return self._control_denied()
         body = request.get_json(silent=True) or {}

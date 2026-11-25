@@ -7,9 +7,6 @@ from stream.capabilities import mode_capabilities
 
 
 RESTART_KEYS = {
-    "SIMULATOR_STOP_LINE_ENABLED", "SIMULATOR_TRAFFIC_LIGHTS_ENABLED",
-    "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
-    "SIMULATOR_SIGN_ACTIONS_ENABLED",
     "SIMULATOR_HOST", "SIMULATOR_PORT", "SIMULATOR_TIMEOUT_S",
     "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
     "SIMULATOR_SPAWN_POINT_INDEX", "SIMULATOR_LIDAR_ENABLED",
@@ -17,6 +14,9 @@ RESTART_KEYS = {
     "SIMULATOR_LIDAR_POINTS_PER_SECOND", "SIMULATOR_LIDAR_ROTATION_FREQUENCY",
     "SIMULATOR_CAMERA_FOV", "CITY_LANE_DETECTOR",
     "USE_ML_LANE_DETECTOR", "ML_LANE_MODEL",
+    "SIMULATOR_STOP_LINE_ENABLED", "SIMULATOR_TRAFFIC_LIGHTS_ENABLED",
+    "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
+    "SIMULATOR_SIGN_ACTIONS_ENABLED",
     "ENCODER_PULSE_DISTANCE_CM", "ENCODER_WHEELBASE_CM",
 }
 CAMERA_MOUNT_KEYS = {
@@ -27,27 +27,30 @@ CAMERA_MOUNT_KEYS = {
 LIVE_KEYS = {
     "SIMULATOR_TARGET_SPEED", "SIMULATOR_THROTTLE_LIMIT",
     "SIMULATOR_STEERING_LIMIT", "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
+    "USE_PID", "AUTO_UPDATE_KP", "KP", "KI", "KD", "KT", "OUTPUT_LIMITS",
+    "PID_MIN_DT", "PID_MAX_DT", "PID_DERIVATIVE_FILTER",
     "SIMULATOR_STOP_ON_LOST_LANE", "SIMULATOR_STOP_ON_CROSSWALK",
     "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_STEERING_INVERTED",
+    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+    "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
+    "SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS",
+    "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
+    "SIMULATOR_OBSTACLE_THROTTLE_LIMIT", "SIMULATOR_STOP_LINE_THRESHOLD",
+    "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO", "SIMULATOR_STOP_LINE_MIN_AREA",
+    "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG", "SIMULATOR_STOP_LINE_CONFIRM_FRAMES",
+    "SIMULATOR_STOP_LINE_DWELL_SECONDS", "SIMULATOR_SIGN_CONFIDENCE",
+    "SIMULATOR_SIGN_SCAN_INTERVAL", "SIMULATOR_SIGN_STOP_HOLD_SECONDS",
+    "SIMULATOR_SIGN_TURN_HOLD_SECONDS", "SIMULATOR_SIGN_STEERING_OFFSET",
+    "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
+    "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_MIN_CONTOUR_AREA",
+    "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
+    "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
+    "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
+    "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI",
     "SIMULATOR_CAMERA_X", "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z",
     "SIMULATOR_CAMERA_PITCH", "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL",
-    "SIMULATOR_AVIS_SENSOR_ANGLE", "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED",
-    "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM", "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
-    "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", "SIMULATOR_OBSTACLE_SHIFT_SECONDS",
-    "SIMULATOR_OBSTACLE_REJOIN_SECONDS", "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS",
-    "SIMULATOR_OBSTACLE_STEERING_OFFSET", "SIMULATOR_OBSTACLE_THROTTLE_LIMIT",
-    "SIMULATOR_STOP_LINE_THRESHOLD", "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO",
-    "SIMULATOR_STOP_LINE_MIN_AREA", "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG",
-    "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_STOP_LINE_DWELL_SECONDS",
-    "SIMULATOR_SIGN_CONFIDENCE", "SIMULATOR_SIGN_SCAN_INTERVAL",
-    "SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS",
-    "SIMULATOR_SIGN_STEERING_OFFSET", "TL_TOP_ROI", "TL_BOTTOM_ROI",
-    "TL_LEFT_ROI", "TL_RIGHT_ROI", "TL_MIN_SATURATION", "TL_MIN_VALUE",
-    "TL_MIN_CONTOUR_AREA", "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN",
-    "TL_RED_HUE_MAX", "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
-    "SIMULATOR_STOP_LINE_TOP_ROI",
-    "SIMULATOR_STOP_LINE_BOTTOM_ROI", "SIMULATOR_STOP_LINE_LEFT_ROI",
-    "SIMULATOR_STOP_LINE_RIGHT_ROI", "USE_BEV", "DEBUG",
+    "SIMULATOR_AVIS_SENSOR_ANGLE", "USE_BEV", "DEBUG",
+    "HALL_LINE_TRACKING_ENABLED", "HALL_LINE_TRACKING_MAX_MISSED",
     "RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
     "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI", "RL_MIRRORED", "LL_MIRRORED",
     "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
@@ -85,8 +88,6 @@ def _roi_geometry(config):
         "cw_top_width_factor": factor("CW_TOP_WIDTH_FACTOR", 0.90),
         "roi_resizable": bool(getattr(config, "ROI_RESIZABLE", False)),
         "use_bev": bool(getattr(config, "USE_BEV", False)),
-        "stop_line_enabled": bool(getattr(config, "SIMULATOR_STOP_LINE_ENABLED", False)),
-        "traffic_lights_enabled": bool(getattr(config, "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", False)),
     }
 
 
@@ -102,17 +103,9 @@ def register_simulator_routes(app, streamer):
     def simulator_run_mode():
         if not streamer._control_allowed():
             return streamer._control_denied()
-        caps = mode_capabilities(streamer.config)
-        backend = str(caps.get("simulator_backend") or "").strip().lower()
-        if backend not in {"carla", "avis"}:
-            return jsonify(
-                success=False,
-                message="Explicit run control is available only for CARLA and AVIS Engine modes.",
-            ), 409
-        engine = "AVIS Engine" if backend == "avis" else "CARLA"
         runtime = getattr(streamer.config, "simulation_runtime", None)
         if runtime is None:
-            return jsonify(success=False, message=f"{engine} simulation runtime is not initialized."), 503
+            return jsonify(success=False, message="Simulation runtime is not initialized."), 503
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify(success=False, message="JSON object required"), 400
@@ -123,15 +116,22 @@ def register_simulator_routes(app, streamer):
             enabled = runtime.set_run_enabled(action == "start")
         except RuntimeError as exc:
             return jsonify(success=False, message=str(exc)), 409
-        return jsonify(
-            success=True,
-            run_enabled=enabled,
-            run_mode="running" if enabled else "stopped",
-            message=(
-                f"{engine} autonomous run started."
-                if enabled else f"{engine} autonomous run stopped; brake applied."
-            ),
-        )
+        return jsonify(success=True, run_enabled=enabled,
+                       run_mode="running" if enabled else "stopped",
+                       message="Autonomous run started." if enabled else "Autonomous run stopped; brake applied.")
+
+    @app.post("/api/simulation/reconnect")
+    def simulator_reconnect():
+        if not streamer._control_allowed():
+            return streamer._control_denied()
+        runtime = getattr(streamer.config, "simulation_runtime", None)
+        if runtime is None:
+            return jsonify(success=False, message="Simulation runtime is not initialized."), 503
+        try:
+            result = runtime.request_reconnect()
+        except RuntimeError as exc:
+            return jsonify(success=False, message=str(exc)), 409
+        return jsonify(success=True, **result)
 
 
     @app.get("/api/simulation/settings")
@@ -151,6 +151,7 @@ def register_simulator_routes(app, streamer):
                 "supports_obstacle_avoidance": bool(caps.get("supports_obstacle_avoidance")),
                 "supports_stop_line": bool(caps.get("supports_stop_line")),
                 "supports_traffic_lights": bool(caps.get("supports_traffic_lights")),
+                "supports_sign_actions": bool(caps.get("supports_sign_actions")),
             },
         )
 
@@ -167,12 +168,14 @@ def register_simulator_routes(app, streamer):
         unknown = set(patch) - SIMULATOR_KEYS
         if unknown:
             return jsonify(success=False, message="unsupported settings: " + ", ".join(sorted(unknown))), 400
+        backend = str(getattr(streamer.config, "SIMULATOR_BACKEND", "")).lower()
+        try:
+            # Use the same type, range and backend-specific rules as profile
+            # loading and saving; the API must not maintain a second schema.
+            patch = _validate_settings(patch, backend=backend)
+        except (TypeError, ValueError) as exc:
+            return jsonify(success=False, message=str(exc)), 400
         caps = mode_capabilities(streamer.config)
-        backend = str(
-            caps.get("simulator_backend")
-            or getattr(streamer.config, "SIMULATOR_BACKEND", "")
-            or ""
-        ).strip().lower()
         profile = caps.get("vision_profile", "city")
         carla_only = {
             "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT", "SIMULATOR_MAP",
@@ -200,15 +203,17 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message="City lane/crosswalk settings are available only for the City vision profile"), 400
         if profile != "race" and ({"USE_ML_LANE_DETECTOR", "ML_LANE_MODEL"} & set(patch)):
             return jsonify(success=False, message="ML lane settings are available only for the Race vision profile"), 400
+        if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
+            return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
         avis_only_keys = {
             "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
             "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
             "SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS",
             "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
             "SIMULATOR_OBSTACLE_THROTTLE_LIMIT", "SIMULATOR_SIGN_ACTIONS_ENABLED",
-            "SIMULATOR_SIGN_CONFIDENCE",
-            "SIMULATOR_SIGN_SCAN_INTERVAL", "SIMULATOR_SIGN_STOP_HOLD_SECONDS",
-            "SIMULATOR_SIGN_TURN_HOLD_SECONDS", "SIMULATOR_SIGN_STEERING_OFFSET",
+            "SIMULATOR_SIGN_CONFIDENCE", "SIMULATOR_SIGN_SCAN_INTERVAL",
+            "SIMULATOR_SIGN_STOP_HOLD_SECONDS", "SIMULATOR_SIGN_TURN_HOLD_SECONDS",
+            "SIMULATOR_SIGN_STEERING_OFFSET",
         }
         avis_city_keys = {
             "SIMULATOR_STOP_LINE_ENABLED", "SIMULATOR_TRAFFIC_LIGHTS_ENABLED",
@@ -219,80 +224,14 @@ def register_simulator_routes(app, streamer):
             "TL_MIN_SATURATION", "TL_MIN_VALUE", "TL_MIN_CONTOUR_AREA",
             "TL_MIN_ACTIVE_BRIGHTNESS", "TL_RED_HUE_MIN", "TL_RED_HUE_MAX",
             "TL_RED_HUE_WRAP_MIN", "TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX",
-            "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED", "SIMULATOR_STOP_LINE_TOP_ROI",
-            "SIMULATOR_STOP_LINE_BOTTOM_ROI", "SIMULATOR_STOP_LINE_LEFT_ROI",
-            "SIMULATOR_STOP_LINE_RIGHT_ROI",
+            "SIMULATOR_TL_CONFIRMATION_WINDOW", "SIMULATOR_TL_GREEN_REQUIRED",
+            "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
+            "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI",
         }
-        if backend != "avis" and (set(patch) & (avis_only_keys | avis_city_keys)):
-            return jsonify(success=False, message="AVIS-specific behavior settings are available only in AVIS Engine modes"), 400
+        if backend != "avis" and (set(patch) & avis_only_keys):
+            return jsonify(success=False, message="Obstacle avoidance and traffic-sign actions are available only in AVIS Engine modes"), 400
         if profile != "city" and (set(patch) & avis_city_keys):
-            return jsonify(success=False, message="Stop-line and traffic-light settings are available only in AVIS City mode"), 400
-        if "SIMULATOR_TARGET_SPEED" in patch:
-            try:
-                target_speed = float(patch["SIMULATOR_TARGET_SPEED"])
-            except (TypeError, ValueError, OverflowError):
-                return jsonify(success=False, message="SIMULATOR_TARGET_SPEED must be numeric"), 400
-            maximum_speed = 100 if backend == "avis" else 200
-            if not math.isfinite(target_speed) or target_speed < 0 or target_speed > maximum_speed:
-                return jsonify(success=False, message=f"Target speed must be between 0 and {maximum_speed} for {backend.upper()}"), 400
-            patch["SIMULATOR_TARGET_SPEED"] = target_speed
-        if profile != "city" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
-            return jsonify(success=False, message="Crosswalk braking is available only for the City vision profile"), 400
-        if backend == "avis" and "SIMULATOR_STOP_ON_CROSSWALK" in patch:
-            return jsonify(success=False, message="AVIS City uses a solid stop line rather than crosswalk detection"), 400
-        if "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM" in patch:
-            try:
-                obstacle_distance = float(patch["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"])
-            except (TypeError, ValueError, OverflowError):
-                return jsonify(success=False, message="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM must be numeric"), 400
-            if not math.isfinite(obstacle_distance) or not 0 <= obstacle_distance <= 500:
-                return jsonify(success=False, message="Obstacle stop distance must be between 0 and 500 cm"), 400
-            patch["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"] = obstacle_distance
-        if "SIMULATOR_PORT" in patch:
-            value = patch["SIMULATOR_PORT"]
-            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535:
-                return jsonify(success=False, message="SIMULATOR_PORT must be an integer from 1 to 65535"), 400
-        for key in ("SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
-                    "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
-                    "ENCODER_PULSE_DISTANCE_CM"):
-            if key in patch:
-                try:
-                    value = float(patch[key])
-                except (TypeError, ValueError, OverflowError):
-                    return jsonify(success=False, message=key + " must be numeric"), 400
-                if not math.isfinite(value) or value <= 0:
-                    return jsonify(success=False, message=key + " must be positive and finite"), 400
-                patch[key] = value
-        if "SIMULATOR_THROTTLE_LIMIT" in patch:
-            try:
-                value = float(patch["SIMULATOR_THROTTLE_LIMIT"])
-            except (TypeError, ValueError, OverflowError):
-                return jsonify(success=False, message="SIMULATOR_THROTTLE_LIMIT must be numeric"), 400
-            maximum_throttle = 1.0
-            if not math.isfinite(value) or not 0 <= value <= maximum_throttle:
-                return jsonify(success=False, message=f"SIMULATOR_THROTTLE_LIMIT must be between 0 and {maximum_throttle} for {backend.upper()}"), 400
-            patch["SIMULATOR_THROTTLE_LIMIT"] = value
-        for key in ("SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE",
-                    "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED",
-                    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_STOP_LINE_ENABLED",
-                    "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_SIGN_ACTIONS_ENABLED",
-                    "USE_BEV", "USE_ML_LANE_DETECTOR", "DEBUG"):
-            if key in patch and not isinstance(patch[key], bool):
-                return jsonify(success=False, message=key + " must be boolean"), 400
-        for key in ("RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
-                    "LL_TOP_ROI", "LL_BOTTOM_ROI", "LL_LEFT_ROI", "LL_RIGHT_ROI",
-                    "CW_TOP_ROI", "CW_BOTTOM_ROI", "CW_LEFT_ROI", "CW_RIGHT_ROI",
-                    "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
-                    "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
-                    "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI"):
-            if key in patch:
-                try:
-                    value = float(patch[key])
-                except (TypeError, ValueError, OverflowError):
-                    return jsonify(success=False, message=key + " must be numeric"), 400
-                if not math.isfinite(value) or not 0 <= value <= 1:
-                    return jsonify(success=False, message=key + " must be between 0 and 1"), 400
-                patch[key] = value
+            return jsonify(success=False, message="Stop-line and traffic-light settings are available only for AVIS City"), 400
         if patch.get("WITH_SIGN") and patch.get("WITH_APRILTAG"):
             return jsonify(success=False, message="Choose traffic signs or AprilTags, not both"), 400
         try:

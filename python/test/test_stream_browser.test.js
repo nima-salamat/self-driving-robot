@@ -1,8 +1,10 @@
 'use strict';
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
 const {spawn}=require('node:child_process');
 const {setTimeout:delay}=require('node:timers/promises');
 const {chromium}=require('playwright');
+const vm=require('node:vm');
 
 const port=Number(process.env.STREAM_BROWSER_TEST_PORT||41982);
 const baseURL='http://127.0.0.1:'+port;
@@ -33,8 +35,75 @@ async function waitForServer(child){
   let browser=null;
   try{
     await waitForServer(server);
+    for(const backend of ['avis','carla']){
+      const profile=backend==='avis'?'city':'race';
+      const response=await fetch(baseURL+'/__test/simulator-editor?backend='+backend+'&profile='+profile);
+      assert.equal(response.status,200,backend+' simulator template should render');
+      const html=await response.text();
+      assert.ok(!html.includes('{% include'),'Jinja partials must be expanded before serving '+backend);
+      assert.ok(html.includes('simulator-editor--'+backend));
+      assert.ok(html.includes('simulator-profile--'+profile));
+      const scriptStart=html.indexOf('<script>');
+      const scriptEnd=html.indexOf('</script>',scriptStart);
+      assert.ok(scriptStart>=0&&scriptEnd>scriptStart,backend+' runtime script should render');
+      const runtimeScript=html.slice(scriptStart+8,scriptEnd);
+      new vm.Script(runtimeScript,{filename:'simulator-'+backend+'.inline.js'});
+      assert.ok(html.includes('simulator-base.css'));
+      assert.ok(html.includes('simulator-'+backend+'.css'));
+      if(backend==='carla'){
+        assert.ok(runtimeScript.includes('function initCarlaScene('),'CARLA scene module must be included');
+        assert.ok(runtimeScript.includes('function initCameraEditor('),'CARLA camera module must be included');
+      }else{
+        assert.ok(!runtimeScript.includes('function initCarlaScene('),'AVIS must not include CARLA scene code');
+      }
+    }
     browser=await chromium.launch({headless:true,args:['--no-sandbox']});
     const page=await browser.newPage({viewport:{width:1365,height:900}});
+    // Regression-test the simulator editor with its real Stream stylesheet.
+    // The right-hand settings stack must terminate at the content edge with no
+    // sticky overlap or horizontal overflow at desktop, tablet and mobile sizes.
+    const simulatorTemplate=fs.readFileSync('python/stream/templates/simulator_editor.html','utf8');
+    const streamCssFiles=['stream-base.css','stream-workspace.css','stream-responsive.css','stream-panels.css','stream-vision.css'];
+    const simulatorCssFiles=['simulator-base.css','simulator-avis.css','simulator-carla.css'];
+    const readStyles=files=>files.map(file=>fs.readFileSync('python/stream/static/css/'+file,'utf8')).join(String.fromCharCode(10));
+    const sharedStreamCss=readStyles(streamCssFiles);
+    const simulatorEditorCss=readStyles(simulatorCssFiles);
+    assert.doesNotMatch(simulatorTemplate,/<style>/i,'Simulator styles must be external CSS assets');
+    assert.ok(simulatorTemplate.includes('simulator-avis.css'),'AVIS must have a dedicated stylesheet');
+    assert.ok(simulatorTemplate.includes('simulator-carla.css'),'CARLA must have a dedicated stylesheet');
+    const layoutPage=await browser.newPage({viewport:{width:1365,height:900}});
+    const layoutHtml='<!doctype html><html><head><style>'+sharedStreamCss+
+      '</style><style>'+simulatorEditorCss+'</style></head><body>'+
+      '<header class="sim-top">AVIS Stream</header><main class="sim-layout avis-layout">'+
+      '<div class="stack"><section class="panel"><div class="panel-content" style="height:420px">Camera</div></section></div>'+
+      '<div class="stack"><section class="panel" style="height:60px">Run controls</section>'+
+      '<section class="panel sim-settings-panel" id="sim-settings-panel"><div class="panel-head">Editor</div>'+
+      '<div class="panel-content"><form id="settings-form"><div class="avis-settings-toolbar">AVIS</div>'+
+      '<div class="setting-block"><div class="grid-two"><div class="field"><label>Host</label><input value="127.0.0.1"></div>'+
+      '<div class="field"><label>Port</label><input value="25001"></div></div></div></form></div></section></div></main></body></html>';
+    for(const width of [1440,1365,1200,1100,1024,1021,1020,900,520]){
+      await layoutPage.setViewportSize({width,height:900});
+      await layoutPage.setContent(layoutHtml,{waitUntil:'domcontentloaded'});
+      const geometry=await layoutPage.evaluate(()=>{
+        const main=document.querySelector('.sim-layout'),panel=document.querySelector('#sim-settings-panel');
+        const mainRect=main.getBoundingClientRect(),panelRect=panel.getBoundingClientRect();
+        return {
+          contentRight:mainRect.right-parseFloat(getComputedStyle(main).paddingRight),
+          panelRight:panelRect.right,panelWidth:panelRect.width,
+          viewportWidth:innerWidth,
+          documentWidth:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth),
+          columns:getComputedStyle(main).gridTemplateColumns.trim().split(/\s+/).length
+        };
+      });
+      assert.ok(Math.abs(geometry.panelRight-geometry.contentRight)<=1,
+        'Settings must fit the exact right content edge at '+width+': '+JSON.stringify(geometry));
+      assert.ok(geometry.panelWidth>=300,'Settings panel must stay readable at '+width);
+      assert.ok(geometry.documentWidth<=width+1,'No horizontal overflow at '+width+': '+JSON.stringify(geometry));
+      assert.equal(geometry.columns,width>1020?2:1,'Responsive layout breakpoint at '+width);
+    }
+    await layoutPage.close();
+
+
     const pageErrors=[],consoleErrors=[],criticalRequestFailures=[],commandRequests=[];
     const unexpectedHttpResponses=[],expectedInjectedFailures=[];
     page.on('pageerror',error=>pageErrors.push(error.message));

@@ -405,7 +405,8 @@ class AVISModeSettingsTests(unittest.TestCase):
             city_path = load_simulator_settings(config, "avis", "avis")
             self.assertTrue(config.SIMULATOR_STOP_LINE_ENABLED)
             self.assertTrue(config.SIMULATOR_TRAFFIC_LIGHTS_ENABLED)
-            self.assertFalse(config.SIMULATOR_CROSSWALK_DETECTION_ENABLED)
+            # AVIS City uses the dedicated solid stop-line detector, not
+            # the generic simulator crosswalk-braking path.
             self.assertFalse(config.SIMULATOR_STOP_ON_CROSSWALK)
             self.assertFalse(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
             self.assertFalse(config.SIMULATOR_SIGN_ACTIONS_ENABLED)
@@ -419,7 +420,7 @@ class AVISModeSettingsTests(unittest.TestCase):
             self.assertFalse(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
             self.assertNotEqual(city_path, race_path)
             load_simulator_settings(config, "carla", "carla")
-            self.assertTrue(config.SIMULATOR_CROSSWALK_DETECTION_ENABLED)
+            self.assertTrue(config.SIMULATOR_STOP_ON_CROSSWALK)
             self.assertTrue((Path(directory) / "avis.sim.json").is_file())
 
     def test_validation_rejects_unsafe_ordering_and_invalid_hue_ranges(self):
