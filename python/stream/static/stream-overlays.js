@@ -154,6 +154,14 @@ function drawOverlays(){
                     drawPolygon(pts,color,isHL);
                 }
             }
+            else if(key === 'ML' || key === 'MR') {
+                shapeType='Rectangle';
+                const pts = [
+                    {x:r.x,y:r.y}, {x:r.x+r.w,y:r.y},
+                    {x:r.x+r.w,y:r.y+r.h}, {x:r.x,y:r.y+r.h}
+                ];
+                drawPolygon(pts,color,isHL);
+            }
 
             const labelAlignment=key==='RL'?'right':key==='CW'?'center':'left';
             const labelX=labelAlignment==='right'?r.x+r.w:labelAlignment==='center'?r.x+r.w/2:r.x;
