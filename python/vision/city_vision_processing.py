@@ -191,7 +191,31 @@ class VisionProcessor:
         rl_left, rl_right = int(conf.RL_LEFT_ROI * width), int(conf.RL_RIGHT_ROI * width)
         ll_top, ll_bottom = int(conf.LL_TOP_ROI * height), int(conf.LL_BOTTOM_ROI * height)
         ll_left, ll_right = int(conf.LL_LEFT_ROI * width), int(conf.LL_RIGHT_ROI * width)
-        
+        active_maneuver_roi = str(getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_ROI", "")).lower()
+        if active_maneuver_roi not in {"left", "right"}:
+            active_maneuver_roi = None
+        if active_maneuver_roi:
+            prefix = "ML" if active_maneuver_roi == "left" else "MR"
+            base = (ll_top, ll_bottom, ll_left, ll_right) if active_maneuver_roi == "left" else (rl_top, rl_bottom, rl_left, rl_right)
+            bounds = []
+            for suffix, fallback, dimension in zip(
+                ("TOP_ROI", "BOTTOM_ROI", "LEFT_ROI", "RIGHT_ROI"),
+                base, (height, height, width, width),
+            ):
+                try:
+                    value = float(getattr(conf, prefix + "_" + suffix, fallback / dimension))
+                except (TypeError, ValueError, OverflowError):
+                    value = fallback / dimension
+                bounds.append(max(0.0, min(1.0, value)))
+            top_px, bottom_px = sorted((int(bounds[0] * height), int(bounds[1] * height)))
+            left_px, right_px = sorted((int(bounds[2] * width), int(bounds[3] * width)))
+            if bottom_px - top_px < 2 or right_px - left_px < 2:
+                active_maneuver_roi = None
+            elif active_maneuver_roi == "left":
+                ll_top, ll_bottom, ll_left, ll_right = top_px, bottom_px, left_px, right_px
+            else:
+                rl_top, rl_bottom, rl_left, rl_right = top_px, bottom_px, left_px, right_px
+
         hall_requested = bool(getattr(conf, "HALL_LINE_TRACKING_ENABLED", False))
         sobel_hough_active = not bool(getattr(conf, "OLD_METHOD", OLD_METHOD))
         simulator_backend = str(getattr(conf, "SIMULATOR_BACKEND", "")).lower()
@@ -208,6 +232,7 @@ class VisionProcessor:
         legacy_roi_resizing = (
             bool(getattr(conf, "ROI_RESIZABLE", ROI_RESIZABLE))
             and not simulator_joint_tracking
+            and active_maneuver_roi is None
         )
         if legacy_roi_resizing:
             rl_right_ = rl_right + int(
@@ -259,6 +284,11 @@ class VisionProcessor:
                 ], np.int32)
                 mask_ll = np.zeros((ll_h, ll_w), dtype=np.uint8)
                 cv2.fillPoly(mask_ll, [pts_ll], 255)
+
+        if active_maneuver_roi == "left":
+            mask_ll = None
+        elif active_maneuver_roi == "right":
+            mask_rl = None
 
         if hasattr(conf, 'CW_TRAPEZOID_MODE') and conf.CW_TRAPEZOID_MODE:
             if cw_frame is not None:
@@ -686,4 +716,5 @@ class VisionProcessor:
             ,"perception_quality": (float(lane_tracking_result["perception_quality"]) if lane_tracking_result is not None else min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0)))
             ,"observed_lane_boundaries": (int(lane_tracking_result["left"]["observed"]) + int(lane_tracking_result["right"]["observed"]) if lane_tracking_result is not None else (2 if lane_type == "both" else 1 if lane_type in ("only_left", "only_right") else 0))
             ,"line_tracking": line_tracking
+            ,"maneuver_roi": {"side": active_maneuver_roi, "observed": bool(ll_x_mid is not None if active_maneuver_roi == "left" else rl_x_mid is not None) if active_maneuver_roi else False}
         }
