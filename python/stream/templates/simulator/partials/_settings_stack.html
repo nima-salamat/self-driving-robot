@@ -115,6 +115,13 @@
               <div class="field"><label for="obstacle-right-steering">Direct right steering (AVIS %, positive)</label><input id="obstacle-right-steering" type="number" min="0" max="100" step="1" name="SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT"></div>
               <div class="field"><label for="obstacle-roi-delay">Delay before maneuver ROI (s)</label><input id="obstacle-roi-delay" type="number" min="0" max="5" step=".1" name="SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS"></div>
               <div class="field"><label for="obstacle-lane-hold">Time following passing lane (s)</label><input id="obstacle-lane-hold" type="number" min=".2" max="10" step=".1" name="SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS"></div>
+              <div class="field" style="grid-column:1/-1">
+                <label class="check-field"><input id="obstacle-return-steering-gate-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"> Wait for near-straight steering before returning right</label>
+                <p class="note">The passing-lane time above remains the minimum. When enabled, the right-return maneuver starts only after the mean of the latest lane-controller commands enters the configured AVIS-percent band.</p>
+              </div>
+              <div class="field"><label for="obstacle-return-steering-samples">Recent steering commands to average (N)</label><input id="obstacle-return-steering-samples" type="number" min="1" max="100" step="1" name="SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT"></div>
+              <div class="field"><label for="obstacle-return-steering-min">Return band minimum (AVIS %)</label><input id="obstacle-return-steering-min" type="number" min="-100" max="100" step="1" name="SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT"></div>
+              <div class="field"><label for="obstacle-return-steering-max">Return band maximum (AVIS %)</label><input id="obstacle-return-steering-max" type="number" min="-100" max="100" step="1" name="SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"></div>
               <div class="field"><label for="obstacle-roi-timeout">Maneuver ROI search timeout (s)</label><input id="obstacle-roi-timeout" type="number" min=".5" max="15" step=".1" name="SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS"></div>
               <div class="field"><label for="obstacle-roi-frames">Valid ROI frames required</label><input id="obstacle-roi-frames" type="number" min="1" max="10" step="1" name="SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES"></div>
               <div class="field"><label for="obstacle-throttle-limit">Bypass throttle cap (0–0.25)</label><input id="obstacle-throttle-limit" type="number" min="0" max=".25" step=".01" name="SIMULATOR_OBSTACLE_THROTTLE_LIMIT"></div>
