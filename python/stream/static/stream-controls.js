@@ -280,7 +280,7 @@ document.getElementById('confirm_advanced').addEventListener('click', ()=>{
 });
 
 /* ---------- Color & Vis Listeners ---------- */
-['vis_rl','vis_ll','vis_cw','vis_st','vis_obj','vis_bev'].forEach(id => {
+['vis_rl','vis_ll','vis_cw','vis_st','vis_obj','vis_ml','vis_mr','vis_bev'].forEach(id => {
     document.getElementById(id).addEventListener('change', (e) => {
         let key = id.replace('vis_', '').toUpperCase();
         ui.visible[key] = e.target.checked;
@@ -290,7 +290,7 @@ document.getElementById('confirm_advanced').addEventListener('click', ()=>{
         drawOverlays();
     });
 });
-['color_rl','color_ll','color_cw','color_st','color_obj','color_bev'].forEach(id => {
+['color_rl','color_ll','color_cw','color_st','color_obj','color_ml','color_mr','color_bev'].forEach(id => {
     document.getElementById(id).addEventListener('change', (e) => {
         let key = id.replace('color_', '').toUpperCase();
         ui.colors[key] = e.target.value;
