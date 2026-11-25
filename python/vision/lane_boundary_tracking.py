@@ -426,7 +426,9 @@ class LaneBoundaryTracker:
         selected_id = result.get("selected_track_id")
         if selected_id is not None:
             for item in result.get("candidate_tracks", ()):
-                if item.get("track_id") == selected_id and item.get("matched"):
+                # A newly acquired selected track is present in this frame even
+                # though Hall correctly marks it as not matched to prior history.
+                if item.get("track_id") == selected_id:
                     local_index = int(item["candidate_index"])
                     if 0 <= local_index < len(source):
                         selected_index = int(source[local_index]["index"])
