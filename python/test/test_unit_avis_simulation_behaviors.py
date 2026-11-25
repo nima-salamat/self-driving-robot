@@ -313,7 +313,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         returning = controller.apply(lane_command(0.04), ranges, perception_valid=True, now=11.0)
         self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
         self.assertAlmostEqual(returning.steering, 0.70)
-        self.assertIn("mean steering", controller.last_reason)
+        self.assertTrue(controller._return_steering_gate_stats()["ready"])
 
     def test_return_steering_gate_uses_signed_avis_percent_and_inclusive_band(self):
         controller = RangeObstacleAvoidance(obstacle_config(
