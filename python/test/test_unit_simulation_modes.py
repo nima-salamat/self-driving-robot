@@ -82,8 +82,10 @@ class SimulatorSettingsTests(unittest.TestCase):
     def test_every_mode_default_is_accepted_by_settings_schema(self):
         for mode, backend in (("carla", "carla"), ("avis", "avis"), ("avis-race", "avis")):
             with self.subTest(mode=mode):
-                unsupported = set(_defaults(mode, backend)) - SIMULATOR_KEYS
+                defaults = _defaults(mode, backend)
+                unsupported = set(defaults) - SIMULATOR_KEYS
                 self.assertEqual(unsupported, set())
+                self.assertEqual(_validate_settings(defaults), defaults)
 
     def test_avis_race_existing_settings_can_load_save_and_reload(self):
         with tempfile.TemporaryDirectory() as directory:
