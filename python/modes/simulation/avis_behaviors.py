@@ -99,7 +99,7 @@ class RangeObstacleAvoidance:
     def prepare_vision(self, now=None):
         """Select the temporary lane ROI before the next camera frame is parsed."""
         active_roi = None
-        if self.state in {self.SEARCH_LEFT_ROI, self.PASS_LANE_FOLLOW}:
+        if self.state == self.SEARCH_LEFT_ROI:
             active_roi = "left"
         elif self.state == self.SEARCH_RIGHT_ROI:
             active_roi = "right"
@@ -361,7 +361,9 @@ class RangeObstacleAvoidance:
             self.last_reason = (
                 "obstacle lane change: following the passing lane with normal lane PID"
             )
-            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
+            # The confirmation frame used the temporary ROI; subsequent
+            # passing-lane frames return to the ordinary lane detector and PID.
+            self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
             return command
 
         if self.state == self.SHIFT_RIGHT_DIRECT:
