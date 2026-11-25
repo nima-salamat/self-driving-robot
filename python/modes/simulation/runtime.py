@@ -272,9 +272,13 @@ class SimulationRuntime:
         if not self._requires_explicit_start:
             raise RuntimeError("Explicit run mode is available only for CARLA and AVIS Engine.")
         enabled = bool(enabled)
-        if enabled == self._run_enabled:
-            return self._run_enabled
         engine = "AVIS Engine" if self.backend == "avis" else "CARLA"
+        if enabled == self._run_enabled:
+            if not enabled:
+                # Stop is an idempotent safety action: even a second click
+                # should send zero speed/full brake to the adapter.
+                self._safe_stop(f"{engine} run mode is stopped; brake command reaffirmed.")
+            return self._run_enabled
         if enabled:
             if self.backend == "carla" and (self._camera_editor_active or self._scene_edit_active):
                 raise RuntimeError("Close the CARLA camera/scene editor before starting autonomous run.")
