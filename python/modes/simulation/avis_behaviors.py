@@ -106,7 +106,9 @@ class RangeObstacleAvoidance:
         return _brake(command, reason)
 
 
-    def _target_lane_steering(self, command, lane_tracking, progress, fallback):
+    def _target_lane_steering(
+        self, command, lane_tracking, progress, fallback, steering_authority=1.0
+    ):
         """Track the adjacent-lane center when the vision tracker has geometry."""
         self.lane_geometry_active = False
         self.last_lane_error_px = None
@@ -148,16 +150,31 @@ class RangeObstacleAvoidance:
         )
         servo_direction = str(
             getattr(self.config, "SERVO_DIRECTION", "ltr")
-        ).lower()
+        ).strip().lower()
+        # Match VirtualVehicleController's servo-angle convention:
+        # LTR: positive correction increases the angle; RTL reverses it.
+        servo_axis_sign = -1.0 if servo_direction == "rtl" else 1.0
         correction = kp * target_error
-        target_angle = center - correction if servo_direction == "ltr" else center + correction
+        target_angle = center + servo_axis_sign * correction
         target_angle = max(minimum, min(maximum, target_angle))
         if target_angle < center:
             steering = (target_angle - center) / max(1.0, center - minimum)
         else:
             steering = (target_angle - center) / max(1.0, maximum - center)
+
+        # AVIS uses one stable signed convention regardless of servo orientation:
+        # negative steers left, positive steers right. Convert the selected servo
+        # axis back to that convention before applying the simulator inversion.
+        steering *= servo_axis_sign
         if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
             steering = -steering
+        try:
+            authority = float(steering_authority)
+        except (TypeError, ValueError, OverflowError):
+            authority = 1.0
+        if not math.isfinite(authority):
+            authority = 1.0
+        steering *= max(0.0, min(1.0, authority))
         self.lane_geometry_active = True
         self.last_lane_error_px = round(lane_error, 2)
         self.last_lane_width_px = round(lane_width, 2)
@@ -267,7 +284,7 @@ class RangeObstacleAvoidance:
         )
         offset = max(
             0.05,
-            min(0.35, self._number("SIMULATOR_OBSTACLE_STEERING_OFFSET", 0.28)),
+            min(1.0, self._number("SIMULATOR_OBSTACLE_STEERING_OFFSET", 0.28)),
         )
         throttle_cap = max(
             0.0,
@@ -349,6 +366,7 @@ class RangeObstacleAvoidance:
             target_steering = self._target_lane_steering(
                 command, lane_tracking, progress,
                 command.steering + self.direction * offset * progress,
+                steering_authority=offset,
             )
             return self._steer_command(
                 command,
@@ -389,6 +407,7 @@ class RangeObstacleAvoidance:
                 target_steering = self._target_lane_steering(
                     command, lane_tracking, 1.0,
                     command.steering + self.direction * offset * 0.78,
+                    steering_authority=offset,
                 )
                 return self._steer_command(
                     command,
@@ -407,6 +426,7 @@ class RangeObstacleAvoidance:
                 target_steering = self._target_lane_steering(
                     command, lane_tracking, 1.0,
                     command.steering + self.direction * offset * 0.78,
+                    steering_authority=offset,
                 )
                 return self._steer_command(
                     command,
