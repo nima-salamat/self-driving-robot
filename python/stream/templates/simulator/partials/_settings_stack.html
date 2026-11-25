@@ -97,7 +97,7 @@
               <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max="1" step="any" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
               {% endif %}
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step="any" name="ENCODER_PULSE_DISTANCE_CM"></div>
-              <div class="field"><label for="obstacle-stop-distance">Forward range stop threshold (cm, 0 disables)</label><input id="obstacle-stop-distance" type="number" min="0" max="500" step="any" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-stop-distance">Forward emergency-stop threshold (cm; AVIS minimum 20)</label><input id="obstacle-stop-distance" type="number" min="20" max="500" step="any" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
             </div>
             <label class="check-field"><input id="stop-lost-lane" type="checkbox" name="SIMULATOR_STOP_ON_LOST_LANE"> Brake when no valid lane is detected</label>
             <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
@@ -105,7 +105,7 @@
           </div>
           {% if caps.supports_obstacle_avoidance %}
           <div class="setting-block" id="avis-obstacle-settings">
-            <h3 class="section-title">AVIS · Staged obstacle lane change <span class="pill">Optional · Off by default</span></h3>
+            <h3 class="section-title">AVIS · Staged obstacle lane change <span class="pill">Enabled by default</span></h3>
             <label class="check-field"><input id="obstacle-avoidance-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED"> Enable staged left/front/right lane-change avoidance</label>
             <div class="grid-two">
               <div class="field"><label for="obstacle-trigger-distance">Start bypass below (cm)</label><input id="obstacle-trigger-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"></div>
@@ -117,7 +117,7 @@
               <div class="field"><label for="obstacle-pass-timeout">Maximum bypass time (s)</label><input id="obstacle-pass-timeout" type="number" min=".2" max="10" step=".1" name="SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS"></div>
               <div class="field"><label for="obstacle-throttle-limit">Bypass throttle cap (0–0.25)</label><input id="obstacle-throttle-limit" type="number" min="0" max=".25" step=".01" name="SIMULATOR_OBSTACLE_THROTTLE_LIMIT"></div>
             </div>
-            <p class="note">Uses AVIS left/front/right range rays with a staged shift → pass → rejoin maneuver. Steering authority applies to both lane departure and rejoin; 1.0 allows the full normalized maneuver command. The effective output is still bounded by Maximum steering input and Steering slew rate above. Rejoining requires three clear front observations and a minimum travel distance. Missing sensor data, lost lane perception, insufficient side clearance or timeout causes braking. This is not a 2D occupancy map; retain the independent emergency stop and validate at the lowest speed.</p>
+            <p class="note">AVIS starts with staged shift → pass → rejoin enabled. The independent forward guard is always active: it brakes at the configured threshold (at least 20 cm) and also brakes when front-range telemetry is missing or invalid. The steering authority applies to both lane departure and rejoin, but Maximum steering input and Steering slew rate still bound the final output. Three range rays are not a 2D occupancy map; test at minimum speed and retain supervision.</p>
           </div>
           {% endif %}
           {% if caps.supports_sign_actions %}
