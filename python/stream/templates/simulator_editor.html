@@ -1004,8 +1004,8 @@ async function setSimulatorRunMode(action){
     if(start)start.disabled=!simRoiControlsEnabled;if(stop)stop.disabled=!simRoiControlsEnabled;
   }
 }
-if($("simulator-run-start"))$("simulator-run-start").addEventListener("click",function(){setCarlaRunMode("start");});
-if($("simulator-run-stop"))$("simulator-run-stop").addEventListener("click",function(){setCarlaRunMode("stop");});
+if($("simulator-run-start"))$("simulator-run-start").addEventListener("click",function(){setSimulatorRunMode("start");});
+if($("simulator-run-stop"))$("simulator-run-stop").addEventListener("click",function(){setSimulatorRunMode("stop");});
 
 async function poll(){
   try{
