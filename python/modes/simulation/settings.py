@@ -18,7 +18,7 @@ SIMULATOR_KEYS = {
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "SIMULATOR_STOP_ON_LOST_LANE",
     "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
-    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
+    "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM",
     "SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS",
     "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", "SIMULATOR_OBSTACLE_STEERING_OFFSET",
@@ -29,6 +29,7 @@ SIMULATOR_KEYS = {
     "SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES",
     "SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED",
+    "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
@@ -218,6 +219,7 @@ def _defaults(mode, backend):
         # AVIS enables range-based bypass by default; an independent fail-safe
         # forward guard brakes whenever its front reading is missing or unsafe.
         "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED": avis,
+        "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED": False,
         "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 120.0 if avis else 100.0,
         "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 150.0 if avis else 125.0,
         "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 75.0,
@@ -462,8 +464,10 @@ def _validate_settings(data, backend=None):
                 raise ValueError("PID_MIN_DT must be at most 1 second")
             if key == "PID_MAX_DT" and value > 5:
                 raise ValueError("PID_MAX_DT must be at most 5 seconds")
-            if key in ROI_KEYS | BEV_KEYS | ROI_FACTOR_KEYS and not 0 <= value <= 1:
+            if key in ROI_KEYS | ROI_FACTOR_KEYS and not 0 <= value <= 1:
                 raise ValueError(f"{key} must be between 0 and 1")
+            if key in BEV_KEYS and not -0.15 <= value <= 1.15:
+                raise ValueError(f"{key} must be between -0.15 and 1.15 (BEV source may extend outside the frame)")
             if key == "CAMERA_PITCH_DEG" and not -90 <= value <= 90:
                 raise ValueError("CAMERA_PITCH_DEG must be between -90 and 90 degrees")
             if key in {"MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE"} and not 0 <= value <= 180:
