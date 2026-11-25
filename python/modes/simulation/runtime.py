@@ -442,8 +442,12 @@ class SimulationRuntime:
             encoder = {"available": True, "pulses": int(self._encoder_pulses),
                        "delta": int(self._encoder_delta), "distance_cm": round(self._last_distance_cm, 2),
                        "source": "simulated travel estimate; not hardware ground truth"}
+            range_sensor_status = (
+                dict(getattr(frame, "sensor_status", {}) or {}) if frame is not None else {}
+            )
             sensor_data = {
                 "speed_kmh": speed, "ranges_cm": ranges,
+                "range_sensor_status": range_sensor_status,
                 "lidar_available": bool(self.backend == "carla" and
                                         getattr(self.config, "SIMULATOR_LIDAR_ENABLED", False) and points is not None),
                 "lidar_point_count": int(len(points)) if points is not None else 0,
