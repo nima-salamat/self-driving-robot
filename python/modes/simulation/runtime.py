@@ -20,6 +20,75 @@ from visualization.lane_debug_overlay import render_lane_debug_overlay
 logger = logging.getLogger(__name__)
 
 
+def _apply_forward_range_guard(command, ranges, *, backend, stop_distance_cm):
+    """Apply the independent forward-range safety guard.
+
+    AVIS has no verified separate brake channel: a stop is represented by a
+    zero-speed command. Missing/invalid AVIS front telemetry therefore fails
+    closed instead of allowing lane-following throttle to continue.
+    """
+    backend = str(backend or "").lower()
+    ranges = ranges if isinstance(ranges, dict) else {}
+    raw_front = ranges.get("front")
+    try:
+        front = float(raw_front)
+        if isinstance(raw_front, bool) or not math.isfinite(front) or front < 0:
+            front = None
+    except (TypeError, ValueError, OverflowError):
+        front = None
+
+    try:
+        configured_threshold = float(stop_distance_cm)
+        if not math.isfinite(configured_threshold):
+            raise ValueError("non-finite stop threshold")
+    except (TypeError, ValueError, OverflowError):
+        configured_threshold = 60.0 if backend == "avis" else 35.0
+
+    if backend == "avis":
+        threshold = max(20.0, configured_threshold)
+        if front is None:
+            reason = "AVIS front range sensor missing/invalid; fail-safe stop"
+            status = "sensor_unavailable"
+        elif front <= threshold:
+            reason = f"forward range {front:.1f} cm at/below {threshold:.1f} cm; AVIS safety stop"
+            status = "obstacle_detected"
+        else:
+            return command, {
+                "status": "clear", "front_range_cm": front,
+                "threshold_cm": threshold, "reason": "front range above emergency-stop threshold",
+            }
+        safe = VehicleCommand(
+            steering=command.steering, throttle=0.0, brake=1.0,
+            servo_angle=command.servo_angle, target_speed=0.0, reason=reason,
+        )
+        return safe, {
+            "status": status, "front_range_cm": front,
+            "threshold_cm": threshold, "reason": reason,
+        }
+
+    threshold = configured_threshold
+    if threshold <= 0 or front is None:
+        return command, {
+            "status": "disabled" if threshold <= 0 else "unavailable",
+            "front_range_cm": front, "threshold_cm": threshold,
+            "reason": "forward range guard is disabled or no front range is supplied",
+        }
+    if front <= threshold:
+        reason = f"forward range {front:.1f} cm at/below {threshold:.1f} cm; simulator braking"
+        safe = VehicleCommand(
+            steering=command.steering, throttle=0.0, brake=1.0,
+            servo_angle=command.servo_angle, target_speed=0.0, reason=reason,
+        )
+        return safe, {
+            "status": "obstacle_detected", "front_range_cm": front,
+            "threshold_cm": threshold, "reason": reason,
+        }
+    return command, {
+        "status": "clear", "front_range_cm": front,
+        "threshold_cm": threshold, "reason": "front range above stop threshold",
+    }
+
+
 class SimulationRuntime:
     def __init__(self, config):
         self.config = config
@@ -58,6 +127,7 @@ class SimulationRuntime:
         self._last_sequence = 0
         self._last_result = {}
         self._last_sensor_frame = None
+        self._last_range_safety = {"status": "waiting", "reason": "waiting for the first front-range sample"}
         self._last_command = self.controller.last_command
         self._last_error = None
         self._last_event_key = None
@@ -448,6 +518,7 @@ class SimulationRuntime:
             sensor_data = {
                 "speed_kmh": speed, "ranges_cm": ranges,
                 "range_sensor_status": range_sensor_status,
+                "range_safety": dict(self._last_range_safety),
                 "lidar_available": bool(self.backend == "carla" and
                                         getattr(self.config, "SIMULATOR_LIDAR_ENABLED", False) and points is not None),
                 "lidar_point_count": int(len(points)) if points is not None else 0,
@@ -620,20 +691,15 @@ class SimulationRuntime:
                         now=now,
                     )
                     result["simulation_behavior"] = self.avis_behaviors.snapshot()
-                obstacle_limit = float(getattr(self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", 35.0))
+                obstacle_limit = getattr(
+                    self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+                    60.0 if self.backend == "avis" else 35.0,
+                )
                 ranges = dict(getattr(frame, "ranges_cm", {}) or {})
-                front_range = ranges.get("front")
-                if front_range is not None and obstacle_limit > 0:
-                    try:
-                        front_range = float(front_range)
-                    except (TypeError, ValueError, OverflowError):
-                        front_range = None
-                    if front_range is not None and math.isfinite(front_range) and 0 <= front_range <= obstacle_limit:
-                        command = VehicleCommand(
-                            steering=command.steering, throttle=0.0, brake=1.0,
-                            servo_angle=command.servo_angle, target_speed=0.0,
-                            reason=f"forward range {front_range:.1f} cm at/below {obstacle_limit:.1f} cm; simulator braking",
-                        )
+                command, self._last_range_safety = _apply_forward_range_guard(
+                    command, ranges, backend=self.backend,
+                    stop_distance_cm=obstacle_limit,
+                )
                 if (self.backend != "avis" and self.vision_profile == "city" and bool(result.get("crosswalk", False))
                         and bool(getattr(self.config, "SIMULATOR_STOP_ON_CROSSWALK", True))):
                     command = VehicleCommand(
