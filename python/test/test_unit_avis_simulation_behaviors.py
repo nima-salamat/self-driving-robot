@@ -33,6 +33,7 @@ def base_command():
 def obstacle_config(**overrides):
     values = dict(
         SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED=True,
+        SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
         SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=100.0,
         SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=125.0,
         SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=3,
@@ -564,7 +565,8 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
 
     def test_hall_bypass_hands_off_right_then_left_and_restores_both_rois(self):
         controller = RangeObstacleAvoidance(obstacle_config(
-            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
+            HALL_LINE_TRACKING_ENABLED=False,
             OLD_METHOD=False,
             SIMULATOR_BACKEND="avis",
             CITY_LANE_DETECTOR="default",
@@ -723,6 +725,19 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.BLOCKED)
         self.assertEqual(stopped.brake, 1.0)
         self.assertEqual(stopped.throttle, 0.0)
+
+    def test_general_hall_tracking_does_not_enable_obstacle_handoff_by_itself(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
+            OLD_METHOD=False,
+            SIMULATOR_BACKEND="avis",
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+        ))
+        self.assertFalse(controller._hall_handoff_enabled())
+        controller.config.SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED = True
+        self.assertTrue(controller._hall_handoff_enabled())
 
     def test_hall_handoff_is_not_used_by_ml_or_blsf_detectors(self):
         controller = RangeObstacleAvoidance(obstacle_config(
