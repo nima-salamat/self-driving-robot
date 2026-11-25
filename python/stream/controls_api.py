@@ -179,6 +179,36 @@ class StreamControlsMixin:
                     for var, val in before.get("values", {}).items():
                         setattr(self.config, var, val)
                     return jsonify(success=False, message="could not persist ROI settings; previous values restored"), 500
+
+                # AVIS maneuver ROIs are also owned by the simulator's
+                # mode-specific profile. Keep Stream edits live and persist
+                # the same geometry to <mode>.sim.json so a restart cannot
+                # silently restore stale ML/MR coordinates.
+                maneuver_roi_patch = {
+                    key: value for key, value in updated.items()
+                    if key.startswith(("ML_", "MR_")) and key.endswith("_ROI")
+                }
+                if (
+                    maneuver_roi_patch
+                    and str(getattr(self.config, "SIMULATOR_BACKEND", "")).lower() == "avis"
+                ):
+                    try:
+                        from modes.simulation.settings import save_simulator_settings
+                        save_simulator_settings(
+                            self.config,
+                            getattr(self.config, "MODE", "simulation"),
+                            maneuver_roi_patch,
+                        )
+                    except Exception:
+                        logger.exception("Could not persist AVIS maneuver ROI settings")
+                        for var, val in before.get("values", {}).items():
+                            setattr(self.config, var, val)
+                        self.save_conf_to_json()
+                        return jsonify(
+                            success=False,
+                            message="could not persist AVIS maneuver ROI settings; previous values restored",
+                        ), 500
+
                 self._record_config_history("before ROI update", before)
                 self._record_config_history("ROI settings updated")
             return jsonify(
