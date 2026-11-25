@@ -125,7 +125,7 @@ class VisionProcessor:
         active_maneuver_roi = str(getattr(conf, "SIMULATOR_ACTIVE_OBSTACLE_ROI", "")).lower()
         if active_maneuver_roi not in {"left", "right"}:
             active_maneuver_roi = None
-        if self.ml_lane_detector is not None and active_maneuver_roi is None
+        if self.ml_lane_detector is not None and active_maneuver_roi is None:
             visualization_enabled = bool(conf.DEBUG or conf.STREAM)
             result = self.ml_lane_detector.detect(
                 frame, debug_frame if visualization_enabled else None
