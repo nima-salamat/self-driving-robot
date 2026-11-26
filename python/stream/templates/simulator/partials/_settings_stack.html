@@ -103,7 +103,7 @@
               <div class="field"><label for="throttle-rise-rate">Throttle rise rate (per second)</label><input id="throttle-rise-rate" type="number" min=".01" max="1" step="any" name="SIMULATOR_THROTTLE_RISE_RATE"></div>
               {% endif %}
               <div class="field"><label for="pulse-distance">Virtual encoder pulse distance (cm)</label><input id="pulse-distance" type="number" min=".01" max="100" step="any" name="ENCODER_PULSE_DISTANCE_CM"></div>
-              <div class="field"><label for="obstacle-stop-distance">Forward emergency-stop threshold (cm; AVIS minimum 20)</label><input id="obstacle-stop-distance" type="number" min="20" max="500" step="any" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-stop-distance">Forward emergency-stop threshold (cm; AVIS minimum 20)</label><input id="obstacle-stop-distance" type="number" min="20" max="{% if mode == 'avis' %}1000{% else %}500{% endif %}" step="any" name="SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"></div>
             </div>
             <label class="check-field"><input id="stop-lost-lane" type="checkbox" name="SIMULATOR_STOP_ON_LOST_LANE"> Brake when no valid lane is detected</label>
             <label class="check-field {% if not caps.supports_crosswalk %}section-hide{% endif %}"><input id="stop-crosswalk" type="checkbox" name="SIMULATOR_STOP_ON_CROSSWALK"> Brake when the City vision processor detects a crosswalk</label>
@@ -116,7 +116,7 @@
             <label class="check-field"><input id="obstacle-hall-handoff-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED"> Use Hall line identity when switching ROIs during obstacle bypass</label>
             <p class="note">Optional and independent from general Hall tracking. When enabled, the AVIS Hough detector keeps the same lane-boundary identity through both ROI handoffs. When disabled, each maneuver ROI is acquired independently.</p>
             <div class="grid-two">
-              <div class="field"><label for="obstacle-trigger-distance">Start bypass below (cm)</label><input id="obstacle-trigger-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-trigger-distance">Start bypass below (cm)</label><input id="obstacle-trigger-distance" type="number" min="36" max="{% if mode == 'avis' %}1500{% else %}500{% endif %}" step="1" name="SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-approach-speed">Speed limit when an object is detected (km/h)</label><input id="obstacle-approach-speed" type="number" min="1" max="100" step=".5" name="SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH"></div>
               <div class="field"><label for="obstacle-speed-limit-distance">Apply speed limit when an object is closer than (cm)</label><input id="obstacle-speed-limit-distance" type="number" min="1" max="10000" step="1" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM"></div>
               <div class="field" style="grid-column:1/-1">
@@ -126,7 +126,7 @@
                 <label class="check-field"><input id="obstacle-speed-limit-right-sensor" type="checkbox" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED"> Right sensor</label>
                 <p class="note">Only selected sensors trigger the configured approach-speed limit. By default, only the front sensor is selected; side sensors can be enabled independently. The independent front emergency-stop guard remains active even when the front sensor option is unchecked.</p>
               </div>
-              <div class="field"><label for="obstacle-clear-distance">Path clear above (cm)</label><input id="obstacle-clear-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-clear-distance">Path clear above (cm)</label><input id="obstacle-clear-distance" type="number" min="36" max="{% if mode == 'avis' %}2000{% else %}500{% endif %}" step="1" name="SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-clear-confirm-frames">Clear front confirmations (N)</label><input id="obstacle-clear-confirm-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES"></div>
               <div class="field"><label for="avis-front-range-grace">Front sensor invalid grace (s)</label><input id="avis-front-range-grace" type="number" min="0" max="10" step=".1" name="SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS"></div>
               <div class="field"><label for="obstacle-side-clearance">Minimum side clearance (cm)</label><input id="obstacle-side-clearance" type="number" min="1" max="500" step="1" name="SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"></div>
@@ -144,7 +144,7 @@
               <div class="field"><label for="obstacle-return-steering-max">Return band maximum (AVIS %)</label><input id="obstacle-return-steering-max" type="number" min="-100" max="100" step="1" name="SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"></div>
               <div class="field"><label for="obstacle-roi-timeout">Maneuver ROI search timeout (s)</label><input id="obstacle-roi-timeout" type="number" min=".5" max="15" step=".1" name="SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS"></div>
               <div class="field"><label for="obstacle-roi-frames">Valid ROI frames required</label><input id="obstacle-roi-frames" type="number" min="1" max="10" step="1" name="SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES"></div>
-              <div class="field"><label for="obstacle-throttle-limit">Bypass throttle cap (0–0.25)</label><input id="obstacle-throttle-limit" type="number" min="0" max=".25" step=".01" name="SIMULATOR_OBSTACLE_THROTTLE_LIMIT"></div>
+              <div class="field"><label for="obstacle-throttle-limit">Bypass throttle cap (0–{% if mode == 'avis' %}1{% else %}0.25{% endif %})</label><input id="obstacle-throttle-limit" type="number" min="0" max="{% if mode == 'avis' %}1{% else %}.25{% endif %}" step=".01" name="SIMULATOR_OBSTACLE_THROTTLE_LIMIT"></div>
               <p class="note">The bypass controller re-arms only after the configured number of consecutive front readings exceed “Path clear above”. A missing/invalid front reading brakes immediately; the Engine is disarmed only if the telemetry outage lasts longer than the configured grace period. A confirmed near obstacle still causes an immediate Engine stop.</p>
             </div>
             <p class="note">When any left, front or right range sensor sees an object closer than the speed-limit distance above, AVIS uses measured vehicle speed (km/h) to limit speed to the configured value. This controls only the AVIS virtual vehicle; the existing forward emergency-stop guard remains independent. AVIS's normal target-speed command above remains a percentage, not km/h.</p>

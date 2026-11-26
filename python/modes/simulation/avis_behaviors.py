@@ -486,8 +486,12 @@ class RangeObstacleAvoidance:
         throttle_limit = max(
             0.0, min(1.0, self._number("SIMULATOR_THROTTLE_LIMIT", 0.35))
         )
+        throttle_cap_max = (
+            1.0 if str(getattr(self.config, "MODE", "")).strip().lower() == "avis" else 0.25
+        )
         throttle_cap = max(
-            0.0, min(0.25, self._number("SIMULATOR_OBSTACLE_THROTTLE_LIMIT", 0.08))
+            0.0,
+            min(throttle_cap_max, self._number("SIMULATOR_OBSTACLE_THROTTLE_LIMIT", 0.08)),
         )
         throttle = min(throttle_limit, throttle_cap)
         target_speed = max(

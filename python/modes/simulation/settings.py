@@ -311,9 +311,13 @@ def _defaults(mode, backend):
     }
 
 
-def _validate_settings(data, backend=None):
+def _validate_settings(data, backend=None, mode=None):
     if not isinstance(data, dict):
         raise ValueError("simulator settings must be a JSON object")
+    avis_city_mode = (
+        str(backend or "").strip().lower() == "avis"
+        and str(mode or "").strip().lower() == "avis"
+    )
     clean = {}
     for key, value in data.items():
         if key not in SIMULATOR_KEYS:
@@ -434,8 +438,17 @@ def _validate_settings(data, backend=None):
             if key == "SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM" and value > 10000:
                 raise ValueError("SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM must be at most 10000 cm")
             if key in {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
-                       "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"} and value > 500:
-                raise ValueError(f"{key} must be at most 500 cm")
+                       "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"}:
+                maximum = 500
+                if avis_city_mode:
+                    maximum = {
+                        "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 1000,
+                        "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 1500,
+                        "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 2000,
+                        "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 500,
+                    }[key]
+                if value > maximum:
+                    raise ValueError(f"{key} must be at most {maximum} cm")
             if key in {"SIMULATOR_OBSTACLE_SHIFT_SECONDS", "SIMULATOR_OBSTACLE_REJOIN_SECONDS"} and not 0.05 <= value <= 2.0:
                 raise ValueError(f"{key} must be between 0.05 and 2 seconds")
             if key == "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS" and not 0.2 <= value <= 10.0:
@@ -456,8 +469,12 @@ def _validate_settings(data, backend=None):
                 raise ValueError("SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS must be between 0 and 10 seconds")
             if key == "SIMULATOR_SIGN_STEERING_OFFSET" and not 0.05 <= value <= 0.35:
                 raise ValueError("SIMULATOR_SIGN_STEERING_OFFSET must be between 0.05 and 0.35")
-            if key == "SIMULATOR_OBSTACLE_THROTTLE_LIMIT" and not 0 <= value <= 0.25:
-                raise ValueError("SIMULATOR_OBSTACLE_THROTTLE_LIMIT must be between 0 and 0.25")
+            if key == "SIMULATOR_OBSTACLE_THROTTLE_LIMIT":
+                maximum = 1.0 if avis_city_mode else 0.25
+                if not 0 <= value <= maximum:
+                    raise ValueError(
+                        f"SIMULATOR_OBSTACLE_THROTTLE_LIMIT must be between 0 and {maximum}"
+                    )
             if key == "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG" and not 1 <= value <= 45:
                 raise ValueError("SIMULATOR_STOP_LINE_MAX_ANGLE_DEG must be between 1 and 45 degrees")
             if key == "TL_MIN_ACTIVE_BRIGHTNESS" and not 0 <= value <= 255:
@@ -554,7 +571,7 @@ def load_simulator_settings(config, mode, backend):
     saved_values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            saved_values = _validate_settings(json.load(handle), backend=backend)
+            saved_values = _validate_settings(json.load(handle), backend=backend, mode=mode)
         for key, value in saved_values.items():
             setattr(config, key, value)
     if backend == "carla" and path.is_file() and int(saved_values.get("SIMULATOR_TUNING_PROFILE_VERSION", 0)) < 2:
@@ -645,8 +662,8 @@ def save_simulator_settings(config, mode, patch):
     values = {}
     if path.is_file():
         with path.open("r", encoding="utf-8") as handle:
-            values.update(_validate_settings(json.load(handle), backend=backend))
-    values.update(_validate_settings(patch, backend=backend))
+            values.update(_validate_settings(json.load(handle), backend=backend, mode=mode))
+    values.update(_validate_settings(patch, backend=backend, mode=mode))
     if backend == "carla":
         # Mark all newly written CARLA profiles as migrated. This prevents a
         # future restart from applying the one-time legacy safety clamp again.
@@ -655,7 +672,7 @@ def save_simulator_settings(config, mode, patch):
         # Persist the current AVIS profile schema marker so a freshly created
         # profile does not re-run one-time migrations and override user choices.
         values.setdefault("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION", 3)
-    values = _validate_settings(values, backend=backend)
+    values = _validate_settings(values, backend=backend, mode=mode)
     fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

@@ -169,6 +169,23 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(above.state, above.CLEAR)
         self.assertIs(unchanged, idle_command)
 
+    def test_avis_city_bypass_throttle_cap_can_be_raised_above_quarter_scale(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            MODE="avis",
+            SIMULATOR_THROTTLE_LIMIT=1.0,
+            SIMULATOR_OBSTACLE_THROTTLE_LIMIT=0.8,
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=88.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        command = controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 80.0, "right": 180.0},
+            perception_valid=True,
+            now=1.0,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertAlmostEqual(command.throttle, 0.8)
+
     def test_direct_left_steering_is_negative_and_roi_waits_for_delay(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=92.0,
@@ -1180,6 +1197,51 @@ class AVISModeSettingsTests(unittest.TestCase):
             self.assertEqual(saved["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 500.0)
             self.assertEqual(persisted["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 500.0)
             self.assertEqual(config.SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM, 500.0)
+
+    def test_avis_city_accepts_extended_distance_and_bypass_throttle_limits(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 1000.0,
+            "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 1500.0,
+            "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 2000.0,
+            "SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 1.0,
+        }, backend="avis", mode="avis")
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_STOP_DISTANCE_CM"], 1000.0)
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 1500.0)
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"], 2000.0)
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_THROTTLE_LIMIT"], 1.0)
+
+        with self.assertRaisesRegex(ValueError, "STOP_DISTANCE_CM.*1000"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 1000.1},
+                backend="avis", mode="avis",
+            )
+        with self.assertRaisesRegex(ValueError, "TRIGGER_DISTANCE_CM.*1500"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 1500.1},
+                backend="avis", mode="avis",
+            )
+        with self.assertRaisesRegex(ValueError, "CLEAR_DISTANCE_CM.*2000"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 2000.1},
+                backend="avis", mode="avis",
+            )
+        with self.assertRaisesRegex(ValueError, "THROTTLE_LIMIT.*1.0"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 1.01},
+                backend="avis", mode="avis",
+            )
+
+        # The expanded envelope is intentionally limited to the AVIS City mode.
+        with self.assertRaisesRegex(ValueError, "STOP_DISTANCE_CM.*500"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 501.0},
+                backend="avis", mode="avis-race",
+            )
+        with self.assertRaisesRegex(ValueError, "THROTTLE_LIMIT.*0.25"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 0.26},
+                backend="avis", mode="avis-race",
+            )
 
     def test_validation_rejects_invalid_hue_ranges(self):
         with self.assertRaisesRegex(ValueError, "TL_RED_HUE_MIN"):
