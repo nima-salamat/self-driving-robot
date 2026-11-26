@@ -2599,5 +2599,195 @@ class ForwardRangeSafetyTests(unittest.TestCase):
         self.assertEqual(status["status"], "unavailable")
 
 
+
+class AvisDistanceModeAndSpeedFeedbackTests(unittest.TestCase):
+    def make_obstacle_controller(self, **overrides):
+        from modes.simulation.avis_behaviors import RangeObstacleAvoidance
+
+        values = dict(
+            MODE="avis",
+            SIMULATOR_BACKEND="avis",
+            SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
+            SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=120.0,
+            SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM=150.0,
+            SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=1,
+            SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM=75.0,
+            SIMULATOR_OBSTACLE_STOP_DISTANCE_CM=60.0,
+            SIMULATOR_OBSTACLE_USE_DISTANCE_MODE=True,
+            SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM=100.0,
+            SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS=4.0,
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
+            SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS=4.0,
+            SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES=2,
+            SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=3.0,
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=88.0,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=73.0,
+            SIMULATOR_OBSTACLE_THROTTLE_LIMIT=0.12,
+            SIMULATOR_THROTTLE_LIMIT=0.35,
+            SIMULATOR_STEERING_LIMIT=1.0,
+            SIMULATOR_STEERING_INVERTED=False,
+            SIMULATOR_ACTIVE_OBSTACLE_ROI=None,
+        )
+        values.update(overrides)
+        return RangeObstacleAvoidance(SimpleNamespace(**values))
+
+    @staticmethod
+    def lane_command():
+        return VehicleCommand(0.0, 0.2, 0.0, 95.0, 25.0, "lane following")
+
+    def test_distance_mode_keeps_left_steering_until_centimetre_target(self):
+        controller = self.make_obstacle_controller(
+            SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM=100.0,
+        )
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        first = controller.apply(
+            self.lane_command(), ranges, perception_valid=True, now=1.0,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertAlmostEqual(first.steering, -0.88)
+
+        halfway = controller.apply(
+            self.lane_command(), ranges, perception_valid=True,
+            distance_delta_cm=40.0, now=1.2,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertAlmostEqual(halfway.steering, -0.88)
+
+        completed = controller.apply(
+            self.lane_command(), ranges, perception_valid=True,
+            distance_delta_cm=60.0, now=1.4,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
+        self.assertAlmostEqual(completed.steering, -0.88)
+
+    def test_distance_mode_uses_same_target_for_direct_right_return(self):
+        controller = self.make_obstacle_controller(
+            SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM=120.0,
+            SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=1,
+        )
+        controller.state = controller.SHIFT_RIGHT_DIRECT
+        controller.state_since = 1.0
+        controller.return_clear_observations = 0
+        ranges = {"left": 180.0, "front": 180.0, "right": 180.0}
+
+        halfway = controller.apply(
+            self.lane_command(), ranges, perception_valid=True,
+            distance_delta_cm=70.0, now=1.2,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_RIGHT_DIRECT)
+        self.assertAlmostEqual(halfway.steering, 0.73)
+
+        completed = controller.apply(
+            self.lane_command(), ranges, perception_valid=True,
+            distance_delta_cm=50.0, now=1.4,
+        )
+        self.assertEqual(controller.state, controller.SEARCH_RIGHT_ROI)
+        self.assertAlmostEqual(completed.steering, 0.73)
+
+    def test_distance_mode_brakes_when_timeout_expires_before_target(self):
+        controller = self.make_obstacle_controller(
+            SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM=100.0,
+            SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS=2.0,
+        )
+        controller.state = controller.SHIFT_LEFT_DIRECT
+        controller.state_since = 1.0
+        result = controller.apply(
+            self.lane_command(),
+            {"left": 180.0, "front": 80.0, "right": 180.0},
+            perception_valid=True,
+            distance_delta_cm=10.0,
+            now=3.1,
+        )
+        self.assertEqual(controller.state, controller.BLOCKED)
+        self.assertEqual(result.brake, 1.0)
+        self.assertEqual(result.throttle, 0.0)
+
+    def test_distance_mode_settings_validate_and_survive_restart(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_USE_DISTANCE_MODE": True,
+            "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM": 275.0,
+        }, backend="avis", mode="avis")
+        self.assertTrue(clean["SIMULATOR_OBSTACLE_USE_DISTANCE_MODE"])
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM"], 275.0)
+        with self.assertRaises(ValueError):
+            _validate_settings({
+                "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM": 0.0,
+            }, backend="avis", mode="avis")
+        with self.assertRaises(ValueError):
+            _validate_settings({
+                "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM": 2000.1,
+            }, backend="avis", mode="avis")
+        with tempfile.TemporaryDirectory() as directory:
+            config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
+            save_simulator_settings(config, "avis", clean)
+            reloaded = SimpleNamespace(BASE_DIR=directory)
+            load_simulator_settings(reloaded, "avis", "avis")
+            self.assertTrue(reloaded.SIMULATOR_OBSTACLE_USE_DISTANCE_MODE)
+            self.assertEqual(reloaded.SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM, 275.0)
+
+    def test_speed_feedback_requires_an_actual_speed_tag_and_keeps_fractional_values(self):
+        class FakeSocket:
+            def __init__(self, payload):
+                self.payload = payload
+            def sendall(self, data):
+                pass
+            def recv(self, size):
+                payload, self.payload = self.payload, b""
+                return payload
+
+        image = np.full((12, 16, 3), 127, dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", image)
+        self.assertTrue(ok)
+
+        payload = (
+            b"<image>" + base64.b64encode(encoded.tobytes()) + b"</image>"
+            + b"<sensor>100,80,100</sensor><speed>4.75</speed><EOF>"
+        )
+        car = Car()
+        car.sock = FakeSocket(payload)
+        self.assertTrue(car.getData())
+        self.assertAlmostEqual(car.getSpeed(), 4.75)
+        self.assertTrue(car.last_response_info["speed_tag"])
+        car.sock = None
+
+        payload_without_speed = (
+            b"<image>" + base64.b64encode(encoded.tobytes()) + b"</image>"
+            + b"<sensor>100,80,100</sensor><EOF>"
+        )
+        car = Car()
+        car.sock = FakeSocket(payload_without_speed)
+        self.assertTrue(car.getData())
+        self.assertIsNone(car.getSpeed())
+        self.assertFalse(car.last_response_info["speed_tag"])
+        car.sock = None
+
+    def test_adapter_does_not_mark_the_legacy_default_zero_as_valid_speed_feedback(self):
+        class FakeCar:
+            def __init__(self):
+                self.image_sequence = 0
+                self.image = np.zeros((12, 16, 3), dtype=np.uint8)
+                self.last_response_info = {
+                    "image_decoded": True, "sensor_tag": True, "speed_tag": False,
+                }
+            def getData(self):
+                self.image_sequence += 1
+            def getImage(self):
+                return self.image
+            def getSensors(self):
+                return [100.0, 80.0, 100.0]
+            def getSpeed(self):
+                return 0.0
+
+        adapter = AvisAdapter(SimpleNamespace(SIMULATOR_AVIS_SENSOR_ANGLE=30))
+        adapter.car = FakeCar()
+        adapter.connected = True
+        adapter._ready_at = 0.0
+        adapter._sensor_angle_applied = True
+        frame = adapter.read()
+        self.assertIsNotNone(frame)
+        self.assertFalse(frame.sensor_status["speed_tag_present"])
+        self.assertFalse(frame.sensor_status["speed_available"])
+
 if __name__ == "__main__":
     unittest.main()

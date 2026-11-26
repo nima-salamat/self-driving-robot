@@ -60,6 +60,8 @@ function populate(s){
     "obstacle-left-steering":"SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT",
     "obstacle-right-steering":"SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT",
     "obstacle-roi-delay":"SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS",
+    "obstacle-steering-distance":"SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM",
+    "obstacle-distance-timeout":"SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS",
     "obstacle-lane-hold":"SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS",
     "obstacle-roi-timeout":"SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS",
     "obstacle-roi-frames":"SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
@@ -122,7 +124,8 @@ function populate(s){
    "pid-enabled","pid-auto-kp","obstacle-avoidance-enabled","obstacle-hall-handoff-enabled",
    "obstacle-speed-limit-left-sensor","obstacle-speed-limit-front-sensor","obstacle-speed-limit-right-sensor",
    "stop-line-enabled",
-   "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled"].forEach(function(id){
+   "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled",
+   "obstacle-distance-mode"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];

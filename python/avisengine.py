@@ -3,6 +3,7 @@
 '''
 
 import cv2
+import math
 import re
 import base64
 import time
@@ -457,12 +458,18 @@ class Car():
 
         if speed_match is not None:
             try:
-                self.current_speed = int(float(speed_match.group(1).strip()))
+                parsed_speed = float(speed_match.group(1).strip())
+                if math.isfinite(parsed_speed) and parsed_speed >= 0.0:
+                    self.current_speed = parsed_speed
+                else:
+                    self.current_speed = None
+                    info["speed_parse_error"] = True
             except (TypeError, ValueError, OverflowError):
-                self.current_speed = 0
+                self.current_speed = None
                 info["speed_parse_error"] = True
         else:
-            self.current_speed = 0
+            # Missing telemetry is unknown, not a real zero-speed reading.
+            self.current_speed = None
 
         # Do not include encoded frame bytes in logs or diagnostics.
         if image_match is None:

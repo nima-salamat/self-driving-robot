@@ -269,6 +269,7 @@ class RangeObstacleAvoidance:
         self.state = self.CLEAR
         self.selected_side = None
         self.state_since = 0.0
+        self.direct_steering_distance_cm = 0.0
         self.pass_started_at = 0.0
         self.return_clear_observations = 0
         self.roi_confirmations = 0
@@ -303,6 +304,8 @@ class RangeObstacleAvoidance:
         self.state_since = now
         self.roi_confirmations = 0
         self.last_reason = reason
+        if state in {self.SHIFT_LEFT_DIRECT, self.SHIFT_RIGHT_DIRECT}:
+            self.direct_steering_distance_cm = 0.0
         if state == self.BLOCKED:
             self.clear_observations = 0
         if state in {self.PASS_LANE_FOLLOW, self.REJOIN_LANE_FOLLOW}:
@@ -515,11 +518,41 @@ class RangeObstacleAvoidance:
 
     def _direct_phase(self, command, side, now, delay, search_state):
         elapsed = max(0.0, now - self.state_since)
-        if self.state in {self.SHIFT_LEFT_DIRECT, self.SHIFT_RIGHT_DIRECT} and elapsed >= delay:
+        is_direct_state = self.state in {self.SHIFT_LEFT_DIRECT, self.SHIFT_RIGHT_DIRECT}
+        distance_mode = bool(getattr(
+            self.config, "SIMULATOR_OBSTACLE_USE_DISTANCE_MODE", False
+        ))
+        if is_direct_state and distance_mode:
+            target_distance = max(
+                1.0,
+                min(2000.0, self._number(
+                    "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM", 100.0
+                )),
+            )
+            watchdog_seconds = max(
+                0.2,
+                min(10.0, self._number("SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", 4.0)),
+            )
+            if self.direct_steering_distance_cm >= target_distance:
+                self._set_state(
+                    search_state,
+                    now,
+                    f"{side} direct steering travelled {self.direct_steering_distance_cm:.1f} cm "
+                    f"(target {target_distance:.1f} cm); enabling {side} maneuver ROI",
+                )
+            elif elapsed >= watchdog_seconds:
+                self._set_state(
+                    self.BLOCKED,
+                    now,
+                    f"{side} direct steering did not reach {target_distance:.1f} cm "
+                    f"within the {watchdog_seconds:.1f} s safety timeout; braking",
+                )
+                return self._brake(command, self.last_reason)
+        elif is_direct_state and elapsed >= delay:
             self._set_state(
                 search_state,
                 now,
-                f"{side} steering delay elapsed; enabling {side} maneuver ROI",
+                f"{side} steering time elapsed; enabling {side} maneuver ROI",
             )
         if self.state == search_state:
             timeout = max(
@@ -567,6 +600,14 @@ class RangeObstacleAvoidance:
         front = self.last_ranges["front"]
         left = self.last_ranges["left"]
         right = self.last_ranges["right"]
+
+        if self.state in {self.SHIFT_LEFT_DIRECT, self.SHIFT_RIGHT_DIRECT}:
+            try:
+                distance_delta = float(distance_delta_cm)
+            except (TypeError, ValueError, OverflowError):
+                distance_delta = 0.0
+            if math.isfinite(distance_delta) and distance_delta > 0.0:
+                self.direct_steering_distance_cm += distance_delta
 
         if self._handoff_plan is not None and not hall_handoff:
             self._set_state(
@@ -1104,6 +1145,16 @@ class RangeObstacleAvoidance:
             "direct_steering_percent": (
                 max(0.0, min(100.0, self._number(direct_setting, 80.0)))
                 if direct_side else None
+            ),
+            "direct_steering_distance_mode": bool(getattr(
+                self.config, "SIMULATOR_OBSTACLE_USE_DISTANCE_MODE", False
+            )),
+            "direct_steering_distance_cm": round(self.direct_steering_distance_cm, 1),
+            "direct_steering_target_distance_cm": self._number(
+                "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM", 100.0
+            ),
+            "direct_steering_watchdog_seconds": self._number(
+                "SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", 4.0
             ),
             "lane_hold_seconds": lane_hold,
             "lane_hold_elapsed_seconds": min(lane_hold, hold_elapsed),

@@ -328,13 +328,22 @@ class AvisAdapter(SimulatorAdapter):
         self._missing_images = 0
         image = image[:, :, :3].copy()
         now = time.monotonic()
+        response_info = dict(getattr(car, "last_response_info", {}) or {})
+        has_protocol_metadata = hasattr(car, "last_response_info")
+        speed_tag_present = bool(response_info.get("speed_tag", not has_protocol_metadata))
+        speed_parse_error = bool(response_info.get("speed_parse_error"))
         speed_available = False
         try:
             speed = float(car.getSpeed())
-            speed_available = math.isfinite(speed) and speed >= 0.0
+            speed_available = (
+                speed_tag_present
+                and not speed_parse_error
+                and math.isfinite(speed)
+                and speed >= 0.0
+            )
             if not speed_available:
                 speed = 0.0
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             speed = 0.0
         try:
             values = list(car.getSensors() or [])
@@ -360,7 +369,6 @@ class AvisAdapter(SimulatorAdapter):
             "max_intensity": int(np.max(sample)) if sample.size else 0,
             "looks_black": bool(not sample.size or float(np.mean(sample)) < 1.0 or int(np.max(sample)) < 4),
         }
-        response_info = dict(getattr(car, "last_response_info", {}) or {})
         sensor_status = {
             "ranges_available": bool(response_info.get("sensor_tag"))
             and len(values) >= 3
@@ -368,6 +376,8 @@ class AvisAdapter(SimulatorAdapter):
             "front_range_available": ranges["front"] is not None,
             "range_sensor_count": len(values),
             "sensor_tag_present": bool(response_info.get("sensor_tag")),
+            "speed_tag_present": speed_tag_present,
+            "speed_parse_error": speed_parse_error,
             "speed_available": bool(speed_available),
         }
         return SensorFrame(

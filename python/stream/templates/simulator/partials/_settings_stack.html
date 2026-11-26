@@ -132,7 +132,13 @@
               <div class="field"><label for="obstacle-side-clearance">Minimum side clearance (cm)</label><input id="obstacle-side-clearance" type="number" min="1" max="500" step="1" name="SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"></div>
               <div class="field"><label for="obstacle-left-steering">Direct left steering (AVIS %, negative)</label><input id="obstacle-left-steering" type="number" min="0" max="100" step="1" name="SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT"></div>
               <div class="field"><label for="obstacle-right-steering">Direct right steering (AVIS %, positive)</label><input id="obstacle-right-steering" type="number" min="0" max="100" step="1" name="SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT"></div>
-              <div class="field"><label for="obstacle-roi-delay">Delay before maneuver ROI (s)</label><input id="obstacle-roi-delay" type="number" min="0" max="5" step=".1" name="SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS"></div>
+              <div class="field"><label for="obstacle-roi-delay">Time-based direct steering duration (s)</label><input id="obstacle-roi-delay" type="number" min="0" max="5" step=".1" name="SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS"></div>
+              <div class="field"><label for="obstacle-steering-distance">Direct left/right steering distance (cm)</label><input id="obstacle-steering-distance" type="number" min="1" max="2000" step="1" name="SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM"></div>
+              <div class="field"><label for="obstacle-distance-timeout">Distance-mode safety timeout (s)</label><input id="obstacle-distance-timeout" type="number" min=".2" max="10" step=".1" name="SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS"></div>
+              <div class="field" style="grid-column:1/-1">
+                <label class="check-field"><input id="obstacle-distance-mode" type="checkbox" name="SIMULATOR_OBSTACLE_USE_DISTANCE_MODE"> End direct left/right steering after the configured travel distance instead of elapsed time</label>
+                <p class="note">The left/right steering percentages stay unchanged. When enabled, the same centimetre target is measured from AVIS travel telemetry for both direct steering phases. If speed telemetry is missing or the target is not reached before the safety timeout, the maneuver brakes instead of steering indefinitely. When disabled, the time-based duration above is used.</p>
+              </div>
               <div class="field"><label for="obstacle-lane-hold">Time following passing lane (s)</label><input id="obstacle-lane-hold" type="number" min=".2" max="10" step=".1" name="SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS"></div>
               <div class="field" style="grid-column:1/-1">
                 <label class="check-field"><input id="obstacle-return-steering-gate-enabled" type="checkbox" name="SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED"> Wait for the steering mean to enter the return band before turning right</label>
