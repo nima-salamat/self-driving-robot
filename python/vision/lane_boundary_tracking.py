@@ -134,7 +134,7 @@ class LaneBoundaryTracker:
         self._roi_signature = signature
         return signature
 
-    def handoff_side(self, source_side, target_side):
+    def handoff_side(self, source_side, target_side, expected_track_id=None):
         """Move one confirmed physical boundary track to the opposite ROI owner.
 
         The learned lane-width model is deliberately preserved. That lets the
@@ -150,6 +150,18 @@ class LaneBoundaryTracker:
         source = self._sides[source_side]
         if source.track_id is None or source.x_px is None or source.line_global is None:
             return {"ok": False, "reason": "source_boundary_has_no_confirmed_track"}
+        if expected_track_id is not None:
+            try:
+                expected_track_id = int(expected_track_id)
+            except (TypeError, ValueError, OverflowError):
+                return {"ok": False, "reason": "expected_boundary_track_id_invalid"}
+            if int(source.track_id) != expected_track_id:
+                return {
+                    "ok": False,
+                    "reason": "source_boundary_identity_mismatch",
+                    "track_id": int(source.track_id),
+                    "expected_track_id": expected_track_id,
+                }
         if self._lane_width_px is None or not math.isfinite(float(self._lane_width_px)):
             return {"ok": False, "reason": "lane_width_model_unavailable"}
         source_hall = self._hall[source_side]

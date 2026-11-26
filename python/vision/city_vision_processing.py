@@ -549,28 +549,35 @@ class VisionProcessor:
                 source_side = str(handoff_request.get("source_side") or "").lower()
                 target_side = str(handoff_request.get("target_side") or "").lower()
                 token = handoff_request.get("token")
-                valid_pair = (
-                    (source_side, target_side) in {("left", "right"), ("right", "left")}
-                    and active_maneuver_roi == target_side
-                )
-
-                if token != self._last_obstacle_handoff_token:
-                    transfer = (
-                        self._lane_boundary_tracker.handoff_side(source_side, target_side)
-                        if valid_pair else {"ok": False, "reason": "invalid_handoff_request"}
-                    )
-                    self._last_obstacle_handoff_token = token
-                    self._active_obstacle_handoff = dict(transfer)
-                else:
-                    transfer = dict(self._active_obstacle_handoff or {})
-
-                inherited_track_id = transfer.get("track_id")
                 expected_track_id = handoff_request.get("expected_track_id")
                 if expected_track_id is not None:
                     try:
                         expected_track_id = int(expected_track_id)
                     except (TypeError, ValueError, OverflowError):
                         expected_track_id = None
+                valid_pair = (
+                    (source_side, target_side) in {("left", "right"), ("right", "left")}
+                    and active_maneuver_roi == target_side
+                )
+
+                cached_transfer = dict(self._active_obstacle_handoff or {})
+                if (
+                    token != self._last_obstacle_handoff_token
+                    or not cached_transfer.get("ok")
+                ):
+                    transfer = (
+                        self._lane_boundary_tracker.handoff_side(
+                            source_side, target_side,
+                            expected_track_id=expected_track_id,
+                        )
+                        if valid_pair else {"ok": False, "reason": "invalid_handoff_request"}
+                    )
+                    self._last_obstacle_handoff_token = token
+                    self._active_obstacle_handoff = dict(transfer)
+                else:
+                    transfer = cached_transfer
+
+                inherited_track_id = transfer.get("track_id")
                 if expected_track_id is None:
                     expected_track_id = inherited_track_id
                 transfer_ok = bool(

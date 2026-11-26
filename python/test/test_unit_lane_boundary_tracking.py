@@ -1257,6 +1257,31 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
         self.assertEqual(ranked[0][1]["index"], 1)
 
+    def test_handoff_rejects_stale_expected_boundary_id_without_mutating_source(self):
+        initial = self.update(left_x=220.0, right_x=420.0)
+        source_track_id = initial["left"]["track_id"]
+        source_hall_id = self.tracker._hall["left"]._selected_track_id
+        self.assertIsNotNone(source_track_id)
+        self.assertIsNotNone(source_hall_id)
+
+        failed = self.tracker.handoff_side(
+            "left", "right", expected_track_id=source_track_id + 100,
+        )
+        self.assertFalse(failed["ok"])
+        self.assertEqual(failed["reason"], "source_boundary_identity_mismatch")
+        self.assertEqual(self.tracker._sides["left"].track_id, source_track_id)
+        self.assertEqual(
+            self.tracker._hall["left"]._selected_track_id,
+            source_hall_id,
+        )
+        self.assertIsNone(self.tracker._sides["right"].track_id)
+
+        retried = self.tracker.handoff_side(
+            "left", "right", expected_track_id=source_track_id,
+        )
+        self.assertTrue(retried["ok"])
+        self.assertEqual(retried["track_id"], source_track_id)
+
     def test_handoff_rejects_similar_geometry_without_the_original_hall_match(self):
         self.update(left_x=220.0, right_x=420.0)
         self.tracker.reacquire_frames = 2
