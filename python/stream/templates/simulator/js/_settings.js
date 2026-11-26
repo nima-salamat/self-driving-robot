@@ -123,7 +123,7 @@ function populate(s){
    "hough-morph-close","cw-trapezoid","old-method","cw-old-method","roi-resizable","hall-line-tracking",
    "pid-enabled","pid-auto-kp","obstacle-avoidance-enabled","obstacle-hall-handoff-enabled",
    "obstacle-speed-limit-left-sensor","obstacle-speed-limit-front-sensor","obstacle-speed-limit-right-sensor",
-   "stop-line-enabled",
+   "obstacle-speed-limit-brake","stop-line-enabled",
    "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled",
    "obstacle-distance-mode","obstacle-roi-confirmation-enabled"].forEach(function(id){
     if(!$(id)) return;

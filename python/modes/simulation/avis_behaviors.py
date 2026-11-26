@@ -60,8 +60,12 @@ class AVISObstacleApproachSpeedController:
             derivative_filter=0.0,
         )
         self._active = False
+        self._brake_active = False
         self._snapshot = {
             "state": "clear",
+            "brake_to_target_enabled": bool(getattr(
+                config, "SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED", False
+            )),
             "target_speed_kmh": float(getattr(
                 config, "SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH", 10.0
             )),
@@ -127,11 +131,17 @@ class AVISObstacleApproachSpeedController:
             ))),
         )
 
+        brake_to_target_enabled = bool(getattr(
+            self.config, "SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED", False
+        ))
+
         if command.brake >= 0.5:
             self._pid.reset()
             self._active = False
+            self._brake_active = False
             self._snapshot = {
                 "state": "braking",
+                "brake_to_target_enabled": brake_to_target_enabled,
                 "target_speed_kmh": target_speed,
                 "measured_speed_kmh": self._valid_speed(
                     getattr(frame, "speed_kmh", None)
@@ -147,9 +157,10 @@ class AVISObstacleApproachSpeedController:
             return command
 
         if nearest_distance is None or nearest_distance >= trigger_distance:
-            if self._active:
+            if self._active or self._brake_active:
                 self._pid.reset()
             self._active = False
+            self._brake_active = False
             clear_reason = (
                 "approach-speed limiting is disabled for all range sensors"
                 if not any(enabled_sensors.values())
@@ -157,6 +168,7 @@ class AVISObstacleApproachSpeedController:
             )
             self._snapshot = {
                 "state": "clear",
+                "brake_to_target_enabled": brake_to_target_enabled,
                 "target_speed_kmh": target_speed,
                 "measured_speed_kmh": self._valid_speed(
                     getattr(frame, "speed_kmh", None)
@@ -182,8 +194,10 @@ class AVISObstacleApproachSpeedController:
         if measured_speed is None:
             self._pid.reset()
             self._active = False
+            self._brake_active = False
             self._snapshot = {
                 "state": "speed_unavailable",
+                "brake_to_target_enabled": brake_to_target_enabled,
                 "target_speed_kmh": target_speed,
                 "measured_speed_kmh": None,
                 "nearest_sensor": nearest_sensor,
@@ -198,6 +212,43 @@ class AVISObstacleApproachSpeedController:
                 command,
                 "AVIS obstacle approach: speed feedback unavailable; holding safe stop",
             )
+
+        if not brake_to_target_enabled:
+            self._brake_active = False
+        elif self._brake_active:
+            # Keep the AVIS zero-speed command latched until measured speed
+            # reaches the configured approach speed.
+            if measured_speed <= target_speed:
+                self._brake_active = False
+                self._pid.reset()
+        elif measured_speed > target_speed + 0.5:
+            # Add a small engage margin to avoid toggling on speed sensor noise.
+            self._brake_active = True
+            self._pid.reset()
+
+        if self._brake_active:
+            self._active = False
+            reason = (
+                "AVIS obstacle approach: brake command active; measured speed "
+                "{:.1f} km/h is above target {:.1f} km/h".format(
+                    measured_speed, target_speed
+                )
+            )
+            self._snapshot = {
+                "state": "approach_speed_braking",
+                "brake_to_target_enabled": True,
+                "target_speed_kmh": target_speed,
+                "measured_speed_kmh": round(measured_speed, 2),
+                "nearest_sensor": nearest_sensor,
+                "nearest_distance_cm": round(nearest_distance, 1),
+                "speed_limit_distance_cm": trigger_distance,
+                "speed_limit_sensors_enabled": dict(enabled_sensors),
+                "ranges_cm": {key: round(value, 1) for key, value in readings.items()},
+                "throttle": 0.0,
+                "brake": 1.0,
+                "reason": reason,
+            }
+            return _brake(command, reason)
 
         if not self._active:
             self._pid.reset()
@@ -220,6 +271,7 @@ class AVISObstacleApproachSpeedController:
         )
         self._snapshot = {
             "state": "approach_speed_control",
+            "brake_to_target_enabled": brake_to_target_enabled,
             "target_speed_kmh": target_speed,
             "measured_speed_kmh": round(measured_speed, 2),
             "nearest_sensor": nearest_sensor,

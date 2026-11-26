@@ -20,7 +20,7 @@ from modes.simulation.settings import (
 
 
 class AVISObstacleApproachSpeedTests(unittest.TestCase):
-    def make_controller(self, enabled_sensors=None):
+    def make_controller(self, enabled_sensors=None, brake_enabled=False):
         config = types.SimpleNamespace(
             SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=120.0,
             SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH=10.0,
@@ -28,6 +28,7 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
             SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED=(enabled_sensors or {}).get("left", False),
             SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED=(enabled_sensors or {}).get("front", True),
             SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED=(enabled_sensors or {}).get("right", False),
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED=brake_enabled,
             SIMULATOR_THROTTLE_LIMIT=0.35,
         )
         return AVISObstacleApproachSpeedController(config)
@@ -113,6 +114,17 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
         self.assertIs(defaults[keys[0]], False)
         self.assertIs(defaults[keys[1]], True)
         self.assertIs(defaults[keys[2]], False)
+        self.assertIs(defaults["SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED"], False)
+        self.assertIs(
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED": True}, backend="avis",
+            )["SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED"],
+            True,
+        )
+        with self.assertRaises(ValueError):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED": 1}, backend="avis",
+            )
         for key in keys:
             with self.subTest(key=key):
                 self.assertIs(_validate_settings({key: False}, backend="avis")[key], False)
@@ -124,6 +136,7 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
             "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED": False,
             "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED": True,
             "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED": False,
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_BRAKE_ENABLED": True,
         }
         with tempfile.TemporaryDirectory() as directory:
             config = types.SimpleNamespace(
@@ -169,6 +182,58 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
         self.assertEqual(controller.snapshot()["measured_speed_kmh"], 16.0)
         self.assertLess(result.throttle, command.throttle)
         self.assertEqual(result.throttle, 0.0)
+        self.assertEqual(result.brake, 0.0)
+        self.assertEqual(controller.snapshot()["state"], "approach_speed_control")
+
+    def test_optional_brake_latches_until_speed_reaches_approach_target(self):
+        controller = self.make_controller(brake_enabled=True)
+        command = self.make_command()
+        braking = controller.apply(
+            self.make_frame({"left": 150, "front": 70, "right": 150}, speed=16.0),
+            command, now=10.0,
+        )
+        self.assertEqual(braking.throttle, 0.0)
+        self.assertEqual(braking.brake, 1.0)
+        self.assertEqual(controller.snapshot()["state"], "approach_speed_braking")
+        self.assertTrue(controller.snapshot()["brake_to_target_enabled"])
+        self.assertEqual(controller.snapshot()["target_speed_kmh"], 10.0)
+
+        still_braking = controller.apply(
+            self.make_frame({"left": 150, "front": 70, "right": 150}, speed=11.0),
+            command, now=10.1,
+        )
+        self.assertEqual(still_braking.brake, 1.0)
+        self.assertEqual(controller.snapshot()["state"], "approach_speed_braking")
+
+        released = controller.apply(
+            self.make_frame({"left": 150, "front": 70, "right": 150}, speed=10.0),
+            command, now=10.2,
+        )
+        self.assertEqual(released.brake, 0.0)
+        self.assertEqual(controller.snapshot()["state"], "approach_speed_control")
+
+        below_target = controller.apply(
+            self.make_frame({"left": 150, "front": 70, "right": 150}, speed=9.0),
+            command, now=10.3,
+        )
+        self.assertEqual(below_target.brake, 0.0)
+        self.assertGreater(below_target.throttle, 0.0)
+
+    def test_brake_latch_clears_when_no_selected_sensor_reports_an_object(self):
+        controller = self.make_controller(brake_enabled=True)
+        command = self.make_command()
+        braking = controller.apply(
+            self.make_frame({"left": 150, "front": 70, "right": 150}, speed=16.0),
+            command, now=10.0,
+        )
+        self.assertEqual(braking.brake, 1.0)
+        clear = controller.apply(
+            self.make_frame({"left": 150, "front": 1800, "right": 150}, speed=16.0),
+            command, now=10.1,
+        )
+        self.assertIs(clear, command)
+        self.assertEqual(controller.snapshot()["state"], "clear")
+        self.assertFalse(controller._brake_active)
 
     def test_no_object_inside_trigger_distance_leaves_command_unchanged(self):
         controller = self.make_controller()
