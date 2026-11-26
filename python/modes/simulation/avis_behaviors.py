@@ -39,7 +39,7 @@ def _brake(command, reason):
 
 
 class AVISObstacleApproachSpeedController:
-    """Regulate AVIS speed toward a km/h target when any range ray sees an object.
+    """Regulate AVIS speed toward a km/h target when an enabled range ray sees an object.
 
     AVIS actuator speed is a percentage command, not km/h. This controller
     therefore uses the Engine's measured km/h as feedback and adjusts only the
@@ -96,7 +96,7 @@ class AVISObstacleApproachSpeedController:
             sensor: bool(getattr(
                 self.config,
                 "SIMULATOR_OBSTACLE_SPEED_LIMIT_{}_SENSOR_ENABLED".format(sensor.upper()),
-                True,
+                sensor == "front",
             ))
             for sensor in self.SENSOR_ORDER
         }

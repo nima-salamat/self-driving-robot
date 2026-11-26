@@ -25,9 +25,9 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
             SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=120.0,
             SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH=10.0,
             SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM=1500.0,
-            SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED=(enabled_sensors or {}).get("left", True),
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED=(enabled_sensors or {}).get("left", False),
             SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED=(enabled_sensors or {}).get("front", True),
-            SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED=(enabled_sensors or {}).get("right", True),
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED=(enabled_sensors or {}).get("right", False),
             SIMULATOR_THROTTLE_LIMIT=0.35,
         )
         return AVISObstacleApproachSpeedController(config)
@@ -56,7 +56,9 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
     def test_each_of_the_three_sensors_independently_enables_10_kmh_approach_control(self):
         for sensor in ("left", "front", "right"):
             with self.subTest(sensor=sensor):
-                controller = self.make_controller()
+                controller = self.make_controller(
+                    enabled_sensors={"left": True, "front": True, "right": True}
+                )
                 ranges = {"left": 180.0, "front": 180.0, "right": 180.0}
                 ranges[sensor] = 90.0
                 command = self.make_command()
@@ -101,16 +103,18 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
         self.assertEqual(controller.snapshot()["state"], "approach_speed_control")
         self.assertEqual(controller.snapshot()["nearest_sensor"], "front")
 
-    def test_all_sensor_speed_limit_selectors_default_enabled_and_validate_as_booleans(self):
+    def test_front_sensor_is_the_only_speed_limit_default_and_selectors_validate_as_booleans(self):
         defaults = _defaults("avis", "avis")
         keys = (
             "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED",
             "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED",
             "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED",
         )
+        self.assertIs(defaults[keys[0]], False)
+        self.assertIs(defaults[keys[1]], True)
+        self.assertIs(defaults[keys[2]], False)
         for key in keys:
             with self.subTest(key=key):
-                self.assertIs(defaults[key], True)
                 self.assertIs(_validate_settings({key: False}, backend="avis")[key], False)
                 with self.assertRaises(ValueError):
                     _validate_settings({key: 1}, backend="avis")
@@ -129,13 +133,28 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
             save_simulator_settings(
                 config,
                 "avis",
-                {"SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 2, **choices},
+                {"SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 3, **choices},
             )
             reloaded = types.SimpleNamespace(BASE_DIR=Path(directory))
             load_simulator_settings(reloaded, "avis", "avis")
             for key, expected in choices.items():
                 with self.subTest(key=key):
                     self.assertIs(getattr(reloaded, key), expected)
+
+
+    def test_side_sensor_obstacles_do_not_limit_speed_with_forward_only_defaults(self):
+        controller = self.make_controller()
+        command = self.make_command()
+        result = controller.apply(
+            self.make_frame({"left": 120, "front": 1800, "right": 95}, speed=16.0),
+            command,
+            now=10.0,
+        )
+        self.assertIs(result, command)
+        snapshot = controller.snapshot()
+        self.assertEqual(snapshot["state"], "clear")
+        self.assertEqual(snapshot["speed_limit_sensors_enabled"],
+                         {"left": False, "front": True, "right": False})
 
     def test_speed_above_10_kmh_reduces_avis_speed_command(self):
         controller = self.make_controller()

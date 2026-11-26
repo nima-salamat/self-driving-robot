@@ -166,7 +166,7 @@ def _defaults(mode, backend):
     return {
         "SIMULATOR_HOST": "127.0.0.1",
         "SIMULATOR_TUNING_PROFILE_VERSION": 2,
-        "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 2 if avis else 0,
+        "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 3 if avis else 0,
         "SIMULATOR_PORT": 25001 if avis else 2000,
         # Legacy AVIS camera responses need a realistic TCP read window.
         "SIMULATOR_TIMEOUT_S": 5.0,
@@ -233,9 +233,9 @@ def _defaults(mode, backend):
         "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 120.0 if avis else 100.0,
         "SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH": 10.0,
         "SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM": 1500.0,
-        "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED": True,
+        "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED": False,
         "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED": True,
-        "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED": True,
+        "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED": False,
         "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 150.0 if avis else 125.0,
         "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 75.0,
         "SIMULATOR_OBSTACLE_SHIFT_SECONDS": 0.35,
@@ -405,8 +405,8 @@ def _validate_settings(data, backend=None):
                 raise ValueError("HALL_LINE_TRACKING_REACQUIRE_FRAMES must be between 1 and 10")
             if key == "SIMULATOR_TUNING_PROFILE_VERSION" and value not in {1, 2}:
                 raise ValueError("SIMULATOR_TUNING_PROFILE_VERSION must be 1 or 2")
-            if key == "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION" and value not in {0, 1, 2}:
-                raise ValueError("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION must be 0, 1, or 2")
+            if key == "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION" and value not in {0, 1, 2, 3}:
+                raise ValueError("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION must be 0, 1, 2, or 3")
         elif key in NUMERIC_KEYS:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
                 raise ValueError(f"{key} must be a finite number")
@@ -618,6 +618,21 @@ def load_simulator_settings(config, mode, backend):
             migration["SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT"] = -10.0
         if "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT" not in saved_values:
             migration["SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT"] = 10.0
+        save_simulator_settings(config, mode, migration)
+
+    if backend == "avis" and path.is_file() and int(
+        saved_values.get("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION", 0)
+    ) < 3:
+        # Keep approach-speed limiting focused on the forward path by default.
+        # Side rays can legitimately see nearby lane boundaries or scenery.
+        # This one-time migration also resets the all-enabled defaults introduced
+        # by the previous profile version; users can re-enable either side ray.
+        migration = {
+            "SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 3,
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED": False,
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED": True,
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED": False,
+        }
         save_simulator_settings(config, mode, migration)
     return path
 

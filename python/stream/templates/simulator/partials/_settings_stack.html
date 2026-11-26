@@ -121,10 +121,10 @@
               <div class="field"><label for="obstacle-speed-limit-distance">Apply speed limit when an object is closer than (cm)</label><input id="obstacle-speed-limit-distance" type="number" min="1" max="10000" step="1" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM"></div>
               <div class="field" style="grid-column:1/-1">
                 <p><strong>Range sensors that activate the speed limit</strong></p>
-                <label class="check-field"><input id="obstacle-speed-limit-left-sensor" type="checkbox" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED" checked> Left sensor</label>
+                <label class="check-field"><input id="obstacle-speed-limit-left-sensor" type="checkbox" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED"> Left sensor</label>
                 <label class="check-field"><input id="obstacle-speed-limit-front-sensor" type="checkbox" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED" checked> Front sensor</label>
-                <label class="check-field"><input id="obstacle-speed-limit-right-sensor" type="checkbox" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED" checked> Right sensor</label>
-                <p class="note">Only selected sensors trigger the configured approach-speed limit. The independent front emergency-stop guard remains active even when the front sensor option is unchecked.</p>
+                <label class="check-field"><input id="obstacle-speed-limit-right-sensor" type="checkbox" name="SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED"> Right sensor</label>
+                <p class="note">Only selected sensors trigger the configured approach-speed limit. By default, only the front sensor is selected; side sensors can be enabled independently. The independent front emergency-stop guard remains active even when the front sensor option is unchecked.</p>
               </div>
               <div class="field"><label for="obstacle-clear-distance">Path clear above (cm)</label><input id="obstacle-clear-distance" type="number" min="36" max="500" step="1" name="SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"></div>
               <div class="field"><label for="obstacle-clear-confirm-frames">Clear front confirmations (N)</label><input id="obstacle-clear-confirm-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES"></div>
