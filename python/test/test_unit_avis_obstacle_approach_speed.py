@@ -1,5 +1,6 @@
 """Hardware-free tests for AVIS obstacle approach speed regulation."""
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -10,15 +11,23 @@ if str(ROOT) not in sys.path:
 
 from modes.simulation.avis_behaviors import AVISObstacleApproachSpeedController
 from modes.simulation.base_adapter import SensorFrame, VehicleCommand
-from modes.simulation.settings import _defaults, _validate_settings
+from modes.simulation.settings import (
+    _defaults,
+    _validate_settings,
+    load_simulator_settings,
+    save_simulator_settings,
+)
 
 
 class AVISObstacleApproachSpeedTests(unittest.TestCase):
-    def make_controller(self):
+    def make_controller(self, enabled_sensors=None):
         config = types.SimpleNamespace(
             SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM=120.0,
             SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH=10.0,
             SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM=1500.0,
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED=(enabled_sensors or {}).get("left", True),
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED=(enabled_sensors or {}).get("front", True),
+            SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED=(enabled_sensors or {}).get("right", True),
             SIMULATOR_THROTTLE_LIMIT=0.35,
         )
         return AVISObstacleApproachSpeedController(config)
@@ -64,6 +73,69 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
                 self.assertGreater(result.throttle, 0.0)
                 self.assertLessEqual(result.throttle, command.throttle)
                 self.assertEqual(result.target_speed, command.target_speed)
+
+
+    def test_only_selected_sensors_can_trigger_approach_speed_limiting(self):
+        controller = self.make_controller(
+            enabled_sensors={"left": False, "front": True, "right": False}
+        )
+        command = self.make_command()
+        disabled_sensor_obstacles = controller.apply(
+            self.make_frame({"left": 80, "front": 1800, "right": 90}, speed=12.0),
+            command,
+            now=10.0,
+        )
+        self.assertIs(disabled_sensor_obstacles, command)
+        self.assertEqual(controller.snapshot()["state"], "clear")
+        self.assertEqual(
+            controller.snapshot()["speed_limit_sensors_enabled"],
+            {"left": False, "front": True, "right": False},
+        )
+
+        enabled_sensor_obstacle = controller.apply(
+            self.make_frame({"left": 80, "front": 1499, "right": 90}, speed=12.0),
+            command,
+            now=10.1,
+        )
+        self.assertNotEqual(enabled_sensor_obstacle, command)
+        self.assertEqual(controller.snapshot()["state"], "approach_speed_control")
+        self.assertEqual(controller.snapshot()["nearest_sensor"], "front")
+
+    def test_all_sensor_speed_limit_selectors_default_enabled_and_validate_as_booleans(self):
+        defaults = _defaults("avis", "avis")
+        keys = (
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED",
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED",
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED",
+        )
+        for key in keys:
+            with self.subTest(key=key):
+                self.assertIs(defaults[key], True)
+                self.assertIs(_validate_settings({key: False}, backend="avis")[key], False)
+                with self.assertRaises(ValueError):
+                    _validate_settings({key: 1}, backend="avis")
+
+    def test_sensor_speed_limit_choices_persist_and_reload(self):
+        choices = {
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED": False,
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED": True,
+            "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED": False,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            config = types.SimpleNamespace(
+                BASE_DIR=Path(directory),
+                SIMULATOR_BACKEND="avis",
+            )
+            save_simulator_settings(
+                config,
+                "avis",
+                {"SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 2, **choices},
+            )
+            reloaded = types.SimpleNamespace(BASE_DIR=Path(directory))
+            load_simulator_settings(reloaded, "avis", "avis")
+            for key, expected in choices.items():
+                with self.subTest(key=key):
+                    self.assertIs(getattr(reloaded, key), expected)
 
     def test_speed_above_10_kmh_reduces_avis_speed_command(self):
         controller = self.make_controller()

@@ -92,8 +92,27 @@ class AVISObstacleApproachSpeedController:
             if value is not None and value > 0:
                 readings[sensor] = value
 
-        nearest_sensor = min(readings, key=readings.get) if readings else None
-        nearest_distance = readings.get(nearest_sensor) if nearest_sensor else None
+        enabled_sensors = {
+            sensor: bool(getattr(
+                self.config,
+                "SIMULATOR_OBSTACLE_SPEED_LIMIT_{}_SENSOR_ENABLED".format(sensor.upper()),
+                True,
+            ))
+            for sensor in self.SENSOR_ORDER
+        }
+        speed_limit_readings = {
+            sensor: distance
+            for sensor, distance in readings.items()
+            if enabled_sensors[sensor]
+        }
+        nearest_sensor = (
+            min(speed_limit_readings, key=speed_limit_readings.get)
+            if speed_limit_readings else None
+        )
+        nearest_distance = (
+            speed_limit_readings.get(nearest_sensor)
+            if nearest_sensor is not None else None
+        )
         trigger_distance = max(
             1.0,
             min(10000.0, float(getattr(
@@ -107,10 +126,34 @@ class AVISObstacleApproachSpeedController:
             ))),
         )
 
+        if command.brake >= 0.5:
+            self._pid.reset()
+            self._active = False
+            self._snapshot = {
+                "state": "braking",
+                "target_speed_kmh": target_speed,
+                "measured_speed_kmh": self._valid_speed(
+                    getattr(frame, "speed_kmh", None)
+                ) if frame is not None else None,
+                "nearest_sensor": nearest_sensor,
+                "nearest_distance_cm": nearest_distance,
+                "speed_limit_distance_cm": trigger_distance,
+                "speed_limit_sensors_enabled": dict(enabled_sensors),
+                "ranges_cm": readings,
+                "throttle": 0.0,
+                "reason": "an independent stop/brake condition has priority",
+            }
+            return command
+
         if nearest_distance is None or nearest_distance >= trigger_distance:
             if self._active:
                 self._pid.reset()
             self._active = False
+            clear_reason = (
+                "approach-speed limiting is disabled for all range sensors"
+                if not any(enabled_sensors.values())
+                else "no enabled ultrasonic sensor reports an object inside the speed-limit range"
+            )
             self._snapshot = {
                 "state": "clear",
                 "target_speed_kmh": target_speed,
@@ -120,27 +163,10 @@ class AVISObstacleApproachSpeedController:
                 "nearest_sensor": nearest_sensor,
                 "nearest_distance_cm": nearest_distance,
                 "speed_limit_distance_cm": trigger_distance,
+                "speed_limit_sensors_enabled": dict(enabled_sensors),
                 "ranges_cm": readings,
                 "throttle": None,
-                "reason": "no ultrasonic object inside the speed-limit range",
-            }
-            return command
-
-        if command.brake >= 0.5:
-            self._pid.reset()
-            self._active = False
-            self._snapshot = {
-                "state": "braking",
-                "target_speed_kmh": target_speed,
-                "measured_speed_kmh": self._valid_speed(
-                    getattr(frame, "speed_kmh", None)
-                ),
-                "nearest_sensor": nearest_sensor,
-                "nearest_distance_cm": nearest_distance,
-                "speed_limit_distance_cm": trigger_distance,
-                "ranges_cm": readings,
-                "throttle": 0.0,
-                "reason": "an independent stop/brake condition has priority",
+                "reason": clear_reason,
             }
             return command
 
@@ -162,6 +188,7 @@ class AVISObstacleApproachSpeedController:
                 "nearest_sensor": nearest_sensor,
                 "nearest_distance_cm": nearest_distance,
                 "speed_limit_distance_cm": trigger_distance,
+                "speed_limit_sensors_enabled": dict(enabled_sensors),
                 "ranges_cm": readings,
                 "throttle": 0.0,
                 "reason": "AVIS speed feedback unavailable while an object is inside the speed-limit range; holding zero speed command",
@@ -197,6 +224,7 @@ class AVISObstacleApproachSpeedController:
             "nearest_sensor": nearest_sensor,
             "nearest_distance_cm": round(nearest_distance, 1),
             "speed_limit_distance_cm": trigger_distance,
+            "speed_limit_sensors_enabled": dict(enabled_sensors),
             "ranges_cm": {key: round(value, 1) for key, value in readings.items()},
             "throttle": round(throttle, 3),
             "reason": reason,
