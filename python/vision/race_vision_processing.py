@@ -138,6 +138,9 @@ class VisionProcessor:
             and handoff_request.get("enabled")
             and active_maneuver_roi in {"left", "right"}
         )
+        if not hall_handoff_requested:
+            self._last_obstacle_handoff_token = None
+            self._active_obstacle_handoff = None
         if self.ml_lane_detector is not None and active_maneuver_roi is None:
             visualization_enabled = bool(conf.DEBUG or conf.STREAM)
             result = self.ml_lane_detector.detect(
@@ -435,11 +438,11 @@ class VisionProcessor:
             tracking_left_lines = ll_lines
             tracking_right_lines = rl_lines
             left_preferred_index = (
-                None if simulator_joint_tracking or recovery["left"]["expanded"]
+                None if recovery["left"]["expanded"]
                 else self._line_index_for_midpoint(ll_lines, ll_x_mid)
             )
             right_preferred_index = (
-                None if simulator_joint_tracking or recovery["right"]["expanded"]
+                None if recovery["right"]["expanded"]
                 else self._line_index_for_midpoint(rl_lines, rl_x_mid)
             )
             left_prediction_valid = bool(recovery["left"].get("prediction_valid", True))
@@ -595,6 +598,7 @@ class VisionProcessor:
                     "token": token,
                     "expected_track_id": expected_track_id,
                     "inherited_track_id": inherited_track_id,
+                    "hall_track_id": transfer.get("hall_track_id"),
                     "transfer_ok": transfer_ok,
                     "search_valid": search_valid,
                     "search": dict(search),
@@ -850,6 +854,7 @@ class VisionProcessor:
                 "observed": bool(target_boundary.get("observed")),
                 "track_id": actual_track_id,
                 "expected_track_id": expected_track_id,
+                "hall_track_id": hall_handoff_details.get("hall_track_id"),
                 "handoff_locked": handoff_locked,
                 "search_valid": bool(hall_handoff_details.get("search_valid")),
                 "search_roi": hall_handoff_details.get("search", {}).get("roi"),

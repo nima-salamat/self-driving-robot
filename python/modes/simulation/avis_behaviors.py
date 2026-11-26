@@ -8,6 +8,7 @@ hold, or invalid lane perception.
 import logging
 import math
 import time
+import uuid
 from collections import deque
 
 from controller.pid_controller import PIDController
@@ -282,6 +283,7 @@ class RangeObstacleAvoidance:
         self._last_observed_track_ids = {}
         self._handoff_plan = None
         self._handoff_sequence = 0
+        self._handoff_token_namespace = uuid.uuid4().hex
         self._handoff_missed_frames = 0
 
     def _number(self, key, default):
@@ -414,12 +416,13 @@ class RangeObstacleAvoidance:
             "enabled": True,
             "source_side": source_side,
             "target_side": target_side,
-            "token": self._handoff_sequence,
+            "token": f"{self._handoff_token_namespace}:{self._handoff_sequence}",
             "expected_track_id": expected_track_id,
         }
         logger.info(
             "AVIS Hall ROI handoff armed: %s -> %s (track_id=%s, token=%s)",
-            source_side, target_side, expected_track_id, self._handoff_sequence,
+            source_side, target_side, expected_track_id,
+            self._handoff_plan["token"],
         )
         return self._handoff_plan
 

@@ -1239,14 +1239,63 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertFalse(result["pair_reacquire_required"])
 
 
+    def test_hall_selected_identity_beats_a_lower_cost_unrelated_fragment(self):
+        tracker = LaneBoundaryTracker()
+        state = tracker._sides["right"]
+        state.track_id = 41
+        state.x_px = 220.0
+        state.velocity_px = 16.0
+        state.angle_deg = 0.0
+        state.missed_frames = 0
+        candidates = [
+            {"index": 0, "x_px": 236.0, "angle_deg": 0.0, "quality": 1.0},
+            {"index": 1, "x_px": 275.0, "angle_deg": 0.0, "quality": 0.0},
+        ]
+        ranked = tracker._ranked(
+            "right", candidates, preferred_index=None,
+            hall_selected_index=1, frame_width=640,
+        )
+        self.assertEqual(ranked[0][1]["index"], 1)
+
+    def test_handoff_rejects_similar_geometry_without_the_original_hall_match(self):
+        self.update(left_x=220.0, right_x=420.0)
+        self.tracker.reacquire_frames = 2
+        transfer = self.tracker.handoff_side("left", "right")
+        self.assertTrue(transfer["ok"])
+        hall_track_id = transfer["hall_track_id"]
+        # This line passes the lane track's local displacement/tangent gates,
+        # but not Hall's tighter angle association threshold.
+        different_line = np.asarray([[[100.0, 0.0, 340.0, 140.0]]], dtype=np.float32)
+        result = self.tracker.update(
+            left_lines=None,
+            right_lines=different_line,
+            frame_shape=self.FRAME_SHAPE,
+            left_roi=self.LEFT_ROI,
+            right_roi=(0, 300, 560, 440),
+            reference_center_x=320.0,
+        )
+        self.assertFalse(result["right"]["observed"])
+        self.assertEqual(result["right"]["handoff_hall_track_id"], hall_track_id)
+        self.assertEqual(
+            result["right"]["reacquisition_diagnostics"]["reason"],
+            "transferred_hall_identity_not_matched",
+        )
+
     def test_hall_handoff_transfers_track_identity_and_expands_opposite_roi(self):
         initial = self.update(left_x=220.0, right_x=420.0)
         original_track_id = initial["left"]["track_id"]
         self.assertIsNotNone(original_track_id)
 
+        self.tracker.reacquire_frames = 2
+        hall_track_id = self.tracker._hall["left"]._selected_track_id
+        self.assertIsNotNone(hall_track_id)
         transfer = self.tracker.handoff_side("left", "right")
         self.assertTrue(transfer["ok"])
         self.assertEqual(transfer["track_id"], original_track_id)
+        self.assertEqual(transfer["hall_track_id"], hall_track_id)
+        self.assertEqual(transfer["confirmation_frames_required"], 2)
+        self.assertFalse(self.tracker._sides["right"].observed)
+        self.assertEqual(self.tracker._sides["right"].missed_frames, 1)
 
         search = self.tracker.handoff_search_roi(
             "right", self.RIGHT_ROI, self.FRAME_SHAPE,
@@ -1258,6 +1307,19 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertGreater(search["roi"][2], 220.0)
 
         handed_off_lines = self.line_for_global_x(search["roi"], 220.0, dx=-8.0)
+        first_confirmation = self.tracker.update(
+            left_lines=None,
+            right_lines=handed_off_lines,
+            frame_shape=self.FRAME_SHAPE,
+            left_roi=self.LEFT_ROI,
+            right_roi=search["roi"],
+            reference_center_x=320.0,
+        )
+        self.assertFalse(first_confirmation["right"]["observed"])
+        self.assertEqual(first_confirmation["right"]["status"], "REACQUIRING")
+        self.assertEqual(first_confirmation["right"]["pending_hits"], 1)
+        self.assertEqual(first_confirmation["right"]["handoff_hall_track_id"], hall_track_id)
+
         result = self.tracker.update(
             left_lines=None,
             right_lines=handed_off_lines,
@@ -1268,6 +1330,8 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         )
         self.assertTrue(result["right"]["observed"])
         self.assertEqual(result["right"]["track_id"], original_track_id)
+        self.assertIsNone(result["right"]["handoff_hall_track_id"])
+        self.assertIsNotNone(result["right"]["hall_selected_candidate_index"])
         self.assertFalse(result["left"]["observed"])
         self.assertEqual(result["lane_type"], "only_right")
 
@@ -1305,6 +1369,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         inherited_line = self.tracker._sides["left"].line_global
         self.assertEqual(self.tracker._sides["left"].reference_y_px, 370.0)
 
+        self.tracker.reacquire_frames = 2
         transfer = self.tracker.handoff_side("left", "right")
         self.assertTrue(transfer["ok"])
         search_roi = (200, 250, 560, 400)
@@ -1317,6 +1382,15 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             dtype=np.float32,
         )
 
+        first = self.tracker.update(
+            left_lines=None,
+            right_lines=lines,
+            frame_shape=self.FRAME_SHAPE,
+            left_roi=self.LEFT_ROI,
+            right_roi=search_roi,
+            reference_center_x=320.0,
+        )
+        self.assertFalse(first["right"]["observed"])
         result = self.tracker.update(
             left_lines=None,
             right_lines=lines,

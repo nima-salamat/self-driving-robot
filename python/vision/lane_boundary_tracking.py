@@ -28,6 +28,7 @@ class _BoundaryState:
     age: int = 0
     pending: dict | None = None
     observed: bool = False
+    handoff_hall_track_id: int | None = None
 
 
 class LaneBoundaryTracker:
@@ -79,6 +80,7 @@ class LaneBoundaryTracker:
             state.age = 0
             state.pending = None
             state.observed = False
+            state.handoff_hall_track_id = None
         for tracker in self._hall.values():
             tracker.reset()
         self._next_track_id = 1
@@ -150,9 +152,19 @@ class LaneBoundaryTracker:
             return {"ok": False, "reason": "source_boundary_has_no_confirmed_track"}
         if self._lane_width_px is None or not math.isfinite(float(self._lane_width_px)):
             return {"ok": False, "reason": "lane_width_model_unavailable"}
+        source_hall = self._hall[source_side]
+        hall_track_id = source_hall._selected_track_id
+        if hall_track_id is None or hall_track_id not in source_hall._tracks:
+            return {"ok": False, "reason": "source_hall_identity_unavailable"}
 
         inherited_state = copy.deepcopy(source)
-        inherited_hall = copy.deepcopy(self._hall[source_side])
+        # A source-side Hall match is only a hypothesis in the destination ROI.
+        # Confirm it in the destination crop, and require the same Hall ID.
+        inherited_state.observed = False
+        inherited_state.missed_frames = max(1, int(inherited_state.missed_frames))
+        inherited_state.pending = None
+        inherited_state.handoff_hall_track_id = int(hall_track_id)
+        inherited_hall = copy.deepcopy(source_hall)
         self._sides[target_side] = inherited_state
         self._hall[target_side] = inherited_hall
 
@@ -169,8 +181,10 @@ class LaneBoundaryTracker:
             "source_side": source_side,
             "target_side": target_side,
             "track_id": int(inherited_state.track_id),
+            "hall_track_id": int(hall_track_id),
             "x_px": float(inherited_state.x_px),
             "lane_width_px": float(self._lane_width_px),
+            "confirmation_frames_required": int(self.reacquire_frames),
         }
 
     def handoff_search_roi(
@@ -455,6 +469,7 @@ class LaneBoundaryTracker:
             "unmatched_candidate_indices",
         ):
             result[key] = restore_candidate_indices(result.get(key))
+        result["selected_candidate_index"] = selected_index
         return result, selected_index
 
     def _candidate_cost(self, state, candidate, preferred_index,
@@ -513,7 +528,20 @@ class LaneBoundaryTracker:
             )
             if cost is not None:
                 ranked.append((cost, candidate))
-        ranked.sort(key=lambda item: (item[0], -item[1]["quality"], item[1]["index"]))
+        # A live Hall identity is authoritative among candidates that already
+        # passed the boundary track's local position/angle gates. A small score
+        # bonus alone lets a brighter shadow or adjacent marking steal the line.
+        hall_identity_active = bool(
+            state.track_id is not None
+            and state.missed_frames <= self.max_missed_frames
+            and hall_selected_index is not None
+        )
+        ranked.sort(key=lambda item: (
+            0 if hall_identity_active and item[1]["index"] == hall_selected_index else 1,
+            item[0],
+            -item[1]["quality"],
+            item[1]["index"],
+        ))
         return ranked
 
     def _reacquisition_ranked(self, side, candidates, hall_selected_index,
@@ -1224,6 +1252,9 @@ class LaneBoundaryTracker:
             "matched_tracks": int(hall_result.get("matched_tracks", 0)),
             "hall_satisfied": bool(hall_result.get("hall_satisfied", True)),
             "hall_deficiency": int(hall_result.get("hall_deficiency", 0)),
+            "hall_selected_track_id": hall_result.get("selected_track_id"),
+            "hall_selected_candidate_index": hall_result.get("selected_candidate_index"),
+            "handoff_hall_track_id": state.handoff_hall_track_id,
             "reacquisition_diagnostics": dict(
                 self._reacquisition_diagnostics.get(
                     side, {"attempted": False, "reason": "unavailable"}
@@ -1725,6 +1756,34 @@ class LaneBoundaryTracker:
             right_ranked = self._reacquisition_ranked(
                 "right", right_candidates, right_hall_selected, frame_width
             )
+
+        handoff_hall_blocked = {}
+        for side, hall_result, hall_selected_index in (
+            ("left", left_hall, left_hall_selected),
+            ("right", right_hall, right_hall_selected),
+        ):
+            state = self._sides[side]
+            expected_hall_id = state.handoff_hall_track_id
+            if expected_hall_id is None:
+                continue
+            identity_matched = (
+                hall_result.get("selected_track_id") == expected_hall_id
+                and hall_selected_index is not None
+            )
+            if not identity_matched:
+                if side == "left":
+                    left_ranked = []
+                else:
+                    right_ranked = []
+                handoff_hall_blocked[side] = {
+                    "attempted": True,
+                    "route": "hall_handoff",
+                    "reason": "transferred_hall_identity_not_matched",
+                    "expected_hall_track_id": int(expected_hall_id),
+                    "selected_hall_track_id": hall_result.get("selected_track_id"),
+                    "selected_candidate_index": hall_selected_index,
+                }
+
         left_hall["ranked_count"] = len(left_ranked)
         right_hall["ranked_count"] = len(right_ranked)
         left_hall["temporal_rejected_count"] = max(
@@ -1814,6 +1873,11 @@ class LaneBoundaryTracker:
             rejected_left = max(0, len(left_candidates) - (1 if left_observed else 0))
             rejected_right = max(0, len(right_candidates) - (1 if right_observed else 0))
 
+        # Preserve the specific Hall mismatch reason after the helper records
+        # its generic "no ranked candidate" diagnostic.
+        for side, details in handoff_hall_blocked.items():
+            self._reacquisition_diagnostics[side] = details
+
         for side, observed, ranked in (
             ("left", left_observed, left_ranked),
             ("right", right_observed, right_ranked),
@@ -1822,8 +1886,10 @@ class LaneBoundaryTracker:
                 self._miss(side, preserve_pending=bool(ranked))
         if left_observed:
             self._sides["left"].observed = True
+            self._sides["left"].handoff_hall_track_id = None
         if right_observed:
             self._sides["right"].observed = True
+            self._sides["right"].handoff_hall_track_id = None
 
         pair_geometry_valid = False
         pair_geometry_anchor_side = None
