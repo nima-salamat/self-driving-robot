@@ -651,6 +651,10 @@ def save_simulator_settings(config, mode, patch):
         # Mark all newly written CARLA profiles as migrated. This prevents a
         # future restart from applying the one-time legacy safety clamp again.
         values["SIMULATOR_TUNING_PROFILE_VERSION"] = 2
+    elif backend == "avis":
+        # Persist the current AVIS profile schema marker so a freshly created
+        # profile does not re-run one-time migrations and override user choices.
+        values.setdefault("SIMULATOR_AVIS_SAFETY_PROFILE_VERSION", 3)
     values = _validate_settings(values, backend=backend)
     fd, temporary = tempfile.mkstemp(prefix=".sim-settings-", suffix=".json", dir=str(path.parent))
     try:

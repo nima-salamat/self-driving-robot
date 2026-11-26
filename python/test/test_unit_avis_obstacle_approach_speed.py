@@ -133,8 +133,9 @@ class AVISObstacleApproachSpeedTests(unittest.TestCase):
             save_simulator_settings(
                 config,
                 "avis",
-                {"SIMULATOR_AVIS_SAFETY_PROFILE_VERSION": 3, **choices},
+                choices,
             )
+            self.assertEqual(config.SIMULATOR_AVIS_SAFETY_PROFILE_VERSION, 3)
             reloaded = types.SimpleNamespace(BASE_DIR=Path(directory))
             load_simulator_settings(reloaded, "avis", "avis")
             for key, expected in choices.items():
