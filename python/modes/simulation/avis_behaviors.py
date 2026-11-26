@@ -408,6 +408,33 @@ class RangeObstacleAvoidance:
                 except (TypeError, ValueError, OverflowError):
                     continue
 
+    def _refresh_handoff_expected_track(self, lane_tracking):
+        if not isinstance(self._handoff_plan, dict) or not isinstance(lane_tracking, dict):
+            return False
+        details = lane_tracking.get("hall_handoff")
+        if not isinstance(details, dict) or details.get("transfer_ok"):
+            return False
+        if details.get("token") != self._handoff_plan.get("token"):
+            return False
+        source_side = self._handoff_plan.get("source_side")
+        source = lane_tracking.get(source_side)
+        if not isinstance(source, dict) or not source.get("observed"):
+            return False
+        try:
+            current_track_id = int(source.get("track_id"))
+        except (TypeError, ValueError, OverflowError):
+            return False
+
+        previous_track_id = self._handoff_plan.get("expected_track_id")
+        if previous_track_id != current_track_id:
+            logger.info(
+                "AVIS Hall handoff source track refreshed: %s %s -> %s",
+                source_side, previous_track_id, current_track_id,
+            )
+        self._handoff_plan["expected_track_id"] = current_track_id
+        self._last_observed_track_ids[source_side] = current_track_id
+        return True
+
     def _start_hall_handoff(self, source_side, target_side):
         self._handoff_sequence += 1
         expected_track_id = self._last_observed_track_ids.get(source_side)
@@ -637,6 +664,7 @@ class RangeObstacleAvoidance:
     ):
         now = time.monotonic() if now is None else float(now)
         self._remember_lane_tracking(lane_tracking)
+        self._refresh_handoff_expected_track(lane_tracking)
         hall_handoff = self._hall_handoff_enabled()
         ranges = ranges if isinstance(ranges, dict) else {}
         self.last_ranges = {

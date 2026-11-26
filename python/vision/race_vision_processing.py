@@ -557,41 +557,80 @@ class VisionProcessor:
                 tracking_left_lines = None
                 tracking_right_lines = None
 
-                if target_side == "right":
-                    recovery["left"] = {
-                        "roi": source_base_roi,
-                        "configured_roi": source_base_roi,
-                        "expanded": False,
-                        "prediction_valid": False,
-                        "recheck": False,
-                        "reason": "source_roi_disabled_during_hall_handoff",
-                    }
-                    recovery["right"] = search
-                    ll_edge = None
-                    rl_edge = None
-                    if search_valid:
+                if transfer_ok and search_valid:
+                    # Suppress the source ROI only after the destination search
+                    # corridor is ready. A rejected handoff must keep observing
+                    # its source so it can reacquire or refresh the source ID.
+                    if target_side == "right":
+                        recovery["left"] = {
+                            "roi": source_base_roi,
+                            "configured_roi": source_base_roi,
+                            "expanded": False,
+                            "prediction_valid": False,
+                            "recheck": False,
+                            "reason": "source_roi_disabled_after_hall_handoff",
+                        }
+                        recovery["right"] = search
                         tracking_right_roi = search["roi"]
+                        tracking_right_lines = None
                         rl_edge, tracking_right_lines = detect_recovery_lines(
                             frame, tracking_right_roi, conf, self._morph_kernel,
                             mirrored=rl_mirrored,
                         )
-                else:
-                    recovery["right"] = {
-                        "roi": source_base_roi,
-                        "configured_roi": source_base_roi,
-                        "expanded": False,
-                        "prediction_valid": False,
-                        "recheck": False,
-                        "reason": "source_roi_disabled_during_hall_handoff",
-                    }
-                    recovery["left"] = search
-                    rl_edge = None
-                    ll_edge = None
-                    if search_valid:
+                        ll_edge = None
+                    else:
+                        recovery["right"] = {
+                            "roi": source_base_roi,
+                            "configured_roi": source_base_roi,
+                            "expanded": False,
+                            "prediction_valid": False,
+                            "recheck": False,
+                            "reason": "source_roi_disabled_after_hall_handoff",
+                        }
+                        recovery["left"] = search
                         tracking_left_roi = search["roi"]
+                        tracking_left_lines = None
                         ll_edge, tracking_left_lines = detect_recovery_lines(
                             frame, tracking_left_roi, conf, self._morph_kernel,
                             mirrored=ll_mirrored,
+                        )
+                        rl_edge = None
+                else:
+                    # Keep normal source-side detection alive until the Hall
+                    # identity is available and the destination ROI is valid.
+                    if source_side == "left":
+                        recovery["left"] = {
+                            "roi": source_base_roi,
+                            "configured_roi": source_base_roi,
+                            "expanded": False,
+                            "prediction_valid": True,
+                            "recheck": False,
+                            "reason": "source_roi_retained_until_hall_transfer",
+                        }
+                        recovery["right"] = search
+                        tracking_left_roi = source_base_roi
+                        tracking_right_roi = base_right_roi
+                        tracking_left_lines = ll_lines
+                        tracking_right_lines = None
+                        left_preferred_index = self._line_index_for_midpoint(
+                            ll_lines, ll_x_mid
+                        )
+                    else:
+                        recovery["right"] = {
+                            "roi": source_base_roi,
+                            "configured_roi": source_base_roi,
+                            "expanded": False,
+                            "prediction_valid": True,
+                            "recheck": False,
+                            "reason": "source_roi_retained_until_hall_transfer",
+                        }
+                        recovery["left"] = search
+                        tracking_right_roi = source_base_roi
+                        tracking_left_roi = base_left_roi
+                        tracking_right_lines = rl_lines
+                        tracking_left_lines = None
+                        right_preferred_index = self._line_index_for_midpoint(
+                            rl_lines, rl_x_mid
                         )
 
                 left_preferred_index = None

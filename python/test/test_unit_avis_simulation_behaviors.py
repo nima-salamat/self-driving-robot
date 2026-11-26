@@ -879,6 +879,74 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
                 backend="avis",
             )
 
+    def test_failed_hall_handoff_refreshes_expected_id_from_observed_source(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
+            HALL_LINE_TRACKING_ENABLED=False,
+            OLD_METHOD=False,
+            SIMULATOR_BACKEND="avis",
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+        ))
+        controller.state = controller.SEARCH_LEFT_ROI
+        controller.state_since = 10.0
+        controller._handoff_plan = {
+            "enabled": True,
+            "source_side": "left",
+            "target_side": "right",
+            "token": "test-session:1",
+            "expected_track_id": 41,
+        }
+        lane_tracking = {
+            "hall_handoff": {
+                "token": "test-session:1",
+                "transfer_ok": False,
+                "transfer_reason": "source_boundary_identity_mismatch",
+            },
+            "left": {"observed": True, "track_id": 57},
+            "right": {"observed": False, "track_id": 42},
+            "lane_width_px": 200.0,
+        }
+        controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 80.0, "right": 180.0},
+            perception_valid=True,
+            lane_tracking=lane_tracking,
+            now=10.1,
+        )
+        self.assertEqual(controller._handoff_plan["expected_track_id"], 57)
+        self.assertEqual(controller._last_observed_track_ids["left"], 57)
+
+    def test_failed_hall_handoff_does_not_refresh_from_unobserved_source(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
+            HALL_LINE_TRACKING_ENABLED=False,
+            OLD_METHOD=False,
+            SIMULATOR_BACKEND="avis",
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
+        ))
+        controller.state = controller.SEARCH_LEFT_ROI
+        controller._handoff_plan = {
+            "enabled": True,
+            "source_side": "left",
+            "target_side": "right",
+            "token": "test-session:1",
+            "expected_track_id": 41,
+        }
+        lane_tracking = {
+            "hall_handoff": {
+                "token": "test-session:1",
+                "transfer_ok": False,
+                "transfer_reason": "source_boundary_identity_mismatch",
+            },
+            "left": {"observed": False, "track_id": 57},
+            "right": {"observed": False, "track_id": 42},
+            "lane_width_px": 200.0,
+        }
+        controller._refresh_handoff_expected_track(lane_tracking)
+        self.assertEqual(controller._handoff_plan["expected_track_id"], 41)
+
     def test_hall_bypass_hands_off_right_then_left_and_restores_both_rois(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
