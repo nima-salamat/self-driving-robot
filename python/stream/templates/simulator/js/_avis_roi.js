@@ -204,12 +204,14 @@ function setCameraFeedStatus(message,kind){
   el.textContent=message||"";el.className="msg camera-feed-status"+(kind==="bad"?" bad":kind==="good"?" good":"");
 }
 async function refreshSimulatorCameraFrame(){
-  if(cameraFramePollActive)return;
+  if(document.hidden||cameraFramePollActive)return;
   cameraFramePollActive=true;
   try{
-    const since=lastCameraFrameSequence===null?"":"&since="+encodeURIComponent(lastCameraFrameSequence);
-    const response=await fetch("/video_feed_frame?t="+Date.now()+since,{cache:"no-store",headers:{"Accept":"image/jpeg"}});
+    const since=lastCameraFrameSequence===null?"":"?since="+encodeURIComponent(lastCameraFrameSequence);
+    const response=await fetch("/video_feed_frame"+since,{cache:"no-store",headers:{"Accept":"image/jpeg"}});
     if(response.status===204){
+      const unchangedSequence=response.headers.get("X-Stream-Frame-Sequence");
+      if(unchangedSequence!==null)lastCameraFrameSequence=unchangedSequence;
       if(!camera.naturalWidth)setCameraFeedStatus("Waiting for the {{ caps.simulator_backend|upper }} camera adapter to publish its first frame (HTTP 204).");
       return;
     }

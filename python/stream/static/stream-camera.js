@@ -27,14 +27,17 @@ function computeRects(){
     };
 }
 
+const STREAM_DISPLAY_FPS_MAX = 8.3;
 function getStreamDisplayFps(){return streamDisplayFps;}
 function setStreamDisplayFps(value){
     const fps=Number(value);
-    if(!Number.isFinite(fps)||fps<1||fps>30)throw new RangeError('Stream display FPS must be between 1 and 30.');
+    if(!Number.isFinite(fps)||fps<1||fps>STREAM_DISPLAY_FPS_MAX){
+        throw new RangeError('Stream display FPS must be between 1 and '+STREAM_DISPLAY_FPS_MAX+'.');
+    }
     streamDisplayFps=Math.round(fps*10)/10;
     if(fetchFrameTimer){
         clearInterval(fetchFrameTimer);
-        fetchFrameTimer=setInterval(fetchFrameOnce,Math.max(33,Math.round(1000/streamDisplayFps)));
+        fetchFrameTimer=setInterval(fetchFrameOnce,Math.max(120,Math.round(1000/streamDisplayFps)));
     }
     return streamDisplayFps;
 }
@@ -42,7 +45,9 @@ window.getStreamDisplayFps=getStreamDisplayFps;
 window.setStreamDisplayFps=setStreamDisplayFps;
 function startFrameLoop(){
     if(fetchFrameTimer) clearInterval(fetchFrameTimer);
-    fetchFrameTimer = setInterval(fetchFrameOnce, Math.max(33,Math.round(1000/streamDisplayFps)));
+    fetchFrameTimer = null;
+    if(!syncActive || document.hidden) return;
+    fetchFrameTimer = setInterval(fetchFrameOnce, Math.max(120,Math.round(1000/streamDisplayFps)));
     fetchFrameOnce();
 }
 
@@ -50,6 +55,7 @@ let frameRequestInFlight = false;
 let hasRenderedFrame = false;
 let frameRequestFailures = 0;
 let frameRetryAt = 0;
+let lastRenderedFrameSequence = null;
 
 function showCameraConnectionState(message){
     if(hasRenderedFrame) return;
@@ -66,12 +72,13 @@ function showCameraConnectionState(message){
 const FRAME_REQUEST_TIMEOUT_MS = 8000;
 function fetchFrameOnce(){
     // Camera refresh is independent from configuration/health API availability.
-    if(!syncActive || frameRequestInFlight) return;
+    if(!syncActive || document.hidden || frameRequestInFlight) return;
     if(Date.now() < frameRetryAt) return;
 
     frameRequestInFlight = true;
     let objectUrl = null;
     let img = null;
+    let imgFrameSequence = null;
     let timeoutHandle = null;
     let completed = false;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -91,6 +98,7 @@ function fetchFrameOnce(){
         frameRequestInFlight = false;
 
         if(error) {
+            lastRenderedFrameSequence = null;
             frameRequestFailures += 1;
             frameRetryAt = Date.now() + Math.min(5000, 250 * Math.pow(2, Math.min(frameRequestFailures - 1, 5)));
             const detail = error && error.message ? error.message : 'Unknown frame request error';
@@ -122,12 +130,22 @@ function fetchFrameOnce(){
 
     const requestOptions = {cache:'no-store',headers:{'Accept':'image/jpeg'}};
     if(controller) requestOptions.signal = controller.signal;
+    const frameUrl = lastRenderedFrameSequence === null
+        ? '/video_feed_frame'
+        : '/video_feed_frame?since=' + encodeURIComponent(lastRenderedFrameSequence);
 
-    fetch('/video_feed_frame?t=' + Date.now(), requestOptions).then(response => {
+    fetch(frameUrl, requestOptions).then(response => {
         if(completed) return null;
-        if(response.status === 204) throw new Error('The Stream server has not published a frame yet (HTTP 204).');
+        if(response.status === 204) {
+            const unchangedSequence = response.headers.get('X-Stream-Frame-Sequence');
+            if(unchangedSequence !== null) lastRenderedFrameSequence = unchangedSequence;
+            finishFrameRequest();
+            return null;
+        }
         if(!response.ok) throw new Error('Camera frame endpoint returned HTTP ' + response.status + '.');
         const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        const responseSequence = response.headers.get('X-Stream-Frame-Sequence');
+        if(responseSequence !== null) imgFrameSequence = responseSequence;
         if(contentType && !contentType.startsWith('image/')) {
             throw new Error('Camera frame endpoint returned ' + contentType + ', not an image.');
         }
@@ -149,6 +167,7 @@ function fetchFrameOnce(){
                     frameSourceWidth = frameWidth;
                     frameSourceHeight = frameHeight;
                     lastFrameImage = img;
+                    if(imgFrameSequence !== null) lastRenderedFrameSequence = imgFrameSequence;
                     syncCameraCanvasSize();
                     const rect = canvas.getBoundingClientRect();
                     if(rect.width <= 0 || rect.height <= 0) throw new Error('Camera canvas has no visible size.');
@@ -171,12 +190,16 @@ function fetchFrameOnce(){
 
 // Force an immediate retry after browser timer throttling or network recovery.
 document.addEventListener('visibilitychange', () => {
-    if(!document.hidden) {
-        frameRetryAt = 0;
-        fetchFrameOnce();
+    if(document.hidden) {
+        if(fetchFrameTimer) clearInterval(fetchFrameTimer);
+        fetchFrameTimer = null;
+        return;
     }
+    frameRetryAt = 0;
+    startFrameLoop();
 });
 window.addEventListener('online', () => {
+    if(document.hidden) return;
     frameRetryAt = 0;
     fetchFrameOnce();
 });

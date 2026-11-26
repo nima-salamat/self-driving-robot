@@ -127,26 +127,45 @@ function noteDashboardApiSuccess() {
     }
 }
 
+const dashboardJsonRequestsInFlight = new Map();
 async function fetchDashboardJson(url, options = {}) {
-    if(Date.now() < dashboardApiRetryAt) return null;
+    if(document.hidden || Date.now() < dashboardApiRetryAt) return null;
 
-    const isRecoveryProbe = !dashboardApiOnline;
-    if(isRecoveryProbe && dashboardApiProbeInFlight) return null;
-    if(isRecoveryProbe) dashboardApiProbeInFlight = true;
+    const method = String(options.method || 'GET').toUpperCase();
+    const requestKey = method + ' ' + String(url);
+    if(method === 'GET') {
+        const existing = dashboardJsonRequestsInFlight.get(requestKey);
+        if(existing) return existing;
+    }
 
-    try {
-        const response = await fetch(url, options);
-        const data = await response.json().catch(() => ({}));
-        if(!response.ok) {
-            throw new Error(data.message || ('HTTP ' + response.status));
+    const request = (async function(){
+        const isRecoveryProbe = !dashboardApiOnline;
+        if(isRecoveryProbe && dashboardApiProbeInFlight) return null;
+        if(isRecoveryProbe) dashboardApiProbeInFlight = true;
+        try {
+            const response = await fetch(url, options);
+            const data = await response.json().catch(() => ({}));
+            if(!response.ok) {
+                throw new Error(data.message || ('HTTP ' + response.status));
+            }
+            noteDashboardApiSuccess();
+            return data;
+        } catch(err) {
+            noteDashboardApiFailure(err);
+            return null;
+        } finally {
+            if(isRecoveryProbe) dashboardApiProbeInFlight = false;
         }
-        noteDashboardApiSuccess();
-        return data;
-    } catch(err) {
-        noteDashboardApiFailure(err);
-        return null;
+    })();
+
+    if(method !== 'GET') return request;
+    dashboardJsonRequestsInFlight.set(requestKey, request);
+    try {
+        return await request;
     } finally {
-        if(isRecoveryProbe) dashboardApiProbeInFlight = false;
+        if(dashboardJsonRequestsInFlight.get(requestKey) === request) {
+            dashboardJsonRequestsInFlight.delete(requestKey);
+        }
     }
 }
 

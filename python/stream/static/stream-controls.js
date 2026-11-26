@@ -216,9 +216,9 @@ stopAllBtn.addEventListener('click', () => {
         stopAllBtn.style.background = '#ef4444'; // Red for pause
         if(typeof window.setStreamExtensionPollingEnabled==='function')window.setStreamExtensionPollingEnabled(true);
         startFrameLoop();
-        if(!valUpdateTimer) valUpdateTimer = setInterval(fetchValuesLoop, 4000);
-        if(!healthUpdateTimer) healthUpdateTimer = setInterval(updateHealth, 1000);
-        if(!arduinoUpdateTimer) arduinoUpdateTimer = setInterval(updateArduinoOutput, 1000);
+        if(!valUpdateTimer) valUpdateTimer = setInterval(fetchValuesLoop, 8000);
+        if(!healthUpdateTimer) healthUpdateTimer = setInterval(updateHealth, 2000);
+        if(!arduinoUpdateTimer) arduinoUpdateTimer = setInterval(updateArduinoOutput, 3000);
         fetchValuesLoop();
         updateHealth();
         updateArduinoOutput();

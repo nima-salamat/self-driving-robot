@@ -275,8 +275,8 @@ async function refreshPythonLogs(){
   }finally{pythonLogRequestInFlight=false;}
 }
 function updatePythonLogPolling(){
-  const shouldPoll=consoleTab==='python'&&consoleDock.classList.contains('console-open')&&syncActive&&!workspaceConsolePaused;
-  if(shouldPoll&&!pythonLogPollTimer){refreshPythonLogs();pythonLogPollTimer=setInterval(refreshPythonLogs,2000);}
+  const shouldPoll=consoleTab==='python'&&consoleDock.classList.contains('console-open')&&syncActive&&!workspaceConsolePaused&&!document.hidden;
+  if(shouldPoll&&!pythonLogPollTimer){refreshPythonLogs();pythonLogPollTimer=setInterval(refreshPythonLogs,4000);}
   else if(!shouldPoll&&pythonLogPollTimer){clearInterval(pythonLogPollTimer);pythonLogPollTimer=null;}
 }
 function setConsoleOpen(open){
@@ -292,6 +292,7 @@ function setConsoleOpen(open){
 }
 consoleToggle.addEventListener('click',()=>setConsoleOpen(!consoleDock.classList.contains('console-open')));
 setConsoleOpen(consoleDock.classList.contains('console-open'));
+document.addEventListener('visibilitychange',updatePythonLogPolling);
 consoleClear.addEventListener('click',()=>{
   if(consoleTab==='arduino'){
     const output=document.getElementById('arduino_output');
@@ -474,9 +475,9 @@ function initApp(){
     fetchValuesLoop();
     updateHealth();
     updateArduinoOutput();
-    valUpdateTimer = setInterval(fetchValuesLoop, 4000);
-    healthUpdateTimer = setInterval(updateHealth, 1000);
-    arduinoUpdateTimer = setInterval(updateArduinoOutput, 1000);
+    valUpdateTimer = setInterval(fetchValuesLoop, 8000);
+    healthUpdateTimer = setInterval(updateHealth, 2000);
+    arduinoUpdateTimer = setInterval(updateArduinoOutput, 3000);
 }
 initApp();
 

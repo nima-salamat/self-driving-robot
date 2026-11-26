@@ -16,7 +16,10 @@ async function setCarlaRunMode(action){
 if($("carla-run-start"))$("carla-run-start").addEventListener("click",function(){setCarlaRunMode("start");});
 if($("carla-run-stop"))$("carla-run-stop").addEventListener("click",function(){setCarlaRunMode("stop");});
 
+let simulatorStatePollInFlight=false;
 async function poll(){
+  if(document.hidden||simulatorStatePollInFlight)return;
+  simulatorStatePollInFlight=true;
   try{
     const response=await fetch("/api/simulation/state",{cache:"no-store"});
     const d=await response.json();
@@ -224,6 +227,8 @@ async function poll(){
   }catch(error){
     $("connection-led").className="led error";setText("connection-label","Disconnected / waiting");
     const box=$("runtime-error");box.textContent=error.message;box.classList.add("visible");
+  }finally{
+    simulatorStatePollInFlight=false;
   }
 }
 $("settings-form").addEventListener("submit",async function(event){

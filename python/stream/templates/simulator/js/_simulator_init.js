@@ -10,9 +10,15 @@ loadSettings().then(function () {
   }
 }).catch(function (error) { status(error.message, false); });
 poll();
-setInterval(poll, 650);
+setInterval(poll, 1000);
 refreshSimulatorCameraFrame();
-setInterval(refreshSimulatorCameraFrame, 40);
+setInterval(refreshSimulatorCameraFrame, 120);
+document.addEventListener("visibilitychange",function(){
+  if(!document.hidden){
+    poll();
+    refreshSimulatorCameraFrame();
+  }
+});
 function toggleSensorPanel(panelId,buttonId,expandedClass){
   const panel=$(panelId),button=$(buttonId);if(!panel||!button)return;
   const expanded=panel.classList.toggle(expandedClass);

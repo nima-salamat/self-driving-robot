@@ -123,6 +123,15 @@ class SimulationRuntime:
             self.shutdown_event = threading.Event()
         self.target_fps = float(getattr(config, "TARGET_PROCESSING_FPS", DEFAULT_TARGET_FPS))
         self._frame_period = 1.0 / max(1.0, self.target_fps)
+        # Stream is a diagnostics preview, not part of the vehicle control loop.
+        try:
+            stream_render_fps = float(getattr(config, "STREAM_RENDER_FPS", 8.3))
+        except (TypeError, ValueError, OverflowError):
+            stream_render_fps = 8.3
+        if not math.isfinite(stream_render_fps):
+            stream_render_fps = 8.3
+        self._stream_frame_period = 1.0 / max(1.0, min(8.3, stream_render_fps))
+        self._last_stream_queue_at = None
         self._next_cycle_at = time.monotonic()
         self.frame_lock = threading.RLock()
         config.stream_frame_lock = self.frame_lock
@@ -265,10 +274,16 @@ class SimulationRuntime:
             self._debug_render_times_ms.append(elapsed_ms)
 
     def _queue_frame_for_stream(self, sensor_frame, perception, command):
-        """Queue the newest annotated frame without blocking vehicle control."""
+        """Queue a rate-limited latest frame without blocking vehicle control."""
+        if not bool(getattr(self.config, "STREAM", False)):
+            return
+        now = time.monotonic()
+        last_queued = self._last_stream_queue_at
+        if last_queued is not None and now - last_queued < self._stream_frame_period:
+            return
+        self._last_stream_queue_at = now
         with self._visual_condition:
-            # The Stream is a live view, not a recording. If drawing falls behind,
-            # replace the pending item with the newest perception result.
+            # A live preview is not a recording; retain only the latest due frame.
             self._visual_pending = (sensor_frame, perception, command)
             self._visual_condition.notify()
 
