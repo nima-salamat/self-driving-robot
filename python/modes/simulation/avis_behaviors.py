@@ -291,6 +291,11 @@ class RangeObstacleAvoidance:
             return float(default)
         return value if math.isfinite(value) else float(default)
 
+    def _roi_confirmation_enabled(self):
+        return bool(getattr(
+            self.config, "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED", True
+        ))
+
     def _integer(self, key, default):
         try:
             value = int(getattr(self.config, key, default))
@@ -454,7 +459,10 @@ class RangeObstacleAvoidance:
                 self._start_hall_handoff(*pair)
             descriptor = dict(self._handoff_plan)
             active_roi = pair[1]
-        elif self.state == self.SEARCH_LEFT_ROI or (
+        elif (
+            self.state == self.SEARCH_LEFT_ROI
+            and self._roi_confirmation_enabled()
+        ) or (
             self.state == self.PASS_LANE_FOLLOW
             and self._hall_tracking_without_identity_handoff()
         ):
@@ -463,7 +471,10 @@ class RangeObstacleAvoidance:
             # it active for the entire PASS phase instead of reverting to the
             # original pair of lane ROIs immediately after confirmation.
             active_roi = "left"
-        elif self.state == self.SEARCH_RIGHT_ROI:
+        elif (
+            self.state == self.SEARCH_RIGHT_ROI
+            and self._roi_confirmation_enabled()
+        ):
             active_roi = "right"
 
         self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = active_roi
@@ -516,6 +527,29 @@ class RangeObstacleAvoidance:
         self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
         return _brake(command, reason)
 
+    def _advance_after_direct_steering(self, side, now, search_state, reason):
+        if self._roi_confirmation_enabled():
+            self._set_state(search_state, now, reason + f"; enabling {side} maneuver ROI")
+            return
+
+        self.last_maneuver_roi = None
+        if side == "left":
+            self._set_state(
+                self.PASS_LANE_FOLLOW,
+                now,
+                reason + "; ML ROI confirmation disabled, handing control to normal lane following",
+            )
+        else:
+            self.awaiting_clear = True
+            self.clear_observations = 0
+            self._set_state(
+                self.CLEAR,
+                now,
+                reason + "; MR ROI confirmation disabled, restoring normal lane detection",
+            )
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+        self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None
+
     def _direct_phase(self, command, side, now, delay, search_state):
         elapsed = max(0.0, now - self.state_since)
         is_direct_state = self.state in {self.SHIFT_LEFT_DIRECT, self.SHIFT_RIGHT_DIRECT}
@@ -534,11 +568,12 @@ class RangeObstacleAvoidance:
                 min(10.0, self._number("SIMULATOR_OBSTACLE_PASS_TIMEOUT_SECONDS", 4.0)),
             )
             if self.direct_steering_distance_cm >= target_distance:
-                self._set_state(
-                    search_state,
+                self._advance_after_direct_steering(
+                    side,
                     now,
+                    search_state,
                     f"{side} direct steering travelled {self.direct_steering_distance_cm:.1f} cm "
-                    f"(target {target_distance:.1f} cm); enabling {side} maneuver ROI",
+                    f"(target {target_distance:.1f} cm)",
                 )
             elif elapsed >= watchdog_seconds:
                 self._set_state(
@@ -549,10 +584,18 @@ class RangeObstacleAvoidance:
                 )
                 return self._brake(command, self.last_reason)
         elif is_direct_state and elapsed >= delay:
-            self._set_state(
-                search_state,
+            self._advance_after_direct_steering(
+                side,
                 now,
-                f"{side} steering time elapsed; enabling {side} maneuver ROI",
+                search_state,
+                f"{side} direct steering time elapsed after {elapsed:.2f} s",
+            )
+        if self.state == search_state and not self._roi_confirmation_enabled():
+            self._advance_after_direct_steering(
+                side,
+                now,
+                search_state,
+                f"{side} maneuver ROI confirmation disabled while searching",
             )
         if self.state == search_state:
             timeout = max(
@@ -1136,6 +1179,7 @@ class RangeObstacleAvoidance:
             "hall_handoff": dict(self._handoff_plan) if self._handoff_plan else None,
             "hall_handoff_missed_frames": int(self._handoff_missed_frames),
             "roi_confirmations": int(self.roi_confirmations),
+            "roi_confirmation_enabled": self._roi_confirmation_enabled(),
             "roi_confirmations_required": max(
                 1, min(10, self._integer("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES", 2))
             ),

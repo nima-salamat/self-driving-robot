@@ -125,7 +125,7 @@ function populate(s){
    "obstacle-speed-limit-left-sensor","obstacle-speed-limit-front-sensor","obstacle-speed-limit-right-sensor",
    "stop-line-enabled",
    "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled",
-   "obstacle-distance-mode"].forEach(function(id){
+   "obstacle-distance-mode","obstacle-roi-confirmation-enabled"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];

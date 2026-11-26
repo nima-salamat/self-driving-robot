@@ -30,7 +30,7 @@ SIMULATOR_KEYS = {
     "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT", "SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS",
     "SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS", "SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS",
     "SIMULATOR_OBSTACLE_USE_DISTANCE_MODE", "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM",
-    "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
+    "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED", "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
     "SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES",
     "SIMULATOR_AVIS_FRONT_RANGE_INVALID_GRACE_SECONDS",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED",
@@ -84,6 +84,7 @@ BOOL_KEYS = {
     "SIMULATOR_OBSTACLE_SPEED_LIMIT_RIGHT_SENSOR_ENABLED",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_GATE_ENABLED",
     "SIMULATOR_OBSTACLE_USE_DISTANCE_MODE",
+    "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED",
     "SIMULATOR_STOP_LINE_ENABLED",
     "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_SIGN_ACTIONS_ENABLED",
     "HALL_LINE_TRACKING_ENABLED", "USE_PID", "AUTO_UPDATE_KP",
@@ -250,6 +251,7 @@ def _defaults(mode, backend):
         "SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT": 80.0,
         "SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS": 1.0,
         "SIMULATOR_OBSTACLE_USE_DISTANCE_MODE": False,
+        "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED": True,
         "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM": 100.0,
         "SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS": 3.0,
         "SIMULATOR_OBSTACLE_ROI_SEARCH_TIMEOUT_SECONDS": 4.0,
@@ -319,10 +321,8 @@ def _defaults(mode, backend):
 def _validate_settings(data, backend=None, mode=None):
     if not isinstance(data, dict):
         raise ValueError("simulator settings must be a JSON object")
-    avis_city_mode = (
-        str(backend or "").strip().lower() == "avis"
-        and str(mode or "").strip().lower() == "avis"
-    )
+    avis_backend = str(backend or "").strip().lower() == "avis"
+    avis_city_mode = avis_backend and str(mode or "").strip().lower() == "avis"
     clean = {}
     for key, value in data.items():
         if key not in SIMULATOR_KEYS:
@@ -442,13 +442,18 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH must be between 1 and 100 km/h")
             if key == "SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM" and value > 10000:
                 raise ValueError("SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM must be at most 10000 cm")
-            if key in {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
-                       "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM", "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"}:
+            if key == "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM":
+                # The AVIS range-sensor bypass is shared by City and Race profiles.
+                maximum = 1500 if avis_backend else 500
+                if value > maximum:
+                    raise ValueError(f"{key} must be at most {maximum} cm")
+            if key in {"SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+                       "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM",
+                       "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM"}:
                 maximum = 500
                 if avis_city_mode:
                     maximum = {
                         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 1000,
-                        "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 1500,
                         "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 2000,
                         "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM": 500,
                     }[key]

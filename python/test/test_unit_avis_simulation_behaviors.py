@@ -213,6 +213,78 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertEqual(controller.state, controller.SEARCH_LEFT_ROI)
         self.assertEqual(controller.prepare_vision(), "left")
 
+
+    def test_disabling_roi_confirmation_hands_left_departure_to_normal_lane_pid(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED=False,
+            SIMULATOR_OBSTACLE_USE_DISTANCE_MODE=True,
+            SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM=100.0,
+            SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=88.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
+        first = controller.apply(
+            base_command(), ranges, perception_valid=True, now=1.0,
+        )
+        self.assertEqual(controller.state, controller.SHIFT_LEFT_DIRECT)
+        self.assertAlmostEqual(first.steering, -0.88)
+
+        completed = controller.apply(
+            base_command(), ranges, perception_valid=True,
+            distance_delta_cm=100.0, now=1.4,
+        )
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+        self.assertLess(completed.steering, 0.0)
+        self.assertIsNone(controller.prepare_vision())
+        self.assertFalse(controller.snapshot()["roi_confirmation_enabled"])
+
+        lane_pid = VehicleCommand(
+            steering=0.14, throttle=0.12, brake=0.0,
+            servo_angle=101.0, target_speed=15.0, reason="normal lane PID",
+        )
+        handed_off = controller.apply(
+            lane_pid, ranges, perception_valid=True, now=1.5,
+        )
+        self.assertIs(handed_off, lane_pid)
+        self.assertEqual(controller.state, controller.PASS_LANE_FOLLOW)
+
+    def test_disabling_roi_confirmation_restores_normal_lane_detection_after_right_return(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED=False,
+            SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=1.0,
+            SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES=1,
+            SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=73.0,
+            SIMULATOR_STEERING_LIMIT=1.0,
+        ))
+        controller.state = controller.SHIFT_RIGHT_DIRECT
+        controller.state_since = 1.0
+        controller.return_clear_observations = 0
+        ranges = {"left": 180.0, "front": 180.0, "right": 180.0}
+
+        returned = controller.apply(
+            base_command(), ranges, perception_valid=True, now=2.1,
+        )
+        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertTrue(controller.awaiting_clear)
+        self.assertAlmostEqual(returned.steering, 0.73)
+        self.assertIsNone(controller.prepare_vision())
+        self.assertFalse(controller.snapshot()["roi_confirmation_enabled"])
+
+    def test_disabling_roi_confirmation_keeps_front_emergency_braking_active(self):
+        controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED=False,
+            SIMULATOR_OBSTACLE_STOP_DISTANCE_CM=60.0,
+        ))
+        result = controller.apply(
+            base_command(),
+            {"left": 180.0, "front": 45.0, "right": 180.0},
+            perception_valid=True,
+            now=1.0,
+        )
+        self.assertEqual(controller.state, controller.BLOCKED)
+        self.assertEqual(result.brake, 1.0)
+        self.assertEqual(result.throttle, 0.0)
+
     def test_sensor_gated_direct_departure_can_start_after_normal_lane_is_lost(self):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_LEFT_STEERING_PERCENT=88.0,
@@ -1177,13 +1249,55 @@ class AVISModeSettingsTests(unittest.TestCase):
             self.assertTrue(config.SIMULATOR_STOP_ON_CROSSWALK)
             self.assertTrue((Path(directory) / "avis.sim.json").is_file())
 
-    def test_maximum_trigger_distance_is_valid_with_default_clear_hysteresis(self):
+    def test_avis_race_trigger_distance_supports_1500_cm_but_carla_stays_at_500(self):
         clean = _validate_settings({
-            "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 500.0,
+            "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 1500.0,
             "SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM": 150.0,
-        }, backend="avis")
-        self.assertEqual(clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 500.0)
+        }, backend="avis", mode="avis-race")
+        self.assertEqual(clean["SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM"], 1500.0)
         self.assertEqual(clean["SIMULATOR_OBSTACLE_CLEAR_DISTANCE_CM"], 150.0)
+        with self.assertRaisesRegex(ValueError, "TRIGGER_DISTANCE_CM.*1500"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 1500.1},
+                backend="avis", mode="avis-race",
+            )
+        with self.assertRaisesRegex(ValueError, "TRIGGER_DISTANCE_CM.*500"):
+            _validate_settings(
+                {"SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM": 500.1},
+                backend="carla", mode="carla",
+            )
+
+    def test_roi_confirmation_setting_is_boolean_and_persists_for_avis_race(self):
+        clean = _validate_settings({
+            "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED": False,
+        }, backend="avis", mode="avis-race")
+        self.assertIs(clean["SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED"], False)
+        with self.assertRaisesRegex(ValueError, "ROI_CONFIRMATION_ENABLED must be boolean"):
+            _validate_settings({
+                "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED": "false",
+            }, backend="avis", mode="avis-race")
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
+            load_simulator_settings(config, "avis-race", "avis")
+            save_simulator_settings(config, "avis-race", clean)
+            restored = SimpleNamespace(BASE_DIR=directory, SIMULATOR_BACKEND="avis")
+            load_simulator_settings(restored, "avis-race", "avis")
+            self.assertIs(restored.SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED, False)
+
+    def test_obstacle_settings_template_uses_avis_backend_limit_and_exposes_roi_toggle(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator" / "partials" / "_settings_stack.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'max="{% if caps.simulator_backend == \'avis\' %}1500{% else %}500{% endif %}"',
+            template,
+        )
+        self.assertIn(
+            'name="SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED"',
+            template,
+        )
 
     def test_500_cm_trigger_setting_is_persisted_without_changing_clear_field(self):
         with tempfile.TemporaryDirectory() as directory:

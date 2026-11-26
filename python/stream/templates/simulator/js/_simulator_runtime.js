@@ -140,6 +140,7 @@ async function poll(){
       }
       if(caps.supports_obstacle_avoidance){
         details.push("Lane change "+(!obstacle.enabled?"off":state.toLowerCase()+(obstacle.direction?" · "+obstacle.direction:"")));
+        details.push("Maneuver ROI confirmation "+(obstacle.roi_confirmation_enabled===false?"off":"on"));
         const ranges=obstacle.ranges_cm||{};
         const rangeText=value=>value==null?"—":numeric(value,0);
         details.push("Ranges L/F/R "+rangeText(ranges.left)+"/"+rangeText(ranges.front)+"/"+rangeText(ranges.right)+" cm");
