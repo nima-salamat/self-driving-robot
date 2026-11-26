@@ -617,9 +617,13 @@ class LaneBoundaryTracker:
             if hall_selected_index is not None and candidate["index"] == hall_selected_index:
                 cost -= 0.08
             ranked.append((float(cost), candidate))
+        handoff_identity_active = state.handoff_hall_track_id is not None
         ranked.sort(
             key=lambda item: (
-                item[0], -item[1]["quality"], item[1]["index"]
+                0 if handoff_identity_active and item[1]["index"] == hall_selected_index else 1,
+                item[0],
+                -item[1]["quality"],
+                item[1]["index"],
             )
         )
         return ranked
@@ -1778,9 +1782,15 @@ class LaneBoundaryTracker:
             expected_hall_id = state.handoff_hall_track_id
             if expected_hall_id is None:
                 continue
+            ranked_candidates = left_ranked if side == "left" else right_ranked
+            lane_selected_hall_candidate = bool(
+                ranked_candidates
+                and ranked_candidates[0][1]["index"] == hall_selected_index
+            )
             identity_matched = (
                 hall_result.get("selected_track_id") == expected_hall_id
                 and hall_selected_index is not None
+                and lane_selected_hall_candidate
             )
             if not identity_matched:
                 if side == "left":

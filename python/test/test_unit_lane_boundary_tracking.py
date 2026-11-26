@@ -1294,6 +1294,26 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         self.assertTrue(retried["ok"])
         self.assertEqual(retried["track_id"], source_track_id)
 
+    def test_hall_candidate_remains_authoritative_during_handoff_reacquisition(self):
+        tracker = LaneBoundaryTracker()
+        state = tracker._sides["right"]
+        state.track_id = 41
+        state.x_px = 220.0
+        state.velocity_px = 16.0
+        state.angle_deg = 0.0
+        state.missed_frames = 2
+        state.handoff_hall_track_id = 77
+        candidates = [
+            {"index": 0, "x_px": 236.0, "angle_deg": 0.0, "quality": 1.0},
+            {"index": 1, "x_px": 275.0, "angle_deg": 0.0, "quality": 0.0},
+        ]
+
+        ranked = tracker._reacquisition_ranked(
+            "right", candidates, hall_selected_index=1, frame_width=640,
+        )
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0][1]["index"], 1)
+
     def test_handoff_rejects_similar_geometry_without_the_original_hall_match(self):
         self.update(left_x=220.0, right_x=420.0)
         self.tracker.reacquire_frames = 2
