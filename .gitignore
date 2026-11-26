@@ -13,5 +13,8 @@ python/assets/dataset_connector/
 .env.*
 !.env.example
 
-# Mode-specific simulator overrides contain local endpoints and editor tuning.
-python/*.sim.json
+# Simulator mode profiles are version-controlled alongside city.json and race.json.
+# Keep credentials and other machine-specific secrets out of these files.
+!python/carla.sim.json
+!python/avis.sim.json
+!python/avis-race.sim.json
