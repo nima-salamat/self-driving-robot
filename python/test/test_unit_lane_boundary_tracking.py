@@ -1103,13 +1103,23 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
         first = self.line_for_global_x(first_roi, 220.0, dx=-8.0)
         second = self.line_for_global_x(second_roi, 220.0, dx=-8.0)
 
-        self.tracker._hall_update("left", first, first_roi, 0, self.FRAME_SHAPE)
+        first_candidates = self.tracker._candidates(
+            first, first_roi, frame_width=640, y_ref=370.0, preferred_index=0,
+        )
+        self.tracker._hall_update(
+            "left", first_candidates, 0, self.FRAME_SHAPE,
+        )
         tracks = self.tracker._hall["left"]._tracks
         self.assertEqual(len(tracks), 1)
         original_id = next(iter(tracks))
         original_feature = tuple(tracks[original_id]["feature"])
 
-        self.tracker._hall_update("left", second, second_roi, 0, self.FRAME_SHAPE)
+        second_candidates = self.tracker._candidates(
+            second, second_roi, frame_width=640, y_ref=370.0, preferred_index=0,
+        )
+        self.tracker._hall_update(
+            "left", second_candidates, 0, self.FRAME_SHAPE,
+        )
         tracks = self.tracker._hall["left"]._tracks
         self.assertEqual(len(tracks), 1)
         self.assertIn(original_id, tracks)
@@ -1260,8 +1270,10 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
     def test_handoff_rejects_stale_expected_boundary_id_without_mutating_source(self):
         initial = self.update(left_x=220.0, right_x=420.0)
         source_track_id = initial["left"]["track_id"]
+        target_track_id = initial["right"]["track_id"]
         source_hall_id = self.tracker._hall["left"]._selected_track_id
         self.assertIsNotNone(source_track_id)
+        self.assertIsNotNone(target_track_id)
         self.assertIsNotNone(source_hall_id)
 
         failed = self.tracker.handoff_side(
@@ -1274,7 +1286,7 @@ class LaneBoundaryTrackingTests(unittest.TestCase):
             self.tracker._hall["left"]._selected_track_id,
             source_hall_id,
         )
-        self.assertIsNone(self.tracker._sides["right"].track_id)
+        self.assertEqual(self.tracker._sides["right"].track_id, target_track_id)
 
         retried = self.tracker.handoff_side(
             "left", "right", expected_track_id=source_track_id,
