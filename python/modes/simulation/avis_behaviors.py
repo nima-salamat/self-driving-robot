@@ -842,6 +842,11 @@ class RangeObstacleAvoidance:
                 direct_reason = "obstacle lane change: direct right steering"
                 if self.return_clear_observations >= clear_confirm_frames:
                     direct_reason += "; right-side clearance confirmed"
+                if gate["enabled"] and gate["ready"]:
+                    direct_reason += (
+                        f"; mean steering {gate['mean_percent']:+.1f}% is inside "
+                        f"[{gate['minimum_percent']:+.1f}, {gate['maximum_percent']:+.1f}]%"
+                    )
                 if gate_timed_out:
                     direct_reason += (
                         f" (return steering gate timed out after {gate_max_wait:.1f}s)"
