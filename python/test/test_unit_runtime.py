@@ -795,27 +795,17 @@ class StreamVisualizationThrottleTests(unittest.TestCase):
         runtime._visual_pending = None
         return runtime
 
-    def test_stream_render_queue_is_capped_and_keeps_latest_due_frame(self):
-        runtime = self.make_runtime(stream_enabled=True)
-        frames = [object(), object(), object()]
-        perception = {"lane_type": "both"}
-        command = object()
-        with patch(
-            "modes.simulation.runtime.time.monotonic",
-            side_effect=[10.0, 10.04, 10.13],
-        ):
-            runtime._queue_frame_for_stream(frames[0], perception, command)
-            runtime._queue_frame_for_stream(frames[1], perception, command)
-            runtime._queue_frame_for_stream(frames[2], perception, command)
-        self.assertIs(runtime._visual_pending[0], frames[2])
-        self.assertAlmostEqual(runtime._last_stream_queue_at, 10.13)
-
-    def test_stream_disabled_does_not_queue_diagnostic_frames(self):
+    def test_visualization_queue_always_coalesces_to_latest_frame(self):
         runtime = self.make_runtime(stream_enabled=False)
-        with patch("modes.simulation.runtime.time.monotonic") as monotonic:
-            runtime._queue_frame_for_stream(object(), {}, object())
-        monotonic.assert_not_called()
-        self.assertIsNone(runtime._visual_pending)
+        frames = [object(), object(), object()]
+        for frame in frames:
+            runtime._queue_frame_for_stream(frame, {"lane_type": "both"}, None)
+        self.assertIs(runtime._visual_pending[0], frames[-1])
+
+    def test_visualization_render_rate_has_an_eight_fps_ceiling(self):
+        runtime = self.make_runtime(stream_enabled=True)
+        self.assertGreaterEqual(runtime._stream_frame_period, 1.0 / 8.3)
+        self.assertLessEqual(runtime._stream_frame_period, 1.0)
 
 
 if __name__ == "__main__":

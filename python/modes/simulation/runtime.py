@@ -131,7 +131,6 @@ class SimulationRuntime:
         if not math.isfinite(stream_render_fps):
             stream_render_fps = 8.3
         self._stream_frame_period = 1.0 / max(1.0, min(8.3, stream_render_fps))
-        self._last_stream_queue_at = None
         self._next_cycle_at = time.monotonic()
         self.frame_lock = threading.RLock()
         config.stream_frame_lock = self.frame_lock
@@ -274,32 +273,38 @@ class SimulationRuntime:
             self._debug_render_times_ms.append(elapsed_ms)
 
     def _queue_frame_for_stream(self, sensor_frame, perception, command):
-        """Queue a rate-limited latest frame without blocking vehicle control."""
-        if not bool(getattr(self.config, "STREAM", False)):
-            return
-        now = time.monotonic()
-        last_queued = self._last_stream_queue_at
-        if last_queued is not None and now - last_queued < self._stream_frame_period:
-            return
-        self._last_stream_queue_at = now
+        """Queue the newest annotated frame without blocking vehicle control."""
         with self._visual_condition:
-            # A live preview is not a recording; retain only the latest due frame.
+            # Keep the newest frame while the renderer is busy or rate-limited.
+            was_empty = self._visual_pending is None
             self._visual_pending = (sensor_frame, perception, command)
-            self._visual_condition.notify()
+            if was_empty:
+                self._visual_condition.notify()
 
     def _visualization_loop(self):
+        next_render_at = 0.0
         while True:
             with self._visual_condition:
                 while self._visual_pending is None and not self._visual_stopping:
                     self._visual_condition.wait()
                 if self._visual_pending is None and self._visual_stopping:
                     return
+                while self._visual_pending is not None and not self._visual_stopping:
+                    remaining = next_render_at - time.monotonic()
+                    if remaining <= 0.0:
+                        break
+                    self._visual_condition.wait(timeout=remaining)
+                if self._visual_pending is None and self._visual_stopping:
+                    return
                 item = self._visual_pending
                 self._visual_pending = None
+            render_started = time.monotonic()
             try:
                 self._publish_frame(*item)
             except Exception:
                 logger.exception("Could not render/publish simulator lane-debug frame")
+            finally:
+                next_render_at = render_started + self._stream_frame_period
 
     def _start_visualization_worker(self):
         with self._visual_condition:
