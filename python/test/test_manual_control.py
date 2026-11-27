@@ -78,7 +78,6 @@ UI_HZ = 20.0
 WATCHDOG_MULT = 3.0
 PRIORITY_STOP_REFRESH_INTERVAL = 0.10  # Reassert stop at 10 Hz while Space/E-STOP is active
 
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s')
 log = logging.getLogger('manual_enterprise')
 
 # ---------- Defaults & persistence ----------
@@ -1305,6 +1304,8 @@ def _shutdown():
 def _handle_shutdown_signal(_signum,_frame):raise KeyboardInterrupt
 
 if __name__=="__main__":
+    from utils.logging_setup import configure_logging
+    configure_logging(level=os.getenv("LOG_LEVEL", "INFO"), log_dir=os.getenv("OUTPUT_DIR", "output"))
     signal.signal(signal.SIGINT,_handle_shutdown_signal);signal.signal(signal.SIGTERM,_handle_shutdown_signal)
     log.info("Starting manual RC controller on %s:%s",HOST,PORT);print(f"MANUAL_TOKEN={MANUAL_TOKEN}",flush=True)
     try:
