@@ -5,7 +5,34 @@
   </div>
 </div>
 
-<div id="ext_maneuver_settings_dialog" class="settings-modal maneuver-config-modal" aria-hidden="true">
+<style>
+.crosswalk-chain-modal .maneuver-config-card{width:min(1280px,97vw);max-width:1280px;max-height:94vh;overflow:auto}
+.crosswalk-chain-modal .maneuver-config-card .settings-section{margin-top:12px}
+.crosswalk-chain-builder{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.crosswalk-chain-intro{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.crosswalk-pulse-calibration{display:flex;flex-direction:column;gap:3px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;min-width:190px}
+.crosswalk-route-tabs{display:flex;gap:8px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.crosswalk-route-tab{border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);padding:9px 16px;font:inherit;font-weight:650;cursor:pointer}
+.crosswalk-route-tab.is-active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,var(--panel));color:var(--text)}
+.crosswalk-chain-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.crosswalk-chain-toolbar>div{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.crosswalk-chain-steps{display:flex;flex-direction:column;gap:8px;max-height:34vh;overflow:auto;padding-right:2px}
+.crosswalk-step-row{display:grid;grid-template-columns:72px minmax(145px,1.1fr) minmax(115px,.8fr) minmax(120px,.8fr) minmax(135px,.9fr) 82px;gap:9px;align-items:end;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.crosswalk-step-row label{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:12px;color:var(--muted)}
+.crosswalk-step-row input,.crosswalk-step-row select{width:100%;min-width:0;box-sizing:border-box}
+.crosswalk-step-number{align-self:center;color:var(--muted);font-size:13px;font-weight:700;padding-bottom:8px}
+.crosswalk-step-pulses{font-size:11px;color:var(--muted);padding-top:3px}
+.crosswalk-step-remove{height:36px}
+.crosswalk-chain-preview{display:flex;flex-direction:column;gap:7px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.crosswalk-chain-preview-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.crosswalk-chain-preview code{display:block;white-space:normal;overflow-wrap:anywhere;padding:10px;border-radius:7px;background:var(--surface);color:var(--text);font-size:13px}
+.crosswalk-chain-help{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.crosswalk-chain-help>div{display:flex;flex-direction:column;gap:4px;padding:9px 11px;border:1px solid var(--border);border-radius:8px}
+.crosswalk-chain-help span{font-size:12px;color:var(--muted);line-height:1.5}
+.crosswalk-chain-raw{display:none}
+@media(max-width:760px){.crosswalk-step-row{grid-template-columns:58px 1fr 1fr;}.crosswalk-step-remove{grid-column:3;}.crosswalk-chain-help{grid-template-columns:1fr}.crosswalk-route-tab{flex:1;padding:9px 5px;font-size:12px}.crosswalk-chain-steps{max-height:42vh}}
+</style>
+<div id="ext_maneuver_settings_dialog" class="settings-modal maneuver-config-modal crosswalk-chain-modal" aria-hidden="true">
   <section class="settings-card maneuver-config-card" role="dialog" aria-modal="true" aria-labelledby="ext_maneuver_title" aria-describedby="ext_maneuver_description">
     <header class="settings-header"><div><h2 id="ext_maneuver_title">Maneuver Sequence Editor</h2><p id="ext_maneuver_description">Edit and validate the Arduino motion sequences used by this mode.</p></div><button type="button" class="ghost" id="ext_maneuver_settings_close" aria-label="Close maneuver editor">×</button></header>
     <div class="maneuver-warning"><strong>Hardware safety:</strong> these edits are persisted immediately to the active mode JSON, but startup lane-change sequences reach Arduino only at the next robot initialization. Stop the robot or lift the wheels before testing changes.</div>
@@ -21,10 +48,50 @@
     <div class="settings-section">
       <h3>City · Pedestrian / Crosswalk Routes</h3>
       <p class="settings-note">These routes are selected from the detected direction tag in City mode. This section is intentionally absent in Race mode.</p>
-      <div class="maneuver-grid">
-        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M19 20V12a7 7 0 0 0-7-7H5"/><path d="m10 1-5 4 5 4"/></svg><span>Turn LEFT</span></span><textarea id="maneuver_city_left" rows="3" spellcheck="false" aria-label="City pedestrian left-turn sequence"></textarea><span class="small-muted">Sequence used for TURN LEFT.</span></label>
-        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M12 22V3"/><path d="m5 10 7-7 7 7"/></svg><span>Go STRAIGHT</span></span><textarea id="maneuver_city_straight" rows="3" spellcheck="false" aria-label="City pedestrian straight sequence"></textarea><span class="small-muted">Sequence used for STRAIGHT and the fallback route.</span></label>
-        <label class="sequence-card"><span class="sequence-title"><svg viewBox="0 0 24 24" class="maneuver-icon" aria-hidden="true"><path d="M5 20V12a7 7 0 0 1 7-7h7"/><path d="m14 1 5 4-5 4"/></svg><span>Turn RIGHT</span></span><textarea id="maneuver_city_right" rows="3" spellcheck="false" aria-label="City pedestrian right-turn sequence"></textarea><span class="small-muted">Sequence used for TURN RIGHT.</span></label>
+      <div class="crosswalk-chain-builder" id="crosswalk_chain_builder"
+           data-servo-min="{{ servo_min_angle }}" data-servo-max="{{ servo_max_angle }}"
+           data-encoder-pulse-cm="{{ advanced.get('ENCODER_PULSE_DISTANCE_CM', 0.4) }}">
+        <div class="crosswalk-chain-intro">
+          <div>
+            <strong>Build a direction-specific hardcode chain</strong>
+            <p class="settings-note">Choose LEFT, STRAIGHT or RIGHT, then add as many steps as needed. Each step can drive forward or reverse with its own distance, PWM and servo angle.</p>
+          </div>
+          <div class="crosswalk-pulse-calibration">
+            <span class="small-muted">Active encoder calibration</span>
+            <strong id="crosswalk_encoder_calibration">{{ '%.4f'|format(advanced.get('ENCODER_PULSE_DISTANCE_CM', 0.4)) }} cm / pulse</strong>
+            <span class="small-muted">1 metre ≈ {{ (100 / (advanced.get('ENCODER_PULSE_DISTANCE_CM', 0.4)|float))|round(0)|int }} pulses</span>
+          </div>
+        </div>
+        <div class="crosswalk-route-tabs" role="tablist" aria-label="Crosswalk direction">
+          <button type="button" class="crosswalk-route-tab is-active" data-chain-route="left" role="tab" aria-selected="true">↰ LEFT</button>
+          <button type="button" class="crosswalk-route-tab" data-chain-route="straight" role="tab" aria-selected="false">↑ STRAIGHT</button>
+          <button type="button" class="crosswalk-route-tab" data-chain-route="right" role="tab" aria-selected="false">↱ RIGHT</button>
+        </div>
+        <div class="crosswalk-chain-toolbar">
+          <div>
+            <strong id="crosswalk_chain_heading">LEFT route · command chain</strong>
+            <span class="small-muted" id="crosswalk_chain_count">0 / 16 steps</span>
+          </div>
+          <button type="button" class="btn" id="crosswalk_chain_add">＋ Add command</button>
+        </div>
+        <div id="crosswalk_chain_steps" class="crosswalk-chain-steps" aria-live="polite"></div>
+        <div class="crosswalk-chain-preview">
+          <div class="crosswalk-chain-preview-head"><strong>Arduino command preview</strong><span class="small-muted">f/b · PWM · pulses · servo</span></div>
+          <code id="crosswalk_chain_preview">f 220 50 95</code>
+          <p id="crosswalk_chain_estimate" class="small-muted">Each distance is converted into encoder pulses using the calibration above. This is an estimate; measure pulse distance on the actual robot.</p>
+        </div>
+        <div class="crosswalk-chain-help">
+          <div><strong>Direction</strong><span><code>f</code> moves forward; <code>b</code> reverses.</span></div>
+          <div><strong>Distance</strong><span>Metres are converted to encoder pulses. Example: 0.20m at 0.40cm/pulse ≈ 50 pulses.</span></div>
+          <div><strong>Speed (PWM)</strong><span>0–255. Start with a conservative value such as 120–160, then test in a safe raised-wheel setup.</span></div>
+          <div><strong>Steering angle</strong><span>Servo command in degrees, not the road-wheel turn angle. The configured center is straight; the current servo limits are shown below each step.</span></div>
+          <div><strong>Chain limit</strong><span>Firmware pulse queue supports at most 16 groups per route. Use fewer or more steps up to this limit; remove any unwanted step.</span></div>
+        </div>
+        <div class="crosswalk-chain-raw" aria-hidden="true">
+          <textarea id="maneuver_city_left" rows="2" tabindex="-1"></textarea>
+          <textarea id="maneuver_city_straight" rows="2" tabindex="-1"></textarea>
+          <textarea id="maneuver_city_right" rows="2" tabindex="-1"></textarea>
+        </div>
       </div>
       <h3 style="margin-top:18px">Crosswalk Line-count Thresholds</h3>
       <p class="settings-note">The detector checks how many vertical and horizontal line segments appear in the crosswalk region, then performs its existing lowest-horizontal-line position check. Defaults preserve the current condition: at least 6 vertical and 3 horizontal lines.</p>

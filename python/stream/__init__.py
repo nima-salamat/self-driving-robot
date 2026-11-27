@@ -129,6 +129,7 @@ ADVANCED_VARS = {
 
     "USE_BEV": True,
     "SERVO_CENTER": 95,
+    "ENCODER_PULSE_DISTANCE_CM": 0.4,
     "APPLY_CAMERA_CALIBRATION": True,
     "CAMERA_CALIBRATION_FILE": "assets/camera_calibrations/camera_calibration.npz",
     "KP": 0.35, "KI": 0.0, "KD": 0.01, "KT": 0.01,

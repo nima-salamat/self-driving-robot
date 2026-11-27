@@ -281,6 +281,7 @@ class StreamConfigurationMixin:
                 "KD": (-100.0, 100.0), "KT": (0.0, 10.0),
                 "PID_MIN_DT": (0.0001, 1.0), "PID_MAX_DT": (0.001, 5.0),
                 "PID_DERIVATIVE_FILTER": (0.0, 1.0),
+                "ENCODER_PULSE_DISTANCE_CM": (0.0001, 100.0),
             }
             if key in numeric_ranges and not numeric_ranges[key][0] <= normalized <= numeric_ranges[key][1]:
                 raise ValueError(f"{key} must be between {numeric_ranges[key][0]} and {numeric_ranges[key][1]}")
