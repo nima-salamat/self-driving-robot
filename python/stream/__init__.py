@@ -20,7 +20,7 @@ from visualization.lane_debug_overlay import normalize_display_frame
 logger = logging.getLogger(__name__)
 
 CONFIG_HISTORY_LIMIT = 50
-STREAM_LOG_LIMIT = 500
+STREAM_LOG_LIMIT = 1000
 
 # Serialize state-file operations across dashboard threads. RLock is required
 # because history recording holds the lock while calling _write_json_atomic.
@@ -65,7 +65,8 @@ class _StreamLogBuffer(logging.Handler):
             name = str(record.name or "")
             allowed = (name == "stream" or name.startswith((
                 "stream.", "modes.", "vision.", "controller.", "arduino.",
-                "traffic_sign_detector.", "manager.", "utils.", "main"
+                "traffic_sign_detector.", "manager.", "utils.", "calibration.",
+                "dataset_connector.", "werkzeug.", "manual_enterprise", "main"
             )))
             if not allowed:
                 return
