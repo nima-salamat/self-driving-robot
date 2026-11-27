@@ -1,6 +1,9 @@
 const simRoiDefs = [
   {id:"RL",label:"Right lane",color:"#48d7a4",fields:{top:"rl-top",bottom:"rl-bottom",left:"rl-left",right:"rl-right"}},
   {id:"LL",label:"Left lane",color:"#65a8ff",fields:{top:"ll-top",bottom:"ll-bottom",left:"ll-left",right:"ll-right"}},
+  ...(caps.supports_sign_actions?[
+    {id:"ST",label:"Sign detector",color:"#f472b6",fields:{top:"st-top",bottom:"st-bottom",left:"st-left",right:"st-right"}}
+  ]:[]),
   ...(caps.simulator_backend==="avis"?[
     {id:"ML",label:"Left maneuver",color:"#c084fc",fields:{top:"ml-top",bottom:"ml-bottom",left:"ml-left",right:"ml-right"}},
     {id:"MR",label:"Right maneuver",color:"#fb923c",fields:{top:"mr-top",bottom:"mr-bottom",left:"mr-left",right:"mr-right"}}
