@@ -1066,7 +1066,8 @@ class SimulationRuntime:
                     with self._state_lock:
                         self._camera_frames_skipped += frame.sequence - self._last_sequence - 1
                 self._last_sequence = frame.sequence
-                self._last_frame_at = frame.captured_at
+                if getattr(frame, "image", None) is not None:
+                    self._last_frame_at = frame.captured_at
                 self._last_sensor_frame = frame
                 sensor_status = dict(getattr(frame, "sensor_status", {}) or {})
                 if (
@@ -1151,7 +1152,10 @@ class SimulationRuntime:
 
                 if hardcode_cycle:
                     # Perception-driven range/stop rules are intentionally
-                    # suspended until this configured route finishes.
+                    # suspended until this configured route finishes. Restart
+                    # the invalid-range grace clock after the route is complete.
+                    self._front_range_unavailable_since = None
+                    self._front_range_grace_notified = False
                     self._last_range_safety = {
                         "status": "bypassed_during_hardcode",
                         "reason": "configured AVIS hardcode route owns vehicle motion",
