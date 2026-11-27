@@ -407,6 +407,8 @@ class SimulationRuntime:
             config.debug_frames_list = [None, None]
         self._events = deque(maxlen=120)
         self._state_lock = threading.RLock()
+        self._behavior_lock = threading.RLock()
+        self._behavior_generation = 0
         self._started_at = None
         self._last_frame_at = None
         self._last_sequence = 0
@@ -651,6 +653,25 @@ class SimulationRuntime:
             )
             self._record_event(level, message, log=False)
 
+    def reset_deadlock_state(self, reason, *, brake_if_active=True):
+        """Cancel AVIS Deadlock detection/hardcode at an external lifecycle boundary."""
+        if self.avis_behaviors is None:
+            return False
+        with self._behavior_lock:
+            was_running = self.avis_behaviors.deadlock_state == "running"
+            self.avis_behaviors.reset_deadlock(reason)
+            if was_running:
+                # Any command calculated from the old hardcode must be rejected
+                # before it reaches the virtual actuator.
+                self._behavior_generation += 1
+        if was_running and brake_if_active and self.backend == "avis":
+            self._safe_stop(
+                "AVIS deadlock hardcode cancelled: {}; vehicle braked.".format(reason),
+                level="info",
+                set_error=False,
+            )
+        return was_running
+
     def _adapter_control_ready(self):
         if not bool(getattr(self.adapter, "connected", False)):
             return False
@@ -669,6 +690,10 @@ class SimulationRuntime:
                 "simulation process before enabling motion."
             )
         enabled = bool(enabled)
+        self.reset_deadlock_state(
+            "explicit Stream Start" if enabled else "explicit Stream Stop",
+            brake_if_active=enabled,
+        )
         if enabled == self._run_enabled:
             return self._run_enabled
         if enabled:
@@ -919,6 +944,10 @@ class SimulationRuntime:
                 "virtual_encoder": encoder,
                 "range_min_cm": min((v for v in ranges.values() if isinstance(v, (int, float)) and math.isfinite(float(v))), default=None),
             }
+            behavior_snapshot = {}
+            if self.avis_behaviors is not None:
+                with self._behavior_lock:
+                    behavior_snapshot = self.avis_behaviors.snapshot()
             return {
                 "mode": self.mode, "backend": self.backend, "vision_profile": self.vision_profile,
                 "editor_profile": "simulator", "connected": bool(self.adapter.connected),
@@ -934,9 +963,7 @@ class SimulationRuntime:
                 "lane_type": str(result.get("lane_type", "none")),
                 "perception_valid": bool(result.get("perception_valid", False)),
                 "line_tracking": result.get("line_tracking", {"enabled": False, "state": "DISABLED"}),
-                "simulation_behavior": (
-                    self.avis_behaviors.snapshot() if self.avis_behaviors is not None else {}
-                ),
+                "simulation_behavior": behavior_snapshot,
                 "steering_angle": round(float(self.controller.last_servo), 2),
                 "steering_normalized": round(float(self._last_command.steering), 3),
                 "crosswalk": bool(result.get("crosswalk", False)), "speed_kmh": round(speed, 2),
@@ -1015,6 +1042,9 @@ class SimulationRuntime:
                         if not bool(getattr(self.adapter, "connected", False)):
                             if self._run_enabled:
                                 self._run_enabled = False
+                                self.reset_deadlock_state(
+                                    "AVIS link lost", brake_if_active=False
+                                )
                                 recovery_action = (
                                     "restart the AVIS process after camera frames return; "
                                     "this run has no Stream controls."
@@ -1035,6 +1065,9 @@ class SimulationRuntime:
                             missing_age = float(camera_diag.get("missing_image_duration_s") or 0.0)
                             if self._run_enabled and missing_count >= 30 and missing_age >= 5.0:
                                 self._run_enabled = False
+                                self.reset_deadlock_state(
+                                    "AVIS camera stream unavailable", brake_if_active=False
+                                )
                                 recovery_action = (
                                     "restart the AVIS process after the camera stream is healthy; "
                                     "this run has no Stream controls."
@@ -1052,10 +1085,12 @@ class SimulationRuntime:
                         self._safe_stop("No fresh simulator camera frame; braking until frames resume.")
                     self.shutdown_event.wait(0.05)
                     continue
-                hardcode_active = bool(
-                    self.avis_behaviors is not None
-                    and self.avis_behaviors.hardcode_route_active()
-                )
+                with self._behavior_lock:
+                    frame_behavior_generation = self._behavior_generation
+                    hardcode_active = bool(
+                        self.avis_behaviors is not None
+                        and self.avis_behaviors.hardcode_route_active()
+                    )
                 if getattr(frame, "image", None) is None:
                     telemetry_status = dict(getattr(frame, "sensor_status", {}) or {})
                     can_continue_hardcode = bool(
@@ -1131,7 +1166,8 @@ class SimulationRuntime:
                 else:
                     if self.avis_behaviors is not None:
                         # Temporary lane ROIs apply only during normal lane following.
-                        self.avis_behaviors.prepare_vision(now=now)
+                        with self._behavior_lock:
+                            self.avis_behaviors.prepare_vision(now=now)
                     detection_started = time.perf_counter()
                     result = self.vision.detect(frame.image)
                     detection_ms = (time.perf_counter() - detection_started) * 1000.0
@@ -1140,25 +1176,26 @@ class SimulationRuntime:
                     command = self.controller.command_for(result, frame.speed_kmh)
 
                 if self.avis_behaviors is not None:
-                    if not hardcode_active:
-                        self.avis_behaviors.submit_sign_frame(frame)
-                    command = self.avis_behaviors.apply(
-                        frame, result, command,
-                        distance_delta_cm=getattr(frame, "distance_delta_cm", 0.0),
-                        now=now,
-                    )
-                    hardcode_cycle = bool(
-                        hardcode_active
-                        or self.avis_behaviors.hardcode_route_active()
-                        or str(getattr(command, "reason", "")).lower().startswith(
-                            ("crosswalk hardcode", "deadlock ")
+                    with self._behavior_lock:
+                        if not hardcode_active:
+                            self.avis_behaviors.submit_sign_frame(frame)
+                        command = self.avis_behaviors.apply(
+                            frame, result, command,
+                            distance_delta_cm=getattr(frame, "distance_delta_cm", 0.0),
+                            now=now,
                         )
-                    )
-                    if not hardcode_cycle:
-                        command = self.avis_behaviors.approach_speed.apply(
-                            frame, command, now=now
+                        hardcode_cycle = bool(
+                            hardcode_active
+                            or self.avis_behaviors.hardcode_route_active()
+                            or str(getattr(command, "reason", "")).lower().startswith(
+                                ("crosswalk hardcode", "deadlock ")
+                            )
                         )
-                    result["simulation_behavior"] = self.avis_behaviors.snapshot()
+                        if not hardcode_cycle:
+                            command = self.avis_behaviors.approach_speed.apply(
+                                frame, command, now=now
+                            )
+                        result["simulation_behavior"] = self.avis_behaviors.snapshot()
                 else:
                     hardcode_cycle = False
 
@@ -1230,7 +1267,21 @@ class SimulationRuntime:
                     self.shutdown_event.wait(0.05)
                     continue
                 control_started = time.perf_counter()
-                control_accepted = self.adapter.apply_control(command)
+                with self._behavior_lock:
+                    if (
+                        self.backend == "avis"
+                        and frame_behavior_generation != self._behavior_generation
+                    ):
+                        command = VehicleCommand(
+                            steering=command.steering,
+                            throttle=0.0,
+                            brake=1.0,
+                            servo_angle=command.servo_angle,
+                            target_speed=0.0,
+                            reason="AVIS deadlock hardcode reset during frame; braking before normal control resumes.",
+                        )
+                        hardcode_cycle = False
+                    control_accepted = self.adapter.apply_control(command)
                 control_ms = (time.perf_counter() - control_started) * 1000.0
                 if not control_accepted:
                     # CARLA actors can disappear during world changes.
@@ -1244,6 +1295,9 @@ class SimulationRuntime:
                         continue
                     if self.backend == "avis":
                         self._run_enabled = False
+                        self.reset_deadlock_state(
+                            "AVIS actuator link failed", brake_if_active=False
+                        )
                         self._safe_stop("AVIS actuator link failed; reconnecting while remaining STOPPED.")
                         self.shutdown_event.wait(0.1)
                         continue
@@ -1273,6 +1327,9 @@ class SimulationRuntime:
             logger.exception("Simulation runtime failed")
             raise
         finally:
+            self.reset_deadlock_state(
+                "simulation runtime stopped", brake_if_active=False
+            )
             self._started_at = None
             self._stop_visualization_worker()
             self._safe_stop(
