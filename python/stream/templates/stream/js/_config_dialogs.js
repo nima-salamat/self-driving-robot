@@ -329,6 +329,7 @@ function installExtension(){
   $('ext_log_export').onclick=function(){downloadText(JSON.stringify(serverLogsVisible,null,2),'roboy-runtime-logs.json','application/json');};
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String(window.STREAM_BOOTSTRAP.mode || 'mode').toLowerCase()+'-annotations.json','application/json');};
   $('ext_open_palette').onclick=openCommandPalette;
+  $('ext_crosswalk_hardcode_open').onclick=function(){openManeuverConfigDialog();};
   $('ext_maneuver_settings_open').onclick=function(){openManeuverConfigDialog();};
   const crosswalkBuilder=$('crosswalk_chain_builder');
   if(crosswalkBuilder){
