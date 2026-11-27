@@ -12,6 +12,8 @@ from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 
+from utils.logging_setup import configure_worker_logging, get_logging_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,8 +54,10 @@ def _make_detector(method, detector_factory=None, intra_op_num_threads=2):
 def _sign_worker(method, detector_factory, intra_op_num_threads, requests, results,
                  ready, ready_payload, stop_event, paused_event, requests_enabled,
                  idle_event, active_event, shared_memory_name, frame_lock,
-                 frame_sequence, generation, request_event):
+                 frame_sequence, generation, request_event, log_queue=None,
+                 log_level="INFO"):
     """Infer from a shared-memory latest-frame slot; queues carry metadata only."""
+    configure_worker_logging(log_queue, level=log_level)
     try:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
     except (AttributeError, ValueError):
@@ -227,6 +231,7 @@ class ProcessSignDetector:
         if self._max_frame_bytes < 1:
             raise ValueError("max_frame_bytes must be a positive integer")
         self._context = mp.get_context("spawn")
+        self._log_queue, self._log_level = get_logging_context()
         self._shared_frame = SharedMemory(create=True, size=self._max_frame_bytes)
         self._frame_lock = self._context.Lock()
         self._frame_sequence = self._context.Value("q", 0, lock=False)
@@ -269,7 +274,8 @@ class ProcessSignDetector:
                 self._ready, self._ready_payload, self._stop, self._paused,
                 self._requests_enabled, self._idle, self._active,
                 self._shared_frame.name, self._frame_lock, self._frame_sequence,
-                self._generation, self._request_event,
+                self._generation, self._request_event, self._log_queue,
+                self._log_level,
             ),
             daemon=True,
         )
