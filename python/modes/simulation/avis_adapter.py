@@ -240,6 +240,69 @@ class AvisAdapter(SimulatorAdapter):
             return None
         return distance if math.isfinite(distance) and distance >= 0 else None
 
+    def _telemetry_only_frame(self, car, response_info=None):
+        """Build a telemetry sample with no image after a camera decode/missing-frame event."""
+        response_info = response_info or dict(getattr(car, "last_response_info", {}) or {})
+        now = time.monotonic()
+        has_protocol_metadata = hasattr(car, "last_response_info")
+        speed_tag_present = bool(response_info.get("speed_tag", not has_protocol_metadata))
+        speed_parse_error = bool(response_info.get("speed_parse_error"))
+        speed_available = False
+        try:
+            speed = float(car.getSpeed())
+            speed_available = (
+                speed_tag_present and not speed_parse_error
+                and math.isfinite(speed) and speed >= 0.0
+            )
+            if not speed_available:
+                speed = 0.0
+        except (TypeError, ValueError, OverflowError):
+            speed = 0.0
+            speed_available = False
+        self._last_speed_kmh = max(0.0, speed) if speed_available else None
+        self._last_speed_at = now if speed_available else None
+
+        try:
+            values = list(car.getSensors() or [])
+        except Exception:
+            values = []
+            logger.debug("AVIS range-sensor data unavailable in telemetry-only sample", exc_info=True)
+        ranges = {
+            "left": self._range(values[0]) if len(values) > 0 else None,
+            "front": self._range(values[1]) if len(values) > 1 else None,
+            "right": self._range(values[2]) if len(values) > 2 else None,
+        }
+        sensor_tag_present = bool(response_info.get("sensor_tag"))
+        dt = max(0.0, now - self._previous_at) if self._previous_at is not None else 0.0
+        distance_delta = (
+            max(0.0, speed) * 100000.0 / 3600.0 * dt
+            if speed_available else 0.0
+        )
+        self._previous_at = now
+        self._sequence += 1
+        return SensorFrame(
+            image=None,
+            captured_at=now,
+            sequence=self._sequence,
+            speed_kmh=max(0.0, speed),
+            ranges_cm=ranges,
+            lidar_points=None,
+            distance_delta_cm=distance_delta,
+            sensor_status={
+                "image_available": False,
+                "image_fresh": False,
+                "telemetry_only": True,
+                "ranges_available": sensor_tag_present and len(values) >= 3
+                    and all(value is not None for value in ranges.values()),
+                "front_range_available": ranges["front"] is not None,
+                "range_sensor_count": len(values),
+                "sensor_tag_present": sensor_tag_present,
+                "speed_tag_present": speed_tag_present,
+                "speed_parse_error": speed_parse_error,
+                "speed_available": bool(speed_available),
+            },
+        )
+
     def read(self, timeout=0.25):
         # AVIS has one synchronous request/response socket. Serialize it with
         # sensor-angle updates and vehicle commands.
@@ -306,17 +369,17 @@ class AvisAdapter(SimulatorAdapter):
                 + ", error=" + str(response_info.get("decode_error", "unknown"))[:180]
             )
             # A missing image is not automatically a dead TCP connection. Keep
-            # the session alive and brake while waiting for a valid camera frame.
-            # Report the transition once at INFO; if decoding remains broken
-            # for several seconds, emit one actionable ERROR (not one warning
-            # per packet). Full, privacy-safe diagnostics remain in the Stream.
+            # the session alive and preserve fresh speed/range telemetry. The
+            # runtime may continue an already-running distance-based hardcode
+            # route without running vision; ordinary autonomy still holds stopped.
+            # Report the transition once at INFO, not once per packet.
             now = time.monotonic()
             if not self._missing_image_log_active:
                 self._missing_image_started_at = now
                 self._missing_image_error_logged = False
                 self._log_info_rate_limited(
                     "camera-no-decodable-frame",
-                    "AVIS camera stream has not produced a decodable frame; retaining TCP session and holding the vehicle stopped.",
+                    "AVIS camera stream has not produced a decodable frame; retaining TCP session and checking whether fresh motion telemetry is available.",
                     interval_s=60.0,
                 )
             self._missing_image_log_active = True
@@ -326,12 +389,12 @@ class AvisAdapter(SimulatorAdapter):
             )
             if self._missing_images >= 30 and outage_age >= 5.0 and not self._missing_image_error_logged:
                 logger.error(
-                    "AVIS has returned %d consecutive responses without a valid image over %.1fs; "
-                    "the vehicle remains braked. Last response: %s",
+                    "AVIS has returned %d consecutive responses without a valid image over %.1fs. "
+                    "Last response: %s",
                     self._missing_images, outage_age, self._last_error,
                 )
                 self._missing_image_error_logged = True
-            return None
+            return self._telemetry_only_frame(car, response_info)
 
         self._missing_images = 0
         self._missing_image_log_active = False
@@ -344,7 +407,7 @@ class AvisAdapter(SimulatorAdapter):
             self._missing_images += 1
             if self._missing_images >= 4:
                 self._schedule_reconnect_locked("AVIS returned an invalid camera image.")
-            return None
+            return self._telemetry_only_frame(car, response_info)
 
         self._missing_images = 0
         image = image[:, :, :3].copy()
