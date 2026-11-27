@@ -1373,6 +1373,11 @@ class AVISBehaviorCoordinator:
         self._sign_blank_count = 0
         self.sign_detector = None
         self._sign_error = None
+        self.last_sign_roi_status = {
+            "valid": False,
+            "reason": "waiting for the first sign frame",
+        }
+        self._last_sign_roi_error = None
         self.crosswalk_state = "idle"
         self.crosswalk_detect_count = 0
         self.crosswalk_stop_confirm_count = 0
@@ -1406,19 +1411,74 @@ class AVISBehaviorCoordinator:
             logger.exception("AVIS sign actions requested but detector initialization failed")
             raise RuntimeError("Could not initialize the optional AVIS traffic-sign detector: " + self._sign_error) from exc
 
+    def _crop_sign_roi(self, image):
+        """Crop the configured normalized ST rectangle before AVIS YOLO inference."""
+        if image is None or not hasattr(image, "shape") or len(image.shape) < 2:
+            return None, {"valid": False, "reason": "camera image is unavailable"}
+
+        height, width = image.shape[:2]
+        if height <= 0 or width <= 0:
+            return None, {"valid": False, "reason": "camera image has invalid dimensions"}
+
+        try:
+            top = float(getattr(self.config, "ST_TOP_ROI", 0.0))
+            bottom = float(getattr(self.config, "ST_BOTTOM_ROI", 1.0))
+            left = float(getattr(self.config, "ST_LEFT_ROI", 0.0))
+            right = float(getattr(self.config, "ST_RIGHT_ROI", 1.0))
+        except (TypeError, ValueError, OverflowError):
+            return None, {"valid": False, "reason": "sign ROI coordinates are not numeric"}
+
+        if not all(math.isfinite(value) for value in (top, bottom, left, right)):
+            return None, {"valid": False, "reason": "sign ROI coordinates are not finite"}
+        if not (0.0 <= top < bottom <= 1.0 and 0.0 <= left < right <= 1.0):
+            return None, {"valid": False, "reason": "sign ROI bounds are invalid"}
+
+        y1, y2 = int(top * height), int(bottom * height)
+        x1, x2 = int(left * width), int(right * width)
+        if x2 <= x1 or y2 <= y1:
+            return None, {"valid": False, "reason": "sign ROI crop is empty"}
+
+        cropped = image[y1:y2, x1:x2]
+        if cropped.size == 0:
+            return None, {"valid": False, "reason": "sign ROI crop is empty"}
+
+        return cropped, {
+            "valid": True,
+            "top": top,
+            "bottom": bottom,
+            "left": left,
+            "right": right,
+            "x1": x1,
+            "y1": y1,
+            "x2": x2,
+            "y2": y2,
+            "width": int(cropped.shape[1]),
+            "height": int(cropped.shape[0]),
+        }
+
     def submit_sign_frame(self, frame):
         if self.sign_detector is None or frame is None:
             return
+        sign_image, roi_status = self._crop_sign_roi(getattr(frame, "image", None))
+        self.last_sign_roi_status = roi_status
+        if sign_image is None:
+            reason = roi_status.get("reason")
+            if self._last_sign_roi_error != reason:
+                logger.error("AVIS sign inference skipped: %s", reason)
+            self._last_sign_roi_error = reason
+            return
+        self._last_sign_roi_error = None
+
         interval = max(1, int(getattr(self.config, "SIMULATOR_SIGN_SCAN_INTERVAL", 6)))
         self._sign_frame_count += 1
         if self._sign_frame_count % interval == 0:
             try:
                 self.sign_detector.submit(
-                    frame.image.copy(),
+                    sign_image.copy(),
                     frame_captured_at=getattr(frame, "captured_at", None),
                 )
             except Exception:
-                logger.debug("Could not submit AVIS sign frame", exc_info=True)
+                logger.debug("Could not submit AVIS sign ROI frame", exc_info=True)
         latest = self.sign_detector.latest(max_age_s=0.9)
         if latest is None or latest[0] <= self._last_sign_request_id:
             return
@@ -1962,6 +2022,7 @@ class AVISBehaviorCoordinator:
             "sign_enabled": self.sign_detector is not None,
             "sign_label": self.last_sign_label,
             "last_direction_sign": self.last_direction_sign_label,
+            "sign_roi": dict(self.last_sign_roi_status),
             "park_latched": bool(self.park_latched),
             "sign_detector_error": self._sign_error,
             "crosswalk_enabled": bool(getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)),
