@@ -10,6 +10,165 @@ function setConfigDialogOpen(id,open){
     const apply=modal.querySelector('button[id$="_apply"]');if(apply)apply.disabled=!STREAM_CONTROL_ALLOWED;
   }
 }
+
+const CROSSWALK_CHAIN_LIMIT=16;
+const CROSSWALK_CHAIN_ROUTES={
+  left:{key:'CITY_CROSSWALK_TURN_LEFT_SEQUENCE',label:'LEFT'},
+  straight:{key:'CITY_CROSSWALK_STRAIGHT_SEQUENCE',label:'STRAIGHT'},
+  right:{key:'CITY_CROSSWALK_TURN_RIGHT_SEQUENCE',label:'RIGHT'}
+};
+let maneuverCrosswalkChains={left:[],straight:[],right:[]};
+let maneuverActiveChainRoute='left';
+let maneuverEncoderPulseCm=0.4;
+let maneuverServoCenter=95;
+
+function crosswalkChainDefaultStep(){
+  return {direction:'f',distanceM:0.20,pwm:150,servo:maneuverServoCenter};
+}
+function crosswalkChainPulseCount(distanceM){
+  if(!Number.isFinite(maneuverEncoderPulseCm)||maneuverEncoderPulseCm<=0)throw new Error('ENCODER_PULSE_DISTANCE_CM must be a positive calibrated value.');
+  const count=Math.round(Number(distanceM)*100/maneuverEncoderPulseCm);
+  if(!Number.isFinite(count)||count<1||count>10000)throw new Error('This distance converts to an invalid pulse count (allowed: 1–10000).');
+  return count;
+}
+function parseCrosswalkChain(sequence){
+  const raw=String(sequence||'').trim();
+  if(!raw)return [crosswalkChainDefaultStep()];
+  const tokens=raw.split(/\s+/);
+  if(tokens.length%4!==0||tokens.length>64)throw new Error('Existing chain must contain up to 16 groups of four tokens.');
+  const steps=[];
+  for(let i=0;i<tokens.length;i+=4){
+    const direction=tokens[i].toLowerCase();
+    const pwm=Number(tokens[i+1]),pulses=Number(tokens[i+2]),servo=Number(tokens[i+3]);
+    if(!['f','b'].includes(direction)||![pwm,pulses,servo].every(Number.isInteger)||pwm<0||pwm>255||pulses<1||pulses>10000||servo<0||servo>180){
+      throw new Error('Invalid existing Arduino command group: '+tokens.slice(i,i+4).join(' '));
+    }
+    steps.push({direction:direction,distanceM:(pulses*maneuverEncoderPulseCm)/100,pwm:pwm,servo:servo});
+  }
+  return steps;
+}
+function serializeCrosswalkChain(route){
+  const steps=maneuverCrosswalkChains[route]||[];
+  if(!steps.length)throw new Error(CROSSWALK_CHAIN_ROUTES[route].label+' route needs at least one command step.');
+  if(steps.length>CROSSWALK_CHAIN_LIMIT)throw new Error('Firmware allows at most '+CROSSWALK_CHAIN_LIMIT+' command groups in one route.');
+  const builder=$('crosswalk_chain_builder');
+  const servoMin=Number(builder&&builder.dataset.servoMin)||0;
+  const servoMax=Number(builder&&builder.dataset.servoMax)||180;
+  const groups=steps.map(function(step,index){
+    const distance=Number(step.distanceM),pwm=Number(step.pwm),servo=Number(step.servo);
+    if(!['f','b'].includes(step.direction))throw new Error('Step '+(index+1)+': choose forward or reverse.');
+    if(!Number.isFinite(distance)||distance<0.05||distance>40)throw new Error('Step '+(index+1)+': distance must be between 0.05 and 40 metres.');
+    if(!Number.isInteger(pwm)||pwm<0||pwm>255)throw new Error('Step '+(index+1)+': PWM must be an integer from 0 to 255.');
+    if(!Number.isInteger(servo)||servo<servoMin||servo>servoMax)throw new Error('Step '+(index+1)+': servo command must be between '+servoMin+'° and '+servoMax+'° for this robot.');
+    const pulses=crosswalkChainPulseCount(distance);
+    return step.direction+' '+pwm+' '+pulses+' '+servo;
+  });
+  const sequence=groups.join(' ');
+  if(sequence.length>512)throw new Error(CROSSWALK_CHAIN_ROUTES[route].label+' route exceeds the 512-character Arduino sequence limit.');
+  return sequence;
+}
+function updateCrosswalkChainPreview(){
+  const route=maneuverActiveChainRoute;
+  const steps=maneuverCrosswalkChains[route]||[];
+  const count=$('crosswalk_chain_count');
+  const heading=$('crosswalk_chain_heading');
+  const preview=$('crosswalk_chain_preview');
+  const estimate=$('crosswalk_chain_estimate');
+  const add=$('crosswalk_chain_add');
+  if(count)count.textContent=steps.length+' / '+CROSSWALK_CHAIN_LIMIT+' steps';
+  if(heading)heading.textContent=CROSSWALK_CHAIN_ROUTES[route].label+' route · command chain';
+  if(add)add.disabled=!STREAM_CONTROL_ALLOWED||steps.length>=CROSSWALK_CHAIN_LIMIT;
+  if(preview){
+    try{preview.textContent=serializeCrosswalkChain(route);}
+    catch(error){preview.textContent='Configure a valid step to preview the Arduino command.';}
+  }
+  if(estimate){
+    try{
+      const pulseCounts=steps.map(function(step){return crosswalkChainPulseCount(Number(step.distanceM));});
+      const total=pulseCounts.reduce(function(sum,value){return sum+value;},0);
+      estimate.textContent=steps.length+' step(s) · '+total+' estimated encoder pulses at '+maneuverEncoderPulseCm.toFixed(4)+' cm/pulse. Actual travel depends on measured calibration, wheel slip and drivetrain response.';
+    }catch(error){estimate.textContent=error.message;}
+  }
+}
+function renderCrosswalkChainEditor(){
+  const host=$('crosswalk_chain_steps');
+  if(!host)return;
+  const builder=$('crosswalk_chain_builder');
+  const servoMin=Number(builder&&builder.dataset.servoMin)||0;
+  const servoMax=Number(builder&&builder.dataset.servoMax)||180;
+  host.replaceChildren();
+  Object.keys(CROSSWALK_CHAIN_ROUTES).forEach(function(route){
+    const tab=builder&&builder.querySelector('[data-chain-route="'+route+'"]');
+    if(tab){const active=route===maneuverActiveChainRoute;tab.classList.toggle('is-active',active);tab.setAttribute('aria-selected',active?'true':'false');tab.disabled=!STREAM_CONTROL_ALLOWED;}
+  });
+  (maneuverCrosswalkChains[maneuverActiveChainRoute]||[]).forEach(function(step,index){
+    const row=document.createElement('div');row.className='crosswalk-step-row';
+    const number=document.createElement('div');number.className='crosswalk-step-number';number.textContent='STEP '+(index+1);row.appendChild(number);
+    function addField(title,control){
+      const label=document.createElement('label');label.appendChild(document.createTextNode(title));label.appendChild(control);row.appendChild(label);
+    }
+    const direction=document.createElement('select');
+    [['f','Forward'],['b','Reverse']].forEach(function(option){const node=document.createElement('option');node.value=option[0];node.textContent=option[1];direction.appendChild(node);});
+    direction.value=step.direction;direction.disabled=!STREAM_CONTROL_ALLOWED;
+    direction.addEventListener('change',function(){step.direction=direction.value;updateCrosswalkChainPreview();});
+    addField('Direction',direction);
+
+    const distance=document.createElement('input');distance.type='number';distance.min='0.05';distance.max='40';distance.step='0.05';distance.value=Number(step.distanceM).toFixed(2);distance.disabled=!STREAM_CONTROL_ALLOWED;
+    const pulseHint=document.createElement('span');pulseHint.className='crosswalk-step-pulses';
+    function refreshPulseHint(){try{pulseHint.textContent='≈ '+crosswalkChainPulseCount(Number(distance.value))+' pulses';}catch(error){pulseHint.textContent='Pulse estimate unavailable';}}
+    distance.addEventListener('input',function(){step.distanceM=Number(distance.value);refreshPulseHint();updateCrosswalkChainPreview();});
+    refreshPulseHint();
+    const distanceWrap=document.createElement('div');distanceWrap.appendChild(distance);distanceWrap.appendChild(pulseHint);
+    addField('Distance (metres)',distanceWrap);
+
+    const speed=document.createElement('input');speed.type='number';speed.min='0';speed.max='255';speed.step='1';speed.value=String(step.pwm);speed.disabled=!STREAM_CONTROL_ALLOWED;
+    speed.addEventListener('input',function(){step.pwm=Number(speed.value);updateCrosswalkChainPreview();});
+    addField('Speed · PWM',speed);
+
+    const angle=document.createElement('input');angle.type='number';angle.min=String(servoMin);angle.max=String(servoMax);angle.step='1';angle.value=String(step.servo);angle.disabled=!STREAM_CONTROL_ALLOWED;
+    angle.addEventListener('input',function(){step.servo=Number(angle.value);updateCrosswalkChainPreview();});
+    addField('Servo angle · °',angle);
+
+    const remove=document.createElement('button');remove.type='button';remove.className='ghost crosswalk-step-remove';remove.textContent='Remove';remove.disabled=!STREAM_CONTROL_ALLOWED;
+    remove.addEventListener('click',function(){maneuverCrosswalkChains[maneuverActiveChainRoute].splice(index,1);renderCrosswalkChainEditor();});
+    row.appendChild(remove);
+    host.appendChild(row);
+  });
+  if(!(maneuverCrosswalkChains[maneuverActiveChainRoute]||[]).length){
+    const empty=document.createElement('p');empty.className='small-muted';empty.textContent='No steps yet. Add a command to build this route.';host.appendChild(empty);
+  }
+  updateCrosswalkChainPreview();
+}
+function initializeCrosswalkChains(advanced){
+  const builder=$('crosswalk_chain_builder');
+  if(!builder)return;
+  const calibration=Number(advanced.ENCODER_PULSE_DISTANCE_CM!=null?advanced.ENCODER_PULSE_DISTANCE_CM:builder.dataset.encoderPulseCm);
+  if(!Number.isFinite(calibration)||calibration<=0)throw new Error('A valid ENCODER_PULSE_DISTANCE_CM calibration is required before building metre-based routes.');
+  maneuverEncoderPulseCm=calibration;
+  maneuverServoCenter=Number(advanced.SERVO_CENTER==null?95:advanced.SERVO_CENTER);
+  const calibrationLabel=$('crosswalk_encoder_calibration');
+  if(calibrationLabel)calibrationLabel.textContent=maneuverEncoderPulseCm.toFixed(4)+' cm / pulse';
+  const metreCount=$('crosswalk_chain_builder').querySelector('.crosswalk-pulse-calibration .small-muted:last-child');
+  if(metreCount)metreCount.textContent='1 metre ≈ '+Math.round(100/maneuverEncoderPulseCm)+' pulses';
+  Object.keys(CROSSWALK_CHAIN_ROUTES).forEach(function(route){
+    const key=CROSSWALK_CHAIN_ROUTES[route].key;
+    const textarea=$(route==='left'?'maneuver_city_left':route==='right'?'maneuver_city_right':'maneuver_city_straight');
+    const sequence=advanced[key]||(textarea?textarea.value:'');
+    maneuverCrosswalkChains[route]=parseCrosswalkChain(sequence);
+  });
+  maneuverActiveChainRoute='left';
+  renderCrosswalkChainEditor();
+}
+function syncCrosswalkChainsToTextareas(body){
+  Object.keys(CROSSWALK_CHAIN_ROUTES).forEach(function(route){
+    const sequence=serializeCrosswalkChain(route);
+    const key=CROSSWALK_CHAIN_ROUTES[route].key;
+    const textarea=$(route==='left'?'maneuver_city_left':route==='right'?'maneuver_city_right':'maneuver_city_straight');
+    if(textarea)textarea.value=sequence;
+    body.advanced[key]=sequence;
+  });
+}
+
 async function openManeuverConfigDialog(){
   try{
     const fresh=await readConfig();currentConfig=jsonClone(fresh);
@@ -17,12 +176,10 @@ async function openManeuverConfigDialog(){
     [
       ['maneuver_obstacle_left','OBSTACLE_LANE_LEFT_SEQUENCE'],
       ['maneuver_obstacle_right','OBSTACLE_LANE_RIGHT_SEQUENCE'],
-      ['maneuver_city_right','CITY_CROSSWALK_TURN_RIGHT_SEQUENCE'],
-      ['maneuver_city_left','CITY_CROSSWALK_TURN_LEFT_SEQUENCE'],
-      ['maneuver_city_straight','CITY_CROSSWALK_STRAIGHT_SEQUENCE'],
       ['maneuver_crosswalk_vertical_min','CROSSWALK_VERTICAL_MIN_LINES'],
       ['maneuver_crosswalk_horizontal_min','CROSSWALK_HORIZONTAL_MIN_LINES']
     ].forEach(function(pair){const input=$(pair[0]);if(input&&a[pair[1]]!=null)input.value=String(a[pair[1]]);});
+    if(String(window.STREAM_BOOTSTRAP.mode||'').toLowerCase()==='city')initializeCrosswalkChains(a);
     setConfigDialogOpen('ext_maneuver_settings_dialog',true);
     const first=$('maneuver_obstacle_left');if(first&&!first.disabled)first.focus();
   }catch(error){showToast('Could not load maneuver configuration: '+error.message);}
@@ -36,17 +193,9 @@ async function saveManeuverConfigDialog(){
     ['maneuver_obstacle_left','OBSTACLE_LANE_LEFT_SEQUENCE'],
     ['maneuver_obstacle_right','OBSTACLE_LANE_RIGHT_SEQUENCE']
   ];
-  if(isCity)required.push(
-    ['maneuver_city_right','CITY_CROSSWALK_TURN_RIGHT_SEQUENCE'],
-    ['maneuver_city_left','CITY_CROSSWALK_TURN_LEFT_SEQUENCE'],
-    ['maneuver_city_straight','CITY_CROSSWALK_STRAIGHT_SEQUENCE']
-  );
-  required.forEach(function(pair){
-    const input=$(pair[0]);if(!input)return;
-    if(!input.value.trim())throw new Error(pair[1]+' cannot be empty.');
-    body.advanced[pair[1]]=input.value.trim();
-  });
   if(isCity){
+    syncCrosswalkChainsToTextareas(body);
+    body.advanced.ENCODER_PULSE_DISTANCE_CM=maneuverEncoderPulseCm;
     [['maneuver_crosswalk_vertical_min','CROSSWALK_VERTICAL_MIN_LINES'],['maneuver_crosswalk_horizontal_min','CROSSWALK_HORIZONTAL_MIN_LINES']].forEach(function(pair){
       const raw=$(pair[0]).value.trim();
       if(!raw)throw new Error(pair[1]+' is required.');
@@ -55,9 +204,14 @@ async function saveManeuverConfigDialog(){
       body.advanced[pair[1]]=value;
     });
   }
-  await applyFullConfig(body,isCity?'Updated City maneuvers and crosswalk thresholds':'Updated Race obstacle sequences',true);
+  required.forEach(function(pair){
+    const input=$(pair[0]);if(!input)return;
+    if(!input.value.trim())throw new Error(pair[1]+' cannot be empty.');
+    body.advanced[pair[1]]=input.value.trim();
+  });
+  await applyFullConfig(body,isCity?'Updated City crosswalk hardcode chains and thresholds':'Updated Race obstacle sequences',true);
   setConfigDialogOpen('ext_maneuver_settings_dialog',false);
-  showToast(isCity?'Saved to city.json. Arduino startup lane sequences are sent at the next robot initialization.':'Saved to race.json. Arduino startup lane sequences are sent at the next robot initialization.');
+  showToast(isCity?'Saved and applied to future City crosswalk detections. The robot never moves just because settings were saved.':'Saved to race.json. Arduino startup lane sequences are configured by the next robot initialization.');
 }
 async function applyServoCenter(){
   if(!STREAM_CONTROL_ALLOWED)throw new Error('Dashboard is read-only.');
@@ -176,6 +330,23 @@ function installExtension(){
   $('ext_export_annotations').onclick=function(){downloadText(JSON.stringify(extAnnotations,null,2),'roboy-'+String(window.STREAM_BOOTSTRAP.mode || 'mode').toLowerCase()+'-annotations.json','application/json');};
   $('ext_open_palette').onclick=openCommandPalette;
   $('ext_maneuver_settings_open').onclick=function(){openManeuverConfigDialog();};
+  const crosswalkBuilder=$('crosswalk_chain_builder');
+  if(crosswalkBuilder){
+    crosswalkBuilder.addEventListener('click',function(event){
+      const routeButton=event.target.closest('[data-chain-route]');
+      if(routeButton){
+        maneuverActiveChainRoute=routeButton.dataset.chainRoute;
+        renderCrosswalkChainEditor();
+        return;
+      }
+      if(event.target.closest('#crosswalk_chain_add')){
+        const chain=maneuverCrosswalkChains[maneuverActiveChainRoute]||[];
+        if(chain.length>=CROSSWALK_CHAIN_LIMIT){showToast('Arduino queue capacity is '+CROSSWALK_CHAIN_LIMIT+' steps per route.');return;}
+        chain.push(crosswalkChainDefaultStep());
+        renderCrosswalkChainEditor();
+      }
+    });
+  }
   $('ext_maneuver_settings_close').onclick=function(){setConfigDialogOpen('ext_maneuver_settings_dialog',false);};
   $('ext_maneuver_settings_cancel').onclick=function(){setConfigDialogOpen('ext_maneuver_settings_dialog',false);};
   $('ext_maneuver_settings_apply').onclick=function(){saveManeuverConfigDialog().catch(function(error){showToast('Could not save maneuver settings: '+error.message);});};
