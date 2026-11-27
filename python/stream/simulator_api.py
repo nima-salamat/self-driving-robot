@@ -298,6 +298,10 @@ def register_simulator_routes(app, streamer):
             return jsonify(success=False, message=str(exc)), 400
 
         runtime = getattr(streamer.config, "simulation_runtime", None)
+        if runtime is not None:
+            reset_deadlock = getattr(runtime, "reset_deadlock_state", None)
+            if callable(reset_deadlock):
+                reset_deadlock("Stream settings saved")
         sensor_angle_applied = False
         camera_mount_applied = False
         camera_patch = {key: saved[key] for key in CAMERA_MOUNT_KEYS if key in patch and key in saved}
