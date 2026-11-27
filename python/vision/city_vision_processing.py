@@ -397,7 +397,7 @@ class VisionProcessor:
         crosswalk = False
         cw_lines = []
 
-        if cw_frame is not None and simulator_backend != "avis":
+        if cw_frame is not None:
             if bool(getattr(conf, "CW_OLD_METHOD", CW_OLD_METHOD)):
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
@@ -446,6 +446,47 @@ class VisionProcessor:
                     _, ly0, _, ly1 = self._extract_line(lowest_horizontal_line)
                     if max(ly0, ly1) > crosswalk_pixel_dist:
                         crosswalk = True
+
+        crosswalk_color = "NONE"
+        crosswalk_geometry = None
+        if crosswalk and cw_lines:
+            detected_points = []
+            for detected_line in cw_lines:
+                try:
+                    x0, y0, x1, y1 = self._extract_line(detected_line)
+                    detected_points.extend(((x0, y0), (x1, y1)))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+            if detected_points:
+                points = np.asarray(detected_points, dtype=np.float32)
+                (center_x, center_y), radius = cv2.minEnclosingCircle(points)
+                hsv_crosswalk = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2HSV)
+                gray_crosswalk = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
+                _, bright_mask = cv2.threshold(
+                    gray_crosswalk, int(getattr(conf, "CROSSWALK_THRESHOLD", 150)),
+                    255, cv2.THRESH_BINARY,
+                )
+                mean_hue, mean_saturation, _mean_value, _ = cv2.mean(
+                    hsv_crosswalk, mask=bright_mask
+                ) if cv2.countNonZero(bright_mask) else (0.0, 0.0, 0.0, 0.0)
+                if mean_saturation < 55.0:
+                    crosswalk_color = "WHITE"
+                elif mean_hue <= 10.0 or mean_hue >= 170.0:
+                    crosswalk_color = "RED"
+                elif 15.0 <= mean_hue <= 38.0:
+                    crosswalk_color = "YELLOW"
+                elif 40.0 <= mean_hue <= 85.0:
+                    crosswalk_color = "GREEN"
+                elif 90.0 <= mean_hue <= 135.0:
+                    crosswalk_color = "BLUE"
+                else:
+                    crosswalk_color = "BRIGHT"
+                crosswalk_geometry = {
+                    "center": [float(center_x + cw_left), float(center_y + cw_top)],
+                    "radius": float(radius),
+                    "color": crosswalk_color,
+                    "point_count": len(detected_points),
+                }
 
         rl_x_mid = self._best_mid_x(
             rl_lines, rl_current_w, height * abs(conf.RL_BOTTOM_ROI - conf.RL_TOP_ROI),
@@ -944,6 +985,9 @@ class VisionProcessor:
                 "frame_center_x": float(frame_center),
                 "lane_center_offset_px": float(lane_center),
                 "lane_tracking": lane_tracking_result,
+                "crosswalk_detected": bool(crosswalk),
+                "crosswalk_color": crosswalk_color,
+                "crosswalk_geometry": crosswalk_geometry,
             }
             debug = {
                 "combined": debug_frame,
@@ -997,6 +1041,8 @@ class VisionProcessor:
             "lane_type": lane_type,
             "perception_valid": bool(perception_valid),
             "crosswalk": crosswalk,
+            "crosswalk_color": crosswalk_color,
+            "crosswalk_geometry": crosswalk_geometry,
             "debug": debug,
             "kp": kp
             ,"perception_quality": (float(lane_tracking_result["perception_quality"]) if lane_tracking_result is not None else min(1.0, 0.65 + (0.2 if lane_type == "both" else 0.0)))

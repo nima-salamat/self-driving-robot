@@ -119,6 +119,28 @@ class LaneDebugOverlayTests(unittest.TestCase):
         self.assertEqual(rendered.shape, frame.shape)
         self.assertGreater(np.count_nonzero(rendered), 0)
 
+    def test_classical_overlay_circles_detected_crosswalk_and_labels_color(self):
+        frame = np.zeros((120, 160, 3), dtype=np.uint8)
+        draw_data = {
+            "kind": "classical",
+            "frame_width": 160,
+            "frame_height": 120,
+            "roi_bounds": {"CW": (20, 35, 140, 115)},
+            "crosswalk_geometry": {
+                "center": [80.0, 76.0], "radius": 24.0, "color": "WHITE",
+            },
+            "line_offsets": {"CW": (20, 35)},
+            "lines": {"CW": None},
+        }
+        from unittest.mock import patch
+        with patch("visualization.lane_debug_overlay.cv2.circle") as circle, patch(
+            "visualization.lane_debug_overlay.cv2.putText"
+        ) as put_text:
+            render_lane_debug_overlay(frame, draw_data, self.config, steering_angle=None)
+
+        self.assertTrue(any(call.args[1] == (80, 76) for call in circle.call_args_list))
+        self.assertTrue(any("CROSSWALK · WHITE" in call.args[1] for call in put_text.call_args_list))
+
     def test_classical_overlay_skips_malformed_candidate_instead_of_crashing(self):
         frame = np.zeros((120, 160, 3), dtype=np.uint8)
         draw_data = {

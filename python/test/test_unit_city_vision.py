@@ -176,6 +176,41 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         self.assertEqual(result["line_tracking"]["left"]["search_roi"], list(expected_left))
         self.assertEqual(result["line_tracking"]["right"]["search_roi"], list(expected_right))
 
+    def test_avis_city_simulator_detects_crosswalk_and_returns_debug_geometry(self):
+        import modes.city.config_city as city_config
+        from unittest.mock import patch
+
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        frame[48:240, 32:288] = (255, 255, 255)
+        lines = np.asarray([
+            [[30, 15, 32, 170]], [[90, 15, 92, 170]], [[150, 15, 152, 170]],
+            [[10, 155, 245, 157]], [[10, 135, 245, 137]],
+        ], dtype=np.float32)
+        values = {
+            "SIMULATOR_BACKEND": "avis", "USE_BEV": False, "OLD_METHOD": False,
+            "CW_OLD_METHOD": True, "CROSSWALK_THRESHOLD": 120,
+            "CROSSWALK_VERTICAL_MIN_LINES": 2, "CROSSWALK_HORIZONTAL_MIN_LINES": 2,
+            "CW_TOP_ROI": 0.2, "CW_BOTTOM_ROI": 1.0,
+            "CW_LEFT_ROI": 0.1, "CW_RIGHT_ROI": 0.9,
+            "DEBUG": True, "STREAM": False, "HALL_LINE_TRACKING_ENABLED": False,
+        }
+        with patch.multiple(city_config, create=True, **values):
+            processor = VisionProcessor()
+            with patch.object(
+                processor._lsd, "detect",
+                return_value=(lines, None, None, None),
+            ):
+                result = processor.detect(frame)
+
+        self.assertTrue(result["crosswalk"])
+        self.assertEqual(result["crosswalk_color"], "WHITE")
+        self.assertIsNotNone(result["crosswalk_geometry"])
+        self.assertGreater(result["crosswalk_geometry"]["radius"], 0)
+        self.assertEqual(
+            result["debug"]["draw_data"]["crosswalk_geometry"],
+            result["crosswalk_geometry"],
+        )
+
     def test_debug_payload_is_none_when_debug_and_stream_are_disabled(self):
         import modes.city.config_city as city_config
         from unittest.mock import patch

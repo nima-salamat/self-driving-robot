@@ -84,6 +84,14 @@ def mode_capabilities(config: Any) -> dict[str, Any]:
         "supports_crosswalk": bool(base.get("supports_crosswalk", False) and
                                    not (simulation and lane_detector == "blsf-beta")
                                    and not (simulation and backend == "avis")),
+        # AVIS City exposes the shared crosswalk ROI for perception/debug
+        # tuning, but keeps generic crosswalk braking disabled. AVIS road-rule
+        # braking remains owned by its stop-line/traffic-light coordinator.
+        "supports_crosswalk_roi": bool(
+            base.get("supports_crosswalk", False)
+            and not (simulation and lane_detector == "blsf-beta")
+            and (not (simulation and backend == "avis") or profile == "city")
+        ),
         "bev": bool(getattr(config, "USE_BEV", False)),
         "sign_enabled": bool(getattr(config, "WITH_SIGN", False)),
         "apriltag_enabled": bool(getattr(config, "WITH_APRILTAG", False)),

@@ -1311,10 +1311,12 @@ class AVISCapabilityTests(unittest.TestCase):
         self.assertTrue(city["supports_stop_line"])
         self.assertTrue(city["supports_traffic_lights"])
         self.assertFalse(city["supports_crosswalk"])
+        self.assertTrue(city["supports_crosswalk_roi"])
         self.assertTrue(city["supports_obstacle_avoidance"])
         self.assertTrue(city["supports_sign_actions"])
         self.assertFalse(race["supports_stop_line"])
         self.assertFalse(race["supports_traffic_lights"])
+        self.assertFalse(race["supports_crosswalk_roi"])
         self.assertTrue(race["supports_obstacle_avoidance"])
         self.assertTrue(race["supports_sign_actions"])
         self.assertFalse(carla["supports_obstacle_avoidance"])
@@ -1328,8 +1330,8 @@ class AVISModeSettingsTests(unittest.TestCase):
             city_path = load_simulator_settings(config, "avis", "avis")
             self.assertTrue(config.SIMULATOR_STOP_LINE_ENABLED)
             self.assertTrue(config.SIMULATOR_TRAFFIC_LIGHTS_ENABLED)
-            # AVIS City uses the dedicated solid stop-line detector, not
-            # the generic simulator crosswalk-braking path.
+            # AVIS City exposes crosswalk perception/ROI debugging but keeps
+            # generic crosswalk braking separate from its stop-line/light gate.
             self.assertFalse(config.SIMULATOR_STOP_ON_CROSSWALK)
             self.assertTrue(config.SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED)
             self.assertFalse(config.SIMULATOR_SIGN_ACTIONS_ENABLED)

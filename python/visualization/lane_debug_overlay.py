@@ -434,6 +434,26 @@ def _draw_classical(canvas, data, config):
         else:
             cv2.rectangle(canvas, (left + 1, top), (right - 1, bottom), cw_color, 1)
 
+    crosswalk_geometry = data.get("crosswalk_geometry")
+    if isinstance(crosswalk_geometry, dict):
+        center = crosswalk_geometry.get("center")
+        try:
+            center_x, center_y = float(center[0]), float(center[1])
+            radius = float(crosswalk_geometry.get("radius", 0.0))
+            if all(np.isfinite(value) for value in (center_x, center_y, radius)) and radius > 0:
+                point = _scaled_point(center_x, center_y, sx, sy)
+                circle_radius = max(8, int(round(radius * min(sx, sy) * 1.08)))
+                cv2.circle(canvas, point, circle_radius, (0, 235, 255), 3, cv2.LINE_AA)
+                cv2.circle(canvas, point, 4, (255, 255, 255), -1, cv2.LINE_AA)
+                label = "CROSSWALK · " + str(crosswalk_geometry.get("color", "UNKNOWN"))
+                text_y = max(18, point[1] - circle_radius - 8)
+                cv2.putText(canvas, label, (max(4, point[0] - circle_radius), text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(canvas, label, (max(4, point[0] - circle_radius), text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 235, 255), 1, cv2.LINE_AA)
+        except (TypeError, ValueError, IndexError, OverflowError):
+            pass
+
     offsets = data.get("line_offsets") or {}
     line_sets = data.get("lines") or {}
     for key, color, thickness in (

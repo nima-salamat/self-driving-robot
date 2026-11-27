@@ -170,6 +170,7 @@ def register_simulator_routes(app, streamer):
                 "supports_obstacle_avoidance": bool(caps.get("supports_obstacle_avoidance")),
                 "supports_stop_line": bool(caps.get("supports_stop_line")),
                 "supports_traffic_lights": bool(caps.get("supports_traffic_lights")),
+                "supports_crosswalk_roi": bool(caps.get("supports_crosswalk_roi")),
                 "supports_sign_actions": bool(caps.get("supports_sign_actions")),
             },
         )
@@ -191,7 +192,9 @@ def register_simulator_routes(app, streamer):
         try:
             # Use the same type, range and backend-specific rules as profile
             # loading and saving; the API must not maintain a second schema.
-            patch = _validate_settings(patch, backend=backend)
+            patch = _validate_settings(
+                patch, backend=backend, mode=getattr(streamer.config, "MODE", "")
+            )
         except (TypeError, ValueError) as exc:
             return jsonify(success=False, message=str(exc)), 400
         caps = mode_capabilities(streamer.config)

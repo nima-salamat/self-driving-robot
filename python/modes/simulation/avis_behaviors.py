@@ -1353,6 +1353,8 @@ class AVISBehaviorCoordinator:
         self.stop_line_started_at = None
         self.traffic_light_hold = False
         self.last_light_color = None
+        self.last_stop_line_detection = {"detected": False, "confidence": 0.0, "bbox": None}
+        self.last_traffic_light_detections = []
         self.last_frame_token = None
         self.stop_sign_until = 0.0
         self.park_latched = False
@@ -1441,13 +1443,21 @@ class AVISBehaviorCoordinator:
         self.last_frame_token = token
 
         line_detected = False
+        self.last_stop_line_detection = {"detected": False, "confidence": 0.0, "bbox": None}
         if self.stop_line_detector is not None:
             try:
                 line_result = self.stop_line_detector.detect(frame.image)
                 line_detected = bool(line_result.get("detected"))
+                bbox = line_result.get("bbox")
+                self.last_stop_line_detection = {
+                    "detected": line_detected,
+                    "confidence": float(line_result.get("confidence", 0.0) or 0.0),
+                    "bbox": list(bbox) if isinstance(bbox, (list, tuple)) else None,
+                }
             except Exception:
                 logger.exception("AVIS stop-line detector failed; retaining any active stop")
                 line_detected = False
+                self.last_stop_line_detection = {"detected": False, "confidence": 0.0, "bbox": None}
 
         if self.stop_line_armed and self.stop_line_detector is not None:
             if line_detected:
@@ -1467,9 +1477,14 @@ class AVISBehaviorCoordinator:
         if self.traffic_detector is not None:
             try:
                 color, _debug = self.traffic_detector.detect(frame.image)
+                self.last_traffic_light_detections = [
+                    dict(item) for item in getattr(self.traffic_detector, "last_detections", [])
+                    if isinstance(item, dict)
+                ]
             except Exception:
                 logger.exception("AVIS traffic-light detector failed; treating signal as unknown")
                 color = None
+                self.last_traffic_light_detections = []
             self.last_light_color = color
             if color == "RED" and not self.traffic_light_hold:
                 self.traffic_light_hold = True
@@ -1564,10 +1579,12 @@ class AVISBehaviorCoordinator:
             "obstacle": self.obstacles.snapshot(),
             "approach_speed_control": self.approach_speed.snapshot(),
             "stop_line_enabled": self.stop_line_detector is not None,
+            "stop_line_detection": dict(self.last_stop_line_detection),
             "stop_line_waiting": bool(self.stop_line_waiting),
             "stop_line_armed": bool(self.stop_line_armed),
             "traffic_light_enabled": self.traffic_detector is not None,
             "traffic_light": self.last_light_color,
+            "traffic_light_detections": [dict(item) for item in self.last_traffic_light_detections],
             "traffic_light_hold": bool(self.traffic_light_hold),
             "sign_enabled": self.sign_detector is not None,
             "sign_label": self.last_sign_label,

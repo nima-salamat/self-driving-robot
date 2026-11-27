@@ -20,6 +20,82 @@ from visualization.lane_debug_overlay import render_lane_debug_overlay
 logger = logging.getLogger(__name__)
 
 
+def _draw_avis_road_rule_debug(image, perception, *, frame_source="camera"):
+    """Draw City crosswalk, traffic-light and stop-line diagnostics on a preview copy."""
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return image
+    perception = perception if isinstance(perception, dict) else {}
+    behavior = perception.get("simulation_behavior")
+    behavior = behavior if isinstance(behavior, dict) else {}
+
+    if frame_source == "camera":
+        for detection in behavior.get("traffic_light_detections", []):
+            if not isinstance(detection, dict):
+                continue
+            center = detection.get("center")
+            try:
+                x, y = int(round(float(center[0]))), int(round(float(center[1])))
+                radius = max(6, int(round(float(detection.get("radius", 6.0)) + 5)))
+                if not (0 <= x < image.shape[1] and 0 <= y < image.shape[0]):
+                    continue
+            except (TypeError, ValueError, IndexError, OverflowError):
+                continue
+            color_name = str(detection.get("color", "UNKNOWN")).upper()
+            color = (0, 0, 255) if color_name == "RED" else (0, 255, 0) if color_name == "GREEN" else (0, 210, 255)
+            cv2.circle(image, (x, y), radius, color, 2, cv2.LINE_AA)
+            cv2.circle(image, (x, y), 3, color, -1, cv2.LINE_AA)
+            cv2.putText(image, color_name, (max(4, x + radius + 3), max(16, y)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA)
+
+        stop_line = behavior.get("stop_line_detection")
+        if isinstance(stop_line, dict) and stop_line.get("detected"):
+            bbox = stop_line.get("bbox")
+            try:
+                x, y, width, height = [int(round(float(value))) for value in bbox]
+                if width > 0 and height > 0:
+                    center = (x + width // 2, y + height // 2)
+                    radius = max(10, int(round(math.hypot(width, height) * 0.58)))
+                    cv2.circle(image, center, radius, (0, 165, 255), 2, cv2.LINE_AA)
+                    cv2.rectangle(image, (x, y), (x + width, y + height), (0, 165, 255), 1, cv2.LINE_AA)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                pass
+
+    crosswalk = bool(perception.get("crosswalk"))
+    crosswalk_color = str(perception.get("crosswalk_color") or "UNKNOWN").upper()
+    crosswalk_label = (
+        "CROSSWALK: " + crosswalk_color + " · DETECTED"
+        if crosswalk else "CROSSWALK: NOT DETECTED"
+    )
+    traffic_enabled = bool(behavior.get("traffic_light_enabled", False))
+    traffic_color = str(behavior.get("traffic_light") or "UNKNOWN").upper()
+    traffic_label = (
+        "TRAFFIC LIGHT: " + traffic_color
+        if traffic_enabled else "TRAFFIC LIGHT: DISABLED"
+    )
+    stop_line_enabled = bool(behavior.get("stop_line_enabled", False))
+    stop_line_detected = bool(
+        isinstance(behavior.get("stop_line_detection"), dict)
+        and behavior["stop_line_detection"].get("detected")
+    )
+    stop_label = (
+        "STOP LINE: " + ("DETECTED" if stop_line_detected else "CLEAR")
+        if stop_line_enabled else "STOP LINE: DISABLED"
+    )
+    rows = (
+        (crosswalk_label, (0, 235, 255) if crosswalk else (190, 190, 190)),
+        (traffic_label, (0, 0, 255) if traffic_color == "RED" else (0, 255, 0) if traffic_color == "GREEN" else (190, 190, 190)),
+        (stop_label, (0, 165, 255) if stop_line_detected else (190, 190, 190)),
+    )
+    y = 98
+    for label, color in rows:
+        cv2.putText(image, label, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                    (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(image, label, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                    color, 1, cv2.LINE_AA)
+        y += 23
+    return image
+
+
 def _apply_forward_range_guard(command, ranges, *, backend, stop_distance_cm):
     """Apply the independent forward-range safety guard.
 
@@ -261,7 +337,11 @@ class SimulationRuntime:
                     (12, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 220, 255), 1, cv2.LINE_AA)
         cv2.putText(display, f"Steer: {command.servo_angle:.1f}  Speed: {sensor_frame.speed_kmh:.1f} km/h",
                     (12, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 220, 255), 1, cv2.LINE_AA)
-        if perception.get("crosswalk"):
+        if self.backend == "avis":
+            display = _draw_avis_road_rule_debug(
+                display, perception, frame_source=frame_source
+            )
+        elif perception.get("crosswalk"):
             cv2.putText(display, "CROSSWALK DETECTED", (12, 94),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 255), 2, cv2.LINE_AA)
         with self.frame_lock:

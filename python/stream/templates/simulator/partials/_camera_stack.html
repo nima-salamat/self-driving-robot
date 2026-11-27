@@ -55,7 +55,7 @@
             <button type="button" data-sim-roi-select="ML">ML · Left maneuver</button>
             <button type="button" data-sim-roi-select="MR">MR · Right maneuver</button>
             {% endif %}
-            {% if caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
+            {% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
             {% if caps.supports_stop_line %}<button type="button" data-sim-roi-select="SL">SL · Stop line</button>{% endif %}
             {% if caps.supports_traffic_lights %}<button type="button" data-sim-roi-select="TL">TL · Traffic light</button>{% endif %}
             {% if caps.supports_bev %}<button type="button" data-sim-roi-select="BEV">BEV · Source area</button>{% endif %}
@@ -72,7 +72,7 @@
             <label><input type="checkbox" data-sim-roi-visible="ML" checked> ML</label>
             <label><input type="checkbox" data-sim-roi-visible="MR" checked> MR</label>
             {% endif %}
-            {% if caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
+            {% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
             {% if caps.supports_stop_line %}<label><input type="checkbox" data-sim-roi-visible="SL" checked> SL</label>{% endif %}
             {% if caps.supports_traffic_lights %}<label><input type="checkbox" data-sim-roi-visible="TL" checked> TL</label>{% endif %}
             {% if caps.supports_bev %}<label><input type="checkbox" data-sim-roi-visible="BEV" checked> BEV</label>{% endif %}
@@ -140,7 +140,7 @@
           <div class="sim-roi-selectors">
             <button type="button" data-sim-roi-select="RL" class="active">RL · Right lane</button>
             <button type="button" data-sim-roi-select="LL">LL · Left lane</button>
-            {% if caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
+            {% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}<button type="button" data-sim-roi-select="CW">CW · Crosswalk</button>{% endif %}
             {% if caps.supports_stop_line %}<button type="button" data-sim-roi-select="SL">SL · Stop line</button>{% endif %}
             {% if caps.supports_traffic_lights %}<button type="button" data-sim-roi-select="TL">TL · Traffic light</button>{% endif %}
           </div>
@@ -152,7 +152,7 @@
             <label><input type="checkbox" id="sim-roi-overlay-toggle" checked> Show ROI overlays</label>
             <label><input type="checkbox" data-sim-roi-visible="RL" checked> RL</label>
             <label><input type="checkbox" data-sim-roi-visible="LL" checked> LL</label>
-            {% if caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
+            {% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}<label><input type="checkbox" data-sim-roi-visible="CW" checked> CW</label>{% endif %}
             {% if caps.supports_stop_line %}<label><input type="checkbox" data-sim-roi-visible="SL" checked> SL</label>{% endif %}
             {% if caps.supports_traffic_lights %}<label><input type="checkbox" data-sim-roi-visible="TL" checked> TL</label>{% endif %}
           </div>

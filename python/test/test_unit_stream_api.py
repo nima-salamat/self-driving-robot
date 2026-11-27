@@ -66,6 +66,7 @@ class StreamApiTests(unittest.TestCase):
         config = self.make_config()
         config.MODE = "avis"
         config.SIMULATOR_BACKEND = "avis"
+        config.CITY_LANE_DETECTOR = "default"
         config.BASE_DIR = self._stream_test_directory.name
         config.STREAM_ALLOW_CONTROL = True
         load_simulator_settings(config, "avis", "avis")
@@ -93,6 +94,29 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(config.ML_RIGHT_ROI, 0.46)
         self.assertEqual(config.MR_LEFT_ROI, 0.55)
         self.assertEqual(config.MR_RIGHT_ROI, 0.96)
+
+        capabilities = client.get("/api/simulation/settings").get_json()["capabilities"]
+        self.assertTrue(capabilities["supports_crosswalk_roi"])
+        overlay_response = client.post(
+            "/api/simulation/settings",
+            json={"settings": {
+                "CW_TOP_ROI": 0.62, "CW_BOTTOM_ROI": 0.96,
+                "CW_LEFT_ROI": 0.12, "CW_RIGHT_ROI": 0.88,
+                "TL_TOP_ROI": 0.04, "TL_BOTTOM_ROI": 0.48,
+                "TL_LEFT_ROI": 0.31, "TL_RIGHT_ROI": 0.69,
+                "SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 0.5,
+            }},
+        )
+        self.assertEqual(overlay_response.status_code, 200, overlay_response.get_json())
+        self.assertTrue(overlay_response.get_json()["success"])
+        verified = client.get("/api/simulation/settings").get_json()["settings"]
+        self.assertEqual(verified["CW_TOP_ROI"], 0.62)
+        self.assertEqual(verified["CW_RIGHT_ROI"], 0.88)
+        self.assertEqual(verified["TL_TOP_ROI"], 0.04)
+        self.assertEqual(verified["TL_RIGHT_ROI"], 0.69)
+        self.assertEqual(verified["SIMULATOR_OBSTACLE_THROTTLE_LIMIT"], 0.5)
+        self.assertEqual(config.CW_TOP_ROI, 0.62)
+        self.assertEqual(config.TL_TOP_ROI, 0.04)
 
     def test_roi_updates_reject_inverted_rectangles_before_mutation(self):
         config = self.make_config()

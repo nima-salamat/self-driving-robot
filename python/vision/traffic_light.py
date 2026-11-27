@@ -12,11 +12,15 @@ logger = logging.getLogger(__name__)
 class TrafficLightDetector:
     def __init__(self, config=None):
         self.config = config
+        self.last_detections = []
+        self.last_roi = None
 
     def _get(self, key, default):
         return getattr(self.config or config_city, key, default)
 
     def detect(self, frame):
+        self.last_detections = []
+        self.last_roi = None
         if not isinstance(frame, np.ndarray) or frame.size == 0 or frame.ndim != 3 or frame.shape[2] != 3:
             return None, None
         height, width = frame.shape[:2]
@@ -37,6 +41,7 @@ class TrafficLightDetector:
         crop = frame[y1:y2, x1:x2]
         if crop.size == 0:
             return None, None
+        self.last_roi = [int(x1), int(y1), int(x2), int(y2)]
         debug = crop.copy() if self._get("DEBUG", False) else None
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         min_sat = int(self._get("TL_MIN_SATURATION", 50))
@@ -95,9 +100,18 @@ class TrafficLightDetector:
                 evidence[color_name] = max(candidates, key=lambda item: item[0])
         # Conflicting red/green regions are ambiguous, never a permission to move.
         color = next(iter(evidence)) if len(evidence) == 1 else None
-        if debug is not None:
-            for name, (_, value, contour) in evidence.items():
-                (cx, cy), radius = cv2.minEnclosingCircle(contour)
+        for name, (area, value, contour) in evidence.items():
+            (cx, cy), radius = cv2.minEnclosingCircle(contour)
+            bx, by, bw, bh = cv2.boundingRect(contour)
+            self.last_detections.append({
+                "color": name,
+                "center": [float(cx + x1), float(cy + y1)],
+                "radius": float(radius),
+                "bbox": [int(bx + x1), int(by + y1), int(bw), int(bh)],
+                "area": float(area),
+                "brightness": float(value),
+            })
+            if debug is not None:
                 cv2.circle(debug, (int(cx), int(cy)), max(1, int(radius)), (0, 255, 255), 2)
                 cv2.putText(debug, f"{name} V={value:.0f}", (int(cx), max(12, int(cy) - 8)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)

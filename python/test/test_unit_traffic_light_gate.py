@@ -35,6 +35,17 @@ class TrafficLightDetectorTests(unittest.TestCase):
         self.assertEqual(self.detector.detect(self.frame((0, 0, 255)))[0], "RED")
         self.assertEqual(self.detector.detect(self.frame((0, 255, 0)))[0], "GREEN")
 
+    def test_detections_expose_full_frame_circle_geometry(self):
+        color, _debug = self.detector.detect(self.frame((0, 0, 255)))
+
+        self.assertEqual(color, "RED")
+        self.assertEqual(len(self.detector.last_detections), 1)
+        detection = self.detector.last_detections[0]
+        self.assertEqual(detection["color"], "RED")
+        self.assertEqual(detection["center"], [50.0, 50.0])
+        self.assertGreater(detection["radius"], 10.0)
+        self.assertEqual(self.detector.last_roi, [0, 0, 100, 100])
+
     def test_no_signal_and_dim_signal_are_unknown(self):
         self.assertIsNone(self.detector.detect(np.zeros((100, 100, 3), np.uint8))[0])
         self.assertIsNone(self.detector.detect(self.frame((0, 0, 70)))[0])

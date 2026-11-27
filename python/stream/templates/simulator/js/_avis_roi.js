@@ -9,7 +9,7 @@ const simRoiDefs = [
   {id:"SL",label:"Stop line",color:"#ffb45d",fields:{top:"sl-top",bottom:"sl-bottom",left:"sl-left",right:"sl-right"}},
   {id:"TL",label:"Traffic light",color:"#ff6685",fields:{top:"tl-top",bottom:"tl-bottom",left:"tl-left",right:"tl-right"}}
 ].filter(function(item){
-  return (item.id!=="CW"||caps.supports_crosswalk)
+  return (item.id!=="CW"||caps.supports_crosswalk_roi||caps.supports_crosswalk)
     &&(item.id!=="SL"||caps.supports_stop_line)
     &&(item.id!=="TL"||caps.supports_traffic_lights);
 });
@@ -545,7 +545,28 @@ function bindSimRoiEditor(){
   simRoiCanvas.addEventListener("pointermove",simRoiPointerMove);
   simRoiCanvas.addEventListener("pointerup",simRoiPointerUp);
   simRoiCanvas.addEventListener("pointercancel",simRoiPointerUp);
+  simRoiCanvas.addEventListener("lostpointercapture",simRoiPointerUp);
   window.addEventListener("resize",fitSimulatorCameraFrame);camera.addEventListener("load",fitSimulatorCameraFrame);
+  document.addEventListener("visibilitychange",function(){
+    if(document.hidden&&simRoiSaveTimer!==null){
+      clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;
+      saveSimRoiSettings();
+    }
+  });
+  window.addEventListener("pagehide",function(){
+    const pending=simRoiSaveTimer!==null||simRoiSaveQueued;
+    if(simRoiSaveTimer!==null){clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;}
+    if(!pending||!simRoiControlsEnabled)return;
+    const collected=simRoiCollectSettings();
+    if(collected.error)return;
+    // Submit the last drag position even when navigation closes the editor
+    // before the debounce timer or normal verification request can finish.
+    fetch("/api/simulation/settings",{
+      method:"POST",cache:"no-store",credentials:"same-origin",keepalive:true,
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body:JSON.stringify({settings:collected.settings})
+    }).catch(function(){});
+  });
   simRoiUpdateSelection();fitSimulatorCameraFrame();
 }
 bindSimRoiEditor();
