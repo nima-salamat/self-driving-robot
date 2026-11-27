@@ -728,6 +728,14 @@ class SimulationRuntime:
                 "simulation process before enabling motion."
             )
         enabled = bool(enabled)
+        if (
+            enabled
+            and self.avis_behaviors is not None
+            and self.avis_behaviors.stop_sign_latched
+        ):
+            raise RuntimeError(
+                "AVIS STOP-sign safety latch is active. Restart the simulator runtime/server before starting again."
+            )
         self.reset_deadlock_state(
             "explicit Stream Start" if enabled else "explicit Stream Stop",
             brake_if_active=True,
@@ -1133,6 +1141,12 @@ class SimulationRuntime:
                         self.avis_behaviors is not None
                         and self.avis_behaviors.stop_sign_latched
                     )
+                    if stop_sign_latched and self._run_enabled:
+                        self._run_enabled = False
+                        self._record_event(
+                            "warning",
+                            "AVIS STOP-sign latch activated; autonomous run disarmed until simulator runtime reset.",
+                        )
                     hardcode_active = bool(
                         self.avis_behaviors is not None
                         and self.avis_behaviors.hardcode_route_active()
@@ -1240,6 +1254,12 @@ class SimulationRuntime:
                             now=now,
                         )
                         stop_sign_latched = bool(self.avis_behaviors.stop_sign_latched)
+                        if stop_sign_latched and self._run_enabled:
+                            self._run_enabled = False
+                            self._record_event(
+                                "warning",
+                                "AVIS STOP-sign latch activated; autonomous run disarmed until simulator runtime reset.",
+                            )
                         hardcode_cycle = bool(
                             not stop_sign_latched
                             and (
