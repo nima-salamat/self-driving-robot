@@ -17,7 +17,10 @@ SIMULATOR_KEYS = {
     "SIMULATOR_THROTTLE_LIMIT", "SIMULATOR_STEERING_LIMIT",
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "SIMULATOR_STOP_ON_LOST_LANE",
-    "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+    "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_CROSSWALK_HARDCODE_ENABLED",
+    "SIMULATOR_CROSSWALK_CONFIRM_FRAMES", "SIMULATOR_CROSSWALK_DWELL_SECONDS",
+    "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS", "SIMULATOR_CROSSWALK_ROUTE_CHAINS",
+    "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH", "SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED",
@@ -110,7 +113,8 @@ INT_KEYS = {
     "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", "CROSSWALK_MIN_LINE_LENGTH_PX",
     "HALL_LINE_TRACKING_MAX_MISSED",
     "HALL_LINE_TRACKING_REACQUIRE_FRAMES", "SIMULATOR_STOP_LINE_THRESHOLD",
-    "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_SIGN_SCAN_INTERVAL",
+    "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_CROSSWALK_CONFIRM_FRAMES",
+    "SIMULATOR_SIGN_SCAN_INTERVAL",
     "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
     "SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_SAMPLE_COUNT",
@@ -121,6 +125,7 @@ INT_KEYS = {
 STRING_KEYS = {
     "SIMULATOR_HOST", "SIMULATOR_VEHICLE_FILTER", "SIMULATOR_VEHICLE_BLUEPRINT",
     "SIMULATOR_MAP", "CITY_LANE_DETECTOR", "ML_LANE_MODEL", "LANE_ROI_MODE", "SERVO_DIRECTION",
+    "SIMULATOR_CROSSWALK_ROUTE_CHAINS",
 }
 POSITIVE_KEYS = {
     "SIMULATOR_TIMEOUT_S", "SIMULATOR_LIDAR_RANGE_M",
@@ -129,7 +134,8 @@ POSITIVE_KEYS = {
     "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_WAIT_SECONDS",
     "SIMULATOR_OBSTACLE_DIRECT_STEERING_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_SIDE_CLEARANCE_CM", "SIMULATOR_STOP_LINE_MIN_AREA",
-    "SIMULATOR_STOP_LINE_DWELL_SECONDS", "TL_MIN_CONTOUR_AREA",
+    "SIMULATOR_STOP_LINE_DWELL_SECONDS", "SIMULATOR_CROSSWALK_DWELL_SECONDS",
+    "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS", "TL_MIN_CONTOUR_AREA",
     "SIMULATOR_LIDAR_ROTATION_FREQUENCY", "SIMULATOR_CAMERA_FOV",
     "SIMULATOR_STEERING_RATE", "SIMULATOR_THROTTLE_RISE_RATE",
     "ENCODER_PULSE_DISTANCE_CM", "CAMERA_HEIGHT", "LANE_WIDTH",
@@ -250,6 +256,11 @@ def _defaults(mode, backend):
         "BEV_SRC_BL_X": 0.00, "BEV_SRC_BL_Y": 1.00,
         "SIMULATOR_STOP_ON_LOST_LANE": True,
         "SIMULATOR_STOP_ON_CROSSWALK": mode != "avis-race" and backend != "avis",
+        "SIMULATOR_CROSSWALK_HARDCODE_ENABLED": avis and mode == "avis",
+        "SIMULATOR_CROSSWALK_CONFIRM_FRAMES": 3,
+        "SIMULATOR_CROSSWALK_DWELL_SECONDS": 3.0,
+        "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS": 15.0,
+        "SIMULATOR_CROSSWALK_ROUTE_CHAINS": '{"left":[],"straight":[],"right":[]}',
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 60.0 if avis else 35.0,
         # AVIS enables range-based bypass by default; an independent fail-safe
         # forward guard brakes whenever its front reading is missing or unsafe.
@@ -380,6 +391,38 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
             if key == "SERVO_DIRECTION" and value not in {"ltr", "rtl"}:
                 raise ValueError("SERVO_DIRECTION must be ltr or rtl")
+            if key == "SIMULATOR_CROSSWALK_ROUTE_CHAINS":
+                try:
+                    routes = json.loads(value)
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise ValueError("SIMULATOR_CROSSWALK_ROUTE_CHAINS must be valid JSON") from exc
+                if not isinstance(routes, dict):
+                    raise ValueError("crosswalk route chains must be a JSON object")
+                normalized_routes = {}
+                for route_name in ("left", "straight", "right"):
+                    route_steps = routes.get(route_name, [])
+                    if not isinstance(route_steps, list) or len(route_steps) > 16:
+                        raise ValueError(route_name + " crosswalk route must contain 0 to 16 steps")
+                    normalized_steps = []
+                    for index, step in enumerate(route_steps):
+                        if not isinstance(step, dict):
+                            raise ValueError(route_name + " step " + str(index + 1) + " must be an object")
+                        direction = str(step.get("direction", "")).lower()
+                        distance, speed, steering = step.get("distance_m"), step.get("speed_percent"), step.get("steering_percent")
+                        if direction not in {"forward", "reverse"}:
+                            raise ValueError(route_name + " step " + str(index + 1) + " direction must be forward or reverse")
+                        if any(isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(float(item)) for item in (distance, speed, steering)):
+                            raise ValueError(route_name + " step " + str(index + 1) + " values must be finite numbers")
+                        distance, speed, steering = float(distance), int(speed), int(steering)
+                        if not 0.05 <= distance <= 40:
+                            raise ValueError(route_name + " step " + str(index + 1) + " distance must be 0.05 to 40 metres")
+                        if not 1 <= speed <= 100:
+                            raise ValueError(route_name + " step " + str(index + 1) + " speed must be 1 to 100 percent")
+                        if not -100 <= steering <= 100:
+                            raise ValueError(route_name + " step " + str(index + 1) + " steering must be -100 to 100 percent")
+                        normalized_steps.append({"direction": direction, "distance_m": distance, "speed_percent": speed, "steering_percent": steering})
+                    normalized_routes[route_name] = normalized_steps
+                value = json.dumps(normalized_routes, separators=(",", ":"))
         elif key in INT_KEYS:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError(f"{key} must be an integer")
@@ -425,6 +468,8 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("SIMULATOR_STOP_LINE_CONFIRM_FRAMES must be between 1 and 20")
             if key == "SIMULATOR_SIGN_SCAN_INTERVAL" and not 1 <= value <= 120:
                 raise ValueError("SIMULATOR_SIGN_SCAN_INTERVAL must be between 1 and 120")
+            if key == "SIMULATOR_CROSSWALK_CONFIRM_FRAMES" and not 1 <= value <= 20:
+                raise ValueError("SIMULATOR_CROSSWALK_CONFIRM_FRAMES must be between 1 and 20")
             if key == "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES" and not 1 <= value <= 10:
                 raise ValueError("SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES must be between 1 and 10")
             if key == "SIMULATOR_OBSTACLE_CLEAR_CONFIRM_FRAMES" and not 1 <= value <= 20:
@@ -523,6 +568,10 @@ def _validate_settings(data, backend=None, mode=None):
                     )
             if key == "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG" and not 1 <= value <= 45:
                 raise ValueError("SIMULATOR_STOP_LINE_MAX_ANGLE_DEG must be between 1 and 45 degrees")
+            if key == "SIMULATOR_CROSSWALK_DWELL_SECONDS" and not 0.1 <= value <= 30:
+                raise ValueError("SIMULATOR_CROSSWALK_DWELL_SECONDS must be between 0.1 and 30 seconds")
+            if key == "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS" and not 1 <= value <= 120:
+                raise ValueError("SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS must be between 1 and 120 seconds")
             if key == "CROSSWALK_MIN_LINE_LENGTH_RATIO" and not 0.01 <= value <= 1:
                 raise ValueError("CROSSWALK_MIN_LINE_LENGTH_RATIO must be between 0.01 and 1")
             if key == "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO" and not 0 <= value <= 1:
@@ -592,6 +641,12 @@ def _validate_settings(data, backend=None, mode=None):
             raise ValueError("TL_RED_HUE_WRAP_MIN must exceed TL_RED_HUE_MAX")
     if "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO" in clean and not 0 < clean["SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO"] <= 1:
         raise ValueError("SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO must be greater than 0 and at most 1")
+    if "SIMULATOR_CROSSWALK_HARDCODE_ENABLED" in clean and clean["SIMULATOR_CROSSWALK_HARDCODE_ENABLED"] and not avis_city_mode:
+        raise ValueError("crosswalk hardcode routes are available only for AVIS City")
+    if "SIMULATOR_CROSSWALK_ROUTE_CHAINS" in clean and not avis_city_mode:
+        route_data = json.loads(clean["SIMULATOR_CROSSWALK_ROUTE_CHAINS"])
+        if any(route_data.get(name) for name in ("left", "straight", "right")):
+            raise ValueError("crosswalk hardcode routes are available only for AVIS City")
     if "SIMULATOR_TL_CONFIRMATION_WINDOW" in clean and "SIMULATOR_TL_GREEN_REQUIRED" in clean:
         if clean["SIMULATOR_TL_GREEN_REQUIRED"] > clean["SIMULATOR_TL_CONFIRMATION_WINDOW"]:
             raise ValueError("SIMULATOR_TL_GREEN_REQUIRED cannot exceed SIMULATOR_TL_CONFIRMATION_WINDOW")

@@ -409,7 +409,7 @@ class AvisAdapter(SimulatorAdapter):
             normalized_steering = max(-1.0, min(1.0, normalized_steering))
             steering = int(round(normalized_steering * 100.0))
             speed = 0 if float(command.brake) >= 0.5 else max(
-                0, min(100, int(round(float(command.throttle) * 100.0)))
+                -100, min(100, int(round(float(command.throttle) * 100.0)))
             )
             try:
                 # Prefer one packet containing both values. Sending steering

@@ -5,6 +5,7 @@ uses short, bounded steering nudges rather than pretending those readings form
 a full free-space map. It never overrides a stop, a red/unknown traffic-light
 hold, or invalid lane perception.
 """
+import json
 import logging
 import math
 import time
@@ -89,6 +90,8 @@ class AVISObstacleApproachSpeedController:
 
     def apply(self, frame, command, *, now=None):
         now = time.monotonic() if now is None else float(now)
+        if str(getattr(command, "reason", "")).startswith("crosswalk hardcode"):
+            return command
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
         ranges = ranges if isinstance(ranges, dict) else {}
         readings = {}
@@ -526,6 +529,182 @@ class RangeObstacleAvoidance:
             return True
         self._handoff_missed_frames += 1
         return self._handoff_missed_frames <= 2
+
+    def _crosswalk_route_for_latest_sign(self):
+        label = str(self.last_sign_label or "").strip().upper()
+        if label in {"TURN LEFT", "LEFT"}:
+            return "left"
+        if label in {"TURN RIGHT", "RIGHT"}:
+            return "right"
+        return "straight"
+
+    def _observe_crosswalk(self, perception, now):
+        """Debounce one City crosswalk and latch it until its route clears."""
+        if not self.is_city or not bool(
+            getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)
+        ):
+            self.crosswalk_detect_count = 0
+            return
+        detected = bool((perception or {}).get("crosswalk", False))
+        if not detected:
+            self.crosswalk_detect_count = 0
+            if self.crosswalk_latched and self.crosswalk_state in {"completed", "blocked"}:
+                self.crosswalk_absent_count += 1
+                if self.crosswalk_absent_count >= 8:
+                    logger.info("AVIS City crosswalk cleared; releasing route latch (%s)", self.crosswalk_route_name)
+                    self.crosswalk_state = "idle"
+                    self.crosswalk_latched = False
+                    self.crosswalk_started_at = None
+                    self.crosswalk_route_name = None
+                    self.crosswalk_route_sign = None
+                    self.crosswalk_steps = []
+                    self.crosswalk_step_index = 0
+                    self.crosswalk_step_progress_cm = 0.0
+                    self.crosswalk_step_started_at = None
+                    self.crosswalk_reason = "crosswalk hardcode idle"
+                    self.crosswalk_absent_count = 0
+            return
+        self.crosswalk_absent_count = 0
+        if self.crosswalk_latched:
+            return
+        self.crosswalk_detect_count += 1
+        required = max(1, min(20, int(getattr(self.config, "SIMULATOR_CROSSWALK_CONFIRM_FRAMES", 3))))
+        if self.crosswalk_detect_count < required:
+            return
+
+        self.crosswalk_latched = True
+        self.crosswalk_state = "holding"
+        self.crosswalk_started_at = now
+        self.crosswalk_route_sign = str(self.last_sign_label or "NO DIRECTION SIGN")
+        self.crosswalk_route_name = self._crosswalk_route_for_latest_sign()
+        self.crosswalk_step_index = 0
+        self.crosswalk_step_progress_cm = 0.0
+        self.crosswalk_step_started_at = None
+        self.crosswalk_reason = "crosswalk hardcode holding before route"
+        try:
+            route_data = json.loads(str(getattr(
+                self.config, "SIMULATOR_CROSSWALK_ROUTE_CHAINS",
+                '{"left":[],"straight":[],"right":[]}',
+            )))
+            route_steps = route_data.get(self.crosswalk_route_name, [])
+            self.crosswalk_steps = list(route_steps) if isinstance(route_steps, list) else []
+        except (TypeError, ValueError, json.JSONDecodeError):
+            self.crosswalk_steps = []
+            self.crosswalk_reason = "crosswalk hardcode blocked: invalid route configuration"
+        logger.warning(
+            "AVIS City crosswalk confirmed (%d frames); stop %.1fs; latest sign=%s; route=%s; steps=%d",
+            required, float(getattr(self.config, "SIMULATOR_CROSSWALK_DWELL_SECONDS", 3.0)),
+            self.crosswalk_route_sign, self.crosswalk_route_name, len(self.crosswalk_steps),
+        )
+
+    def _crosswalk_route_command(self, command, distance_delta_cm, now):
+        """Return a fail-closed stop or one distance-bounded AVIS route step."""
+        if not self.crosswalk_latched or self.crosswalk_state == "completed":
+            return None
+        if self.crosswalk_state == "holding":
+            dwell = max(0.1, float(getattr(self.config, "SIMULATOR_CROSSWALK_DWELL_SECONDS", 3.0)))
+            elapsed = max(0.0, now - float(self.crosswalk_started_at or now))
+            if elapsed < dwell:
+                self.crosswalk_reason = "crosswalk hardcode holding {}/{}s".format(round(elapsed, 1), round(dwell, 1))
+                return _brake(command, self.crosswalk_reason)
+            if not self.crosswalk_steps:
+                self.crosswalk_state = "blocked"
+                self.crosswalk_reason = (
+                    "crosswalk hardcode blocked: no route steps configured for " +
+                    str(self.crosswalk_route_name).upper() + "; vehicle remains stopped"
+                )
+                logger.error("%s", self.crosswalk_reason)
+                return _brake(command, self.crosswalk_reason)
+            self.crosswalk_state = "running"
+            self.crosswalk_step_index = 0
+            self.crosswalk_step_progress_cm = 0.0
+            self.crosswalk_step_started_at = now
+            logger.info("AVIS City crosswalk dwell complete; starting %s route from sign=%s",
+                        self.crosswalk_route_name, self.crosswalk_route_sign)
+        if self.crosswalk_state == "blocked":
+            return _brake(command, self.crosswalk_reason)
+        if self.crosswalk_state != "running":
+            return None
+        if self.crosswalk_step_index >= len(self.crosswalk_steps):
+            self.crosswalk_state = "completed"
+            self.crosswalk_reason = "crosswalk hardcode route completed"
+            return _brake(command, self.crosswalk_reason)
+
+        step = self.crosswalk_steps[self.crosswalk_step_index]
+        try:
+            target_cm = float(step["distance_m"]) * 100.0
+            requested_speed = float(step["speed_percent"]) / 100.0
+            steering = float(step["steering_percent"]) / 100.0
+            direction = str(step["direction"]).lower()
+        except (KeyError, TypeError, ValueError, OverflowError):
+            self.crosswalk_state = "blocked"
+            self.crosswalk_reason = "crosswalk hardcode blocked: route step values are invalid"
+            return _brake(command, self.crosswalk_reason)
+        if (direction not in {"forward", "reverse"} or
+                not all(math.isfinite(v) for v in (target_cm, requested_speed, steering)) or
+                target_cm <= 0 or not 0 < requested_speed <= 1 or not -1 <= steering <= 1):
+            self.crosswalk_state = "blocked"
+            self.crosswalk_reason = "crosswalk hardcode blocked: route step is outside allowed limits"
+            return _brake(command, self.crosswalk_reason)
+
+        try:
+            delta = float(distance_delta_cm or 0.0)
+        except (TypeError, ValueError, OverflowError):
+            delta = 0.0
+        if math.isfinite(delta) and delta > 0:
+            self.crosswalk_step_progress_cm += delta
+
+        if self.crosswalk_step_progress_cm >= target_cm:
+            self.crosswalk_step_index += 1
+            self.crosswalk_step_progress_cm = 0.0
+            self.crosswalk_step_started_at = now
+            if self.crosswalk_step_index >= len(self.crosswalk_steps):
+                self.crosswalk_state = "completed"
+                self.crosswalk_reason = "crosswalk hardcode route completed"
+                logger.info("AVIS City crosswalk route completed: %s", self.crosswalk_route_name)
+                return _brake(command, self.crosswalk_reason)
+            step = self.crosswalk_steps[self.crosswalk_step_index]
+            target_cm = float(step["distance_m"]) * 100.0
+            requested_speed = float(step["speed_percent"]) / 100.0
+            steering = float(step["steering_percent"]) / 100.0
+            direction = str(step["direction"]).lower()
+
+        timeout = max(1.0, float(getattr(self.config, "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS", 15.0)))
+        elapsed = max(0.0, now - float(self.crosswalk_step_started_at or now))
+        if elapsed >= timeout and self.crosswalk_step_progress_cm < target_cm:
+            self.crosswalk_state = "blocked"
+            self.crosswalk_reason = (
+                "crosswalk hardcode blocked: step {} did not reach its distance within {:.1f}s"
+            ).format(self.crosswalk_step_index + 1, elapsed)
+            logger.error("%s", self.crosswalk_reason)
+            return _brake(command, self.crosswalk_reason)
+
+        throttle_limit = max(0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35))))
+        throttle = min(requested_speed, throttle_limit)
+        if throttle <= 0:
+            self.crosswalk_state = "blocked"
+            self.crosswalk_reason = "crosswalk hardcode blocked: global throttle limit is zero"
+            return _brake(command, self.crosswalk_reason)
+        steering_limit = max(0.05, min(1.0, float(getattr(self.config, "SIMULATOR_STEERING_LIMIT", 1.0))))
+        steering = max(-steering_limit, min(steering_limit, steering))
+        if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
+            steering = -steering
+        servo_min = float(getattr(self.config, "MIN_SERVO_ANGLE", 55.0))
+        servo_center = float(getattr(self.config, "SERVO_CENTER", 95.0))
+        servo_max = float(getattr(self.config, "MAX_SERVO_ANGLE", 125.0))
+        servo_angle = (
+            servo_center + steering * (servo_max - servo_center)
+            if steering >= 0 else servo_center + steering * (servo_center - servo_min)
+        )
+        signed_throttle = throttle if direction == "forward" else -throttle
+        self.crosswalk_reason = (
+            "crosswalk hardcode {} step {}/{} · {:.0f}/{:.0f}cm"
+        ).format(self.crosswalk_route_name, self.crosswalk_step_index + 1,
+                 len(self.crosswalk_steps), self.crosswalk_step_progress_cm, target_cm)
+        return VehicleCommand(
+            steering=steering, throttle=signed_throttle, brake=0.0,
+            servo_angle=servo_angle, target_speed=0.0, reason=self.crosswalk_reason,
+        )
 
     def prepare_vision(self, now=None):
         """Publish the temporary ROI owner before the next camera frame is parsed."""
@@ -1366,6 +1545,18 @@ class AVISBehaviorCoordinator:
         self._sign_blank_count = 0
         self.sign_detector = None
         self._sign_error = None
+        self.crosswalk_state = "idle"
+        self.crosswalk_detect_count = 0
+        self.crosswalk_absent_count = 0
+        self.crosswalk_latched = False
+        self.crosswalk_started_at = None
+        self.crosswalk_route_name = None
+        self.crosswalk_route_sign = None
+        self.crosswalk_steps = []
+        self.crosswalk_step_index = 0
+        self.crosswalk_step_progress_cm = 0.0
+        self.crosswalk_step_started_at = None
+        self.crosswalk_reason = "crosswalk hardcode idle"
 
         if bool(getattr(config, "SIMULATOR_SIGN_ACTIONS_ENABLED", False)):
             self._start_sign_detector()
@@ -1521,6 +1712,7 @@ class AVISBehaviorCoordinator:
             return command
         now = time.monotonic() if now is None else float(now)
         self._observe_road_rules(frame, now)
+        self._observe_crosswalk(perception, now)
 
         if self.traffic_light_hold or self.stop_line_waiting:
             reason = (
@@ -1534,6 +1726,10 @@ class AVISBehaviorCoordinator:
             return _brake(command, "PARK sign latched; waiting for a confirmed STRAIGHT sign")
         if now < self.stop_sign_until:
             return _brake(command, "STOP sign hold")
+
+        crosswalk_command = self._crosswalk_route_command(command, distance_delta_cm, now)
+        if crosswalk_command is not None:
+            return crosswalk_command
 
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
@@ -1590,6 +1786,15 @@ class AVISBehaviorCoordinator:
             "sign_label": self.last_sign_label,
             "park_latched": bool(self.park_latched),
             "sign_detector_error": self._sign_error,
+            "crosswalk_enabled": bool(getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)),
+            "crosswalk_detected": bool(self.crosswalk_detect_count),
+            "crosswalk_state": self.crosswalk_state,
+            "crosswalk_route": self.crosswalk_route_name,
+            "crosswalk_sign": self.crosswalk_route_sign,
+            "crosswalk_step": self.crosswalk_step_index + 1 if self.crosswalk_state == "running" else 0,
+            "crosswalk_steps": len(self.crosswalk_steps),
+            "crosswalk_progress_cm": round(self.crosswalk_step_progress_cm, 1),
+            "crosswalk_reason": self.crosswalk_reason,
         }
 
     def close(self):
