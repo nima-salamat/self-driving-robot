@@ -192,7 +192,7 @@ class VisionProcessor:
                 self._bev_cache_key = cache_key
             frame = cv2.warpPerspective(frame, self._bev_matrix, (width, height), flags=cv2.INTER_LINEAR)
             
-        debug_frame = frame.copy() if (conf.DEBUG or getattr(conf, "STREAM", False) or hall_requested) else None
+        debug_frame = frame.copy() if (conf.DEBUG or getattr(conf, "STREAM", False) or hall_requested or simulator_backend == "avis") else None
 
         rl_top, rl_bottom = int(conf.RL_TOP_ROI * height), int(conf.RL_BOTTOM_ROI * height)
         rl_left, rl_right = int(conf.RL_LEFT_ROI * width), int(conf.RL_RIGHT_ROI * width)
@@ -956,7 +956,7 @@ class VisionProcessor:
         
         # Package geometry only; the optional visualization layer draws it later.
         debug = None
-        if (conf.DEBUG or getattr(conf, "STREAM", False) or hall_requested) and debug_frame is not None:
+        if (conf.DEBUG or getattr(conf, "STREAM", False) or hall_requested or simulator_backend == "avis") and debug_frame is not None:
             frame_center = (conf.RL_LEFT_ROI + conf.LL_RIGHT_ROI) * width / 2.0
             draw_data = {
                 "kind": "classical",
