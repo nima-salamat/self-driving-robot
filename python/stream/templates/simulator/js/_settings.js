@@ -161,7 +161,7 @@ function avisDeadlockUpdatePreview(){
   const preview=$("avis-deadlock-route-preview");if(!preview)return;
   const steps=avisDeadlockRouteData[avisDeadlockActiveRoute]||[];
   if(!steps.length){
-    preview.textContent="No steps configured. If this deadlock direction is confirmed, the vehicle will remain stopped.";
+    preview.textContent="No steps configured. If this deadlock direction is confirmed, no escape hardcode will run and normal lane following will continue.";
     return;
   }
   preview.textContent=steps.map(function(step,index){
@@ -247,7 +247,7 @@ function avisDeadlockRenderRoutes(){
   if(!steps.length){
     const empty=document.createElement("p");
     empty.className="note";
-    empty.textContent="No commands configured. The vehicle will remain stopped if this direction is confirmed.";
+    empty.textContent="No commands configured. This direction will not run an escape hardcode; normal lane following will continue.";
     host.appendChild(empty);
   }
   avisDeadlockUpdatePreview();
