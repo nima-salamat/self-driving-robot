@@ -1409,6 +1409,8 @@ class AVISBehaviorCoordinator:
         self.deadlock_confirm_count = 0
         self.deadlock_clear_count = 0
         self.deadlock_last_frame_token = None
+        self.deadlock_check_count = 0
+        self.deadlock_first_check_logged = False
         self.deadlock_route = None
         self.deadlock_steps = []
         self.deadlock_step_index = 0
@@ -1426,6 +1428,9 @@ class AVISBehaviorCoordinator:
             "left_lane_lines": 0,
             "right_lane_lines": 0,
             "candidate": None,
+            "checked": False,
+            "check_count": 0,
+            "frame_sequence": None,
         }
 
         if bool(getattr(config, "SIMULATOR_SIGN_ACTIONS_ENABLED", False)):
@@ -1622,11 +1627,10 @@ class AVISBehaviorCoordinator:
             "ml_roi": ml_status,
             "mr_roi": mr_status,
             "crosswalk_horizontal_lines": 0,
-            "required_horizontal_lines": max(
-                1, int(getattr(
-                    self.config, "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES", 2
-                ))
-            ),
+            # The requested forward condition is exactly one detected
+            # horizontal segment. Keep legacy profile values from raising it
+            # back to two or more lines.
+            "required_horizontal_lines": 1,
             "left_lane_lines": 0,
             "right_lane_lines": 0,
             "left_has_line": False,
@@ -1673,11 +1677,15 @@ class AVISBehaviorCoordinator:
                 if horizontal >= required_horizontal else "no deadlock pattern"
             ),
             "reason": (
-                "right ROI has a lane line and left ROI is clear"
+                "right ROI has a lane line; ML is clear; escape LEFT"
                 if candidate == "left" else
-                "left ROI has a lane line and right ROI is clear"
+                "left ROI has a lane line; MR is clear; escape RIGHT"
                 if candidate == "right" else
-                "crosswalk horizontal threshold or one-sided lane-line condition is not met"
+                "CW horizontal line was not detected (one required)"
+                if horizontal < 1 else
+                "both ML and MR contain line evidence; no unique clear side"
+                if left_present and right_present else
+                "neither ML nor MR contains line evidence"
             ),
         })
         return candidate, diagnostics
@@ -1746,6 +1754,14 @@ class AVISBehaviorCoordinator:
             self.deadlock_candidate = None
             self.deadlock_confirm_count = 0
             self.deadlock_clear_count = 0
+            self.deadlock_check_count = 0
+            self.deadlock_first_check_logged = False
+            self.deadlock_diagnostics.update({
+                "checked": False,
+                "check_count": 0,
+                "frame_sequence": None,
+                "reason": "deadlock detection disabled",
+            })
             if self.deadlock_state == "running":
                 # Disabling the feature aborts the configured maneuver. Apply
                 # one explicit brake cycle before returning to ordinary lane follow.
@@ -1786,7 +1802,27 @@ class AVISBehaviorCoordinator:
             return
 
         candidate, diagnostics = self._inspect_deadlock_pattern(frame)
+        self.deadlock_check_count += 1
+        frame_sequence = getattr(frame, "sequence", None)
+        diagnostics.update({
+            "checked": True,
+            "check_count": int(self.deadlock_check_count),
+            "frame_sequence": frame_sequence,
+        })
         self.deadlock_diagnostics = diagnostics
+        if not self.deadlock_first_check_logged:
+            logger.info(
+                "AVIS deadlock first ROI check: frame=%s roi_valid=%s "
+                "CW_horizontal=%d/1 ML_lines=%d MR_lines=%d candidate=%s reason=%s",
+                frame_sequence,
+                bool(diagnostics.get("roi_valid")),
+                int(diagnostics.get("crosswalk_horizontal_lines", 0) or 0),
+                int(diagnostics.get("left_lane_lines", 0) or 0),
+                int(diagnostics.get("right_lane_lines", 0) or 0),
+                str(candidate or "none").upper(),
+                str(diagnostics.get("reason") or "unknown"),
+            )
+            self.deadlock_first_check_logged = True
         crosswalk_pattern_candidate = candidate in {"left", "right"}
 
         # The generic City crosswalk detector can raise a provisional brake
