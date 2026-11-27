@@ -412,7 +412,7 @@ function populate(s){
     "stop-sign-min-value":"SIMULATOR_STOP_SIGN_MIN_VALUE",
     "stop-sign-contour-area":"SIMULATOR_STOP_SIGN_MIN_CONTOUR_AREA",
     "stop-sign-area-ratio":"SIMULATOR_STOP_SIGN_MIN_AREA_RATIO",
-    "stop-sign-red-fill":"SIMULATOR_STOP_SIGN_MIN_RED_FILL_RATIO",
+    "stop-sign-shape-fill":"SIMULATOR_STOP_SIGN_MIN_SHAPE_FILL_RATIO",
     "stop-sign-aspect-tolerance":"SIMULATOR_STOP_SIGN_ASPECT_TOLERANCE",
     "stop-sign-min-vertices":"SIMULATOR_STOP_SIGN_MIN_VERTICES",
     "stop-sign-max-vertices":"SIMULATOR_STOP_SIGN_MAX_VERTICES",
