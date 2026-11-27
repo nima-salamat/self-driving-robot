@@ -186,7 +186,7 @@
               <div class="field"><label for="stop-sign-min-value">Minimum brightness / value (0–255)</label><input id="stop-sign-min-value" type="number" min="0" max="255" step="1" name="SIMULATOR_STOP_SIGN_MIN_VALUE"></div>
               <div class="field"><label for="stop-sign-contour-area">Minimum contour area (px²)</label><input id="stop-sign-contour-area" type="number" min="1" max="1000000" step="any" name="SIMULATOR_STOP_SIGN_MIN_CONTOUR_AREA"></div>
               <div class="field"><label for="stop-sign-area-ratio">Minimum sign area / ST ROI area (0.0001–0.5)</label><input id="stop-sign-area-ratio" type="number" min=".0001" max=".5" step=".001" name="SIMULATOR_STOP_SIGN_MIN_AREA_RATIO"></div>
-              <div class="field"><label for="stop-sign-red-fill">Minimum red fill inside box (0.1–1)</label><input id="stop-sign-red-fill" type="number" min=".1" max="1" step=".01" name="SIMULATOR_STOP_SIGN_MIN_RED_FILL_RATIO"></div>
+              <div class="field"><label for="stop-sign-shape-fill">Minimum contour fill / box area (0.1–1)</label><input id="stop-sign-shape-fill" type="number" min=".1" max="1" step=".01" name="SIMULATOR_STOP_SIGN_MIN_SHAPE_FILL_RATIO"></div>
               <div class="field"><label for="stop-sign-aspect-tolerance">Square aspect tolerance (0.05–0.75)</label><input id="stop-sign-aspect-tolerance" type="number" min=".05" max=".75" step=".01" name="SIMULATOR_STOP_SIGN_ASPECT_TOLERANCE"></div>
               <div class="field"><label for="stop-sign-min-vertices">Minimum polygon vertices (4–10)</label><input id="stop-sign-min-vertices" type="number" min="4" max="10" step="1" name="SIMULATOR_STOP_SIGN_MIN_VERTICES"></div>
               <div class="field"><label for="stop-sign-max-vertices">Maximum polygon vertices (5–12)</label><input id="stop-sign-max-vertices" type="number" min="5" max="12" step="1" name="SIMULATOR_STOP_SIGN_MAX_VERTICES"></div>
@@ -197,7 +197,6 @@
             <div class="grid-two">
               <div class="field"><label for="sign-confidence">Minimum confidence (0.05–1)</label><input id="sign-confidence" type="number" min=".05" max="1" step=".01" name="SIMULATOR_SIGN_CONFIDENCE"></div>
               <div class="field"><label for="sign-scan-interval">Inference every N frames</label><input id="sign-scan-interval" type="number" min="1" max="120" step="1" name="SIMULATOR_SIGN_SCAN_INTERVAL"></div>
-              <div class="field"><label for="sign-stop-hold">STOP hold (s)</label><input id="sign-stop-hold" type="number" min=".1" max="10" step=".1" name="SIMULATOR_SIGN_STOP_HOLD_SECONDS"></div>
               <div class="field"><label for="sign-turn-hold">TURN nudge duration (s)</label><input id="sign-turn-hold" type="number" min=".1" max="10" step=".1" name="SIMULATOR_SIGN_TURN_HOLD_SECONDS"></div>
               <div class="field"><label for="sign-steering-offset">TURN steering nudge (0.05–0.35)</label><input id="sign-steering-offset" type="number" min=".05" max=".35" step=".01" name="SIMULATOR_SIGN_STEERING_OFFSET"></div>
             </div>
