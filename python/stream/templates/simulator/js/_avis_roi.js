@@ -554,7 +554,7 @@ function bindSimRoiEditor(){
     }
   });
   window.addEventListener("pagehide",function(){
-    const pending=simRoiSaveTimer!==null||simRoiSaveQueued;
+    const pending=simRoiSaveTimer!==null||simRoiSaveQueued||simRoiSaveInFlight;
     if(simRoiSaveTimer!==null){clearTimeout(simRoiSaveTimer);simRoiSaveTimer=null;}
     if(!pending||!simRoiControlsEnabled)return;
     const collected=simRoiCollectSettings();
