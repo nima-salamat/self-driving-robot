@@ -342,7 +342,7 @@
               </button>
               <span class="note">TURN LEFT / TURN RIGHT signs select their route; without a recognised turn sign the STRAIGHT route is used. Empty or invalid routes remain stopped instead of moving on an unconfigured path.</span>
             </div>
-            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. After the full-stop dwell, the route remains braked until the traffic-light detector confirms GREEN using the configured green-frame window (default 8 of 10). Keep “Require a confirmed green light before releasing stop lines or crosswalk routes” enabled. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
+            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. Before the route starts, the full-stop dwell and optional GREEN confirmation still apply. Once a route enters RUNNING, lane/crosswalk/sign/traffic-light/stop-line and range-based automatic stop logic are bypassed; only the configured hardcode steps control motion until their distances are reached. The per-step time is a warning threshold, not a route cancellation timeout. Fresh speed telemetry and a connected actuator link are still required. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
           </div>
           {% endif %}
           {% if caps.simulator_backend == 'avis' and caps.mode == 'avis' %}
@@ -373,9 +373,9 @@
                 data-settings-search="AVIS deadlock dead lock escape maneuver hardcode LEFT RIGHT route sequence distance speed steering configure">
                 Configure deadlock LEFT / RIGHT hardcodes
               </button>
-              <span class="note">The CW ROI uses the independent Deadlock-only horizontal-line settings above. ML and MR are checked with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route skips the escape maneuver and leaves normal lane following in control; invalid or timed-out configured routes still block the maneuver.</span>
+              <span class="note">The CW ROI uses the independent Deadlock-only horizontal-line settings above. ML and MR are checked with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route skips the escape maneuver and leaves normal lane following in control. Invalid route steps block the maneuver; exceeding the per-step warning time does not cancel it.</span>
             </div>
-            <p class="note">After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. It does not run in AVIS Race or physical modes, and crosswalk, traffic-light, stop-line and obstacle safety holds retain priority.</p>
+            <p class="note">After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. Before it starts, existing holds may prevent route release. Once RUNNING, vision-based detections and automatic stop/avoidance logic are bypassed until the configured hardcode distance is complete. It does not run in AVIS Race or physical modes.</p>
           </div>
           {% endif %}
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
