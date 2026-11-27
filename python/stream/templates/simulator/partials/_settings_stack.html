@@ -359,7 +359,7 @@
                 data-settings-search="AVIS deadlock dead lock escape maneuver hardcode LEFT RIGHT route sequence distance speed steering configure">
                 Configure deadlock LEFT / RIGHT hardcodes
               </button>
-              <span class="note">The CW ROI must contain at least the configured CROSSWALK_HORIZONTAL_MIN_LINES (minimum one); adjust that value in the Crosswalk detector tuning section. ML and MR are checked with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route holds the vehicle stopped.</span>
+              <span class="note">The CW ROI must contain at least the configured CROSSWALK_HORIZONTAL_MIN_LINES (minimum one); adjust that value in the Crosswalk detector tuning section. ML and MR are checked with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route skips the escape maneuver and leaves normal lane following in control; invalid or timed-out configured routes still block the maneuver.</span>
             </div>
             <p class="note">After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. It does not run in AVIS Race or physical modes, and crosswalk, traffic-light, stop-line and obstacle safety holds retain priority.</p>
           </div>
