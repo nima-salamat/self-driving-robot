@@ -1330,6 +1330,9 @@ class RangeObstacleAvoidance:
 class AVISBehaviorCoordinator:
     """Coordinates optional AVIS City/Race behavior without physical I/O."""
 
+    CROSSWALK_STOP_SPEED_KMH = 0.5
+    CROSSWALK_STOP_CONFIRM_FRAMES = 3
+
     def __init__(self, config, vision_profile):
         self.config = config
         self.vision_profile = str(vision_profile).lower()
@@ -1371,6 +1374,8 @@ class AVISBehaviorCoordinator:
         self._sign_error = None
         self.crosswalk_state = "idle"
         self.crosswalk_detect_count = 0
+        self.crosswalk_stop_confirm_count = 0
+        self.crosswalk_measured_speed_kmh = None
         self.crosswalk_absent_count = 0
         self.crosswalk_latched = False
         self.crosswalk_started_at = None
@@ -1542,7 +1547,7 @@ class AVISBehaviorCoordinator:
         )
         if not enabled:
             self.crosswalk_detect_count = 0
-            if self.crosswalk_latched and self.crosswalk_state in {"holding", "running"}:
+            if self.crosswalk_latched and self.crosswalk_state in {"stopping", "holding", "running"}:
                 self.crosswalk_state = "blocked"
                 self.crosswalk_reason = (
                     "crosswalk hardcode disabled during an active route; "
@@ -1553,6 +1558,10 @@ class AVISBehaviorCoordinator:
         detected = bool((perception or {}).get("crosswalk", False))
         if not detected:
             self.crosswalk_detect_count = 0
+            if not self.crosswalk_latched and self.crosswalk_state == "braking":
+                self.crosswalk_state = "idle"
+                self.crosswalk_stop_confirm_count = 0
+                self.crosswalk_reason = "crosswalk hardcode detection cleared before confirmation"
             if self.crosswalk_latched and self.crosswalk_state in {"completed", "blocked"}:
                 self.crosswalk_absent_count += 1
                 if self.crosswalk_absent_count >= 8:
@@ -1574,12 +1583,26 @@ class AVISBehaviorCoordinator:
             return
         self.crosswalk_detect_count += 1
         required = max(1, min(20, int(getattr(self.config, "SIMULATOR_CROSSWALK_CONFIRM_FRAMES", 3))))
+        if self.crosswalk_detect_count == 1:
+            # Start stopping on the first positive detector frame. Confirmation
+            # delays route selection only; it must never delay the stop command.
+            self.crosswalk_state = "braking"
+            self.crosswalk_stop_confirm_count = 0
+            self.crosswalk_started_at = None
+            self.crosswalk_reason = (
+                "crosswalk hardcode braking while confirming detection (1/{})"
+            ).format(required)
         if self.crosswalk_detect_count < required:
+            self.crosswalk_reason = (
+                "crosswalk hardcode braking while confirming detection ({}/{})"
+            ).format(self.crosswalk_detect_count, required)
             return
 
         self.crosswalk_latched = True
-        self.crosswalk_state = "holding"
-        self.crosswalk_started_at = now
+        self.crosswalk_state = "stopping"
+        self.crosswalk_started_at = None
+        self.crosswalk_stop_confirm_count = 0
+        self.crosswalk_measured_speed_kmh = None
         self.crosswalk_route_sign = str(self.last_sign_label or "NO DIRECTION SIGN")
         self.crosswalk_route_name = self._crosswalk_route_for_latest_sign()
         self.crosswalk_step_index = 0
@@ -1602,10 +1625,55 @@ class AVISBehaviorCoordinator:
             self.crosswalk_route_sign, self.crosswalk_route_name, len(self.crosswalk_steps),
         )
 
-    def _crosswalk_route_command(self, command, distance_delta_cm, now):
-        """Return a fail-closed stop or one distance-bounded AVIS route step."""
+    def _crosswalk_route_command(self, frame, command, distance_delta_cm, now):
+        """Hold zero speed until telemetry confirms a full stop, then dwell and run the route."""
+        if self.crosswalk_state == "braking":
+            return _brake(command, self.crosswalk_reason)
         if not self.crosswalk_latched or self.crosswalk_state == "completed":
             return None
+
+        if self.crosswalk_state in {"stopping", "holding"}:
+            sensor_status = getattr(frame, "sensor_status", {}) if frame is not None else {}
+            speed = None
+            if not (isinstance(sensor_status, dict) and sensor_status.get("speed_available") is False):
+                speed = _finite_range(getattr(frame, "speed_kmh", None)) if frame is not None else None
+            self.crosswalk_measured_speed_kmh = speed
+            if speed is None:
+                self.crosswalk_state = "stopping"
+                self.crosswalk_started_at = None
+                self.crosswalk_stop_confirm_count = 0
+                self.crosswalk_reason = (
+                    "crosswalk hardcode stopping: AVIS speed feedback unavailable; "
+                    "zero-speed command remains active"
+                )
+                return _brake(command, self.crosswalk_reason)
+            if speed > self.CROSSWALK_STOP_SPEED_KMH:
+                self.crosswalk_state = "stopping"
+                self.crosswalk_started_at = None
+                self.crosswalk_stop_confirm_count = 0
+                self.crosswalk_reason = (
+                    "crosswalk hardcode stopping: measured speed {:.1f} km/h; waiting for 0 km/h"
+                ).format(speed)
+                return _brake(command, self.crosswalk_reason)
+            if self.crosswalk_state == "stopping":
+                self.crosswalk_stop_confirm_count += 1
+                if self.crosswalk_stop_confirm_count < self.CROSSWALK_STOP_CONFIRM_FRAMES:
+                    self.crosswalk_reason = (
+                        "crosswalk hardcode verifying full stop: {:.1f} km/h ({}/{})"
+                    ).format(
+                        speed, self.crosswalk_stop_confirm_count,
+                        self.CROSSWALK_STOP_CONFIRM_FRAMES,
+                    )
+                    return _brake(command, self.crosswalk_reason)
+                self.crosswalk_state = "holding"
+                self.crosswalk_started_at = now
+                self.crosswalk_reason = (
+                    "crosswalk hardcode vehicle stopped at {:.1f} km/h; dwell started"
+                ).format(speed)
+                logger.info("AVIS City crosswalk stop confirmed; starting %.1fs dwell",
+                            max(0.1, float(getattr(self.config, "SIMULATOR_CROSSWALK_DWELL_SECONDS", 3.0))))
+                return _brake(command, self.crosswalk_reason)
+
         if self.crosswalk_state == "holding":
             dwell = max(0.1, float(getattr(self.config, "SIMULATOR_CROSSWALK_DWELL_SECONDS", 3.0)))
             elapsed = max(0.0, now - float(self.crosswalk_started_at or now))
@@ -1736,7 +1804,7 @@ class AVISBehaviorCoordinator:
         if now < self.stop_sign_until:
             return _brake(command, "STOP sign hold")
 
-        crosswalk_command = self._crosswalk_route_command(command, distance_delta_cm, now)
+        crosswalk_command = self._crosswalk_route_command(frame, command, distance_delta_cm, now)
         if crosswalk_command is not None:
             return crosswalk_command
 
@@ -1798,6 +1866,9 @@ class AVISBehaviorCoordinator:
             "crosswalk_enabled": bool(getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)),
             "crosswalk_detected": bool(self.crosswalk_detect_count),
             "crosswalk_state": self.crosswalk_state,
+            "crosswalk_measured_speed_kmh": self.crosswalk_measured_speed_kmh,
+            "crosswalk_stop_confirm_count": int(self.crosswalk_stop_confirm_count),
+            "crosswalk_stop_confirm_required": self.CROSSWALK_STOP_CONFIRM_FRAMES,
             "crosswalk_route": self.crosswalk_route_name,
             "crosswalk_sign": self.crosswalk_route_sign,
             "crosswalk_step": self.crosswalk_step_index + 1 if self.crosswalk_state == "running" else 0,
