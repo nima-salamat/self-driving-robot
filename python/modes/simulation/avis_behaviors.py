@@ -1415,6 +1415,7 @@ class AVISBehaviorCoordinator:
         self.deadlock_step_started_at = None
         self.deadlock_pause_started_at = None
         self.deadlock_reason = "deadlock detection disabled"
+        self._deadlock_lsd = None
         self.deadlock_diagnostics = {
             "roi_valid": False,
             "reason": "waiting for the first AVIS City frame",
@@ -1501,7 +1502,9 @@ class AVISBehaviorCoordinator:
             edges = cv2.bitwise_and(edges, edges, mask=mask)
 
         if bool(getattr(self.config, "CW_OLD_METHOD", False)):
-            lines = cv2.createLineSegmentDetector(0).detect(edges)[0]
+            if self._deadlock_lsd is None:
+                self._deadlock_lsd = cv2.createLineSegmentDetector(0)
+            lines = self._deadlock_lsd.detect(edges)[0]
         else:
             lines = cv2.HoughLinesP(
                 edges,
