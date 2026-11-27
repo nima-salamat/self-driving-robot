@@ -193,6 +193,7 @@ class Robot:
         self.crosswalk_time_start = 0
         self.crosswalk_last_seen = 0
         self._crosswalk_last_stop_command_at = None
+        self._crosswalk_stop_pending = False
         self._crosswalk_hardcode_sent = False
         self._crosswalk_hardcode_sent_at = None
         self._crosswalk_hardcode_observed_active = False
@@ -653,11 +654,14 @@ class Robot:
     def _begin_crosswalk_stop(self):
         """Start the pedestrian hold only after Arduino accepted STOP."""
         if getattr(self, "crosswalk_time_start", 0):
+            self._crosswalk_stop_pending = False
             return True
+        self._crosswalk_stop_pending = True
         if not self.control.stop():
             return False
 
         now = time.monotonic()
+        self._crosswalk_stop_pending = False
         self.crosswalk_time_start = now
         self.crosswalk_last_seen = now
         self._crosswalk_last_stop_command_at = now
@@ -1156,6 +1160,29 @@ class Robot:
                             sign_text,
                         )
                         self._keep_stop_hold()
+                        self._pace_control_loop()
+                        continue
+
+                    # A failed initial STOP is latched. A one-frame crosswalk
+                    # flicker must never allow lane-following to resume.
+                    if getattr(self, "_crosswalk_stop_pending", False):
+                        if self._begin_crosswalk_stop():
+                            self._set_mode_runtime_fault(
+                                "crosswalk_stop_command", False,
+                                "Crosswalk STOP command recovered; beginning the pedestrian hold.",
+                            )
+                        else:
+                            self._set_mode_runtime_fault(
+                                "crosswalk_stop_command", True,
+                                "Crosswalk STOP is still unconfirmed; motion remains blocked.",
+                            )
+                        self.handle_debug_stream(
+                            result, frame,
+                            int(getattr(config_city, "SERVO_CENTER", SERVO_CENTER)),
+                            result.get("crosswalk", False),
+                            "CROSSWALK STOP PENDING",
+                            sign_text,
+                        )
                         self._pace_control_loop()
                         continue
 
