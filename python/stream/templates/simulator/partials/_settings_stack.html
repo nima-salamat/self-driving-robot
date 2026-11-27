@@ -333,7 +333,7 @@
               </button>
               <span class="note">TURN LEFT / TURN RIGHT signs select their route; without a recognised turn sign the STRAIGHT route is used. Empty or invalid routes remain stopped instead of moving on an unconfigured path.</span>
             </div>
-            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
+            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. After the full-stop dwell, the route remains braked until the traffic-light detector confirms GREEN using the configured green-frame window (default 8 of 10). Keep “Require a confirmed green light before releasing stop lines or crosswalk routes” enabled. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
           </div>
           {% endif %}
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
