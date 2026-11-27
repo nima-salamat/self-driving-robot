@@ -179,9 +179,10 @@
           {% endif %}
           {% if caps.supports_stop_line %}
           <div class="setting-block" id="avis-city-road-rules">
-            <h3 class="section-title">AVIS City · Solid stop line & traffic lights</h3>
+            <h3 class="section-title">AVIS City · Stop line & traffic-light detection</h3>
             <label class="check-field"><input id="stop-line-enabled" type="checkbox" name="SIMULATOR_STOP_LINE_ENABLED"> Detect and stop at the solid City stop line</label>
-            <label class="check-field"><input id="traffic-lights-enabled" type="checkbox" name="SIMULATOR_TRAFFIC_LIGHTS_ENABLED"> Require a confirmed green light before releasing stop lines or crosswalk routes</label>
+            <label class="check-field"><input id="traffic-lights-enabled" type="checkbox" name="SIMULATOR_TRAFFIC_LIGHTS_ENABLED"> Enable traffic-light detection (RED/GREEN signals)</label>
+            <p class="note">Turn this off to completely disable traffic-light image processing, red-light holds and green-light confirmation. Crosswalk routes will start after the configured full-stop dwell using the last detected direction sign. Solid stop-line detection is controlled independently by the checkbox above.</p>
             <div class="grid-two">
               <div class="field"><label for="stop-line-threshold">Stop-line white threshold (0–255)</label><input id="stop-line-threshold" type="number" min="0" max="255" step="1" name="SIMULATOR_STOP_LINE_THRESHOLD"></div>
               <div class="field"><label for="stop-line-width">Minimum line width ratio (0–1)</label><input id="stop-line-width" type="number" min=".01" max="1" step=".01" name="SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO"></div>
