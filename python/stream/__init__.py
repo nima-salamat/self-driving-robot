@@ -74,6 +74,9 @@ class _StreamLogBuffer(logging.Handler):
                 "timestamp": time.time(),
                 "level": record.levelname,
                 "logger": name[:120],
+                "process": str(record.processName or "")[:80],
+                "process_id": int(record.process or 0),
+                "thread": str(record.threadName or "")[:80],
                 "message": _redact_log_message(self.format(record)),
             }
             with _STREAM_LOG_LOCK:
