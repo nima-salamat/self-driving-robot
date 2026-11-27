@@ -332,7 +332,7 @@
             <div class="grid-two">
               <div class="field"><label for="crosswalk-confirm-frames">Consecutive crosswalk frames</label><input id="crosswalk-confirm-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_CROSSWALK_CONFIRM_FRAMES"></div>
               <div class="field"><label for="crosswalk-dwell">Full stop before route (seconds)</label><input id="crosswalk-dwell" type="number" min=".1" max="30" step=".1" name="SIMULATOR_CROSSWALK_DWELL_SECONDS"></div>
-              <div class="field"><label for="crosswalk-step-timeout">Maximum time per route step (seconds)</label><input id="crosswalk-step-timeout" type="number" min="1" max="120" step=".5" name="SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS"></div>
+              <div class="field"><label for="crosswalk-step-timeout">Log warning after this many seconds per route step</label><input id="crosswalk-step-timeout" type="number" min="1" max="120" step=".5" name="SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS"></div>
             </div>
             <input id="crosswalk-route-chains" type="hidden" name="SIMULATOR_CROSSWALK_ROUTE_CHAINS" value='{"left":[],"straight":[],"right":[]}'>
             <div class="crosswalk-route-action-row">
@@ -351,7 +351,7 @@
             <label class="check-field"><input id="deadlock-enabled" type="checkbox" name="SIMULATOR_DEADLOCK_ENABLED"> Enable deadlock pattern detection and automatic escape maneuver</label>
             <div class="grid-two">
               <div class="field"><label for="deadlock-confirm-frames">Consecutive confirming frames</label><input id="deadlock-confirm-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_DEADLOCK_CONFIRM_FRAMES"></div>
-              <div class="field"><label for="deadlock-step-timeout">Maximum time per maneuver step (seconds)</label><input id="deadlock-step-timeout" type="number" min="1" max="120" step=".5" name="SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS"></div>
+              <div class="field"><label for="deadlock-step-timeout">Log warning after this many seconds per maneuver step</label><input id="deadlock-step-timeout" type="number" min="1" max="120" step=".5" name="SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS"></div>
             </div>
             <h4 class="section-subtitle">Deadlock-only CW horizontal-line detector</h4>
             <div class="grid-two">
