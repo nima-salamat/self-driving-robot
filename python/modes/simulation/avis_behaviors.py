@@ -346,9 +346,17 @@ class RangeObstacleAvoidance:
         return value if math.isfinite(value) else float(default)
 
     def _roi_confirmation_enabled(self):
-        return bool(getattr(
+        configured = bool(getattr(
             self.config, "SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED", True
         ))
+        # Hall-backed AVIS bypasses must confirm the destination ROI and keep
+        # following it through rejoin; skipping this stage can end the return
+        # immediately after the direct steering timer expires.
+        return (
+            configured
+            or self._hall_handoff_enabled()
+            or self._hall_tracking_without_identity_handoff()
+        )
 
     def _integer(self, key, default):
         try:
@@ -554,9 +562,11 @@ class RangeObstacleAvoidance:
             # original pair of lane ROIs immediately after confirmation.
             active_roi = "left"
         elif (
-            self.state == self.SEARCH_RIGHT_ROI
+            self.state in {self.SEARCH_RIGHT_ROI, self.REJOIN_LANE_FOLLOW}
             and self._roi_confirmation_enabled()
         ):
+            # Keep the confirmed original-lane boundary in its maneuver ROI
+            # until the lane controller has completed the rejoin interval.
             active_roi = "right"
 
         self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = active_roi
@@ -1089,20 +1099,20 @@ class RangeObstacleAvoidance:
             self.last_maneuver_roi = expected_side if observed else None
             if self.roi_confirmations >= confirm_frames:
                 if hall_handoff:
-                    self._set_state(
-                        self.REJOIN_LANE_FOLLOW, now,
-                        "Hall handoff locked the left ROI onto the boundary tracked by the right ROI; following the original lane",
+                    reason = (
+                        "Hall handoff locked the left ROI onto the boundary tracked "
+                        "by the right ROI; following the original lane"
                     )
-                    self._record_passing_lane_steering(command)
-                    self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = "left"
-                    return command
-                self.awaiting_clear = True
-                self.clear_observations = 0
-                self._set_state(
-                    self.CLEAR, now,
-                    "right maneuver ROI confirmed the original lane; normal lane detection restored",
-                )
-                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
+                    rejoin_roi = "left"
+                else:
+                    reason = (
+                        "right maneuver ROI confirmed the original lane; following "
+                        "it with the lane controller before restoring normal ROIs"
+                    )
+                    rejoin_roi = "right"
+                self._set_state(self.REJOIN_LANE_FOLLOW, now, reason)
+                self._record_passing_lane_steering(command)
+                self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = rejoin_roi
                 return command
             return self._direct_phase(
                 command, "right", now, roi_delay, self.SEARCH_RIGHT_ROI
@@ -1174,6 +1184,8 @@ class RangeObstacleAvoidance:
 
             self.last_reason = (
                 "obstacle lane change: following the original lane with the handed-off left boundary"
+                if hall_handoff else
+                "obstacle lane change: following the original lane in the confirmed right maneuver ROI"
             )
             self.config.SIMULATOR_ACTIVE_OBSTACLE_ROI = None
             self.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF = None

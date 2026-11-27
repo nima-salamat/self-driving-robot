@@ -629,6 +629,10 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         self.assertTrue(controller.config.SIMULATOR_ACTIVE_OBSTACLE_BYPASS)
         self.assertIsNone(controller.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF)
 
+        controller.state = controller.REJOIN_LANE_FOLLOW
+        self.assertEqual(controller.prepare_vision(), "right")
+        self.assertIsNone(controller.config.SIMULATOR_ACTIVE_OBSTACLE_HALL_HANDOFF)
+
         controller.state = controller.CLEAR
         controller.prepare_vision()
         self.assertFalse(controller.config.SIMULATOR_ACTIVE_OBSTACLE_BYPASS)
@@ -664,8 +668,15 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _validate_settings({"SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT": 100.1}, backend="avis")
 
-    def test_right_roi_confirmation_restores_normal_lane_following(self):
+    def test_right_roi_confirmation_keeps_following_original_lane_before_restore(self):
         controller = RangeObstacleAvoidance(obstacle_config(
+            SIMULATOR_BACKEND="avis",
+            HALL_LINE_TRACKING_ENABLED=True,
+            SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=False,
+            SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED=False,
+            OLD_METHOD=False,
+            CITY_LANE_DETECTOR="default",
+            USE_ML_LANE_DETECTOR=False,
             SIMULATOR_OBSTACLE_ROI_DELAY_SECONDS=0.5,
             SIMULATOR_OBSTACLE_LANE_HOLD_SECONDS=0.2,
             SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES=2,
@@ -708,8 +719,21 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
             lane_pid_command, ranges, perception_valid=True,
             maneuver_roi={"side": "right", "observed": True}, now=2.8,
         )
-        self.assertEqual(controller.state, controller.CLEAR)
+        self.assertEqual(controller.state, controller.REJOIN_LANE_FOLLOW)
         self.assertIs(restored, lane_pid_command)
+        self.assertTrue(controller._roi_confirmation_enabled())
+        self.assertEqual(controller.prepare_vision(), "right")
+
+        controller.apply(
+            lane_pid_command, ranges, perception_valid=True, now=2.9,
+        )
+        self.assertEqual(controller.state, controller.REJOIN_LANE_FOLLOW)
+        self.assertEqual(controller.prepare_vision(), "right")
+
+        controller.apply(
+            lane_pid_command, ranges, perception_valid=True, now=3.01,
+        )
+        self.assertEqual(controller.state, controller.CLEAR)
         self.assertIsNone(controller.prepare_vision())
 
     def test_direct_steering_is_clamped_by_global_authority_and_keeps_signs(self):
@@ -951,6 +975,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
         controller = RangeObstacleAvoidance(obstacle_config(
             SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED=True,
             HALL_LINE_TRACKING_ENABLED=False,
+            SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED=False,
             OLD_METHOD=False,
             SIMULATOR_BACKEND="avis",
             CITY_LANE_DETECTOR="default",
@@ -963,6 +988,7 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
             SIMULATOR_OBSTACLE_RIGHT_STEERING_PERCENT=70.0,
             SIMULATOR_STEERING_LIMIT=1.0,
         ))
+        self.assertTrue(controller._roi_confirmation_enabled())
         ranges = {"left": 180.0, "front": 80.0, "right": 180.0}
         left_track = {
             "left": {"observed": True, "track_id": 41},
@@ -1134,11 +1160,14 @@ class RangeObstacleAvoidanceTests(unittest.TestCase):
             USE_ML_LANE_DETECTOR=False,
         ))
         self.assertTrue(controller._hall_handoff_enabled())
+        controller.config.SIMULATOR_OBSTACLE_ROI_CONFIRMATION_ENABLED = False
         controller.config.USE_ML_LANE_DETECTOR = True
         self.assertFalse(controller._hall_handoff_enabled())
+        self.assertFalse(controller._roi_confirmation_enabled())
         controller.config.USE_ML_LANE_DETECTOR = False
         controller.config.CITY_LANE_DETECTOR = "blsf-beta"
         self.assertFalse(controller._hall_handoff_enabled())
+        self.assertFalse(controller._roi_confirmation_enabled())
 
 
 
