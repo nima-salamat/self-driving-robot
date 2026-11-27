@@ -89,7 +89,7 @@ diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs b/Asse
 +        }
 +
          private void CapSpeed()
-@@ -220,7 +254,7 @@
+@@ -223,8 +257,8 @@
              for (int i = 0; i < 4; i++)
              {
                  if (CurrentSpeed > 5 && Vector3.Angle(transform.forward, m_Rigidbody.velocity) < 50f)
