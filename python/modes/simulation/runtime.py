@@ -141,9 +141,10 @@ def _draw_avis_road_rule_debug(
     crosswalk_detected = bool(perception.get("crosswalk"))
     route_state = str(behavior.get("crosswalk_state") or "idle").upper()
     route_name = str(behavior.get("crosswalk_route") or "—").upper()
+    route_sign = str(behavior.get("crosswalk_sign") or "NO SIGN").upper()
     route_step = int(behavior.get("crosswalk_step", 0) or 0)
     route_total = int(behavior.get("crosswalk_steps", 0) or 0)
-    route_text = "{} · {} {}/{}".format(route_name, route_state, route_step, route_total)
+    route_text = "{} ← {} · {} {}/{}".format(route_name, route_sign, route_state, route_step, route_total)
     if route_state == "BRAKING":
         detected = int(behavior.get("crosswalk_detection_frames", 0) or 0)
         required = int(behavior.get("crosswalk_detection_required", 3) or 3)
