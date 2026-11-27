@@ -20,6 +20,8 @@ _GLOBAL_STATUS_LOG_AT = {}
 class AvisAdapter(SimulatorAdapter):
     backend = "avis"
     supports_lidar = False
+    PARKING_BRAKE_SPEED_KMH = 1.0
+    SPEED_FEEDBACK_MAX_AGE_S = 1.0
 
     def __init__(self, config):
         super().__init__(config)
@@ -43,6 +45,11 @@ class AvisAdapter(SimulatorAdapter):
         self._status_log_at = {}
         self._ready_at = 0.0
         self._sensor_angle_applied = False
+        self._last_speed_kmh = None
+        self._last_speed_at = None
+        self._last_brake_mode = "idle"
+        self._last_footbrake_requested = False
+        self._last_handbrake_requested = False
 
     def _request_timeout(self):
         # The legacy AVIS TCP client may need several seconds to return a full
@@ -110,6 +117,11 @@ class AvisAdapter(SimulatorAdapter):
             startup_delay = 3.0
         self._ready_at = time.monotonic() + min(15.0, max(0.0, startup_delay))
         self._sensor_angle_applied = False
+        self._last_speed_kmh = None
+        self._last_speed_at = None
+        self._last_brake_mode = "idle"
+        self._last_footbrake_requested = False
+        self._last_handbrake_requested = False
         logger.info(
             "Connected to legacy AVIS TCP Engine at %s:%s (ready in %.1fs)",
             host, port, max(0.0, self._ready_at - time.monotonic())
@@ -345,6 +357,9 @@ class AvisAdapter(SimulatorAdapter):
                 speed = 0.0
         except (TypeError, ValueError, OverflowError):
             speed = 0.0
+            speed_available = False
+        self._last_speed_kmh = max(0.0, speed) if speed_available else None
+        self._last_speed_at = now if speed_available else None
         try:
             values = list(car.getSensors() or [])
         except Exception:
@@ -400,27 +415,81 @@ class AvisAdapter(SimulatorAdapter):
             # server's startup window; sensor requests use the same delay.
             if time.monotonic() < self._ready_at:
                 return False
-            # SimulatorController expresses steering as normalized [-1, 1].
-            # Legacy AVIS expects a signed percentage: -100 = full left,
-            # 0 = straight, +100 = full right.
+
             normalized_steering = float(command.steering)
             if not math.isfinite(normalized_steering):
                 normalized_steering = 0.0
             normalized_steering = max(-1.0, min(1.0, normalized_steering))
             steering = int(round(normalized_steering * 100.0))
-            speed = 0 if float(command.brake) >= 0.5 else max(
-                -100, min(100, int(round(float(command.throttle) * 100.0)))
-            )
+
             try:
-                # Prefer one packet containing both values. Sending steering
-                # and speed separately can briefly resend the previous throttle
-                # between the two legacy calls during an emergency stop.
+                brake = float(command.brake)
+            except (TypeError, ValueError, OverflowError):
+                brake = 1.0
+            if not math.isfinite(brake):
+                brake = 1.0
+            brake = max(0.0, min(1.0, brake))
+
+            handbrake = 0.0
+            footbrake = 0.0
+            if brake > 0.0:
+                # Use Unity's independent service-brake input, not negative
+                # throttle (which the stock controller may interpret as reverse).
+                speed = 0
+                footbrake = brake
+                now = time.monotonic()
+                speed_is_fresh = (
+                    self._last_speed_kmh is not None
+                    and self._last_speed_at is not None
+                    and now - self._last_speed_at <= self.SPEED_FEEDBACK_MAX_AGE_S
+                )
+                measured_speed = self._last_speed_kmh if speed_is_fresh else None
+                if brake >= 0.5 and (
+                    measured_speed is None
+                    or measured_speed <= self.PARKING_BRAKE_SPEED_KMH
+                ):
+                    handbrake = 1.0
+                self._last_brake_mode = (
+                    "FOOT BRAKE + HANDBRAKE" if handbrake >= 0.5 else "FOOT BRAKE"
+                )
+            else:
+                try:
+                    throttle = float(command.throttle)
+                except (TypeError, ValueError, OverflowError):
+                    throttle = 0.0
+                if not math.isfinite(throttle):
+                    throttle = 0.0
+                speed = max(-100, min(100, int(round(throttle * 100.0))))
+                self._last_brake_mode = "REVERSE" if speed < 0 else "DRIVE" if speed > 0 else "COAST"
+
+            self._last_footbrake_requested = footbrake > 0.0
+            self._last_handbrake_requested = handbrake >= 0.5
+            try:
+                # Send steering, motor speed and both brake channels atomically.
                 drive_setter = getattr(self.car, "setDriveCommand", None)
                 if callable(drive_setter):
-                    drive_setter(steering, speed)
+                    try:
+                        drive_setter(steering, speed, handbrake, footbrake)
+                    except TypeError:
+                        if handbrake >= 0.5 or footbrake > 0.0:
+                            raise RuntimeError(
+                                "AVIS client lacks separate FootBrake/Handbrake fields; "
+                                "update the bundled client and Unity server patch."
+                            )
+                        drive_setter(steering, speed)
                 else:
                     self.car.setSteering(steering)
                     self.car.setSpeed(speed)
+                    if footbrake > 0.0:
+                        footbrake_setter = getattr(self.car, "setFootBrake", None)
+                        if not callable(footbrake_setter):
+                            raise RuntimeError("AVIS client lacks setFootBrake; apply the Unity brake patch.")
+                        footbrake_setter(footbrake)
+                    if handbrake >= 0.5:
+                        handbrake_setter = getattr(self.car, "setHandbrake", None)
+                        if not callable(handbrake_setter):
+                            raise RuntimeError("AVIS client lacks setHandbrake; apply the Unity brake patch.")
+                        handbrake_setter(handbrake)
                 return True
             except Exception as exc:
                 self._schedule_reconnect_locked(
@@ -447,25 +516,41 @@ class AvisAdapter(SimulatorAdapter):
                     else round(max(0.0, now - self._missing_image_started_at), 2)
                 ),
                 "last_error": self._last_error or None,
+                "actuator_brake_mode": self._last_brake_mode,
+                "actuator_footbrake_requested": bool(self._last_footbrake_requested),
+                "actuator_handbrake_requested": bool(self._last_handbrake_requested),
+                "measured_speed_kmh": self._last_speed_kmh,
                 "response": dict(getattr(self.car, "last_response_info", {}) or {}) if self.car is not None else {},
             }
 
     def stop_vehicle(self):
-        """Issue AVIS Engine's explicit stop command, then let the runtime reconnect.
+        """Apply Unity's service brake, optionally add the parking brake, then disconnect.
 
-        The bundled Car.stop() sends zero speed/steering plus the protocol stop
-        token and closes the socket. This is stronger than repeatedly setting
-        the throttle percentage to zero.
+        The bundled Car.stop() sends both independent brake channels before the
+        protocol stop token so the Unity controller keeps applying the last brake.
         """
         with self._io_lock:
             car, self.car = self.car, None
             self.connected = False
             if car is None:
                 return False
+            speed_is_fresh = (
+                self._last_speed_kmh is not None
+                and self._last_speed_at is not None
+                and time.monotonic() - self._last_speed_at <= self.SPEED_FEEDBACK_MAX_AGE_S
+            )
+            parking_brake = bool(
+                speed_is_fresh and self._last_speed_kmh <= self.PARKING_BRAKE_SPEED_KMH
+            )
+            self._last_brake_mode = (
+                "FOOT BRAKE + HANDBRAKE" if parking_brake else "FOOT BRAKE"
+            )
+            self._last_footbrake_requested = True
+            self._last_handbrake_requested = parking_brake
             stopper = getattr(car, "stop", None)
             if callable(stopper):
                 try:
-                    stopper()
+                    stopper(handbrake=1.0 if parking_brake else 0.0)
                     return True
                 except Exception as exc:
                     self._last_error = f"AVIS stop command failed: {type(exc).__name__}: {exc}"[:300]
