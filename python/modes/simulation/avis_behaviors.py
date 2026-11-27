@@ -1367,6 +1367,7 @@ class AVISBehaviorCoordinator:
         self.turn_direction = 0.0
         self.turn_until = 0.0
         self.last_sign_label = None
+        self.last_direction_sign_label = None
         self._last_sign_request_id = 0
         self._sign_frame_count = 0
         self._sign_blank_count = 0
@@ -1436,6 +1437,8 @@ class AVISBehaviorCoordinator:
             return
         self._sign_blank_count = 0
         self.last_sign_label = label
+        if label in {"TURN LEFT", "TURN RIGHT", "STRAIGHT", "LEFT", "RIGHT"}:
+            self.last_direction_sign_label = label
         now = time.monotonic()
         if label == "STOP":
             hold = max(0.1, float(getattr(self.config, "SIMULATOR_SIGN_STOP_HOLD_SECONDS", 2.0)))
@@ -1604,7 +1607,9 @@ class AVISBehaviorCoordinator:
             self.crosswalk_state = "braking"
             self.crosswalk_stop_confirm_count = 0
             self.crosswalk_started_at = None
-            self.crosswalk_pending_sign = str(self.last_sign_label or "NO DIRECTION SIGN")
+            self.crosswalk_pending_sign = str(
+                self.last_direction_sign_label or self.last_sign_label or "NO DIRECTION SIGN"
+            )
             self.crosswalk_reason = (
                 "crosswalk hardcode braking while confirming detection (1/{})"
             ).format(required)
@@ -1936,6 +1941,7 @@ class AVISBehaviorCoordinator:
             "traffic_light_hold": bool(self.traffic_light_hold),
             "sign_enabled": self.sign_detector is not None,
             "sign_label": self.last_sign_label,
+            "last_direction_sign": self.last_direction_sign_label,
             "park_latched": bool(self.park_latched),
             "sign_detector_error": self._sign_error,
             "crosswalk_enabled": bool(getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)),
