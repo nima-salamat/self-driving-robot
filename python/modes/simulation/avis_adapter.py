@@ -25,7 +25,7 @@ class AvisAdapter(SimulatorAdapter):
     # only above 5 mph (8.05 km/h); below that it applies reverse motor torque.
     # Use a margin above that split and never send negative speed near a stop.
     NEGATIVE_SPEED_BRAKE_MIN_KMH = 9.0
-    NEGATIVE_SPEED_BRAKE_PERCENT = 40
+    NEGATIVE_SPEED_BRAKE_PERCENT = 100
     SPEED_FEEDBACK_MAX_AGE_S = 1.0
 
     def __init__(self, config):
