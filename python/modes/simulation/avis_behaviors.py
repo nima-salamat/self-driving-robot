@@ -1650,7 +1650,7 @@ class AVISBehaviorCoordinator:
         )
 
     def _crosswalk_route_command(self, frame, command, distance_delta_cm, now):
-        """Hold zero speed until telemetry confirms a full stop, then dwell and run the route."""
+        """Stop, confirm a full stop, dwell, wait for green, then execute the frozen sign route."""
         if self.crosswalk_state == "braking":
             return _brake(command, self.crosswalk_reason)
         if not self.crosswalk_latched or self.crosswalk_state == "completed":
