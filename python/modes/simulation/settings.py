@@ -287,16 +287,16 @@ def _defaults(mode, backend):
         "SIMULATOR_DEADLOCK_ROUTE_CHAINS": '{"left":[],"right":[]}',
         # Dedicated, deliberately more permissive CW-line detector for deadlock.
         # These settings never affect the normal City crosswalk braking detector.
-        "SIMULATOR_DEADLOCK_CW_THRESHOLD": 140,
-        "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD": 40,
-        "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD": 100,
-        "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD": 8,
-        "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH": 3,
-        "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP": 20,
-        "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG": 40,
-        "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES": 2,
-        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX": 3,
-        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO": 0.02,
+        "SIMULATOR_DEADLOCK_CW_THRESHOLD": 120,
+        "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD": 30,
+        "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD": 80,
+        "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD": 4,
+        "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH": 2,
+        "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP": 30,
+        "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG": 44,
+        "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES": 1,
+        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX": 2,
+        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO": 0.005,
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 60.0 if avis else 35.0,
         # AVIS enables range-based bypass by default; an independent fail-safe
         # forward guard brakes whenever its front reading is missing or unsafe.
