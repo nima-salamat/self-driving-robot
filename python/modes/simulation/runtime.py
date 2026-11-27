@@ -144,6 +144,21 @@ def _draw_avis_road_rule_debug(
     route_step = int(behavior.get("crosswalk_step", 0) or 0)
     route_total = int(behavior.get("crosswalk_steps", 0) or 0)
     route_text = "{} · {} {}/{}".format(route_name, route_state, route_step, route_total)
+    if route_state == "BRAKING":
+        detected = int(behavior.get("crosswalk_detection_frames", 0) or 0)
+        required = int(behavior.get("crosswalk_detection_required", 3) or 3)
+        route_text += " · confirming {}/{}".format(detected, required)
+    elif route_state in {"STOPPING", "HOLDING"}:
+        measured_speed = behavior.get("crosswalk_measured_speed_kmh")
+        speed_text = (
+            "{:.1f} km/h".format(float(measured_speed))
+            if measured_speed is not None else "speed unavailable"
+        )
+        stop_count = int(behavior.get("crosswalk_stop_confirm_count", 0) or 0)
+        stop_required = int(behavior.get("crosswalk_stop_confirm_required", 3) or 3)
+        route_text += " · {} · stopped {}/{}".format(
+            speed_text, stop_count, stop_required
+        )
     if route_state == "BLOCKED":
         route_text = "BLOCKED · " + str(behavior.get("crosswalk_reason") or "route unavailable")
 
@@ -169,7 +184,7 @@ def _draw_avis_road_rule_debug(
         ("CROSSWALK", "DETECTED" if crosswalk_detected else "CLEAR",
          (0, 205, 240) if crosswalk_detected else (105, 120, 138)),
         ("ROUTE", route_text,
-         (0, 205, 240) if route_state in {"HOLDING", "RUNNING"} else
+         (0, 205, 240) if route_state in {"BRAKING", "STOPPING", "HOLDING", "RUNNING"} else
          (0, 165, 255) if route_state == "BLOCKED" else (105, 120, 138)),
         ("TRAFFIC LIGHT", light_text,
          (0, 0, 220) if light_color == "RED" else
