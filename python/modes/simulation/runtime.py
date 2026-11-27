@@ -20,8 +20,58 @@ from visualization.lane_debug_overlay import render_lane_debug_overlay
 logger = logging.getLogger(__name__)
 
 
-def _draw_avis_road_rule_debug(image, perception, *, frame_source="camera"):
-    """Draw City crosswalk, traffic-light and stop-line diagnostics on a preview copy."""
+def _draw_simulation_debug_panel(image, title, rows):
+    """Render diagnostics in one aligned panel with consistent typography."""
+    if not isinstance(image, np.ndarray) or image.size == 0:
+        return image
+    height, width = image.shape[:2]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.32, min(0.50, height / 1600.0))
+    thickness = max(1, int(round(height / 850.0)))
+    title_height = max(24, int(round(height * 0.038)))
+    row_height = max(20, int(round(height * 0.032)))
+    panel_width = min(width - 16, max(220, int(round(width * 0.40))))
+    panel_height = min(height - 16, title_height + row_height * len(rows) + 12)
+    if panel_width < 90 or panel_height < title_height:
+        return image
+
+    x0, y0 = 8, 8
+    x1, y1 = x0 + panel_width, y0 + panel_height
+    overlay = image.copy()
+    cv2.rectangle(overlay, (x0, y0), (x1, y1), (14, 20, 29), -1)
+    cv2.addWeighted(overlay, 0.84, image, 0.16, 0.0, image)
+    cv2.rectangle(image, (x0, y0), (x1, y1), (86, 101, 119), 1, cv2.LINE_AA)
+    cv2.putText(
+        image, str(title).upper(), (x0 + 10, y0 + max(17, title_height - 7)),
+        font, font_scale, (235, 241, 248), thickness + 1, cv2.LINE_AA,
+    )
+    cv2.line(
+        image, (x0 + 8, y0 + title_height),
+        (x1 - 8, y0 + title_height), (70, 83, 99), 1, cv2.LINE_AA,
+    )
+
+    text_width = max(24, panel_width - 42)
+    for index, (label, value, indicator) in enumerate(rows):
+        baseline = y0 + title_height + (index + 1) * row_height - 4
+        if baseline > y1 - 3:
+            break
+        dot_x, dot_y = x0 + 14, baseline - max(5, row_height // 3)
+        cv2.circle(image, (dot_x, dot_y), max(3, thickness + 1), indicator, -1, cv2.LINE_AA)
+        text = "{}  {}".format(str(label).upper(), str(value))
+        while text and cv2.getTextSize(text, font, font_scale, thickness)[0][0] > text_width:
+            text = text[:-2] + "…"
+        cv2.putText(
+            image, text, (x0 + 26, baseline),
+            font, font_scale, (225, 232, 240), thickness, cv2.LINE_AA,
+        )
+    return image
+
+
+def _draw_avis_road_rule_debug(
+    image, perception, *, frame_source="camera", command=None, sensor_frame=None,
+    mode="avis", vision_profile="city",
+):
+    """Draw bounded road-rule geometry and a single structured AVIS HUD."""
     if not isinstance(image, np.ndarray) or image.size == 0:
         return image
     perception = perception if isinstance(perception, dict) else {}
@@ -34,68 +84,130 @@ def _draw_avis_road_rule_debug(image, perception, *, frame_source="camera"):
                 continue
             center = detection.get("center")
             try:
-                x, y = int(round(float(center[0]))), int(round(float(center[1])))
-                radius = max(6, int(round(float(detection.get("radius", 6.0)) + 5)))
+                x = int(round(float(center[0])))
+                y = int(round(float(center[1])))
+                radius = max(5, int(round(float(detection.get("radius", 6.0)))))
                 if not (0 <= x < image.shape[1] and 0 <= y < image.shape[0]):
                     continue
             except (TypeError, ValueError, IndexError, OverflowError):
                 continue
             color_name = str(detection.get("color", "UNKNOWN")).upper()
-            color = (0, 0, 255) if color_name == "RED" else (0, 255, 0) if color_name == "GREEN" else (0, 210, 255)
-            cv2.circle(image, (x, y), radius, color, 2, cv2.LINE_AA)
-            cv2.circle(image, (x, y), 3, color, -1, cv2.LINE_AA)
-            cv2.putText(image, color_name, (max(4, x + radius + 3), max(16, y)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA)
+            color = (
+                (0, 0, 220) if color_name == "RED"
+                else (40, 190, 80) if color_name == "GREEN"
+                else (0, 175, 220)
+            )
+            cv2.rectangle(
+                image, (max(0, x - radius), max(0, y - radius)),
+                (min(image.shape[1] - 1, x + radius), min(image.shape[0] - 1, y + radius)),
+                color, 2, cv2.LINE_AA,
+            )
 
         stop_line = behavior.get("stop_line_detection")
         if isinstance(stop_line, dict) and stop_line.get("detected"):
             bbox = stop_line.get("bbox")
             try:
-                x, y, width, height = [int(round(float(value))) for value in bbox]
-                if width > 0 and height > 0:
-                    center = (x + width // 2, y + height // 2)
-                    radius = max(10, int(round(math.hypot(width, height) * 0.58)))
-                    cv2.circle(image, center, radius, (0, 165, 255), 2, cv2.LINE_AA)
-                    cv2.rectangle(image, (x, y), (x + width, y + height), (0, 165, 255), 1, cv2.LINE_AA)
+                x, y, box_width, box_height = [
+                    int(round(float(value))) for value in bbox
+                ]
+                if box_width > 0 and box_height > 0:
+                    cv2.rectangle(
+                        image, (max(0, x), max(0, y)),
+                        (min(image.shape[1] - 1, x + box_width),
+                         min(image.shape[0] - 1, y + box_height)),
+                        (0, 165, 255), 2, cv2.LINE_AA,
+                    )
             except (TypeError, ValueError, IndexError, OverflowError):
                 pass
 
-    crosswalk = bool(perception.get("crosswalk"))
-    crosswalk_color = str(perception.get("crosswalk_color") or "UNKNOWN").upper()
-    crosswalk_label = (
-        "CROSSWALK: " + crosswalk_color + " · DETECTED"
-        if crosswalk else "CROSSWALK: NOT DETECTED"
+    lane_type = str(perception.get("lane_type", "none")).upper()
+    lane_valid = bool(perception.get("perception_valid", False))
+    speed = getattr(sensor_frame, "speed_kmh", None) if sensor_frame is not None else None
+    try:
+        speed_text = "{:.1f} km/h".format(float(speed))
+    except (TypeError, ValueError, OverflowError):
+        speed_text = "unavailable"
+    if command is not None:
+        steering_text = "{:+.0f}%".format(float(command.steering) * 100.0)
+        control_state = (
+            "STOP" if float(command.brake) >= 0.5
+            else "REVERSE" if float(command.throttle) < 0
+            else "DRIVE"
+        )
+        control_reason = str(getattr(command, "reason", "") or "no command")
+    else:
+        steering_text, control_state, control_reason = "unavailable", "UNKNOWN", "no actuator command"
+
+    crosswalk_detected = bool(perception.get("crosswalk"))
+    route_state = str(behavior.get("crosswalk_state") or "idle").upper()
+    route_name = str(behavior.get("crosswalk_route") or "—").upper()
+    route_step = int(behavior.get("crosswalk_step", 0) or 0)
+    route_total = int(behavior.get("crosswalk_steps", 0) or 0)
+    route_text = "{} · {} {}/{}".format(route_name, route_state, route_step, route_total)
+    if route_state == "BLOCKED":
+        route_text = "BLOCKED · " + str(behavior.get("crosswalk_reason") or "route unavailable")
+
+    light_enabled = bool(behavior.get("traffic_light_enabled", False))
+    light_color = str(behavior.get("traffic_light") or "UNKNOWN").upper()
+    light_text = (
+        light_color + (" · HOLD" if behavior.get("traffic_light_hold") else "")
+        if light_enabled else "DISABLED"
     )
-    traffic_enabled = bool(behavior.get("traffic_light_enabled", False))
-    traffic_color = str(behavior.get("traffic_light") or "UNKNOWN").upper()
-    traffic_label = (
-        "TRAFFIC LIGHT: " + traffic_color
-        if traffic_enabled else "TRAFFIC LIGHT: DISABLED"
-    )
-    stop_line_enabled = bool(behavior.get("stop_line_enabled", False))
-    stop_line_detected = bool(
-        isinstance(behavior.get("stop_line_detection"), dict)
-        and behavior["stop_line_detection"].get("detected")
-    )
-    stop_label = (
-        "STOP LINE: " + ("DETECTED" if stop_line_detected else "CLEAR")
-        if stop_line_enabled else "STOP LINE: DISABLED"
-    )
-    rows = (
-        (crosswalk_label, (0, 235, 255) if crosswalk else (190, 190, 190)),
-        (traffic_label, (0, 0, 255) if traffic_color == "RED" else (0, 255, 0) if traffic_color == "GREEN" else (190, 190, 190)),
-        (stop_label, (0, 165, 255) if stop_line_detected else (190, 190, 190)),
-    )
-    y = 98
-    for label, color in rows:
-        cv2.putText(image, label, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
-                    (0, 0, 0), 3, cv2.LINE_AA)
-        cv2.putText(image, label, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
-                    color, 1, cv2.LINE_AA)
-        y += 23
-    return image
+    stop_enabled = bool(behavior.get("stop_line_enabled", False))
+    stop_detection = behavior.get("stop_line_detection")
+    stop_detected = bool(isinstance(stop_detection, dict) and stop_detection.get("detected"))
+    stop_text = (
+        "WAITING" if behavior.get("stop_line_waiting")
+        else "DETECTED" if stop_detected else "CLEAR"
+    ) if stop_enabled else "DISABLED"
+
+    rows = [
+        ("MODE", str(mode).upper() + " / " + str(vision_profile).upper(), (0, 175, 220)),
+        ("LANE", lane_type + (" · VALID" if lane_valid else " · INVALID"),
+         (40, 190, 80) if lane_valid else (0, 165, 255)),
+        ("STEER / SPEED", steering_text + " · " + speed_text, (190, 205, 220)),
+        ("CROSSWALK", "DETECTED" if crosswalk_detected else "CLEAR",
+         (0, 205, 240) if crosswalk_detected else (105, 120, 138)),
+        ("ROUTE", route_text,
+         (0, 205, 240) if route_state in {"HOLDING", "RUNNING"} else
+         (0, 165, 255) if route_state == "BLOCKED" else (105, 120, 138)),
+        ("TRAFFIC LIGHT", light_text,
+         (0, 0, 220) if light_color == "RED" else
+         (40, 190, 80) if light_color == "GREEN" else (105, 120, 138)),
+        ("STOP LINE", stop_text,
+         (0, 165, 255) if stop_text in {"WAITING", "DETECTED"} else (105, 120, 138)),
+        ("CONTROL", control_state + " · " + control_reason,
+         (0, 165, 255) if control_state == "STOP" else (40, 190, 80)),
+    ]
+    return _draw_simulation_debug_panel(image, "AVIS CITY · DIAGNOSTICS", rows)
 
 
+def _draw_generic_simulation_debug(image, perception, command, sensor_frame, mode, vision_profile):
+    """Use the same typography and placement for CARLA and other simulator modes."""
+    lane_type = str(perception.get("lane_type", "none")).upper()
+    lane_valid = bool(perception.get("perception_valid", False))
+    speed = getattr(sensor_frame, "speed_kmh", 0.0)
+    try:
+        speed_text = "{:.1f} km/h".format(float(speed))
+    except (TypeError, ValueError, OverflowError):
+        speed_text = "unavailable"
+    control_state = (
+        "STOP" if float(command.brake) >= 0.5
+        else "REVERSE" if float(command.throttle) < 0
+        else "DRIVE"
+    )
+    rows = [
+        ("MODE", str(mode).upper() + " / " + str(vision_profile).upper(), (0, 175, 220)),
+        ("LANE", lane_type + (" · VALID" if lane_valid else " · INVALID"),
+         (40, 190, 80) if lane_valid else (0, 165, 255)),
+        ("STEER / SPEED", "{:+.0f}% · {}".format(float(command.steering) * 100.0, speed_text),
+         (190, 205, 220)),
+        ("CROSSWALK", "DETECTED" if perception.get("crosswalk") else "CLEAR",
+         (0, 205, 240) if perception.get("crosswalk") else (105, 120, 138)),
+        ("CONTROL", control_state + " · " + str(getattr(command, "reason", "") or "no command"),
+         (0, 165, 255) if control_state == "STOP" else (40, 190, 80)),
+    ]
+    return _draw_simulation_debug_panel(image, "SIMULATOR · DIAGNOSTICS", rows)
 def _apply_forward_range_guard(command, ranges, *, backend, stop_distance_cm):
     """Apply the independent forward-range safety guard.
 
@@ -319,6 +431,13 @@ class SimulationRuntime:
         with self._state_lock:
             self._last_image_diagnostics = image_diagnostics
         draw_data = debug.get("draw_data") if isinstance(debug, dict) else None
+        if isinstance(draw_data, dict):
+            draw_data = dict(draw_data)
+            draw_data["suppress_labels"] = True
+            lane_tracking = draw_data.get("lane_tracking")
+            if isinstance(lane_tracking, dict):
+                draw_data["lane_tracking"] = dict(lane_tracking)
+                draw_data["lane_tracking"]["suppress_labels"] = True
         can_draw_processing_geometry = frame_source == "bev" or not bool(getattr(self.config, "USE_BEV", False))
         if isinstance(draw_data, dict) and can_draw_processing_geometry:
             try:
@@ -330,20 +449,15 @@ class SimulationRuntime:
                 )
             except Exception:
                 logger.debug("Could not render simulator lane debug overlay", exc_info=True)
-        cv2.putText(display, f"MODE {self.mode.upper()} | {self.vision_profile.upper()} VISION",
-                    (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (40, 220, 255), 2, cv2.LINE_AA)
-        cv2.putText(display, "Lane: " + str(perception.get("lane_type", "none")) +
-                    "  valid=" + str(bool(perception.get("perception_valid", False))),
-                    (12, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 220, 255), 1, cv2.LINE_AA)
-        cv2.putText(display, f"Steer: {command.servo_angle:.1f}  Speed: {sensor_frame.speed_kmh:.1f} km/h",
-                    (12, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 220, 255), 1, cv2.LINE_AA)
         if self.backend == "avis":
             display = _draw_avis_road_rule_debug(
-                display, perception, frame_source=frame_source
+                display, perception, frame_source=frame_source, command=command,
+                sensor_frame=sensor_frame, mode=self.mode, vision_profile=self.vision_profile,
             )
-        elif perception.get("crosswalk"):
-            cv2.putText(display, "CROSSWALK DETECTED", (12, 94),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 255), 2, cv2.LINE_AA)
+        else:
+            display = _draw_generic_simulation_debug(
+                display, perception, command, sensor_frame, self.mode, self.vision_profile
+            )
         with self.frame_lock:
             self.config.debug_frames_list = [None, display]
             self.config.stream_frame_seq = int(getattr(self.config, "stream_frame_seq", 0)) + 1

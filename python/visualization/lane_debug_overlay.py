@@ -351,16 +351,17 @@ def _draw_lane_tracking(canvas, tracking, boxes, sx, sy, font_scale, thickness):
         pending_required = int(tracking.get("pair_pending_required", 3))
         summary += f" | PAIR REACQUIRE {pending_hits}/{pending_required}"
     summary_scale = max(0.30, min(0.48, font_scale + 0.05))
-    cv2.putText(
-        canvas, summary, (7, max(16, int(20 * sy))),
-        cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
-        (0, 0, 0), max(2, thickness + 2), cv2.LINE_AA,
-    )
-    cv2.putText(
-        canvas, summary, (7, max(16, int(20 * sy))),
-        cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
-        (255, 255, 255), thickness, cv2.LINE_AA,
-    )
+    if not tracking.get("suppress_labels", False):
+        cv2.putText(
+            canvas, summary, (7, max(16, int(20 * sy))),
+            cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
+            (0, 0, 0), max(2, thickness + 2), cv2.LINE_AA,
+        )
+        cv2.putText(
+            canvas, summary, (7, max(16, int(20 * sy))),
+            cv2.FONT_HERSHEY_SIMPLEX, summary_scale,
+            (255, 255, 255), thickness, cv2.LINE_AA,
+        )
 
 
 def _scaled_box(box, sx, sy):
@@ -448,13 +449,14 @@ def _draw_classical(canvas, data, config):
             first = _scaled_point(left, top, sx, sy)
             second = _scaled_point(right, bottom, sx, sy)
             cv2.rectangle(canvas, first, second, (0, 235, 255), 2, cv2.LINE_AA)
-            label = "CROSSWALK · " + str(crosswalk_geometry.get("color", "UNKNOWN"))
-            text_x = max(4, min(width - 4, first[0] + 3))
-            text_y = first[1] - 8 if first[1] > 24 else min(height - 4, second[1] + 18)
-            cv2.putText(canvas, label, (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3, cv2.LINE_AA)
-            cv2.putText(canvas, label, (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 235, 255), 1, cv2.LINE_AA)
+            if not data.get("suppress_labels", False):
+                label = "CROSSWALK · " + str(crosswalk_geometry.get("color", "UNKNOWN"))
+                text_x = max(4, min(width - 4, first[0] + 3))
+                text_y = first[1] - 8 if first[1] > 24 else min(height - 4, second[1] + 18)
+                cv2.putText(canvas, label, (text_x, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(canvas, label, (text_x, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 235, 255), 1, cv2.LINE_AA)
         except (TypeError, ValueError, IndexError, OverflowError):
             pass
 
@@ -497,7 +499,7 @@ def _draw_classical(canvas, data, config):
     show_candidate_labels = selected.get("candidate_labels", True) is not False
     label = "Candidate:"
     (_, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-    candidate_label_items = (("RL", rl_color), ("LL", ll_color)) if show_candidate_labels else ()
+    candidate_label_items = (("RL", rl_color), ("LL", ll_color)) if show_candidate_labels and not data.get("suppress_labels", False) else ()
     for key, color in candidate_label_items:
         box = display_boxes.get(key)
         if not box:
@@ -666,6 +668,6 @@ def render_lane_debug_overlay(frame, draw_data=None, config=None, steering_angle
     if config is not None:
         settings = getattr(config, "stream_ui_settings", {})
         selected = settings.get("frame_overlay", {}) if isinstance(settings, dict) else {}
-        if selected.get("servo_guide", True) is not False:
+        if selected.get("servo_guide", True) is not False and not data.get("suppress_labels", False):
             _draw_servo_guide(canvas, config, steering_angle)
     return canvas
