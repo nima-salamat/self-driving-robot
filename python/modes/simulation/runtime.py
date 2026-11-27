@@ -692,7 +692,7 @@ class SimulationRuntime:
         enabled = bool(enabled)
         self.reset_deadlock_state(
             "explicit Stream Start" if enabled else "explicit Stream Stop",
-            brake_if_active=enabled,
+            brake_if_active=True,
         )
         if enabled == self._run_enabled:
             return self._run_enabled
