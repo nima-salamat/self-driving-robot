@@ -22,6 +22,12 @@ SIMULATOR_KEYS = {
     "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS", "SIMULATOR_CROSSWALK_ROUTE_CHAINS",
     "SIMULATOR_DEADLOCK_ENABLED", "SIMULATOR_DEADLOCK_CONFIRM_FRAMES",
     "SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS", "SIMULATOR_DEADLOCK_ROUTE_CHAINS",
+    "SIMULATOR_DEADLOCK_CW_THRESHOLD", "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD",
+    "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD", "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD",
+    "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH", "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP",
+    "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG",
+    "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES",
+    "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX", "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO",
     "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED", "SIMULATOR_OBSTACLE_HALL_HANDOFF_ENABLED", "SIMULATOR_OBSTACLE_TRIGGER_DISTANCE_CM",
     "SIMULATOR_OBSTACLE_APPROACH_SPEED_KMH", "SIMULATOR_OBSTACLE_SPEED_LIMIT_DISTANCE_CM",
@@ -117,6 +123,11 @@ INT_KEYS = {
     "CROSSWALK_CANNY_HIGH_THRESHOLD", "CROSSWALK_HOUGH_THRESHOLD",
     "CROSSWALK_HOUGH_MIN_LINE_LENGTH", "CROSSWALK_HOUGH_MAX_LINE_GAP",
     "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", "CROSSWALK_MIN_LINE_LENGTH_PX",
+    "SIMULATOR_DEADLOCK_CW_THRESHOLD", "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD",
+    "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD", "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD",
+    "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH", "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP",
+    "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG",
+    "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES", "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX",
     "HALL_LINE_TRACKING_MAX_MISSED",
     "HALL_LINE_TRACKING_REACQUIRE_FRAMES", "SIMULATOR_STOP_LINE_THRESHOLD",
     "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_CROSSWALK_CONFIRM_FRAMES",
@@ -183,6 +194,7 @@ NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACT
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
     "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "CAMERA_PITCH_DEG",
     "CROSSWALK_MIN_LINE_LENGTH_RATIO", "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO",
+    "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO",
 }
 
 
@@ -273,6 +285,18 @@ def _defaults(mode, backend):
         "SIMULATOR_DEADLOCK_CONFIRM_FRAMES": 4,
         "SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS": 15.0,
         "SIMULATOR_DEADLOCK_ROUTE_CHAINS": '{"left":[],"right":[]}',
+        # Dedicated, deliberately more permissive CW-line detector for deadlock.
+        # These settings never affect the normal City crosswalk braking detector.
+        "SIMULATOR_DEADLOCK_CW_THRESHOLD": 140,
+        "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD": 40,
+        "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD": 100,
+        "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD": 8,
+        "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH": 3,
+        "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP": 20,
+        "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG": 40,
+        "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES": 2,
+        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX": 3,
+        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO": 0.02,
         "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM": 60.0 if avis else 35.0,
         # AVIS enables range-based bypass by default; an independent fail-safe
         # forward guard brakes whenever its front reading is missing or unsafe.
@@ -510,6 +534,24 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("HOUGH_BLUR_KERNEL must be 1 or an odd integer from 3 to 15")
             if key == "CROSSWALK_THRESHOLD" and not 0 <= value <= 255:
                 raise ValueError("CROSSWALK_THRESHOLD must be between 0 and 255")
+            if key == "SIMULATOR_DEADLOCK_CW_THRESHOLD" and not 0 <= value <= 255:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_THRESHOLD must be between 0 and 255")
+            if key == "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD" and not 0 <= value <= 254:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD must be between 0 and 254")
+            if key == "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD" and not 1 <= value <= 255:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD must be between 1 and 255")
+            if key == "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD" and not 1 <= value <= 255:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD must be between 1 and 255")
+            if key == "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH" and not 1 <= value <= 500:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH must be between 1 and 500")
+            if key == "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP" and not 0 <= value <= 100:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP must be between 0 and 100")
+            if key == "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG" and not 1 <= value <= 44:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG must be between 1 and 44 degrees")
+            if key == "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES" and not 1 <= value <= 1000:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES must be between 1 and 1000")
+            if key == "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX" and not 1 <= value <= 500:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX must be between 1 and 500")
             if key in {"CROSSWALK_CANNY_LOW_THRESHOLD", "CROSSWALK_CANNY_HIGH_THRESHOLD"} and not 0 <= value <= 255:
                 raise ValueError(f"{key} must be between 0 and 255")
             if key == "CROSSWALK_HOUGH_THRESHOLD" and not 1 <= value <= 255:
@@ -640,6 +682,8 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS must be between 1 and 120 seconds")
             if key == "CROSSWALK_MIN_LINE_LENGTH_RATIO" and not 0.01 <= value <= 1:
                 raise ValueError("CROSSWALK_MIN_LINE_LENGTH_RATIO must be between 0.01 and 1")
+            if key == "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO" and not 0.005 <= value <= 1:
+                raise ValueError("SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO must be between 0.005 and 1")
             if key == "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO" and not 0 <= value <= 1:
                 raise ValueError("CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO must be between 0 and 1")
             if key == "TL_MIN_ACTIVE_BRIGHTNESS" and not 0 <= value <= 255:
@@ -701,6 +745,16 @@ def _validate_settings(data, backend=None, mode=None):
     if "CROSSWALK_CANNY_LOW_THRESHOLD" in clean and "CROSSWALK_CANNY_HIGH_THRESHOLD" in clean:
         if clean["CROSSWALK_CANNY_LOW_THRESHOLD"] >= clean["CROSSWALK_CANNY_HIGH_THRESHOLD"]:
             raise ValueError("CROSSWALK_CANNY_LOW_THRESHOLD must be smaller than CROSSWALK_CANNY_HIGH_THRESHOLD")
+    if (
+        "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD" in clean
+        and "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD" in clean
+        and clean["SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD"]
+        >= clean["SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD"]
+    ):
+        raise ValueError(
+            "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD must be smaller than "
+            "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD"
+        )
     for low, high in (("TL_RED_HUE_MIN", "TL_RED_HUE_MAX"), ("TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX")):
         if low in clean and high in clean and clean[low] >= clean[high]:
             raise ValueError(f"{low} must be smaller than {high}")
@@ -712,6 +766,12 @@ def _validate_settings(data, backend=None, mode=None):
     deadlock_keys = {
         "SIMULATOR_DEADLOCK_ENABLED", "SIMULATOR_DEADLOCK_CONFIRM_FRAMES",
         "SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS", "SIMULATOR_DEADLOCK_ROUTE_CHAINS",
+        "SIMULATOR_DEADLOCK_CW_THRESHOLD", "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD",
+        "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD", "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD",
+        "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH", "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP",
+        "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG",
+        "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES",
+        "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX", "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO",
     }
     if deadlock_keys.intersection(clean) and not avis_city_mode:
         raise ValueError("deadlock detection and hardcode routes are available only for AVIS City")
