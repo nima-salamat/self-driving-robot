@@ -540,10 +540,19 @@ class RangeObstacleAvoidance:
 
     def _observe_crosswalk(self, perception, now):
         """Debounce one City crosswalk and latch it until its route clears."""
-        if not self.is_city or not bool(
-            getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)
-        ):
+        enabled = bool(
+            self.is_city
+            and getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)
+        )
+        if not enabled:
             self.crosswalk_detect_count = 0
+            if self.crosswalk_latched and self.crosswalk_state in {"holding", "running"}:
+                self.crosswalk_state = "blocked"
+                self.crosswalk_reason = (
+                    "crosswalk hardcode disabled during an active route; "
+                    "vehicle remains stopped until the crossing clears"
+                )
+                logger.error("%s", self.crosswalk_reason)
             return
         detected = bool((perception or {}).get("crosswalk", False))
         if not detected:
