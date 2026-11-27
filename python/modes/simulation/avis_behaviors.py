@@ -2060,7 +2060,6 @@ class AVISBehaviorCoordinator:
 
         # Repeated observations are still meaningful. Refresh timed STOP/TURN
         # actions on every fresh inference instead of ignoring an unchanged label.
-        previous_label = self.last_sign_label
         self._sign_blank_count = 0
         self.last_sign_label = label
         now = time.monotonic()
