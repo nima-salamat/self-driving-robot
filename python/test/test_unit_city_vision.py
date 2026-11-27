@@ -214,6 +214,50 @@ class CityVisionLineExtractionTests(unittest.TestCase):
             result["crosswalk_geometry"],
         )
 
+    def test_city_crosswalk_detector_uses_stream_tunable_canny_and_hough_settings(self):
+        import modes.city.config_city as city_config
+        from unittest.mock import patch
+
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        frame[48:240, 32:288] = (255, 255, 255)
+        lines = np.asarray([
+            [[30, 15, 32, 170]], [[90, 15, 92, 170]], [[150, 15, 152, 170]],
+            [[10, 155, 245, 157]], [[10, 135, 245, 137]],
+        ], dtype=np.float32)
+        values = {
+            "SIMULATOR_BACKEND": "avis", "USE_BEV": False, "OLD_METHOD": False,
+            "CW_OLD_METHOD": False, "CROSSWALK_THRESHOLD": 135,
+            "CROSSWALK_VERTICAL_MIN_LINES": 2, "CROSSWALK_HORIZONTAL_MIN_LINES": 2,
+            "CROSSWALK_CANNY_LOW_THRESHOLD": 75, "CROSSWALK_CANNY_HIGH_THRESHOLD": 165,
+            "CROSSWALK_HOUGH_THRESHOLD": 28, "CROSSWALK_HOUGH_MIN_LINE_LENGTH": 8,
+            "CROSSWALK_HOUGH_MAX_LINE_GAP": 7,
+            "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG": 25,
+            "CROSSWALK_MIN_LINE_LENGTH_RATIO": 0.10,
+            "CROSSWALK_MIN_LINE_LENGTH_PX": 10,
+            "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO": 0.65,
+            "CW_TOP_ROI": 0.2, "CW_BOTTOM_ROI": 1.0,
+            "CW_LEFT_ROI": 0.1, "CW_RIGHT_ROI": 0.9,
+            "DEBUG": False, "STREAM": False, "HALL_LINE_TRACKING_ENABLED": False,
+        }
+        with patch.multiple(city_config, create=True, **values), patch(
+            "vision.city_vision_processing.cv2.Canny",
+            return_value=np.zeros((192, 256), dtype=np.uint8),
+        ) as canny, patch(
+            "vision.city_vision_processing.cv2.HoughLinesP",
+            return_value=lines,
+        ) as hough:
+            result = VisionProcessor().detect(frame)
+
+        self.assertTrue(result["crosswalk"])
+        self.assertEqual(result["crosswalk_color"], "WHITE")
+        self.assertTrue(any(call.args[1:] == (75, 165) for call in canny.call_args_list))
+        self.assertTrue(any(
+            call.kwargs.get("threshold") == 28
+            and call.kwargs.get("minLineLength") == 8
+            and call.kwargs.get("maxLineGap") == 7
+            for call in hough.call_args_list
+        ))
+
     def test_debug_payload_is_none_when_debug_and_stream_are_disabled(self):
         import modes.city.config_city as city_config
         from unittest.mock import patch
