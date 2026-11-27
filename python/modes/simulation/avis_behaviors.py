@@ -1369,6 +1369,18 @@ class AVISBehaviorCoordinator:
         self.last_traffic_light_detections = []
         self.last_frame_token = None
         self.stop_sign_until = 0.0
+        self.stop_sign_latched = False
+        self.stop_sign_reason = "STOP sign not detected"
+        self.stop_sign_candidate_frames = 0
+        self._stop_sign_last_frame_token = None
+        self.last_stop_sign_detection = {
+            "detected": False,
+            "visible": False,
+            "latched": False,
+            "bbox": None,
+            "source": "HSV",
+            "reason": "waiting for the first sign ROI frame",
+        }
         self.park_latched = False
         self.turn_direction = 0.0
         self.turn_until = 0.0
@@ -2167,6 +2179,257 @@ class AVISBehaviorCoordinator:
             "height": int(cropped.shape[0]),
         }
 
+    def _latch_stop_sign(self, detection=None, source="HSV"):
+        """Latch a STOP-sign decision and cancel every configured motion route."""
+        was_latched = self.stop_sign_latched
+        self.stop_sign_latched = True
+        self.stop_sign_reason = (
+            "AVIS STOP sign detected by {}; vehicle remains stopped until simulator reset"
+        ).format(str(source).upper())
+        if isinstance(detection, dict):
+            current = dict(detection)
+            current["detected"] = True
+            current["latched"] = True
+            current["source"] = str(source).upper()
+            current["reason"] = self.stop_sign_reason
+            self.last_stop_sign_detection = current
+        else:
+            self.last_stop_sign_detection.update({
+                "detected": True,
+                "latched": True,
+                "source": str(source).upper(),
+                "reason": self.stop_sign_reason,
+            })
+
+        # A STOP sign cancels, rather than pauses, an in-progress autonomous
+        # hardcode. No crosswalk or deadlock step may resume behind this latch.
+        self.crosswalk_state = "idle"
+        self.crosswalk_latched = False
+        self.crosswalk_started_at = None
+        self.crosswalk_route_name = None
+        self.crosswalk_route_sign = None
+        self.crosswalk_pending_sign = None
+        self.crosswalk_route_frozen = False
+        self.crosswalk_steps = []
+        self.crosswalk_step_index = 0
+        self.crosswalk_step_progress_cm = 0.0
+        self.crosswalk_step_started_at = None
+        self.crosswalk_step_timeout_warned_index = None
+        self.crosswalk_reason = self.stop_sign_reason
+
+        self.deadlock_state = "idle"
+        self.deadlock_abort_stop_pending = False
+        self.deadlock_candidate = None
+        self.deadlock_confirm_count = 0
+        self.deadlock_clear_count = 0
+        self.deadlock_route = None
+        self.deadlock_steps = []
+        self.deadlock_step_index = 0
+        self.deadlock_step_progress_cm = 0.0
+        self.deadlock_step_started_at = None
+        self.deadlock_step_timeout_warned_index = None
+        self.deadlock_pause_started_at = None
+        self.deadlock_reason = self.stop_sign_reason
+        self.deadlock_diagnostics.update({
+            "candidate": None,
+            "checked": False,
+            "check_count": 0,
+            "frame_sequence": None,
+            "reason": "STOP sign latch has priority over Deadlock detection",
+        })
+        if not was_latched:
+            logger.warning("%s", self.stop_sign_reason)
+
+    def observe_stop_sign_hsv(self, frame):
+        """Find a red, stop-sign-shaped contour inside the configured ST ROI."""
+        if not self.is_avis_city:
+            return dict(self.last_stop_sign_detection)
+        if self.stop_sign_latched:
+            return dict(self.last_stop_sign_detection)
+        if not bool(getattr(self.config, "SIMULATOR_STOP_SIGN_HSV_ENABLED", True)):
+            self.stop_sign_candidate_frames = 0
+            self.last_stop_sign_detection = {
+                "detected": False, "visible": False, "latched": False,
+                "bbox": None, "source": "HSV", "reason": "HSV STOP detection disabled",
+            }
+            return dict(self.last_stop_sign_detection)
+
+        image = getattr(frame, "image", None) if frame is not None else None
+        sign_roi, roi_status = self._crop_sign_roi(image)
+        self.last_sign_roi_status = roi_status
+        if sign_roi is None:
+            self.stop_sign_candidate_frames = 0
+            self.last_stop_sign_detection = {
+                "detected": False, "visible": False, "latched": False,
+                "bbox": None, "source": "HSV",
+                "reason": str(roi_status.get("reason") or "invalid ST ROI"),
+            }
+            return dict(self.last_stop_sign_detection)
+
+        try:
+            import cv2
+
+            hue_min = max(0, min(179, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_RED_HUE_MIN", 0
+            ))))
+            hue_max = max(0, min(179, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_RED_HUE_MAX", 12
+            ))))
+            hue_wrap = max(0, min(179, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_RED_HUE_WRAP_MIN", 168
+            ))))
+            minimum_saturation = max(0, min(255, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_SATURATION", 80
+            ))))
+            minimum_value = max(0, min(255, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_VALUE", 60
+            ))))
+            minimum_contour_area = max(1.0, float(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_CONTOUR_AREA", 120.0
+            )))
+            minimum_area_ratio = max(0.0001, min(0.5, float(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_AREA_RATIO", 0.012
+            ))))
+            minimum_red_fill = max(0.1, min(1.0, float(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_RED_FILL_RATIO", 0.45
+            ))))
+            aspect_tolerance = max(0.05, min(0.75, float(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_ASPECT_TOLERANCE", 0.40
+            ))))
+            minimum_vertices = max(4, min(12, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_VERTICES", 6
+            ))))
+            maximum_vertices = max(minimum_vertices + 1, min(12, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MAX_VERTICES", 10
+            ))))
+            confirmation_required = max(1, min(10, int(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_CONFIRM_FRAMES", 2
+            ))))
+            if hue_min >= hue_max or hue_wrap <= hue_max:
+                raise ValueError("STOP-sign red HSV ranges are invalid")
+
+            hsv = cv2.cvtColor(sign_roi, cv2.COLOR_BGR2HSV)
+            lower_red = cv2.inRange(
+                hsv,
+                (hue_min, minimum_saturation, minimum_value),
+                (hue_max, 255, 255),
+            )
+            upper_red = cv2.inRange(
+                hsv,
+                (hue_wrap, minimum_saturation, minimum_value),
+                (179, 255, 255),
+            )
+            mask = cv2.bitwise_or(lower_red, upper_red)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            contours_info = cv2.findContours(
+                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            contours = contours_info[-2]
+        except Exception as exc:
+            self.stop_sign_candidate_frames = 0
+            reason = "HSV STOP detector error: {}: {}".format(type(exc).__name__, exc)
+            self.last_stop_sign_detection = {
+                "detected": False, "visible": False, "latched": False,
+                "bbox": None, "source": "HSV", "reason": reason,
+            }
+            if self._last_sign_roi_error != reason:
+                logger.exception("AVIS HSV STOP-sign detector failed")
+            self._last_sign_roi_error = reason
+            return dict(self.last_stop_sign_detection)
+
+        roi_area = float(max(1, sign_roi.shape[0] * sign_roi.shape[1]))
+        valid_candidates = []
+        small_shape_candidates = []
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < minimum_contour_area:
+                continue
+            x, y, box_width, box_height = cv2.boundingRect(contour)
+            if box_width < 4 or box_height < 4:
+                continue
+            aspect = box_width / float(box_height)
+            if not (1.0 - aspect_tolerance <= aspect <= 1.0 + aspect_tolerance):
+                continue
+            perimeter = float(cv2.arcLength(contour, True))
+            if perimeter <= 0:
+                continue
+            polygon = cv2.approxPolyDP(contour, 0.035 * perimeter, True)
+            vertices = len(polygon)
+            if not (minimum_vertices <= vertices <= maximum_vertices):
+                continue
+            if not cv2.isContourConvex(polygon):
+                continue
+            fill_ratio = area / float(max(1, box_width * box_height))
+            if fill_ratio < minimum_red_fill:
+                continue
+
+            area_ratio = area / roi_area
+            candidate = {
+                "detected": True,
+                "visible": True,
+                "latched": False,
+                "bbox": [
+                    int(roi_status["x1"] + x),
+                    int(roi_status["y1"] + y),
+                    int(box_width),
+                    int(box_height),
+                ],
+                "source": "HSV",
+                "contour_area": round(area, 1),
+                "roi_area_ratio": round(area_ratio, 5),
+                "red_fill_ratio": round(fill_ratio, 3),
+                "aspect_ratio": round(aspect, 3),
+                "vertices": int(vertices),
+                "candidate_frames": int(self.stop_sign_candidate_frames),
+                "reason": "red convex stop-sign polygon found in ST ROI",
+            }
+            if area_ratio >= minimum_area_ratio:
+                valid_candidates.append(candidate)
+            else:
+                small_shape_candidates.append(candidate)
+
+        candidates = valid_candidates or small_shape_candidates
+        if not candidates:
+            self.stop_sign_candidate_frames = 0
+            self._stop_sign_last_frame_token = None
+            self.last_stop_sign_detection = {
+                "detected": False,
+                "visible": False,
+                "latched": False,
+                "bbox": None,
+                "source": "HSV",
+                "candidate_frames": 0,
+                "reason": "no red stop-sign-shaped contour in ST ROI",
+            }
+            return dict(self.last_stop_sign_detection)
+
+        candidate = max(candidates, key=lambda item: item["contour_area"])
+        large_enough = candidate["roi_area_ratio"] >= minimum_area_ratio
+        token = (
+            getattr(frame, "sequence", None)
+            or getattr(frame, "captured_at", None)
+            or id(frame)
+        )
+        if large_enough:
+            if token != self._stop_sign_last_frame_token:
+                self.stop_sign_candidate_frames += 1
+                self._stop_sign_last_frame_token = token
+        else:
+            self.stop_sign_candidate_frames = 0
+            self._stop_sign_last_frame_token = token
+            candidate["reason"] = (
+                "red stop-sign shape is below the configured ST ROI size threshold"
+            )
+        candidate["candidate_frames"] = int(self.stop_sign_candidate_frames)
+        candidate["confirmation_required"] = confirmation_required
+        self.last_stop_sign_detection = candidate
+
+        if large_enough and self.stop_sign_candidate_frames >= confirmation_required:
+            self._latch_stop_sign(candidate, source="HSV")
+        return dict(self.last_stop_sign_detection)
+
     def submit_sign_frame(self, frame):
         if self.sign_detector is None or frame is None:
             return
@@ -2234,6 +2497,13 @@ class AVISBehaviorCoordinator:
         )
         if label == "STOP":
             self.stop_sign_until = max(self.stop_sign_until, now + hold)
+            self._latch_stop_sign({
+                "detected": True,
+                "visible": True,
+                "bbox": None,
+                "source": "YOLO",
+                "reason": "YOLO classified the sign as STOP",
+            }, source="YOLO")
         elif label == "PARK":
             self.park_latched = True
             self.turn_direction = 0.0
@@ -2773,6 +3043,7 @@ class AVISBehaviorCoordinator:
         """Return True while a configured AVIS City hardcode owns vehicle motion."""
         return bool(
             self.is_avis_city
+            and not self.stop_sign_latched
             and (
                 self.crosswalk_state == "running"
                 or self.deadlock_state == "running"
@@ -2790,6 +3061,8 @@ class AVISBehaviorCoordinator:
         if str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() != "avis":
             return command
         now = time.monotonic() if now is None else float(now)
+        if self.stop_sign_latched:
+            return _brake(command, self.stop_sign_reason)
         # Once a configured route starts, no lane, crosswalk, sign, traffic-light,
         # stop-line or obstacle behavior may replace its step command. The route
         # runs only on its own distance/speed telemetry until it completes.
@@ -2897,6 +3170,13 @@ class AVISBehaviorCoordinator:
             "traffic_light_hold": bool(self.traffic_light_hold),
             "sign_enabled": self.sign_detector is not None,
             "sign_label": self.last_sign_label,
+            "stop_sign_hsv_enabled": bool(
+                self.is_avis_city and getattr(self.config, "SIMULATOR_STOP_SIGN_HSV_ENABLED", True)
+            ),
+            "stop_sign_latched": bool(self.stop_sign_latched),
+            "stop_sign_reason": self.stop_sign_reason,
+            "stop_sign_candidate_frames": int(self.stop_sign_candidate_frames),
+            "stop_sign_detection": dict(self.last_stop_sign_detection),
             "last_direction_sign": self.last_direction_sign_label,
             "last_direction_sign_age_s": (
                 max(0.0, time.monotonic() - self.last_direction_sign_at)
