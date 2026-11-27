@@ -1692,12 +1692,17 @@ class AVISBehaviorCoordinator:
         self.deadlock_step_started_at = now
         self.deadlock_clear_count = 0
         if not self.deadlock_steps:
-            self.deadlock_state = "blocked"
+            # A missing optional hardcode is not itself a road hazard.
+            # Do not turn a perception-only deadlock candidate into an
+            # artificial stop: leave the normal lane-following command intact.
+            self.deadlock_state = "unconfigured"
             self.deadlock_reason = (
-                "deadlock detected toward {}; no hardcode steps are configured"
+                "deadlock pattern confirmed toward {}; no hardcode configured; "
+                "normal lane following continues"
             ).format(direction.upper())
-            logger.error(
-                "AVIS DEADLOCK CONFIRMED: maneuver=%s but its hardcode route is empty; holding brake",
+            logger.info(
+                "AVIS deadlock pattern confirmed toward %s without a configured hardcode; "
+                "continuing normal lane following",
                 direction.upper(),
             )
             return
@@ -1766,7 +1771,7 @@ class AVISBehaviorCoordinator:
         candidate, diagnostics = self._inspect_deadlock_pattern(frame)
         self.deadlock_diagnostics = diagnostics
 
-        if self.deadlock_state in {"completed", "blocked"}:
+        if self.deadlock_state in {"completed", "blocked", "unconfigured"}:
             if candidate is None:
                 self.deadlock_clear_count += 1
                 if self.deadlock_clear_count >= 8:
@@ -2099,16 +2104,6 @@ class AVISBehaviorCoordinator:
             self.turn_direction = 0.0
             self.turn_until = 0.0
 
-        if previous_label != label:
-            logger.info(
-                "AVIS sign action accepted: %s (confidence %.3f)",
-                label, confidence,
-            )
-        else:
-            logger.debug(
-                "AVIS sign action refreshed: %s (confidence %.3f)",
-                label, confidence,
-            )
 
     def _observe_road_rules(self, frame, now):
         if not self.is_city or frame is None:
