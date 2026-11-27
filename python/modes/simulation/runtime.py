@@ -206,6 +206,17 @@ def _draw_avis_road_rule_debug(
     deadlock_cw_required = int(deadlock_diag.get("required_horizontal_lines", 1) or 1)
     deadlock_ml = int(deadlock_diag.get("left_lane_lines", 0) or 0)
     deadlock_mr = int(deadlock_diag.get("right_lane_lines", 0) or 0)
+    deadlock_direction = str(deadlock_diag.get("candidate") or "").upper()
+    if deadlock_direction not in {"LEFT", "RIGHT"} and deadlock_state in {"RUNNING", "BLOCKED"}:
+        deadlock_direction = str(behavior.get("deadlock_route") or "").upper()
+    deadlock_classified = bool(
+        deadlock_enabled and deadlock_direction in {"LEFT", "RIGHT"}
+    )
+    crosswalk_text = (
+        "DEADLOCK → ESCAPE {}".format(deadlock_direction)
+        if deadlock_classified else
+        "DETECTED" if crosswalk_detected else "CLEAR"
+    )
     deadlock_text = (
         "{} · {} {}/{} · CW H {}/{} · ML {} / MR {}".format(
             deadlock_state, deadlock_candidate, deadlock_frames, deadlock_required,
@@ -223,8 +234,8 @@ def _draw_avis_road_rule_debug(
         ("LANE", lane_type + (" · VALID" if lane_valid else " · INVALID"),
          (40, 190, 80) if lane_valid else (0, 165, 255)),
         ("STEER / SPEED", steering_text + " · " + speed_text, (190, 205, 220)),
-        ("CROSSWALK", "DETECTED" if crosswalk_detected else "CLEAR",
-         (0, 205, 240) if crosswalk_detected else (105, 120, 138)),
+        ("CROSSWALK / DEADLOCK", crosswalk_text,
+         (0, 205, 240) if deadlock_classified or crosswalk_detected else (105, 120, 138)),
         ("ROUTE", route_text,
          (0, 205, 240) if route_state in {"BRAKING", "STOPPING", "HOLDING", "WAITING_FOR_GREEN", "RUNNING"} else
          (0, 165, 255) if route_state == "BLOCKED" else (105, 120, 138)),
