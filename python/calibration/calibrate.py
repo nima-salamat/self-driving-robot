@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from .calibrator import CameraCalibrator
+from utils.logging_setup import configure_logging
 
 
 DEFAULT_IMAGE_DIR = (
@@ -21,6 +22,11 @@ DEFAULT_OUTPUT_FILE = (
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Calibrate camera intrinsics from chessboard images.",
+    )
+    parser.add_argument(
+        "--log-level", type=str.upper,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="INFO", help="Severity for the shared output/robot.log file and console.",
     )
     parser.add_argument(
         "--image-dir",
@@ -64,10 +70,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(levelname)s] %(message)s",
-    )
+    configure_logging(level=args.log_level, log_dir="output")
 
     if not args.image_dir.exists():
         raise SystemExit(
