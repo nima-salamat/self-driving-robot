@@ -1473,58 +1473,63 @@ class AVISBehaviorCoordinator:
         }
 
     def _deadlock_horizontal_line_count(self, roi):
-        """Count horizontal CW segments with the City's configured detector thresholds."""
+        """Count CW horizontal segments using Deadlock-only, independently tunable thresholds."""
         import cv2
         import numpy as np
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        threshold = max(0, min(255, int(getattr(self.config, "CROSSWALK_THRESHOLD", 180))))
-        canny_low = max(0, min(255, int(getattr(self.config, "CROSSWALK_CANNY_LOW_THRESHOLD", 100))))
-        canny_high = max(canny_low + 1, min(255, int(getattr(self.config, "CROSSWALK_CANNY_HIGH_THRESHOLD", 150))))
+        threshold = max(0, min(255, int(getattr(
+            self.config, "SIMULATOR_DEADLOCK_CW_THRESHOLD", 140
+        ))))
+        canny_low = max(0, min(254, int(getattr(
+            self.config, "SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD", 40
+        ))))
+        canny_high = max(canny_low + 1, min(255, int(getattr(
+            self.config, "SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD", 100
+        ))))
         _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
         edges = cv2.Canny(binary, canny_low, canny_high)
 
-        # Match the City crosswalk mask so the same CW editor settings affect
-        # both the normal crosswalk detector and this deadlock condition.
-        if bool(getattr(self.config, "CW_TRAPEZOID_MODE", False)):
-            height, width = roi.shape[:2]
-            factor = max(0.0, min(
-                1.0, float(getattr(self.config, "CW_TOP_WIDTH_FACTOR", 0.90))
-            ))
-            inset = int(width * (1.0 - factor) / 2.0)
-            mask = np.zeros((height, width), dtype=np.uint8)
-            polygon = np.array(
-                [[inset, 0], [width - inset, 0], [width - 1, height - 1], [0, height - 1]],
-                dtype=np.int32,
-            )
-            cv2.fillPoly(mask, [polygon], 255)
-            edges = cv2.bitwise_and(edges, edges, mask=mask)
-
-        if bool(getattr(self.config, "CW_OLD_METHOD", False)):
-            if self._deadlock_lsd is None:
-                self._deadlock_lsd = cv2.createLineSegmentDetector(0)
-            lines = self._deadlock_lsd.detect(edges)[0]
-        else:
-            lines = cv2.HoughLinesP(
-                edges,
-                1,
-                np.pi / 180,
-                threshold=max(1, int(getattr(self.config, "CROSSWALK_HOUGH_THRESHOLD", 20))),
-                minLineLength=max(1, int(getattr(self.config, "CROSSWALK_HOUGH_MIN_LINE_LENGTH", 5))),
-                maxLineGap=max(0, int(getattr(self.config, "CROSSWALK_HOUGH_MAX_LINE_GAP", 5))),
-            )
+        # Deadlock deliberately uses its own rectangular CW crop and Hough
+        # pipeline. It does not inherit the normal crosswalk detector's
+        # trapezoid mask, legacy LSD switch, thresholds, or segment filters.
+        lines = cv2.HoughLinesP(
+            edges,
+            1,
+            np.pi / 180,
+            threshold=max(1, int(getattr(
+                self.config, "SIMULATOR_DEADLOCK_CW_HOUGH_THRESHOLD", 8
+            ))),
+            minLineLength=max(1, int(getattr(
+                self.config, "SIMULATOR_DEADLOCK_CW_HOUGH_MIN_LINE_LENGTH", 3
+            ))),
+            maxLineGap=max(0, int(getattr(
+                self.config, "SIMULATOR_DEADLOCK_CW_HOUGH_MAX_LINE_GAP", 20
+            ))),
+        )
 
         height, width = roi.shape[:2]
+        try:
+            length_ratio = float(getattr(
+                self.config, "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_RATIO", 0.02
+            ))
+        except (TypeError, ValueError, OverflowError):
+            length_ratio = 0.02
+        if not math.isfinite(length_ratio):
+            length_ratio = 0.02
+        length_ratio = max(0.005, min(1.0, length_ratio))
+        minimum_length_px = max(1, int(getattr(
+            self.config, "SIMULATOR_DEADLOCK_CW_MIN_LINE_LENGTH_PX", 3
+        )))
         minimum_length = max(
-            math.hypot(width, height) * max(
-                0.01, min(1.0, float(getattr(self.config, "CROSSWALK_MIN_LINE_LENGTH_RATIO", 0.10)))
-            ),
-            max(1, int(getattr(self.config, "CROSSWALK_MIN_LINE_LENGTH_PX", 10))),
-        )
-        angle_tolerance = max(
             1.0,
-            min(44.0, float(getattr(self.config, "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", 30))),
+            float(minimum_length_px),
+            math.hypot(width, height) * length_ratio,
         )
+        angle_tolerance = max(1.0, min(44.0, float(getattr(
+            self.config, "SIMULATOR_DEADLOCK_CW_LINE_ANGLE_TOLERANCE_DEG", 40
+        ))))
+
         horizontal_count = 0
         if lines is not None:
             for line in lines:
@@ -1535,7 +1540,8 @@ class AVISBehaviorCoordinator:
                 length = math.hypot(x2 - x1, y2 - y1)
                 if length < minimum_length:
                     continue
-                angle = abs(math.degrees(math.atan((y2 - y1) / (x2 - x1 + 1e-6))))
+                angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
+                angle = min(angle, abs(180.0 - angle))
                 if angle <= angle_tolerance:
                     horizontal_count += 1
         return horizontal_count
@@ -1614,7 +1620,9 @@ class AVISBehaviorCoordinator:
             "mr_roi": mr_status,
             "crosswalk_horizontal_lines": 0,
             "required_horizontal_lines": max(
-                1, int(getattr(self.config, "CROSSWALK_HORIZONTAL_MIN_LINES", 3))
+                1, int(getattr(
+                    self.config, "SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES", 2
+                ))
             ),
             "left_lane_lines": 0,
             "right_lane_lines": 0,
