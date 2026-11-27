@@ -1046,11 +1046,18 @@ class SimulationRuntime:
                 )
                 if getattr(frame, "image", None) is None:
                     telemetry_status = dict(getattr(frame, "sensor_status", {}) or {})
-                    if not hardcode_active or telemetry_status.get("speed_available") is not True:
-                        self._safe_stop(
-                            "AVIS camera image or fresh speed telemetry is unavailable; "
-                            "holding motion because a distance-based hardcode cannot be tracked."
+                    can_continue_hardcode = bool(
+                        self.backend == "avis"
+                        and hardcode_active
+                        and telemetry_status.get("speed_available") is True
+                    )
+                    if not can_continue_hardcode:
+                        reason = (
+                            "AVIS camera image is unavailable outside a running hardcode route."
+                            if self.backend == "avis"
+                            else "Simulator camera image is unavailable; holding motion until a fresh frame returns."
                         )
+                        self._safe_stop(reason)
                         self.shutdown_event.wait(0.05)
                         continue
                 if frame.sequence and frame.sequence == self._last_sequence:
