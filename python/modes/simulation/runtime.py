@@ -206,6 +206,11 @@ def _draw_avis_road_rule_debug(
     deadlock_cw_required = int(deadlock_diag.get("required_horizontal_lines", 1) or 1)
     deadlock_ml = int(deadlock_diag.get("left_lane_lines", 0) or 0)
     deadlock_mr = int(deadlock_diag.get("right_lane_lines", 0) or 0)
+    deadlock_check_count = int(deadlock_diag.get("check_count", 0) or 0)
+    deadlock_frame_sequence = deadlock_diag.get("frame_sequence")
+    deadlock_check_reason = str(
+        deadlock_diag.get("reason") or "waiting for the first camera frame"
+    ).upper()
     deadlock_direction = str(deadlock_diag.get("candidate") or "").upper()
     if deadlock_direction not in {"LEFT", "RIGHT"} and deadlock_state in {"RUNNING", "BLOCKED"}:
         deadlock_direction = str(behavior.get("deadlock_route") or "").upper()
@@ -245,6 +250,13 @@ def _draw_avis_road_rule_debug(
         ("STOP LINE", stop_text,
          (0, 165, 255) if stop_text in {"WAITING", "DETECTED"} else (105, 120, 138)),
         ("DEADLOCK", deadlock_text, deadlock_color),
+        ("DEADLOCK CHECK", (
+            "CHECKS {} · FRAME {} · {}".format(
+                deadlock_check_count,
+                deadlock_frame_sequence if deadlock_frame_sequence is not None else "—",
+                deadlock_check_reason,
+            ) if deadlock_enabled else "DISABLED"
+        ), (0, 205, 240) if deadlock_check_count else (105, 120, 138)),
         ("CONTROL", control_state + " · " + control_reason,
          (0, 165, 255) if control_state == "STOP" else (40, 190, 80)),
     ]
