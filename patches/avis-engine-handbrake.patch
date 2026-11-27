@@ -5,7 +5,8 @@
 #   git apply /path/to/avis-engine-handbrake.patch
 #
 # Adds backward-compatible FootBrake and Handbrake fields. Older six-field
-# clients default both brake inputs to zero.
+# clients default both brake inputs to zero. Both the legacy negative-speed
+# brake path and the explicit FootBrake path receive 2x service-brake torque.
 
 diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs b/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs
 --- a/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs
@@ -75,7 +76,7 @@ diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs b/Asse
 +            {
 +                if (m_WheelColliders[i] == null) continue;
 +                m_WheelColliders[i].motorTorque = 0f;
-+                m_WheelColliders[i].brakeTorque = m_BrakeTorque * footbrake;
++                m_WheelColliders[i].brakeTorque = m_BrakeTorque * footbrake * 2.0f;
 +            }
 +            if (handbrake > 0f && m_WheelColliders.Length >= 4)
 +            {
@@ -88,6 +89,16 @@ diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs b/Asse
 +        }
 +
          private void CapSpeed()
+@@ -220,7 +254,7 @@
+             for (int i = 0; i < 4; i++)
+             {
+                 if (CurrentSpeed > 5 && Vector3.Angle(transform.forward, m_Rigidbody.velocity) < 50f)
+                 {
+-                    m_WheelColliders[i].brakeTorque = m_BrakeTorque*footbrake;
++                    m_WheelColliders[i].brakeTorque = m_BrakeTorque*footbrake*2.0f;
+                 }
+                 else if (footbrake > 0)
+                 {
 diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs b/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs
 --- a/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs
 +++ b/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs
