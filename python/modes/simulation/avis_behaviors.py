@@ -1509,6 +1509,10 @@ class AVISBehaviorCoordinator:
             if (
                 self.crosswalk_state in {"braking", "stopping", "holding", "waiting_for_green"}
                 and not self.crosswalk_route_frozen
+                and (
+                    self.crosswalk_pending_sign != label
+                    or self.crosswalk_route_name is None
+                )
             ):
                 self.crosswalk_pending_sign = label
                 self._load_crosswalk_route(label, frozen=False)
