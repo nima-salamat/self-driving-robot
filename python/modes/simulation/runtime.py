@@ -195,6 +195,29 @@ def _draw_avis_road_rule_debug(
         else "DETECTED" if stop_detected else "CLEAR"
     ) if stop_enabled else "DISABLED"
 
+    deadlock_enabled = bool(behavior.get("deadlock_enabled", False))
+    deadlock_state = str(behavior.get("deadlock_state") or "idle").upper()
+    deadlock_candidate = str(behavior.get("deadlock_candidate") or "—").upper()
+    deadlock_frames = int(behavior.get("deadlock_confirmation_frames", 0) or 0)
+    deadlock_required = int(behavior.get("deadlock_confirmation_required", 4) or 4)
+    deadlock_diag = behavior.get("deadlock_diagnostics")
+    deadlock_diag = deadlock_diag if isinstance(deadlock_diag, dict) else {}
+    deadlock_cw = int(deadlock_diag.get("crosswalk_horizontal_lines", 0) or 0)
+    deadlock_cw_required = int(deadlock_diag.get("required_horizontal_lines", 1) or 1)
+    deadlock_ml = int(deadlock_diag.get("left_lane_lines", 0) or 0)
+    deadlock_mr = int(deadlock_diag.get("right_lane_lines", 0) or 0)
+    deadlock_text = (
+        "{} · {} {}/{} · CW H {}/{} · ML {} / MR {}".format(
+            deadlock_state, deadlock_candidate, deadlock_frames, deadlock_required,
+            deadlock_cw, deadlock_cw_required, deadlock_ml, deadlock_mr,
+        )
+        if deadlock_enabled else "DISABLED"
+    )
+    deadlock_color = (
+        (0, 205, 240) if deadlock_state in {"RUNNING", "BLOCKED"} or deadlock_frames else
+        (40, 190, 80) if deadlock_enabled else (105, 120, 138)
+    )
+
     rows = [
         ("MODE", str(mode).upper() + " / " + str(vision_profile).upper(), (0, 175, 220)),
         ("LANE", lane_type + (" · VALID" if lane_valid else " · INVALID"),
@@ -210,6 +233,7 @@ def _draw_avis_road_rule_debug(
          (40, 190, 80) if light_color == "GREEN" else (105, 120, 138)),
         ("STOP LINE", stop_text,
          (0, 165, 255) if stop_text in {"WAITING", "DETECTED"} else (105, 120, 138)),
+        ("DEADLOCK", deadlock_text, deadlock_color),
         ("CONTROL", control_state + " · " + control_reason,
          (0, 165, 255) if control_state == "STOP" else (40, 190, 80)),
     ]
