@@ -401,6 +401,7 @@ class AvisAdapter(SimulatorAdapter):
         self._missing_image_started_at = None
         self._missing_image_error_logged = False
         self._last_error = ""
+        response_info = dict(getattr(car, "last_response_info", {}) or {})
 
         image = np.asarray(frame)
         if image.ndim != 3 or image.shape[2] < 3 or not image.size:
@@ -412,7 +413,6 @@ class AvisAdapter(SimulatorAdapter):
         self._missing_images = 0
         image = image[:, :, :3].copy()
         now = time.monotonic()
-        response_info = dict(getattr(car, "last_response_info", {}) or {})
         has_protocol_metadata = hasattr(car, "last_response_info")
         speed_tag_present = bool(response_info.get("speed_tag", not has_protocol_metadata))
         speed_parse_error = bool(response_info.get("speed_parse_error"))
