@@ -51,6 +51,9 @@
           <div class="sim-roi-selectors">
             <button type="button" data-sim-roi-select="RL" class="active">RL · Right lane</button>
             <button type="button" data-sim-roi-select="LL">LL · Left lane</button>
+            {% if caps.supports_sign_actions %}
+            <button type="button" data-sim-roi-select="ST">ST · Sign detector</button>
+            {% endif %}
             {% if caps.simulator_backend == 'avis' %}
             <button type="button" data-sim-roi-select="ML">ML · Left maneuver</button>
             <button type="button" data-sim-roi-select="MR">MR · Right maneuver</button>
@@ -68,6 +71,9 @@
             <label><input type="checkbox" id="sim-roi-overlay-toggle" checked> Show ROI overlays</label>
             <label><input type="checkbox" data-sim-roi-visible="RL" checked> RL</label>
             <label><input type="checkbox" data-sim-roi-visible="LL" checked> LL</label>
+            {% if caps.supports_sign_actions %}
+            <label><input type="checkbox" data-sim-roi-visible="ST" checked> ST</label>
+            {% endif %}
             {% if caps.simulator_backend == 'avis' %}
             <label><input type="checkbox" data-sim-roi-visible="ML" checked> ML</label>
             <label><input type="checkbox" data-sim-roi-visible="MR" checked> MR</label>
