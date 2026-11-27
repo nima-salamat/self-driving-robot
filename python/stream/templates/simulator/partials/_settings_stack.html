@@ -167,6 +167,14 @@
           <div class="setting-block" id="avis-sign-settings">
             <h3 class="section-title">AVIS · Traffic-sign actions</h3>
             <label class="check-field"><input id="sign-actions-enabled" type="checkbox" name="SIMULATOR_SIGN_ACTIONS_ENABLED"> Enable asynchronous YOLO / ONNX sign actions</label>
+            <h4 class="section-title" style="margin-top:12px">Sign detector ROI · normalized 0–1</h4>
+            <p class="note">YOLO receives only the selected rectangle from the live AVIS camera frame. You can also drag the ST rectangle in the Camera ROI editor.</p>
+            <div class="grid-two">
+              <div class="field"><label for="st-top">Sign ROI top</label><input id="st-top" type="number" min="0" max="1" step="any" name="ST_TOP_ROI"></div>
+              <div class="field"><label for="st-bottom">Sign ROI bottom</label><input id="st-bottom" type="number" min="0" max="1" step="any" name="ST_BOTTOM_ROI"></div>
+              <div class="field"><label for="st-left">Sign ROI left</label><input id="st-left" type="number" min="0" max="1" step="any" name="ST_LEFT_ROI"></div>
+              <div class="field"><label for="st-right">Sign ROI right</label><input id="st-right" type="number" min="0" max="1" step="any" name="ST_RIGHT_ROI"></div>
+            </div>
             <div class="grid-two">
               <div class="field"><label for="sign-confidence">Minimum confidence (0.05–1)</label><input id="sign-confidence" type="number" min=".05" max="1" step=".01" name="SIMULATOR_SIGN_CONFIDENCE"></div>
               <div class="field"><label for="sign-scan-interval">Inference every N frames</label><input id="sign-scan-interval" type="number" min="1" max="120" step="1" name="SIMULATOR_SIGN_SCAN_INTERVAL"></div>
