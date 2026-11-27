@@ -345,6 +345,25 @@
             <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. After the full-stop dwell, the route remains braked until the traffic-light detector confirms GREEN using the configured green-frame window (default 8 of 10). Keep “Require a confirmed green light before releasing stop lines or crosswalk routes” enabled. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
           </div>
           {% endif %}
+          {% if caps.simulator_backend == 'avis' and caps.mode == 'avis' %}
+          <div class="setting-block" id="avis-deadlock-settings">
+            <h3 class="section-title">AVIS City · Deadlock detection & escape maneuver</h3>
+            <label class="check-field"><input id="deadlock-enabled" type="checkbox" name="SIMULATOR_DEADLOCK_ENABLED"> Enable deadlock pattern detection and automatic escape maneuver</label>
+            <div class="grid-two">
+              <div class="field"><label for="deadlock-confirm-frames">Consecutive confirming frames</label><input id="deadlock-confirm-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_DEADLOCK_CONFIRM_FRAMES"></div>
+              <div class="field"><label for="deadlock-step-timeout">Maximum time per maneuver step (seconds)</label><input id="deadlock-step-timeout" type="number" min="1" max="120" step=".5" name="SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS"></div>
+            </div>
+            <input id="deadlock-route-chains" type="hidden" name="SIMULATOR_DEADLOCK_ROUTE_CHAINS" value='{"left":[],"right":[]}'>
+            <div class="crosswalk-route-action-row">
+              <button type="button" class="primary" id="avis-deadlock-routes-open"
+                data-settings-search="AVIS deadlock dead lock escape maneuver hardcode LEFT RIGHT route sequence distance speed steering configure">
+                Configure deadlock LEFT / RIGHT hardcodes
+              </button>
+              <span class="note">The detector requires the CW ROI to contain at least the configured CROSSWALK_HORIZONTAL_MIN_LINES. It then checks ML and MR with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route holds the vehicle stopped.</span>
+            </div>
+            <p class="note">After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. It does not run in AVIS Race or physical modes, and crosswalk, traffic-light, stop-line and obstacle safety holds retain priority.</p>
+          </div>
+          {% endif %}
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
             <div class="grid-two">
@@ -431,6 +450,35 @@
           <span class="spacer"></span>
           <button type="button" class="ghost" id="avis-crosswalk-route-cancel">Cancel</button>
           <button type="button" class="primary" id="avis-crosswalk-route-save">Apply route edits</button>
+        </footer>
+      </section>
+    </div>
+    <div id="avis-deadlock-route-modal" class="avis-crosswalk-modal" aria-hidden="true">
+      <section class="avis-crosswalk-card" role="dialog" aria-modal="true" aria-labelledby="avis-deadlock-route-title">
+        <header class="avis-crosswalk-head">
+          <div><h2 id="avis-deadlock-route-title">AVIS City · Deadlock escape route builder</h2>
+            <p>Build the exact distance-based LEFT and RIGHT maneuver used after the one-sided ROI pattern is confirmed.</p></div>
+          <button type="button" class="ghost" id="avis-deadlock-route-close" aria-label="Close deadlock route builder">×</button>
+        </header>
+        <div class="avis-crosswalk-body">
+          <div class="avis-crosswalk-tabs" role="tablist" aria-label="Deadlock escape directions">
+            <button type="button" data-avis-deadlock-route="left" class="active" role="tab" aria-selected="true">↰ LEFT</button>
+            <button type="button" data-avis-deadlock-route="right" role="tab" aria-selected="false">↱ RIGHT</button>
+          </div>
+          <div class="avis-crosswalk-toolbar">
+            <div><strong id="avis-deadlock-route-heading">LEFT maneuver</strong> <span class="small-muted" id="avis-deadlock-route-count">0 / 16 steps</span></div>
+            <button type="button" class="primary" id="avis-deadlock-step-add">＋ Add step</button>
+          </div>
+          <div id="avis-deadlock-step-list" class="avis-crosswalk-step-list" aria-live="polite"></div>
+          <div class="avis-crosswalk-preview"><strong>Maneuver preview</strong><span id="avis-deadlock-route-preview">No steps configured. When the corresponding deadlock pattern is confirmed, AVIS will remain stopped until this route is configured.</span></div>
+          <div class="avis-crosswalk-help">
+            Each step defines Forward/Reverse, travelled metres, speed percentage and signed steering percentage (−100 left to +100 right). Distance comes from AVIS motion telemetry; the global throttle and steering limits still apply. Apply the route edits here, then press the main “Save settings” button. Saving a route does not trigger a maneuver.
+          </div>
+        </div>
+        <footer class="avis-crosswalk-foot">
+          <span class="spacer"></span>
+          <button type="button" class="ghost" id="avis-deadlock-route-cancel">Cancel</button>
+          <button type="button" class="primary" id="avis-deadlock-route-save">Apply route edits</button>
         </footer>
       </section>
     </div>
