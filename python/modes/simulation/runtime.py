@@ -336,6 +336,7 @@ class SimulationRuntime:
         self._front_range_grace_notified = False
         self._last_command = self.controller.last_command
         self._last_error = None
+        self._fatal_runtime_error = None
         self._last_event_key = None
         self._last_cycle_at = None
         self._stop_event_active = False
@@ -581,6 +582,11 @@ class SimulationRuntime:
         Reconnection is independent of run arming: the operator must press Start
         again after any AVIS link loss or simulator reset.
         """
+        if self._fatal_runtime_error is not None:
+            raise RuntimeError(
+                "Simulation runtime has stopped after an internal error; restart the "
+                "simulation process before enabling motion."
+            )
         enabled = bool(enabled)
         if enabled == self._run_enabled:
             return self._run_enabled
@@ -861,6 +867,7 @@ class SimulationRuntime:
                             "reason": self._last_command.reason},
                 "sensors": sensor_data, "virtual_io": encoder,
                 "events": list(self._events)[-60:], "error": self._last_error,
+                "runtime_faulted": self._fatal_runtime_error is not None,
             }
 
     def run(self):
@@ -1109,6 +1116,7 @@ class SimulationRuntime:
             logger.info("Simulation interrupted; stopping vehicle")
         except Exception as exc:
             self._last_error = f"{type(exc).__name__}: {exc}"
+            self._fatal_runtime_error = self._last_error
             self._record_event("error", self._last_error)
             logger.exception("Simulation runtime failed")
             raise
@@ -1135,6 +1143,25 @@ class SimulationRuntime:
             stream_thread.start()
         try:
             self.run()
+        except Exception:
+            if stream_thread is None or not stream_thread.is_alive():
+                raise
+
+            # Keep the diagnostics/control web server alive after a worker crash.
+            # The runtime remains attached for read-only snapshots, while
+            # set_run_enabled() rejects all motion commands in this faulted state.
+            self._run_enabled = False
+            self.config.simulation_runtime = self
+            self.config.simulation_runtime_error = self._fatal_runtime_error or self._last_error
+            logger.error(
+                "Simulation worker stopped unexpectedly; Stream dashboard remains "
+                "available for diagnostics. Restart the process before resuming motion."
+            )
+            try:
+                while stream_thread.is_alive():
+                    stream_thread.join(timeout=0.5)
+            except KeyboardInterrupt:
+                logger.info("Stream dashboard interrupted by operator")
         finally:
             if stream_thread is not None and stream_thread.is_alive():
                 try:
