@@ -1871,6 +1871,10 @@ class AVISBehaviorCoordinator:
             "sign_detector_error": self._sign_error,
             "crosswalk_enabled": bool(getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)),
             "crosswalk_detected": bool(self.crosswalk_detect_count),
+            "crosswalk_detection_frames": int(self.crosswalk_detect_count),
+            "crosswalk_detection_required": max(
+                1, min(20, int(getattr(self.config, "SIMULATOR_CROSSWALK_CONFIRM_FRAMES", 3)))
+            ),
             "crosswalk_state": self.crosswalk_state,
             "crosswalk_measured_speed_kmh": self.crosswalk_measured_speed_kmh,
             "crosswalk_stop_confirm_count": int(self.crosswalk_stop_confirm_count),
