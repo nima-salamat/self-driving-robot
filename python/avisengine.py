@@ -211,8 +211,11 @@ class Car():
         self.image_mode = 1
         self.get_Speed = 1
         self.sensor_angle = 30
+        self.handbrake_value = 0.0
+        self.footbrake_value = 0.0
         self.data_arr = [self.speed_value, self.steering_value, self.image_mode,
-                         self.sensor_status, self.get_Speed, self.sensor_angle]
+                         self.sensor_status, self.get_Speed, self.sensor_angle,
+                         self.handbrake_value, self.footbrake_value]
         self.data_str = self._data_format.format(*self.data_arr)
         self.image = None
         self.sensors = None
@@ -230,13 +233,16 @@ class Car():
     image_mode = 1
     get_Speed = 1
     sensor_angle = 30
+    handbrake_value = 0.0
+    footbrake_value = 0.0
     
     sock = None
 
     #Data format for request
-    data_arr = [speed_value, steering_value, image_mode, sensor_status, get_Speed, sensor_angle]
-    _data_format = "Speed:{},Steering:{},ImageStatus:{},SensorStatus:{},GetSpeed:{},SensorAngle:{}"
-    data_str = _data_format.format(data_arr[0], data_arr[1], data_arr[2], data_arr[3], data_arr[4], data_arr[5])
+    data_arr = [speed_value, steering_value, image_mode, sensor_status, get_Speed, sensor_angle,
+                handbrake_value, footbrake_value]
+    _data_format = "Speed:{},Steering:{},ImageStatus:{},SensorStatus:{},GetSpeed:{},SensorAngle:{},Handbrake:{},FootBrake:{}"
+    data_str = _data_format.format(*data_arr)
     
     image = None
     sensors = None
@@ -283,10 +289,30 @@ class Car():
         return bytes(data)
 
         
-    def setDriveCommand(self, steering, speed):
-        """Send steering and motor speed together in one AVIS protocol packet."""
+    def setDriveCommand(self, steering, speed, handbrake=0.0, footbrake=0.0):
+        """Send steering, motor speed, service brake and parking brake atomically."""
         self.steering_value = int(steering)
         self.speed_value = int(speed)
+        self.handbrake_value = max(0.0, min(1.0, float(handbrake)))
+        self.footbrake_value = max(0.0, min(1.0, float(footbrake)))
+        self.image_mode = 0
+        self.sensor_status = 0
+        self.updateData()
+        self.sock.sendall(self.data_str.encode("utf-8"))
+        time.sleep(0.01)
+
+    def setHandbrake(self, handbrake):
+        """Set the rear-wheel parking brake without changing other controls."""
+        self.handbrake_value = max(0.0, min(1.0, float(handbrake)))
+        self.image_mode = 0
+        self.sensor_status = 0
+        self.updateData()
+        self.sock.sendall(self.data_str.encode("utf-8"))
+        time.sleep(0.01)
+
+    def setFootBrake(self, footbrake):
+        """Set the four-wheel service brake without changing other controls."""
+        self.footbrake_value = max(0.0, min(1.0, float(footbrake)))
         self.image_mode = 0
         self.sensor_status = 0
         self.updateData()
@@ -505,8 +531,12 @@ class Car():
         '''
         Updating the request data array and data string
         '''
-        data = [self.speed_value,self.steering_value,self.image_mode,self.sensor_status,self.get_Speed, self.sensor_angle]
-        self.data_str = self._data_format.format(data[0], data[1], data[2], data[3], data[4], data[5])
+        data = [
+            self.speed_value, self.steering_value, self.image_mode,
+            self.sensor_status, self.get_Speed, self.sensor_angle,
+            self.handbrake_value, self.footbrake_value,
+        ]
+        self.data_str = self._data_format.format(*data)
         
     def disconnect(self, send_stop=True):
         """Release the AVIS server-side client slot and close this socket once.
@@ -535,16 +565,15 @@ class Car():
             except OSError:
                 pass
 
-    def stop(self):
-        """Best-effort actuator stop followed by protocol-level disconnect."""
+    def stop(self, handbrake=0.0):
+        """Apply the service brake before releasing the protocol client slot."""
         sock = getattr(self, "sock", None)
         if sock is None:
             return
         try:
             if sock.fileno() >= 0:
                 try:
-                    self.setSpeed(0)
-                    self.setSteering(0)
+                    self.setDriveCommand(0, 0, handbrake, 1.0)
                 except OSError:
                     pass
         finally:
