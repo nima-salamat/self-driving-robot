@@ -1381,6 +1381,7 @@ class AVISBehaviorCoordinator:
         self.crosswalk_started_at = None
         self.crosswalk_route_name = None
         self.crosswalk_route_sign = None
+        self.crosswalk_pending_sign = None
         self.crosswalk_steps = []
         self.crosswalk_step_index = 0
         self.crosswalk_step_progress_cm = 0.0
@@ -1510,7 +1511,12 @@ class AVISBehaviorCoordinator:
                 self.traffic_light_hold = True
                 if self.green_window:
                     self.green_window.reset()
-            if self.green_window and (self.traffic_light_hold or self.stop_line_waiting):
+            crosswalk_waiting_for_green = (
+                self.crosswalk_latched and self.crosswalk_state == "waiting_for_green"
+            )
+            if self.green_window and (
+                self.traffic_light_hold or self.stop_line_waiting or crosswalk_waiting_for_green
+            ):
                 confirmed = self.green_window.observe(color, token)
                 if confirmed:
                     self.traffic_light_hold = False
@@ -1531,8 +1537,9 @@ class AVISBehaviorCoordinator:
         elif line_detected:
             self.stop_line_absent_count = 0
 
-    def _crosswalk_route_for_latest_sign(self):
-        label = str(self.last_sign_label or "").strip().upper()
+    def _crosswalk_route_for_latest_sign(self, label=None):
+        selected_label = self.last_sign_label if label is None else label
+        label = str(selected_label or "").strip().upper()
         if label in {"TURN LEFT", "LEFT"}:
             return "left"
         if label in {"TURN RIGHT", "RIGHT"}:
@@ -1551,7 +1558,7 @@ class AVISBehaviorCoordinator:
                 self.crosswalk_state = "idle"
                 self.crosswalk_stop_confirm_count = 0
                 self.crosswalk_reason = "crosswalk hardcode disabled before route confirmation"
-            if self.crosswalk_latched and self.crosswalk_state in {"stopping", "holding", "running"}:
+            if self.crosswalk_latched and self.crosswalk_state in {"stopping", "holding", "waiting_for_green", "running"}:
                 self.crosswalk_state = "blocked"
                 self.crosswalk_reason = (
                     "crosswalk hardcode disabled during an active route; "
@@ -1565,6 +1572,7 @@ class AVISBehaviorCoordinator:
             if not self.crosswalk_latched and self.crosswalk_state == "braking":
                 self.crosswalk_state = "idle"
                 self.crosswalk_stop_confirm_count = 0
+                self.crosswalk_pending_sign = None
                 self.crosswalk_reason = "crosswalk hardcode detection cleared before confirmation"
             if self.crosswalk_latched and self.crosswalk_state in {"completed", "blocked"}:
                 self.crosswalk_absent_count += 1
@@ -1575,6 +1583,7 @@ class AVISBehaviorCoordinator:
                     self.crosswalk_started_at = None
                     self.crosswalk_route_name = None
                     self.crosswalk_route_sign = None
+                    self.crosswalk_pending_sign = None
                     self.crosswalk_steps = []
                     self.crosswalk_step_index = 0
                     self.crosswalk_step_progress_cm = 0.0
@@ -1595,6 +1604,7 @@ class AVISBehaviorCoordinator:
             self.crosswalk_state = "braking"
             self.crosswalk_stop_confirm_count = 0
             self.crosswalk_started_at = None
+            self.crosswalk_pending_sign = str(self.last_sign_label or "NO DIRECTION SIGN")
             self.crosswalk_reason = (
                 "crosswalk hardcode braking while confirming detection (1/{})"
             ).format(required)
@@ -1609,8 +1619,11 @@ class AVISBehaviorCoordinator:
         self.crosswalk_started_at = None
         self.crosswalk_stop_confirm_count = 0
         self.crosswalk_measured_speed_kmh = None
-        self.crosswalk_route_sign = str(self.last_sign_label or "NO DIRECTION SIGN")
-        self.crosswalk_route_name = self._crosswalk_route_for_latest_sign()
+        self.crosswalk_route_sign = str(
+            self.crosswalk_pending_sign or self.last_sign_label or "NO DIRECTION SIGN"
+        )
+        self.crosswalk_route_name = self._crosswalk_route_for_latest_sign(self.crosswalk_route_sign)
+        self.crosswalk_pending_sign = None
         self.crosswalk_step_index = 0
         self.crosswalk_step_progress_cm = 0.0
         self.crosswalk_step_started_at = None
@@ -1694,12 +1707,56 @@ class AVISBehaviorCoordinator:
                 )
                 logger.error("%s", self.crosswalk_reason)
                 return _brake(command, self.crosswalk_reason)
+            if self.traffic_detector is None or self.green_window is None:
+                self.crosswalk_state = "waiting_for_green"
+                self.crosswalk_reason = (
+                    "crosswalk hardcode waiting for GREEN: traffic-light detector is disabled; "
+                    "route remains stopped"
+                )
+                logger.error("%s", self.crosswalk_reason)
+                return _brake(command, self.crosswalk_reason)
+            self.green_window.reset()
+            self.crosswalk_state = "waiting_for_green"
+            self.crosswalk_reason = (
+                "crosswalk hardcode dwell complete; waiting for a freshly confirmed GREEN signal"
+            )
+            logger.info(
+                "AVIS City crosswalk dwell complete; waiting for %d/%d fresh GREEN frames before %s route (sign=%s)",
+                self.green_window.required_green, self.green_window.window_size,
+                self.crosswalk_route_name, self.crosswalk_route_sign,
+            )
+            return _brake(command, self.crosswalk_reason)
+
+        if self.crosswalk_state == "waiting_for_green":
+            if self.traffic_detector is None or self.green_window is None:
+                self.crosswalk_reason = (
+                    "crosswalk hardcode waiting for GREEN: traffic-light detector is disabled; "
+                    "route remains stopped"
+                )
+                return _brake(command, self.crosswalk_reason)
+            if not self.green_window.confirmed:
+                self.crosswalk_reason = (
+                    "crosswalk hardcode waiting for GREEN: {}/{} green frames in {}/{} observations"
+                ).format(
+                    self.green_window.green_count,
+                    self.green_window.required_green,
+                    len(self.green_window.observations),
+                    self.green_window.window_size,
+                )
+                return _brake(command, self.crosswalk_reason)
             self.crosswalk_state = "running"
             self.crosswalk_step_index = 0
             self.crosswalk_step_progress_cm = 0.0
             self.crosswalk_step_started_at = now
-            logger.info("AVIS City crosswalk dwell complete; starting %s route from sign=%s",
-                        self.crosswalk_route_name, self.crosswalk_route_sign)
+            self.crosswalk_reason = (
+                "crosswalk hardcode GREEN confirmed; starting {} route from sign={}"
+            ).format(self.crosswalk_route_name, self.crosswalk_route_sign)
+            logger.info(
+                "AVIS City crosswalk GREEN confirmed (%d/%d); starting %s route from sign=%s",
+                self.green_window.green_count, self.green_window.window_size,
+                self.crosswalk_route_name, self.crosswalk_route_sign,
+            )
+
         if self.crosswalk_state == "blocked":
             return _brake(command, self.crosswalk_reason)
         if self.crosswalk_state != "running":
@@ -1805,14 +1862,14 @@ class AVISBehaviorCoordinator:
             )
             return _brake(command, reason)
 
+        crosswalk_command = self._crosswalk_route_command(frame, command, distance_delta_cm, now)
+        if crosswalk_command is not None:
+            return crosswalk_command
+
         if self.park_latched:
             return _brake(command, "PARK sign latched; waiting for a confirmed STRAIGHT sign")
         if now < self.stop_sign_until:
             return _brake(command, "STOP sign hold")
-
-        crosswalk_command = self._crosswalk_route_command(frame, command, distance_delta_cm, now)
-        if crosswalk_command is not None:
-            return crosswalk_command
 
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
@@ -1881,6 +1938,12 @@ class AVISBehaviorCoordinator:
             "crosswalk_stop_confirm_required": self.CROSSWALK_STOP_CONFIRM_FRAMES,
             "crosswalk_route": self.crosswalk_route_name,
             "crosswalk_sign": self.crosswalk_route_sign,
+            "crosswalk_waiting_for_green": self.crosswalk_state == "waiting_for_green",
+            "crosswalk_green_confirmed": bool(self.green_window and self.green_window.confirmed),
+            "crosswalk_green_count": self.green_window.green_count if self.green_window else 0,
+            "crosswalk_green_observations": len(self.green_window.observations) if self.green_window else 0,
+            "crosswalk_green_required": self.green_window.required_green if self.green_window else 0,
+            "crosswalk_green_window": self.green_window.window_size if self.green_window else 0,
             "crosswalk_step": self.crosswalk_step_index + 1 if self.crosswalk_state == "running" else 0,
             "crosswalk_steps": len(self.crosswalk_steps),
             "crosswalk_progress_cm": round(self.crosswalk_step_progress_cm, 1),
