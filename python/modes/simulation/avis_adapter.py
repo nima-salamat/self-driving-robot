@@ -21,11 +21,15 @@ class AvisAdapter(SimulatorAdapter):
     backend = "avis"
     supports_lidar = False
     PARKING_BRAKE_SPEED_KMH = 1.0
-    # AVIS's stock Unity controller treats negative speed as service braking
-    # only above 5 mph (8.05 km/h); below that it applies reverse motor torque.
-    # Use a margin above that split and never send negative speed near a stop.
+    # Above 9 km/h, the stock AVIS controller maps negative speed to its
+    # service-brake path. Below that, negative speed becomes reverse motor
+    # torque; retain a gentle -40 command down to 1 km/h as a legacy fallback.
+    # With the Unity brake patch installed, explicit FootBrake suppresses
+    # motor speed and the direct four-wheel brake remains authoritative.
     NEGATIVE_SPEED_BRAKE_MIN_KMH = 9.0
     NEGATIVE_SPEED_BRAKE_PERCENT = 100
+    LOW_SPEED_REVERSE_BRAKE_MIN_KMH = 1.0
+    LOW_SPEED_REVERSE_BRAKE_PERCENT = 40
     SPEED_FEEDBACK_MAX_AGE_S = 1.0
 
     def __init__(self, config):
@@ -447,18 +451,18 @@ class AvisAdapter(SimulatorAdapter):
                 )
                 measured_speed = self._last_speed_kmh if speed_is_fresh else None
 
-                # Keep the legacy negative-speed braking behavior for higher
-                # speeds, while the explicit FootBrake channel provides full
-                # braking force and protects the low-speed transition. In the
-                # stock Unity controller, negative input becomes reverse torque
-                # below 5 mph, so stop sending it before the 9 km/h safety margin.
+                # Use full legacy braking above the stock 5 mph split.
+                # Below 9 km/h, retain the user's requested -40 reverse-torque
+                # deceleration fallback until 1 km/h. This fallback is needed by
+                # an unpatched 1.2.4 server, which ignores FootBrake/Handbrake.
+                # With the Unity protocol patch, FootBrake forces vSpeed to zero
+                # in CarUserControl and ApplyBrakeInputs applies real wheel torque.
                 speed = 0
-                if (
-                    brake >= 0.5
-                    and measured_speed is not None
-                    and measured_speed > self.NEGATIVE_SPEED_BRAKE_MIN_KMH
-                ):
-                    speed = -self.NEGATIVE_SPEED_BRAKE_PERCENT
+                if brake >= 0.5 and measured_speed is not None:
+                    if measured_speed > self.NEGATIVE_SPEED_BRAKE_MIN_KMH:
+                        speed = -self.NEGATIVE_SPEED_BRAKE_PERCENT
+                    elif measured_speed > self.LOW_SPEED_REVERSE_BRAKE_MIN_KMH:
+                        speed = -self.LOW_SPEED_REVERSE_BRAKE_PERCENT
 
                 if (
                     brake >= 0.5
@@ -469,6 +473,8 @@ class AvisAdapter(SimulatorAdapter):
 
                 if handbrake >= 0.5:
                     self._last_brake_mode = "FOOT BRAKE + HANDBRAKE"
+                elif speed == -self.LOW_SPEED_REVERSE_BRAKE_PERCENT:
+                    self._last_brake_mode = "LOW-SPEED REVERSE-TORQUE BRAKING + FOOT BRAKE"
                 elif speed < 0:
                     self._last_brake_mode = "NEGATIVE SPEED + FOOT BRAKE"
                 else:
