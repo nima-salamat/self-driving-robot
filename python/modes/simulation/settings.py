@@ -63,7 +63,12 @@ SIMULATOR_KEYS = {
     "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL", "HOUGH_MORPH_CLOSE",
     "ROI_RESIZABLE",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
-    "CROSSWALK_HORIZONTAL_MIN_LINES", "LANE_ROI_MODE", "CW_TRAPEZOID_MODE",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "CROSSWALK_CANNY_LOW_THRESHOLD",
+    "CROSSWALK_CANNY_HIGH_THRESHOLD", "CROSSWALK_HOUGH_THRESHOLD",
+    "CROSSWALK_HOUGH_MIN_LINE_LENGTH", "CROSSWALK_HOUGH_MAX_LINE_GAP",
+    "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", "CROSSWALK_MIN_LINE_LENGTH_RATIO",
+    "CROSSWALK_MIN_LINE_LENGTH_PX", "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO",
+    "LANE_ROI_MODE", "CW_TRAPEZOID_MODE",
     "RL_TOP_WIDTH_FACTOR", "LL_TOP_WIDTH_FACTOR", "CW_TOP_WIDTH_FACTOR",
     "OLD_METHOD", "CW_OLD_METHOD", "CAMERA_PITCH_DEG", "CAMERA_HEIGHT", "LANE_WIDTH",
     "BEV_SRC_TL_X", "BEV_SRC_TL_Y", "BEV_SRC_TR_X", "BEV_SRC_TR_Y",
@@ -99,7 +104,11 @@ INT_KEYS = {
     "SIMULATOR_SPAWN_POINT_INDEX", "LANE_THRESHOLD", "HOUGH_THRESHOLD",
     "HOUGH_MIN_LINE_LENGTH", "HOUGH_MAX_LINE_GAP", "HOUGH_BLUR_KERNEL",
     "CROSSWALK_THRESHOLD", "CROSSWALK_VERTICAL_MIN_LINES",
-    "CROSSWALK_HORIZONTAL_MIN_LINES", "HALL_LINE_TRACKING_MAX_MISSED",
+    "CROSSWALK_HORIZONTAL_MIN_LINES", "CROSSWALK_CANNY_LOW_THRESHOLD",
+    "CROSSWALK_CANNY_HIGH_THRESHOLD", "CROSSWALK_HOUGH_THRESHOLD",
+    "CROSSWALK_HOUGH_MIN_LINE_LENGTH", "CROSSWALK_HOUGH_MAX_LINE_GAP",
+    "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", "CROSSWALK_MIN_LINE_LENGTH_PX",
+    "HALL_LINE_TRACKING_MAX_MISSED",
     "HALL_LINE_TRACKING_REACQUIRE_FRAMES", "SIMULATOR_STOP_LINE_THRESHOLD",
     "SIMULATOR_STOP_LINE_CONFIRM_FRAMES", "SIMULATOR_SIGN_SCAN_INTERVAL",
     "SIMULATOR_OBSTACLE_ROI_CONFIRM_FRAMES",
@@ -159,6 +168,7 @@ NUMERIC_KEYS = POSITIVE_KEYS | NONNEGATIVE_KEYS | ROI_KEYS | BEV_KEYS | ROI_FACT
     "MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE",
     "SIMULATOR_CAMERA_Y", "SIMULATOR_CAMERA_Z", "SIMULATOR_CAMERA_PITCH",
     "SIMULATOR_CAMERA_YAW", "SIMULATOR_CAMERA_ROLL", "CAMERA_PITCH_DEG",
+    "CROSSWALK_MIN_LINE_LENGTH_RATIO", "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO",
 }
 
 
@@ -214,6 +224,15 @@ def _defaults(mode, backend):
         "CROSSWALK_THRESHOLD": 180,
         "CROSSWALK_VERTICAL_MIN_LINES": 6,
         "CROSSWALK_HORIZONTAL_MIN_LINES": 3,
+        "CROSSWALK_CANNY_LOW_THRESHOLD": 100,
+        "CROSSWALK_CANNY_HIGH_THRESHOLD": 150,
+        "CROSSWALK_HOUGH_THRESHOLD": 20,
+        "CROSSWALK_HOUGH_MIN_LINE_LENGTH": 5,
+        "CROSSWALK_HOUGH_MAX_LINE_GAP": 5,
+        "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG": 30,
+        "CROSSWALK_MIN_LINE_LENGTH_RATIO": 0.10,
+        "CROSSWALK_MIN_LINE_LENGTH_PX": 10,
+        "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO": 0.70,
         "LANE_ROI_MODE": "rectangle",
         "CW_TRAPEZOID_MODE": False,
         "ROI_RESIZABLE": False,
@@ -386,6 +405,18 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("HOUGH_BLUR_KERNEL must be 1 or an odd integer from 3 to 15")
             if key == "CROSSWALK_THRESHOLD" and not 0 <= value <= 255:
                 raise ValueError("CROSSWALK_THRESHOLD must be between 0 and 255")
+            if key in {"CROSSWALK_CANNY_LOW_THRESHOLD", "CROSSWALK_CANNY_HIGH_THRESHOLD"} and not 0 <= value <= 255:
+                raise ValueError(f"{key} must be between 0 and 255")
+            if key == "CROSSWALK_HOUGH_THRESHOLD" and not 1 <= value <= 255:
+                raise ValueError("CROSSWALK_HOUGH_THRESHOLD must be between 1 and 255")
+            if key == "CROSSWALK_HOUGH_MIN_LINE_LENGTH" and not 1 <= value <= 500:
+                raise ValueError("CROSSWALK_HOUGH_MIN_LINE_LENGTH must be between 1 and 500")
+            if key == "CROSSWALK_HOUGH_MAX_LINE_GAP" and not 0 <= value <= 100:
+                raise ValueError("CROSSWALK_HOUGH_MAX_LINE_GAP must be between 0 and 100")
+            if key == "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG" and not 1 <= value <= 44:
+                raise ValueError("CROSSWALK_LINE_ANGLE_TOLERANCE_DEG must be between 1 and 44 degrees")
+            if key == "CROSSWALK_MIN_LINE_LENGTH_PX" and not 1 <= value <= 500:
+                raise ValueError("CROSSWALK_MIN_LINE_LENGTH_PX must be between 1 and 500")
             if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 1 <= value <= 1000:
                 raise ValueError(f"{key} must be between 1 and 1000")
             if key == "SIMULATOR_STOP_LINE_THRESHOLD" and not 0 <= value <= 255:
@@ -492,6 +523,10 @@ def _validate_settings(data, backend=None, mode=None):
                     )
             if key == "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG" and not 1 <= value <= 45:
                 raise ValueError("SIMULATOR_STOP_LINE_MAX_ANGLE_DEG must be between 1 and 45 degrees")
+            if key == "CROSSWALK_MIN_LINE_LENGTH_RATIO" and not 0.01 <= value <= 1:
+                raise ValueError("CROSSWALK_MIN_LINE_LENGTH_RATIO must be between 0.01 and 1")
+            if key == "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO" and not 0 <= value <= 1:
+                raise ValueError("CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO must be between 0 and 1")
             if key == "TL_MIN_ACTIVE_BRIGHTNESS" and not 0 <= value <= 255:
                 raise ValueError("TL_MIN_ACTIVE_BRIGHTNESS must be between 0 and 255")
             if key == "SIMULATOR_SIGN_CONFIDENCE" and not 0.05 <= value <= 1:
@@ -546,6 +581,9 @@ def _validate_settings(data, backend=None, mode=None):
     if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
         if not clean["MIN_SERVO_ANGLE"] < clean["SERVO_CENTER"] < clean["MAX_SERVO_ANGLE"]:
             raise ValueError("MIN_SERVO_ANGLE must be smaller than SERVO_CENTER, which must be smaller than MAX_SERVO_ANGLE")
+    if "CROSSWALK_CANNY_LOW_THRESHOLD" in clean and "CROSSWALK_CANNY_HIGH_THRESHOLD" in clean:
+        if clean["CROSSWALK_CANNY_LOW_THRESHOLD"] >= clean["CROSSWALK_CANNY_HIGH_THRESHOLD"]:
+            raise ValueError("CROSSWALK_CANNY_LOW_THRESHOLD must be smaller than CROSSWALK_CANNY_HIGH_THRESHOLD")
     for low, high in (("TL_RED_HUE_MIN", "TL_RED_HUE_MAX"), ("TL_GREEN_HUE_MIN", "TL_GREEN_HUE_MAX")):
         if low in clean and high in clean and clean[low] >= clean[high]:
             raise ValueError(f"{low} must be smaller than {high}")
