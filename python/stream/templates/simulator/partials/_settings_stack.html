@@ -175,6 +175,23 @@
               <div class="field"><label for="st-left">Sign ROI left</label><input id="st-left" type="number" min="0" max="1" step="any" name="ST_LEFT_ROI"></div>
               <div class="field"><label for="st-right">Sign ROI right</label><input id="st-right" type="number" min="0" max="1" step="any" name="ST_RIGHT_ROI"></div>
             </div>
+            <h4 class="section-title" style="margin-top:14px">Red HSV STOP-sign detector · same ST ROI</h4>
+            <label class="check-field"><input id="stop-sign-hsv-enabled" type="checkbox" name="SIMULATOR_STOP_SIGN_HSV_ENABLED"> Enable HSV red STOP-sign detection (enabled by default in AVIS City)</label>
+            <div class="grid-two">
+              <div class="field"><label for="stop-sign-red-hue-min">Red hue lower range start (0–179)</label><input id="stop-sign-red-hue-min" type="number" min="0" max="179" step="1" name="SIMULATOR_STOP_SIGN_RED_HUE_MIN"></div>
+              <div class="field"><label for="stop-sign-red-hue-max">Red hue lower range end (0–179)</label><input id="stop-sign-red-hue-max" type="number" min="0" max="179" step="1" name="SIMULATOR_STOP_SIGN_RED_HUE_MAX"></div>
+              <div class="field"><label for="stop-sign-red-hue-wrap">Red hue upper wrap start (0–179)</label><input id="stop-sign-red-hue-wrap" type="number" min="0" max="179" step="1" name="SIMULATOR_STOP_SIGN_RED_HUE_WRAP_MIN"></div>
+              <div class="field"><label for="stop-sign-min-saturation">Minimum saturation (0–255)</label><input id="stop-sign-min-saturation" type="number" min="0" max="255" step="1" name="SIMULATOR_STOP_SIGN_MIN_SATURATION"></div>
+              <div class="field"><label for="stop-sign-min-value">Minimum brightness / value (0–255)</label><input id="stop-sign-min-value" type="number" min="0" max="255" step="1" name="SIMULATOR_STOP_SIGN_MIN_VALUE"></div>
+              <div class="field"><label for="stop-sign-contour-area">Minimum contour area (px²)</label><input id="stop-sign-contour-area" type="number" min="1" max="1000000" step="any" name="SIMULATOR_STOP_SIGN_MIN_CONTOUR_AREA"></div>
+              <div class="field"><label for="stop-sign-area-ratio">Minimum sign area / ST ROI area (0.0001–0.5)</label><input id="stop-sign-area-ratio" type="number" min=".0001" max=".5" step=".001" name="SIMULATOR_STOP_SIGN_MIN_AREA_RATIO"></div>
+              <div class="field"><label for="stop-sign-red-fill">Minimum red fill inside box (0.1–1)</label><input id="stop-sign-red-fill" type="number" min=".1" max="1" step=".01" name="SIMULATOR_STOP_SIGN_MIN_RED_FILL_RATIO"></div>
+              <div class="field"><label for="stop-sign-aspect-tolerance">Square aspect tolerance (0.05–0.75)</label><input id="stop-sign-aspect-tolerance" type="number" min=".05" max=".75" step=".01" name="SIMULATOR_STOP_SIGN_ASPECT_TOLERANCE"></div>
+              <div class="field"><label for="stop-sign-min-vertices">Minimum polygon vertices (4–10)</label><input id="stop-sign-min-vertices" type="number" min="4" max="10" step="1" name="SIMULATOR_STOP_SIGN_MIN_VERTICES"></div>
+              <div class="field"><label for="stop-sign-max-vertices">Maximum polygon vertices (5–12)</label><input id="stop-sign-max-vertices" type="number" min="5" max="12" step="1" name="SIMULATOR_STOP_SIGN_MAX_VERTICES"></div>
+              <div class="field"><label for="stop-sign-confirm-frames">Consecutive size-qualified frames (1–10)</label><input id="stop-sign-confirm-frames" type="number" min="1" max="10" step="1" name="SIMULATOR_STOP_SIGN_CONFIRM_FRAMES"></div>
+            </div>
+            <p class="note">HSV processing uses only the ST rectangle above (also draggable in the Camera ROI editor). It looks for a large red, convex, near-square polygon resembling an octagonal STOP sign. The detected sign gets a bounding box in the live frame. Once it passes the configured ROI-size threshold for the required consecutive frames, STOP is latched: no lane, crosswalk, traffic-light, obstacle or hardcode command can move the vehicle again. Start/Stop and saving settings do not clear this latch; restart the AVIS simulator runtime/server to reset it. This detector is independent of optional YOLO.</p>
             <div class="grid-two">
               <div class="field"><label for="sign-confidence">Minimum confidence (0.05–1)</label><input id="sign-confidence" type="number" min=".05" max="1" step=".01" name="SIMULATOR_SIGN_CONFIDENCE"></div>
               <div class="field"><label for="sign-scan-interval">Inference every N frames</label><input id="sign-scan-interval" type="number" min="1" max="120" step="1" name="SIMULATOR_SIGN_SCAN_INTERVAL"></div>
