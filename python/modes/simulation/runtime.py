@@ -1040,6 +1040,19 @@ class SimulationRuntime:
                         self._safe_stop("No fresh simulator camera frame; braking until frames resume.")
                     self.shutdown_event.wait(0.05)
                     continue
+                hardcode_active = bool(
+                    self.avis_behaviors is not None
+                    and self.avis_behaviors.hardcode_route_active()
+                )
+                if getattr(frame, "image", None) is None:
+                    telemetry_status = dict(getattr(frame, "sensor_status", {}) or {})
+                    if not hardcode_active or telemetry_status.get("speed_available") is not True:
+                        self._safe_stop(
+                            "AVIS camera image or fresh speed telemetry is unavailable; "
+                            "holding motion because a distance-based hardcode cannot be tracked."
+                        )
+                        self.shutdown_event.wait(0.05)
+                        continue
                 if frame.sequence and frame.sequence == self._last_sequence:
                     continue
                 if frame.sequence and self._last_sequence and frame.sequence > self._last_sequence + 1:
@@ -1071,49 +1084,95 @@ class SimulationRuntime:
                     self._queue_frame_for_stream(frame, self._last_result, self._last_command)
                     self.shutdown_event.wait(0.05)
                     continue
+                hardcode_active = bool(
+                    hardcode_active
+                    or (
+                        self.avis_behaviors is not None
+                        and self.avis_behaviors.hardcode_route_active()
+                    )
+                )
+                if hardcode_active:
+                    # A configured hardcode route owns every motion command.
+                    # Do not read lane/crosswalk/sign/traffic-light/stop-line
+                    # vision while it is running.
+                    result = {
+                        "lane_type": "hardcode route (vision bypassed)",
+                        "perception_valid": True,
+                        "crosswalk": False,
+                        "vision_bypassed": True,
+                    }
+                    command = VehicleCommand(
+                        steering=float(getattr(self._last_command, "steering", 0.0)),
+                        throttle=0.0, brake=0.0,
+                        servo_angle=float(getattr(self._last_command, "servo_angle", self.controller.last_servo)),
+                        target_speed=0.0, reason="hardcode route command base",
+                    )
+                    detection_ms = 0.0
+                else:
+                    if self.avis_behaviors is not None:
+                        # Temporary lane ROIs apply only during normal lane following.
+                        self.avis_behaviors.prepare_vision(now=now)
+                    detection_started = time.perf_counter()
+                    result = self.vision.detect(frame.image)
+                    detection_ms = (time.perf_counter() - detection_started) * 1000.0
+                    if not isinstance(result, dict):
+                        result = {}
+                    command = self.controller.command_for(result, frame.speed_kmh)
+
                 if self.avis_behaviors is not None:
-                    # Prepare the requested temporary lane ROI before processing this frame.
-                    self.avis_behaviors.prepare_vision(now=now)
-                detection_started = time.perf_counter()
-                result = self.vision.detect(frame.image)
-                detection_ms = (time.perf_counter() - detection_started) * 1000.0
-                if not isinstance(result, dict):
-                    result = {}
-                command = self.controller.command_for(result, frame.speed_kmh)
-                if self.avis_behaviors is not None:
-                    self.avis_behaviors.submit_sign_frame(frame)
+                    if not hardcode_active:
+                        self.avis_behaviors.submit_sign_frame(frame)
                     command = self.avis_behaviors.apply(
                         frame, result, command,
                         distance_delta_cm=getattr(frame, "distance_delta_cm", 0.0),
                         now=now,
                     )
-                    command = self.avis_behaviors.approach_speed.apply(
-                        frame, command, now=now
+                    hardcode_cycle = bool(
+                        hardcode_active
+                        or self.avis_behaviors.hardcode_route_active()
+                        or str(getattr(command, "reason", "")).lower().startswith(
+                            ("crosswalk hardcode", "deadlock ")
+                        )
                     )
+                    if not hardcode_cycle:
+                        command = self.avis_behaviors.approach_speed.apply(
+                            frame, command, now=now
+                        )
                     result["simulation_behavior"] = self.avis_behaviors.snapshot()
-                obstacle_limit = getattr(
-                    self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
-                    60.0 if self.backend == "avis" else 35.0,
-                )
-                ranges = dict(getattr(frame, "ranges_cm", {}) or {})
-                command, self._last_range_safety = _apply_forward_range_guard(
-                    command, ranges, backend=self.backend,
-                    stop_distance_cm=obstacle_limit,
-                )
-                if self.backend == "avis":
-                    sensor_status = dict(getattr(frame, "sensor_status", {}) or {})
-                    self._last_range_safety.update({
-                        "sensor_tag_present": sensor_status.get("sensor_tag_present"),
-                        "range_sensor_count": sensor_status.get("range_sensor_count"),
-                        "front_range_available": sensor_status.get(
-                            "front_range_available", ranges.get("front") is not None
-                        ),
-                    })
-                if self._latch_avis_range_stop():
-                    # The Engine stop token closes the active control session.
-                    # Motion requires a fresh Start click after reconnect.
-                    self.shutdown_event.wait(0.05)
-                    continue
+                else:
+                    hardcode_cycle = False
+
+                if hardcode_cycle:
+                    # Perception-driven range/stop rules are intentionally
+                    # suspended until this configured route finishes.
+                    self._last_range_safety = {
+                        "status": "bypassed_during_hardcode",
+                        "reason": "configured AVIS hardcode route owns vehicle motion",
+                    }
+                else:
+                    obstacle_limit = getattr(
+                        self.config, "SIMULATOR_OBSTACLE_STOP_DISTANCE_CM",
+                        60.0 if self.backend == "avis" else 35.0,
+                    )
+                    ranges = dict(getattr(frame, "ranges_cm", {}) or {})
+                    command, self._last_range_safety = _apply_forward_range_guard(
+                        command, ranges, backend=self.backend,
+                        stop_distance_cm=obstacle_limit,
+                    )
+                    if self.backend == "avis":
+                        sensor_status = dict(getattr(frame, "sensor_status", {}) or {})
+                        self._last_range_safety.update({
+                            "sensor_tag_present": sensor_status.get("sensor_tag_present"),
+                            "range_sensor_count": sensor_status.get("range_sensor_count"),
+                            "front_range_available": sensor_status.get(
+                                "front_range_available", ranges.get("front") is not None
+                            ),
+                        })
+                    if self._latch_avis_range_stop():
+                        # The Engine stop token closes the active control session.
+                        # Motion requires a fresh Start click after reconnect.
+                        self.shutdown_event.wait(0.05)
+                        continue
                 if (self.backend != "avis" and self.vision_profile == "city" and bool(result.get("crosswalk", False))
                         and bool(getattr(self.config, "SIMULATOR_STOP_ON_CROSSWALK", True))):
                     command = VehicleCommand(
@@ -1177,7 +1236,8 @@ class SimulationRuntime:
                     self._last_control_ms = control_ms
                     self._detection_times_ms.append(detection_ms)
                     self._cycle_times.append(time.monotonic())
-                self._queue_frame_for_stream(frame, result, command)
+                if getattr(frame, "image", None) is not None:
+                    self._queue_frame_for_stream(frame, result, command)
                 self._last_cycle_at = now
                 self._next_cycle_at = max(self._next_cycle_at + self._frame_period, now)
                 self.shutdown_event.wait(max(0.0, self._next_cycle_at - time.monotonic()))
