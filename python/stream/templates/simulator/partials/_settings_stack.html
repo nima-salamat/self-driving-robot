@@ -175,6 +175,7 @@
               <div class="field"><label for="st-left">Sign ROI left</label><input id="st-left" type="number" min="0" max="1" step="any" name="ST_LEFT_ROI"></div>
               <div class="field"><label for="st-right">Sign ROI right</label><input id="st-right" type="number" min="0" max="1" step="any" name="ST_RIGHT_ROI"></div>
             </div>
+            {% if caps.simulator_backend == 'avis' and caps.mode == 'avis' %}
             <h4 class="section-title" style="margin-top:14px">Red HSV STOP-sign detector · same ST ROI</h4>
             <label class="check-field"><input id="stop-sign-hsv-enabled" type="checkbox" name="SIMULATOR_STOP_SIGN_HSV_ENABLED"> Enable HSV red STOP-sign detection (enabled by default in AVIS City)</label>
             <div class="grid-two">
@@ -192,6 +193,7 @@
               <div class="field"><label for="stop-sign-confirm-frames">Consecutive size-qualified frames (1–10)</label><input id="stop-sign-confirm-frames" type="number" min="1" max="10" step="1" name="SIMULATOR_STOP_SIGN_CONFIRM_FRAMES"></div>
             </div>
             <p class="note">HSV processing uses only the ST rectangle above (also draggable in the Camera ROI editor). It looks for a large red, convex, near-square polygon resembling an octagonal STOP sign. The detected sign gets a bounding box in the live frame. Once it passes the configured ROI-size threshold for the required consecutive frames, STOP is latched: no lane, crosswalk, traffic-light, obstacle or hardcode command can move the vehicle again. Start/Stop and saving settings do not clear this latch; restart the AVIS simulator runtime/server to reset it. This detector is independent of optional YOLO.</p>
+            {% endif %}
             <div class="grid-two">
               <div class="field"><label for="sign-confidence">Minimum confidence (0.05–1)</label><input id="sign-confidence" type="number" min=".05" max="1" step=".01" name="SIMULATOR_SIGN_CONFIDENCE"></div>
               <div class="field"><label for="sign-scan-interval">Inference every N frames</label><input id="sign-scan-interval" type="number" min="1" max="120" step="1" name="SIMULATOR_SIGN_SCAN_INTERVAL"></div>
