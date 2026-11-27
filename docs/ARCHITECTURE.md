@@ -55,6 +55,10 @@ Do not assume that the simulator runtime implements every physical-mode behavior
 
 The normal runtime owns perception and control in its main mode process. Optional multiprocessing isolates camera capture and traffic-sign inference; it does not move steering, STOP/phase decisions, or Arduino I/O into the worker. Latest-frame handoff is designed to drop obsolete frames rather than build a backlog.
 
+### Logging
+
+`utils/logging_setup.py` owns the process-wide logging policy. Main-process module loggers write to the console and one append/rotating `output/robot.log`; spawned workers use `QueueHandler` to forward records to the main process, where a single listener fans them out to the same file and runtime sinks. This avoids multiple processes independently opening or rotating the same log file. Stream keeps only a bounded, redacted in-memory tail for its live log API; it is a view of central records, not a separate durable log store.
+
 ### Configuration ownership
 
 Use this precedence as the general rule:
