@@ -212,7 +212,7 @@
               <div class="field"><label for="tl-left">Traffic-light left</label><input id="tl-left" type="number" min="0" max="1" step="any" name="TL_LEFT_ROI"></div>
               <div class="field"><label for="tl-right">Traffic-light right</label><input id="tl-right" type="number" min="0" max="1" step="any" name="TL_RIGHT_ROI"></div>
             </div>
-            <p class="note">AVIS City uses a solid horizontal stop-line detector rather than the physical crosswalk detector. Red holds the brake; releasing a latched stop requires the newest observation to be green and the configured number of distinct green frames.</p>
+            <p class="note">AVIS City uses the shared City crosswalk detector for perception and diagnostics, plus an independent solid stop-line / traffic-light safety gate. Crosswalk detection does not replace or override the stop-line/light brake logic. Red holds the brake; releasing a latched stop requires the newest observation to be green and the configured number of distinct green frames.</p>
           </div>
           {% endif %}
                     <div class="setting-block {% if caps.vision_profile != 'race' %}section-hide{% endif %}" id="race-vision-settings">
@@ -278,15 +278,25 @@
             <label class="check-field"><input id="hough-morph-close" type="checkbox" name="HOUGH_MORPH_CLOSE"> Close small gaps in lane edges (morphological close)</label>
             <label class="check-field"><input id="old-method" type="checkbox" name="OLD_METHOD"> Use legacy Hough/Canny lane detector</label>
             <label class="check-field"><input id="roi-resizable" type="checkbox" name="ROI_RESIZABLE"> Allow lane ROI to expand temporarily when lane markings are lost</label>
-            {% if caps.supports_crosswalk %}
+            {% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}
             <div class="grid-two" style="margin-top:10px">
-              <div class="field"><label for="crosswalk-threshold">Crosswalk pixel threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
+              <div class="field"><label for="crosswalk-threshold">Crosswalk grayscale threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
               <div class="field"><label for="crosswalk-min-vertical">Minimum vertical crosswalk lines</label><input id="crosswalk-min-vertical" type="number" min="1" max="1000" step="1" name="CROSSWALK_VERTICAL_MIN_LINES"></div>
               <div class="field"><label for="crosswalk-min-horizontal">Minimum horizontal crosswalk lines</label><input id="crosswalk-min-horizontal" type="number" min="1" max="1000" step="1" name="CROSSWALK_HORIZONTAL_MIN_LINES"></div>
               <div class="field"><label for="cw-top-factor">Crosswalk trapezoid top width (0–1)</label><input id="cw-top-factor" type="number" min="0" max="1" step="any" name="CW_TOP_WIDTH_FACTOR"></div>
+              <div class="field"><label for="crosswalk-canny-low">Canny low threshold</label><input id="crosswalk-canny-low" type="number" min="0" max="254" step="1" name="CROSSWALK_CANNY_LOW_THRESHOLD"></div>
+              <div class="field"><label for="crosswalk-canny-high">Canny high threshold</label><input id="crosswalk-canny-high" type="number" min="1" max="255" step="1" name="CROSSWALK_CANNY_HIGH_THRESHOLD"></div>
+              <div class="field"><label for="crosswalk-hough-threshold">Hough vote threshold</label><input id="crosswalk-hough-threshold" type="number" min="1" max="255" step="1" name="CROSSWALK_HOUGH_THRESHOLD"></div>
+              <div class="field"><label for="crosswalk-hough-min-line">Hough minimum segment length (px)</label><input id="crosswalk-hough-min-line" type="number" min="1" max="500" step="1" name="CROSSWALK_HOUGH_MIN_LINE_LENGTH"></div>
+              <div class="field"><label for="crosswalk-hough-max-gap">Hough maximum gap (px)</label><input id="crosswalk-hough-max-gap" type="number" min="0" max="100" step="1" name="CROSSWALK_HOUGH_MAX_LINE_GAP"></div>
+              <div class="field"><label for="crosswalk-angle-tolerance">Horizontal / vertical angle tolerance (°)</label><input id="crosswalk-angle-tolerance" type="number" min="1" max="44" step="1" name="CROSSWALK_LINE_ANGLE_TOLERANCE_DEG"></div>
+              <div class="field"><label for="crosswalk-min-line-ratio">Minimum segment length · ROI diagonal ratio</label><input id="crosswalk-min-line-ratio" type="number" min=".01" max="1" step=".01" name="CROSSWALK_MIN_LINE_LENGTH_RATIO"></div>
+              <div class="field"><label for="crosswalk-min-line-px">Minimum segment length floor (px)</label><input id="crosswalk-min-line-px" type="number" min="1" max="500" step="1" name="CROSSWALK_MIN_LINE_LENGTH_PX"></div>
+              <div class="field"><label for="crosswalk-bottom-ratio">Farthest horizontal line · ROI height ratio</label><input id="crosswalk-bottom-ratio" type="number" min="0" max="1" step=".01" name="CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO"></div>
             </div>
             <label class="check-field"><input id="cw-trapezoid" type="checkbox" name="CW_TRAPEZOID_MODE"> Use trapezoid crosswalk ROI mask</label>
-            <label class="check-field"><input id="cw-old-method" type="checkbox" name="CW_OLD_METHOD"> Use legacy LSD crosswalk detector</label>
+            <label class="check-field"><input id="cw-old-method" type="checkbox" name="CW_OLD_METHOD"> Use legacy LSD crosswalk detector (otherwise Hough)</label>
+            <p class="note">These controls tune the City crosswalk detector only. CW's camera overlay defines the image crop; the fields above control grayscale filtering, edge/line extraction, angle classification and the minimum line counts. AVIS keeps its separate stop-line / traffic-light braking logic.</p>
             {% endif %}
             {% if caps.supports_bev %}
             <details style="margin-top:10px">
