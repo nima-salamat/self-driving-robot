@@ -2314,8 +2314,8 @@ class AVISBehaviorCoordinator:
             minimum_area_ratio = max(0.0001, min(0.5, float(getattr(
                 self.config, "SIMULATOR_STOP_SIGN_MIN_AREA_RATIO", 0.012
             ))))
-            minimum_red_fill = max(0.1, min(1.0, float(getattr(
-                self.config, "SIMULATOR_STOP_SIGN_MIN_RED_FILL_RATIO", 0.45
+            minimum_shape_fill = max(0.1, min(1.0, float(getattr(
+                self.config, "SIMULATOR_STOP_SIGN_MIN_SHAPE_FILL_RATIO", 0.45
             ))))
             aspect_tolerance = max(0.05, min(0.75, float(getattr(
                 self.config, "SIMULATOR_STOP_SIGN_ASPECT_TOLERANCE", 0.40
@@ -2386,7 +2386,7 @@ class AVISBehaviorCoordinator:
             if not cv2.isContourConvex(polygon):
                 continue
             fill_ratio = area / float(max(1, box_width * box_height))
-            if fill_ratio < minimum_red_fill:
+            if fill_ratio < minimum_shape_fill:
                 continue
 
             area_ratio = area / roi_area
@@ -2403,7 +2403,7 @@ class AVISBehaviorCoordinator:
                 "source": "HSV",
                 "contour_area": round(area, 1),
                 "roi_area_ratio": round(area_ratio, 5),
-                "red_fill_ratio": round(fill_ratio, 3),
+                "shape_fill_ratio": round(fill_ratio, 3),
                 "aspect_ratio": round(aspect, 3),
                 "vertices": int(vertices),
                 "candidate_frames": int(self.stop_sign_candidate_frames),
