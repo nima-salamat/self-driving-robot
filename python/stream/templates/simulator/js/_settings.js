@@ -118,7 +118,7 @@ function bindAvisCrosswalkRouteEditor(){
   window.addEventListener("keydown",function(event){if(event.key==="Escape"&&modal.classList.contains("is-open"))avisCrosswalkCloseRouteEditor();});
 }
 
-function readSettingNumber(id){function readSettingNumber(id){
+function readSettingNumber(id){
   const input=$(id);
   if(!input)throw new Error("Setting control is unavailable: "+id);
   const raw=String(input.value??"").trim();
