@@ -296,7 +296,7 @@
             </div>
             <label class="check-field"><input id="cw-trapezoid" type="checkbox" name="CW_TRAPEZOID_MODE"> Use trapezoid crosswalk ROI mask</label>
             <label class="check-field"><input id="cw-old-method" type="checkbox" name="CW_OLD_METHOD"> Use legacy LSD crosswalk detector (otherwise Hough)</label>
-            <p class="note">These controls tune the City crosswalk detector only. CW's camera overlay defines the image crop; the fields above control grayscale filtering, edge/line extraction, angle classification and the minimum line counts. AVIS keeps its separate stop-line / traffic-light braking logic.</p>
+            <p class="note">These controls tune the City crosswalk detector only. CW's camera overlay defines the image crop; the fields above control grayscale filtering, edge/line extraction, angle classification and the minimum line counts. AVIS City also uses the dedicated crosswalk-stop and hardcode-route controls below.</p>
             {% endif %}
             {% if caps.supports_bev %}
             <details style="margin-top:10px">
@@ -316,6 +316,26 @@
             {% endif %}
             <p class="note">{% if caps.simulator_backend == 'avis' %}AVIS target speed is a percentage command (0–100); the command limit caps output as a normalized value (0–1). Steering is transmitted separately as −100 to +100. Increase speed gradually while tuning. These values are stored in this mode's .sim.json profile.{% else %}CARLA starts conservatively at 5 km/h, throttle 0.12 and steering input 0.28. These are editable starting values, not fixed UI caps: speed 0–200 km/h, throttle 0–1, steering 0.05–1. Increase motion values gradually while tuning. Settings stay in this simulator's .sim.json profile and do not modify city.json.{% endif %}</p>
           </div>
+          {% if caps.simulator_backend == 'avis' and caps.vision_profile == 'city' %}
+          <div class="setting-block" id="avis-crosswalk-hardcode-settings">
+            <h3 class="section-title">AVIS City · Crosswalk stop & hardcode routes</h3>
+            <label class="check-field"><input id="crosswalk-hardcode-enabled" type="checkbox" name="SIMULATOR_CROSSWALK_HARDCODE_ENABLED"> Stop at a detected crosswalk, wait, then run the latest-sign route</label>
+            <div class="grid-two">
+              <div class="field"><label for="crosswalk-confirm-frames">Consecutive crosswalk frames</label><input id="crosswalk-confirm-frames" type="number" min="1" max="20" step="1" name="SIMULATOR_CROSSWALK_CONFIRM_FRAMES"></div>
+              <div class="field"><label for="crosswalk-dwell">Full stop before route (seconds)</label><input id="crosswalk-dwell" type="number" min=".1" max="30" step=".1" name="SIMULATOR_CROSSWALK_DWELL_SECONDS"></div>
+              <div class="field"><label for="crosswalk-step-timeout">Maximum time per route step (seconds)</label><input id="crosswalk-step-timeout" type="number" min="1" max="120" step=".5" name="SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS"></div>
+            </div>
+            <input id="crosswalk-route-chains" type="hidden" name="SIMULATOR_CROSSWALK_ROUTE_CHAINS" value='{"left":[],"straight":[],"right":[]}'>
+            <div class="crosswalk-route-action-row">
+              <button type="button" class="primary" id="avis-crosswalk-routes-open"
+                data-settings-search="crosswalk hardcode route sequences pedestrian zebra crossing left right straight forward reverse distance speed steering configure">
+                Configure crosswalk hardcode routes
+              </button>
+              <span class="note">TURN LEFT / TURN RIGHT signs select their route; without a recognised turn sign the STRAIGHT route is used. Empty or invalid routes remain stopped instead of moving on an unconfigured path.</span>
+            </div>
+            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
+          </div>
+          {% endif %}
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
             <h3 class="section-title">Lane ROI tuning <span class="pill">Normalized 0–1</span></h3>
             <div class="grid-two">
@@ -346,6 +366,66 @@
         </form>
       </div>
     </section>
+
+    {% if caps.simulator_backend == 'avis' and caps.vision_profile == 'city' %}
+    <style>
+      .avis-crosswalk-modal{position:fixed;inset:0;z-index:100500;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(5,10,18,.78);backdrop-filter:blur(8px)}
+      .avis-crosswalk-modal.is-open{display:flex}
+      .avis-crosswalk-card{width:min(1120px,97vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--border);border-radius:15px;background:var(--panel);color:var(--text);box-shadow:0 24px 90px rgba(0,0,0,.48)}
+      .avis-crosswalk-head,.avis-crosswalk-foot{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)}
+      .avis-crosswalk-head h2{margin:0;font-size:19px}.avis-crosswalk-head p{margin:5px 0 0;color:var(--muted);font-size:13px}
+      .avis-crosswalk-head>div{flex:1}.avis-crosswalk-head button{font-size:23px;line-height:1}
+      .avis-crosswalk-body{padding:18px 20px;overflow:auto;display:flex;flex-direction:column;gap:15px}
+      .avis-crosswalk-tabs{display:flex;gap:8px;border-bottom:1px solid var(--border);padding-bottom:10px}
+      .avis-crosswalk-tabs button{flex:1;min-height:40px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-weight:700}
+      .avis-crosswalk-tabs button.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,var(--panel))}
+      .avis-crosswalk-step-list{display:flex;flex-direction:column;gap:9px;max-height:42vh;overflow:auto}
+      .avis-crosswalk-step{display:grid;grid-template-columns:64px minmax(130px,1fr) minmax(130px,1fr) minmax(130px,1fr) minmax(145px,1fr) 76px;gap:10px;align-items:end;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+      .avis-crosswalk-step label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px;color:var(--muted)}
+      .avis-crosswalk-step input,.avis-crosswalk-step select{width:100%;min-width:0;box-sizing:border-box}
+      .avis-crosswalk-step-number{align-self:center;padding-bottom:9px;font-weight:750;color:var(--muted)}
+      .avis-crosswalk-step button{min-height:36px}
+      .avis-crosswalk-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+      .avis-crosswalk-preview{padding:12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+      .avis-crosswalk-preview strong{display:block;color:var(--text);margin-bottom:6px}
+      .avis-crosswalk-help{padding:12px;border-radius:9px;background:var(--surface);color:var(--muted);font-size:12px;line-height:1.6}
+      .avis-crosswalk-foot{border-top:1px solid var(--border);border-bottom:0;justify-content:flex-end}
+      .avis-crosswalk-foot .spacer{flex:1}
+      .crosswalk-route-action-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
+      .crosswalk-route-action-row .note{margin:0;flex:1;min-width:220px}
+      @media(max-width:760px){.avis-crosswalk-step{grid-template-columns:55px 1fr 1fr}.avis-crosswalk-step button{grid-column:3}.avis-crosswalk-card{max-height:96vh}.avis-crosswalk-head,.avis-crosswalk-body,.avis-crosswalk-foot{padding:13px}}
+    </style>
+    <div id="avis-crosswalk-route-modal" class="avis-crosswalk-modal" aria-hidden="true">
+      <section class="avis-crosswalk-card" role="dialog" aria-modal="true" aria-labelledby="avis-crosswalk-route-title">
+        <header class="avis-crosswalk-head">
+          <div><h2 id="avis-crosswalk-route-title">AVIS City · Crosswalk route builder</h2>
+            <p>Build the exact distance-based command chain used after a confirmed stop and dwell.</p></div>
+          <button type="button" class="ghost" id="avis-crosswalk-route-close" aria-label="Close route builder">×</button>
+        </header>
+        <div class="avis-crosswalk-body">
+          <div class="avis-crosswalk-tabs" role="tablist" aria-label="Crosswalk direction routes">
+            <button type="button" data-avis-crosswalk-route="left" class="active" role="tab" aria-selected="true">↰ LEFT</button>
+            <button type="button" data-avis-crosswalk-route="straight" role="tab" aria-selected="false">↑ STRAIGHT</button>
+            <button type="button" data-avis-crosswalk-route="right" role="tab" aria-selected="false">↱ RIGHT</button>
+          </div>
+          <div class="avis-crosswalk-toolbar">
+            <div><strong id="avis-crosswalk-route-heading">LEFT route</strong> <span class="small-muted" id="avis-crosswalk-route-count">0 / 16 steps</span></div>
+            <button type="button" class="primary" id="avis-crosswalk-step-add">＋ Add step</button>
+          </div>
+          <div id="avis-crosswalk-step-list" class="avis-crosswalk-step-list" aria-live="polite"></div>
+          <div class="avis-crosswalk-preview"><strong>Route preview</strong><span id="avis-crosswalk-route-preview">No steps configured. The vehicle will remain stopped if this route is selected.</span></div>
+          <div class="avis-crosswalk-help">
+            Distance is measured from AVIS speed telemetry. Speeds are signed by direction (forward positive, reverse negative). Steering is a signed AVIS percentage: −100 left, 0 straight, +100 right. The configured global throttle cap can reduce the requested speed. Save this editor, then press the main “Save settings” button to persist all changes. A saved route does not trigger motion by itself.
+          </div>
+        </div>
+        <footer class="avis-crosswalk-foot">
+          <span class="spacer"></span>
+          <button type="button" class="ghost" id="avis-crosswalk-route-cancel">Cancel</button>
+          <button type="button" class="primary" id="avis-crosswalk-route-save">Apply route edits</button>
+        </footer>
+      </section>
+    </div>
+    {% endif %}
 
 
     {% if caps.simulator_backend != 'avis' %}

@@ -1,5 +1,124 @@
 let simulatorSettingsReady=false;
-function readSettingNumber(id){
+
+const AVIS_CROSSWALK_ROUTE_NAMES={left:"LEFT",straight:"STRAIGHT",right:"RIGHT"};
+let avisCrosswalkRouteData={left:[],straight:[],right:[]};
+let avisCrosswalkActiveRoute="left";
+function avisCrosswalkDefaultStep(route){
+  const angle=route==="left"?-20:route==="right"?20:0;
+  return {direction:"forward",distance_m:0.25,speed_percent:12,steering_percent:angle};
+}
+function avisCrosswalkReadRoutes(){
+  const field=$("crosswalk-route-chains");
+  let value={left:[],straight:[],right:[]};
+  if(field&&String(field.value||"").trim())value=JSON.parse(field.value);
+  ["left","straight","right"].forEach(function(route){
+    if(!Array.isArray(value[route]))value[route]=[];
+    value[route]=value[route].slice(0,16).map(function(step){
+      return {direction:step.direction==="reverse"?"reverse":"forward",
+        distance_m:Number(step.distance_m),speed_percent:Number(step.speed_percent),
+        steering_percent:Number(step.steering_percent)};
+    });
+  });
+  return value;
+}
+function avisCrosswalkSerializeRoutes(){
+  const result={left:[],straight:[],right:[]};
+  ["left","straight","right"].forEach(function(route){
+    const steps=avisCrosswalkRouteData[route]||[];
+    if(steps.length>16)throw new Error(AVIS_CROSSWALK_ROUTE_NAMES[route]+" route cannot exceed 16 steps.");
+    result[route]=steps.map(function(step,index){
+      const distance=Number(step.distance_m),speed=Number(step.speed_percent),steering=Number(step.steering_percent);
+      if(!["forward","reverse"].includes(step.direction))throw new Error("Step "+(index+1)+": choose forward or reverse.");
+      if(!Number.isFinite(distance)||distance<0.05||distance>40)throw new Error("Step "+(index+1)+": distance must be 0.05–40 metres.");
+      if(!Number.isInteger(speed)||speed<1||speed>100)throw new Error("Step "+(index+1)+": speed must be an integer from 1 to 100 percent.");
+      if(!Number.isInteger(steering)||steering<-100||steering>100)throw new Error("Step "+(index+1)+": steering must be an integer from -100 to +100 percent.");
+      return {direction:step.direction,distance_m:distance,speed_percent:speed,steering_percent:steering};
+    });
+  });
+  return JSON.stringify(result);
+}
+function avisCrosswalkUpdatePreview(){
+  const preview=$("avis-crosswalk-route-preview");if(!preview)return;
+  const steps=avisCrosswalkRouteData[avisCrosswalkActiveRoute]||[];
+  if(!steps.length){preview.textContent="No steps configured. The vehicle will remain stopped if this route is selected.";return;}
+  preview.textContent=steps.map(function(step,index){
+    return (index+1)+". "+(step.direction==="reverse"?"REVERSE":"FORWARD")+" "+
+      Number(step.distance_m).toFixed(2)+"m · "+Number(step.speed_percent)+
+      "% speed · "+Number(step.steering_percent)+"% steering";
+  }).join("   →   ");
+}
+function avisCrosswalkRenderRoutes(){
+  const host=$("avis-crosswalk-step-list"),heading=$("avis-crosswalk-route-heading");
+  const count=$("avis-crosswalk-route-count"),add=$("avis-crosswalk-step-add");
+  if(!host)return;
+  host.replaceChildren();
+  ["left","straight","right"].forEach(function(route){
+    const button=document.querySelector('[data-avis-crosswalk-route="'+route+'"]');
+    if(button){const active=route===avisCrosswalkActiveRoute;button.classList.toggle("active",active);button.setAttribute("aria-selected",active?"true":"false");}
+  });
+  const steps=avisCrosswalkRouteData[avisCrosswalkActiveRoute]||[];
+  if(heading)heading.textContent=AVIS_CROSSWALK_ROUTE_NAMES[avisCrosswalkActiveRoute]+" route";
+  if(count)count.textContent=steps.length+" / 16 steps";
+  if(add)add.disabled=steps.length>=16;
+  steps.forEach(function(step,index){
+    const row=document.createElement("div");row.className="avis-crosswalk-step";
+    const number=document.createElement("div");number.className="avis-crosswalk-step-number";number.textContent="STEP "+(index+1);row.appendChild(number);
+    function addField(title,control){const label=document.createElement("label");label.appendChild(document.createTextNode(title));label.appendChild(control);row.appendChild(label);}
+    const direction=document.createElement("select");
+    [["forward","Forward"],["reverse","Reverse"]].forEach(function(option){
+      const node=document.createElement("option");node.value=option[0];node.textContent=option[1];direction.appendChild(node);
+    });
+    direction.value=step.direction;direction.addEventListener("change",function(){step.direction=direction.value;avisCrosswalkUpdatePreview();});addField("Direction",direction);
+    const distance=document.createElement("input");distance.type="number";distance.min="0.05";distance.max="40";distance.step="0.05";distance.value=Number(step.distance_m).toFixed(2);
+    distance.addEventListener("input",function(){step.distance_m=Number(distance.value);avisCrosswalkUpdatePreview();});addField("Distance · metres",distance);
+    const speed=document.createElement("input");speed.type="number";speed.min="1";speed.max="100";speed.step="1";speed.value=String(step.speed_percent);
+    speed.addEventListener("input",function(){step.speed_percent=Number(speed.value);avisCrosswalkUpdatePreview();});addField("Speed · percent",speed);
+    const steering=document.createElement("input");steering.type="number";steering.min="-100";steering.max="100";steering.step="1";steering.value=String(step.steering_percent);
+    steering.addEventListener("input",function(){step.steering_percent=Number(steering.value);avisCrosswalkUpdatePreview();});addField("Steering · signed %",steering);
+    const remove=document.createElement("button");remove.type="button";remove.className="ghost";remove.textContent="Remove";
+    remove.addEventListener("click",function(){avisCrosswalkRouteData[avisCrosswalkActiveRoute].splice(index,1);avisCrosswalkRenderRoutes();});
+    row.appendChild(remove);host.appendChild(row);
+  });
+  if(!steps.length){const empty=document.createElement("p");empty.className="note";empty.textContent="No commands configured. If this sign is detected at a crosswalk, AVIS will hold at zero speed until the route is configured.";host.appendChild(empty);}
+  avisCrosswalkUpdatePreview();
+}
+function avisCrosswalkCloseRouteEditor(){
+  const modal=$("avis-crosswalk-route-modal");if(modal){modal.classList.remove("is-open");modal.setAttribute("aria-hidden","true");}
+}
+function avisCrosswalkOpenRouteEditor(){
+  const modal=$("avis-crosswalk-route-modal"),field=$("crosswalk-route-chains");
+  if(!modal||!field)return;
+  try{avisCrosswalkRouteData=avisCrosswalkReadRoutes();avisCrosswalkActiveRoute="left";avisCrosswalkRenderRoutes();
+    modal.classList.add("is-open");modal.setAttribute("aria-hidden","false");
+    const close=$("avis-crosswalk-route-close");if(close)close.focus();
+  }catch(error){showToast("Could not load crosswalk routes: "+error.message);}
+}
+function bindAvisCrosswalkRouteEditor(){
+  const open=$("avis-crosswalk-routes-open"),modal=$("avis-crosswalk-route-modal");
+  if(!open||!modal||open.dataset.bound==="1")return;
+  open.dataset.bound="1";open.addEventListener("click",avisCrosswalkOpenRouteEditor);
+  const close=$("avis-crosswalk-route-close"),cancel=$("avis-crosswalk-route-cancel");
+  if(close)close.addEventListener("click",avisCrosswalkCloseRouteEditor);
+  if(cancel)cancel.addEventListener("click",avisCrosswalkCloseRouteEditor);
+  modal.addEventListener("click",function(event){if(event.target===modal)avisCrosswalkCloseRouteEditor();});
+  modal.querySelectorAll("[data-avis-crosswalk-route]").forEach(function(button){
+    button.addEventListener("click",function(){avisCrosswalkActiveRoute=button.dataset.avisCrosswalkRoute;avisCrosswalkRenderRoutes();});
+  });
+  const add=$("avis-crosswalk-step-add");
+  if(add)add.addEventListener("click",function(){
+    const steps=avisCrosswalkRouteData[avisCrosswalkActiveRoute]||[];if(steps.length>=16)return;
+    steps.push(avisCrosswalkDefaultStep(avisCrosswalkActiveRoute));avisCrosswalkRenderRoutes();
+  });
+  const save=$("avis-crosswalk-route-save");
+  if(save)save.addEventListener("click",function(){
+    try{$("crosswalk-route-chains").value=avisCrosswalkSerializeRoutes();avisCrosswalkCloseRouteEditor();
+      showToast("Route edits applied. Press Save settings to persist them.");
+    }catch(error){showToast("Route validation failed: "+error.message);}
+  });
+  window.addEventListener("keydown",function(event){if(event.key==="Escape"&&modal.classList.contains("is-open"))avisCrosswalkCloseRouteEditor();});
+}
+
+function readSettingNumber(id){function readSettingNumber(id){
   const input=$(id);
   if(!input)throw new Error("Setting control is unavailable: "+id);
   const raw=String(input.value??"").trim();
@@ -76,6 +195,10 @@ function populate(s){
     "stop-line-angle":"SIMULATOR_STOP_LINE_MAX_ANGLE_DEG",
     "stop-line-frames":"SIMULATOR_STOP_LINE_CONFIRM_FRAMES",
     "stop-line-dwell":"SIMULATOR_STOP_LINE_DWELL_SECONDS",
+    "crosswalk-confirm-frames":"SIMULATOR_CROSSWALK_CONFIRM_FRAMES",
+    "crosswalk-dwell":"SIMULATOR_CROSSWALK_DWELL_SECONDS",
+    "crosswalk-step-timeout":"SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS",
+    "crosswalk-route-chains":"SIMULATOR_CROSSWALK_ROUTE_CHAINS",
     "sign-confidence":"SIMULATOR_SIGN_CONFIDENCE",
     "sign-scan-interval":"SIMULATOR_SIGN_SCAN_INTERVAL",
     "sign-stop-hold":"SIMULATOR_SIGN_STOP_HOLD_SECONDS",
@@ -134,7 +257,7 @@ function populate(s){
    "obstacle-speed-limit-left-sensor","obstacle-speed-limit-front-sensor","obstacle-speed-limit-right-sensor",
    "obstacle-speed-limit-brake","stop-line-enabled",
    "traffic-lights-enabled","sign-actions-enabled","obstacle-return-steering-gate-enabled",
-   "obstacle-distance-mode","obstacle-roi-confirmation-enabled"].forEach(function(id){
+   "obstacle-distance-mode","obstacle-roi-confirmation-enabled","crosswalk-hardcode-enabled"].forEach(function(id){
     if(!$(id)) return;
     const key=$(id).name;
     if(s[key]!==undefined) $(id).checked=!!s[key];
@@ -153,4 +276,8 @@ function populate(s){
   if($("carla-run-start"))$("carla-run-start").disabled=!simRoiControlsEnabled;
   if($("carla-run-stop"))$("carla-run-stop").disabled=!simRoiControlsEnabled;
   drawSimRoiOverlay();
+  bindAvisCrosswalkRouteEditor();
 }
+
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bindAvisCrosswalkRouteEditor,{once:true});
+else bindAvisCrosswalkRouteEditor();

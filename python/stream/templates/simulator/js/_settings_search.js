@@ -18,6 +18,11 @@ function bindSettingsSearch(){
     const detail=section+" · "+(control.name||control.id||"setting");
     entries.push({title:title,detail:detail,searchable:[title,detail,control.name,control.id,context].join(" ").toLowerCase(),target:control,kind:"field"});
    });
+   block.querySelectorAll("button[data-settings-search]").forEach(function(control){
+    const title=control.textContent.trim().replace(/\\s+/g," ");
+    const searchable=[title,control.dataset.settingsSearch,section,block.textContent].join(" ").toLowerCase();
+    entries.push({title:title,detail:section+" · Open editor",searchable:searchable,target:control,kind:"action"});
+   });
    if(heading)entries.push({title:section,detail:"Open section",searchable:(section+" "+block.textContent).toLowerCase(),target:block,kind:"section"});
   });
  }
@@ -40,6 +45,10 @@ function bindSettingsSearch(){
   panel.scrollIntoView({behavior:"smooth",block:"start"});
   const top=content.scrollTop+target.getBoundingClientRect().top-content.getBoundingClientRect().top-24;
   content.scrollTo({top:Math.max(0,top),behavior:"smooth"});
+  if(entry.kind==="action"){
+   window.setTimeout(function(){target.click();},180);
+   return;
+  }
   if(entry.kind==="section")target.setAttribute("tabindex","-1");
   target.classList.add("setting-search-highlight");
   window.setTimeout(function(){target.focus({preventScroll:true});},180);
@@ -50,8 +59,8 @@ function bindSettingsSearch(){
   results.replaceChildren();activeIndex=-1;
   if(!query){
    const empty=document.createElement("div");empty.className="settings-search-empty";
-   empty.textContent="Start typing to find connection, sensors, motion, vision, ROI, calibration or PID settings.";
-   results.append(empty);count.textContent=entries.filter(function(item){return item.kind==="field";}).length+" settings indexed";return;
+   empty.textContent="Search settings or actions: crosswalk, hardcode routes, sensors, motion, vision, ROI, calibration or PID.";
+   results.append(empty);count.textContent=entries.filter(function(item){return item.kind==="field"||item.kind==="action";}).length+" settings and actions indexed";return;
   }
   const matches=entries.map(function(item){
    const title=item.title.toLowerCase(),detail=item.detail.toLowerCase();let score=0;
@@ -61,7 +70,7 @@ function bindSettingsSearch(){
   count.textContent=matches.length?matches.length+" matching results":"No matching settings";
   if(!matches.length){
    const empty=document.createElement("div");empty.className="settings-search-empty";
-   empty.textContent="No results. Try KP, PID, ROI, threshold, speed or a configuration key.";
+   empty.textContent="No results. Try crosswalk, hardcode, sign, KP, PID, ROI, threshold or speed.";
    results.append(empty);return;
   }
   matches.forEach(function(match,index){
@@ -72,7 +81,7 @@ function bindSettingsSearch(){
    const title=document.createElement("strong");title.textContent=item.title;
    const detail=document.createElement("small");detail.textContent=item.detail;
    wrap.append(title,detail);
-   const kind=document.createElement("span");kind.className="settings-search-result-kind";kind.textContent=item.kind==="section"?"SECTION":"SETTING";
+   const kind=document.createElement("span");kind.className="settings-search-result-kind";kind.textContent=item.kind==="section"?"SECTION":item.kind==="action"?"ACTION":"SETTING";
    button.append(wrap,kind);button.addEventListener("click",function(){jumpTo(item);});
    results.append(button);
   });
