@@ -170,6 +170,22 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 8)
         self.assertEqual(config.CROSSWALK_HOUGH_THRESHOLD, 24)
 
+        reloaded = self.make_config()
+        reloaded.MODE = "avis"
+        reloaded.SIMULATOR_BACKEND = "avis"
+        reloaded.CITY_LANE_DETECTOR = "default"
+        reloaded.BASE_DIR = self._stream_test_directory.name
+        load_simulator_settings(reloaded, "avis", "avis")
+        self.assertEqual(reloaded.SIMULATOR_STOP_LINE_TOP_ROI, 0.70)
+        self.assertEqual(reloaded.SIMULATOR_STOP_LINE_RIGHT_ROI, 0.89)
+        self.assertEqual(reloaded.CROSSWALK_THRESHOLD, 165)
+        self.assertEqual(reloaded.CROSSWALK_VERTICAL_MIN_LINES, 8)
+        self.assertEqual(reloaded.CROSSWALK_HORIZONTAL_MIN_LINES, 4)
+        self.assertEqual(reloaded.CROSSWALK_CANNY_LOW_THRESHOLD, 90)
+        self.assertEqual(reloaded.CROSSWALK_CANNY_HIGH_THRESHOLD, 175)
+        self.assertEqual(reloaded.CROSSWALK_HOUGH_THRESHOLD, 24)
+        self.assertFalse(reloaded.CW_OLD_METHOD)
+
         roi_editor_js = (
             Path(__file__).resolve().parents[1]
             / "stream" / "templates" / "simulator" / "js" / "_avis_roi.js"
