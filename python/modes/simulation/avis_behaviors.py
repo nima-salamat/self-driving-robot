@@ -90,7 +90,8 @@ class AVISObstacleApproachSpeedController:
 
     def apply(self, frame, command, *, now=None):
         now = time.monotonic() if now is None else float(now)
-        if str(getattr(command, "reason", "")).startswith("crosswalk hardcode"):
+        command_reason = str(getattr(command, "reason", "")).lower()
+        if command_reason.startswith(("crosswalk hardcode", "deadlock ")):
             return command
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
         ranges = ranges if isinstance(ranges, dict) else {}
@@ -1399,6 +1400,7 @@ class AVISBehaviorCoordinator:
         self.crosswalk_step_index = 0
         self.crosswalk_step_progress_cm = 0.0
         self.crosswalk_step_started_at = None
+        self.crosswalk_step_timeout_warned_index = None
         self.crosswalk_reason = "crosswalk hardcode idle"
 
         self.deadlock_state = "idle"
@@ -1412,6 +1414,7 @@ class AVISBehaviorCoordinator:
         self.deadlock_step_index = 0
         self.deadlock_step_progress_cm = 0.0
         self.deadlock_step_started_at = None
+        self.deadlock_step_timeout_warned_index = None
         self.deadlock_pause_started_at = None
         self.deadlock_reason = "deadlock detection disabled"
         self._deadlock_lsd = None
@@ -1703,6 +1706,7 @@ class AVISBehaviorCoordinator:
         self.deadlock_step_index = 0
         self.deadlock_step_progress_cm = 0.0
         self.deadlock_step_started_at = now
+        self.deadlock_step_timeout_warned_index = None
         self.deadlock_clear_count = 0
         if not self.deadlock_steps:
             # A missing optional hardcode is not itself a road hazard.
@@ -1945,6 +1949,7 @@ class AVISBehaviorCoordinator:
             self.deadlock_step_index += 1
             self.deadlock_step_progress_cm = 0.0
             self.deadlock_step_started_at = now
+            self.deadlock_step_timeout_warned_index = None
             if self.deadlock_step_index >= len(self.deadlock_steps):
                 self.deadlock_state = "completed"
                 self.deadlock_reason = "deadlock {} maneuver completed".format(self.deadlock_route)
@@ -1952,7 +1957,7 @@ class AVISBehaviorCoordinator:
                     "AVIS deadlock maneuver completed: direction=%s steps=%d",
                     self.deadlock_route, completed_step,
                 )
-                return None
+                return _brake(command, self.deadlock_reason)
             step = self.deadlock_steps[self.deadlock_step_index]
             target_cm = float(step["distance_m"]) * 100.0
             speed = float(step["speed_percent"]) / 100.0
@@ -1970,13 +1975,18 @@ class AVISBehaviorCoordinator:
             1.0, float(getattr(self.config, "SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS", 15.0))
         )
         elapsed = max(0.0, now - float(self.deadlock_step_started_at or now))
-        if elapsed >= timeout and self.deadlock_step_progress_cm < target_cm:
-            self.deadlock_state = "blocked"
-            self.deadlock_reason = (
-                "deadlock hardcode blocked: step {} did not reach its distance within {:.1f}s"
-            ).format(self.deadlock_step_index + 1, elapsed)
-            logger.error("%s", self.deadlock_reason)
-            return _brake(command, self.deadlock_reason)
+        if (
+            elapsed >= timeout
+            and self.deadlock_step_progress_cm < target_cm
+            and self.deadlock_step_timeout_warned_index != self.deadlock_step_index
+        ):
+            self.deadlock_step_timeout_warned_index = self.deadlock_step_index
+            logger.warning(
+                "AVIS deadlock hardcode step %d exceeded its %.1fs warning threshold "
+                "at %.0f/%.0f cm; continuing the configured step until its distance is reached",
+                self.deadlock_step_index + 1, timeout,
+                self.deadlock_step_progress_cm, target_cm,
+            )
 
         throttle_limit = max(
             0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35)))
@@ -2258,6 +2268,7 @@ class AVISBehaviorCoordinator:
         self.crosswalk_step_index = 0
         self.crosswalk_step_progress_cm = 0.0
         self.crosswalk_step_started_at = None
+        self.crosswalk_step_timeout_warned_index = None
         self.crosswalk_route_frozen = bool(frozen)
         return bool(steps)
 
@@ -2605,6 +2616,7 @@ class AVISBehaviorCoordinator:
             self.crosswalk_step_index += 1
             self.crosswalk_step_progress_cm = 0.0
             self.crosswalk_step_started_at = now
+            self.crosswalk_step_timeout_warned_index = None
             if self.crosswalk_step_index >= len(self.crosswalk_steps):
                 self.crosswalk_state = "completed"
                 self.crosswalk_reason = "crosswalk hardcode route completed"
@@ -2618,13 +2630,18 @@ class AVISBehaviorCoordinator:
 
         timeout = max(1.0, float(getattr(self.config, "SIMULATOR_CROSSWALK_STEP_TIMEOUT_SECONDS", 15.0)))
         elapsed = max(0.0, now - float(self.crosswalk_step_started_at or now))
-        if elapsed >= timeout and self.crosswalk_step_progress_cm < target_cm:
-            self.crosswalk_state = "blocked"
-            self.crosswalk_reason = (
-                "crosswalk hardcode blocked: step {} did not reach its distance within {:.1f}s"
-            ).format(self.crosswalk_step_index + 1, elapsed)
-            logger.error("%s", self.crosswalk_reason)
-            return _brake(command, self.crosswalk_reason)
+        if (
+            elapsed >= timeout
+            and self.crosswalk_step_progress_cm < target_cm
+            and self.crosswalk_step_timeout_warned_index != self.crosswalk_step_index
+        ):
+            self.crosswalk_step_timeout_warned_index = self.crosswalk_step_index
+            logger.warning(
+                "AVIS City crosswalk hardcode step %d exceeded its %.1fs warning threshold "
+                "at %.0f/%.0f cm; continuing the configured step until its distance is reached",
+                self.crosswalk_step_index + 1, timeout,
+                self.crosswalk_step_progress_cm, target_cm,
+            )
 
         throttle_limit = max(0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35))))
         throttle = min(requested_speed, throttle_limit)
@@ -2653,8 +2670,20 @@ class AVISBehaviorCoordinator:
             servo_angle=servo_angle, target_speed=0.0, reason=self.crosswalk_reason,
         )
 
+    def hardcode_route_active(self):
+        """Return True while a configured AVIS City hardcode owns vehicle motion."""
+        return bool(
+            self.is_avis_city
+            and (
+                self.crosswalk_state == "running"
+                or self.deadlock_state == "running"
+            )
+        )
+
     def prepare_vision(self, now=None):
         if str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() != "avis":
+            return None
+        if self.hardcode_route_active():
             return None
         return self.obstacles.prepare_vision(now=now)
 
@@ -2662,6 +2691,14 @@ class AVISBehaviorCoordinator:
         if str(getattr(self.config, "SIMULATOR_BACKEND", "avis")).lower() != "avis":
             return command
         now = time.monotonic() if now is None else float(now)
+        # Once a configured route starts, no lane, crosswalk, sign, traffic-light,
+        # stop-line or obstacle behavior may replace its step command. The route
+        # runs only on its own distance/speed telemetry until it completes.
+        if self.crosswalk_state == "running":
+            return self._crosswalk_route_command(frame, command, distance_delta_cm, now)
+        if self.deadlock_state == "running":
+            route_command = self._deadlock_route_command(command, distance_delta_cm, now)
+            return route_command if route_command is not None else command
         self._observe_road_rules(frame, now)
         # Resolve the three-ROI deadlock pattern before the generic crosswalk
         # observer can turn the same CW-like image into a provisional stop.
