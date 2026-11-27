@@ -212,7 +212,9 @@ class Car():
         self.get_Speed = 1
         self.sensor_angle = 30
         self.handbrake_value = 0.0
-        self.footbrake_value = 0.0
+        # A new TCP session must keep the vehicle braked until runtime control
+        # explicitly sends a motion command.
+        self.footbrake_value = 1.0
         self.data_arr = [self.speed_value, self.steering_value, self.image_mode,
                          self.sensor_status, self.get_Speed, self.sensor_angle,
                          self.handbrake_value, self.footbrake_value]
@@ -234,7 +236,7 @@ class Car():
     get_Speed = 1
     sensor_angle = 30
     handbrake_value = 0.0
-    footbrake_value = 0.0
+    footbrake_value = 1.0
     
     sock = None
 
