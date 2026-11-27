@@ -194,13 +194,16 @@ class CityVisionLineExtractionTests(unittest.TestCase):
             "CW_LEFT_ROI": 0.1, "CW_RIGHT_ROI": 0.9,
             "DEBUG": True, "STREAM": False, "HALL_LINE_TRACKING_ENABLED": False,
         }
-        with patch.multiple(city_config, create=True, **values):
+        fake_lsd = type(
+            "FakeLineSegmentDetector", (),
+            {"detect": lambda self, _image: (lines, None, None, None)},
+        )()
+        with patch.multiple(city_config, create=True, **values), patch(
+            "vision.city_vision_processing.cv2.createLineSegmentDetector",
+            return_value=fake_lsd,
+        ):
             processor = VisionProcessor()
-            with patch.object(
-                processor._lsd, "detect",
-                return_value=(lines, None, None, None),
-            ):
-                result = processor.detect(frame)
+            result = processor.detect(frame)
 
         self.assertTrue(result["crosswalk"])
         self.assertEqual(result["crosswalk_color"], "WHITE")
