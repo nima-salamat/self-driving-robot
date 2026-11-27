@@ -1436,6 +1436,69 @@ class AVISBehaviorCoordinator:
         if bool(getattr(config, "SIMULATOR_SIGN_ACTIONS_ENABLED", False)):
             self._start_sign_detector()
 
+    def reset_deadlock(self, reason="simulator reset"):
+        """Clear the current Deadlock candidate, route and diagnostics."""
+        was_running = self.deadlock_state == "running"
+        changed = bool(
+            was_running
+            or self.deadlock_state != "idle"
+            or self.deadlock_abort_stop_pending
+            or self.deadlock_candidate is not None
+            or self.deadlock_confirm_count
+            or self.deadlock_clear_count
+            or self.deadlock_route is not None
+            or self.deadlock_steps
+            or self.deadlock_step_index
+            or self.deadlock_step_progress_cm
+            or self.deadlock_step_started_at is not None
+            or self.deadlock_pause_started_at is not None
+            or self.deadlock_check_count
+            or self.deadlock_first_check_logged
+            or self.deadlock_diagnostics.get("checked")
+        )
+        label = str(reason or "simulator reset").strip() or "simulator reset"
+        previous_state = self.deadlock_state
+        previous_route = self.deadlock_route
+
+        # Preserve a one-cycle brake request when an active hardcode is cancelled.
+        self.deadlock_abort_stop_pending = bool(
+            self.deadlock_abort_stop_pending or was_running
+        )
+        self.deadlock_state = "idle"
+        self.deadlock_candidate = None
+        self.deadlock_confirm_count = 0
+        self.deadlock_clear_count = 0
+        self.deadlock_last_frame_token = None
+        self.deadlock_check_count = 0
+        self.deadlock_first_check_logged = False
+        self.deadlock_route = None
+        self.deadlock_steps = []
+        self.deadlock_step_index = 0
+        self.deadlock_step_progress_cm = 0.0
+        self.deadlock_step_started_at = None
+        self.deadlock_step_timeout_warned_index = None
+        self.deadlock_pause_started_at = None
+        self.deadlock_reason = "deadlock reset: {}".format(label)
+        self.deadlock_diagnostics = {
+            "roi_valid": False,
+            "reason": self.deadlock_reason,
+            "crosswalk_horizontal_lines": 0,
+            "required_horizontal_lines": 1,
+            "left_lane_lines": 0,
+            "right_lane_lines": 0,
+            "candidate": None,
+            "checked": False,
+            "check_count": 0,
+            "frame_sequence": None,
+        }
+
+        if changed:
+            logger.info(
+                "AVIS deadlock state reset: reason=%s previous_state=%s previous_route=%s",
+                label, previous_state, previous_route or "none",
+            )
+        return changed
+
     def _start_sign_detector(self):
         try:
             # The ONNX detector exposes per-detection confidence, which the
