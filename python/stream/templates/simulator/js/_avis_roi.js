@@ -409,7 +409,7 @@ function simRoiCollectSettings(){
       if(values.left>=values.right)return {error:def.label+" ROI left must be smaller than right."};
       return {error:"Invalid "+def.label+" ROI bounds."};
     }
-    const prefix=def.id+"_";
+    const prefix=def.id==="SL"?"SIMULATOR_STOP_LINE_":def.id+"_";
     Object.keys(def.fields).forEach(function(key){
       settings[prefix+({top:"TOP_ROI",bottom:"BOTTOM_ROI",left:"LEFT_ROI",right:"RIGHT_ROI"})[key]]=b[key];
     });
