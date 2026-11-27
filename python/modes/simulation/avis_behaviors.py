@@ -1622,6 +1622,7 @@ class AVISBehaviorCoordinator:
             "left_has_line": False,
             "right_has_line": False,
             "candidate": None,
+            "classification": "unknown",
             "reason": "one or more deadlock ROIs are invalid",
         }
         if cw_roi is None or ml_roi is None or mr_roi is None:
@@ -1656,6 +1657,11 @@ class AVISBehaviorCoordinator:
             "left_has_line": bool(left_present),
             "right_has_line": bool(right_present),
             "candidate": candidate,
+            "classification": (
+                "deadlock" if candidate else
+                "crosswalk-like but escape side is ambiguous"
+                if horizontal >= required_horizontal else "no deadlock pattern"
+            ),
             "reason": (
                 "right ROI has a lane line and left ROI is clear"
                 if candidate == "left" else
@@ -1770,6 +1776,25 @@ class AVISBehaviorCoordinator:
 
         candidate, diagnostics = self._inspect_deadlock_pattern(frame)
         self.deadlock_diagnostics = diagnostics
+        crosswalk_pattern_candidate = candidate in {"left", "right"}
+
+        # The generic City crosswalk detector can raise a provisional brake
+        # before the deadlock ROI pattern has completed its own confirmation.
+        # Once CW + one-sided ML/MR evidence identifies an escape side, discard
+        # only that provisional crosswalk brake so it cannot starve deadlock.
+        if (
+            crosswalk_pattern_candidate
+            and not self.crosswalk_latched
+            and self.crosswalk_state == "braking"
+        ):
+            self.crosswalk_state = "idle"
+            self.crosswalk_detect_count = 0
+            self.crosswalk_stop_confirm_count = 0
+            self.crosswalk_pending_sign = None
+            self.crosswalk_reason = (
+                "crosswalk-like pattern reclassified as deadlock toward {}; "
+                "the matching side ROI is clear"
+            ).format(candidate.upper())
 
         if self.deadlock_state in {"completed", "blocked", "unconfigured"}:
             if candidate is None:
@@ -1791,9 +1816,14 @@ class AVISBehaviorCoordinator:
                 self.deadlock_clear_count = 0
             return
 
+        crosswalk_state_hold = self.crosswalk_state in {
+            "stopping", "holding", "waiting_for_green", "running"
+        }
+        if self.crosswalk_state == "braking" and not crosswalk_pattern_candidate:
+            crosswalk_state_hold = True
         safety_hold = (
             self.crosswalk_latched
-            or self.crosswalk_state in {"braking", "stopping", "holding", "waiting_for_green", "running"}
+            or crosswalk_state_hold
             or self.traffic_light_hold
             or self.stop_line_waiting
             or self.park_latched
@@ -2248,7 +2278,37 @@ class AVISBehaviorCoordinator:
         return "straight"
 
     def _observe_crosswalk(self, perception, now):
-        """Debounce one City crosswalk and latch it until its route clears."""
+        """Debounce crosswalks unless the enabled deadlock ROIs identify an escape side."""
+        deadlock_diagnostics = (
+            self.deadlock_diagnostics
+            if isinstance(self.deadlock_diagnostics, dict) else {}
+        )
+        deadlock_direction = deadlock_diagnostics.get("candidate")
+        if self.deadlock_state in {"running", "blocked"}:
+            deadlock_direction = self.deadlock_route or deadlock_direction
+        deadlock_preempts_crosswalk = bool(
+            self.is_avis_city
+            and getattr(self.config, "SIMULATOR_DEADLOCK_ENABLED", False)
+            and not self.crosswalk_latched
+            and deadlock_direction in {"left", "right"}
+        )
+        if deadlock_preempts_crosswalk:
+            # A CW-like pattern with exactly one side ROI containing lane-line
+            # evidence is a deadlock, not a crosswalk stop. The empty side is
+            # the escape direction. Keep separate traffic/stop-line/obstacle
+            # safety holds active in apply().
+            self.crosswalk_detect_count = 0
+            if self.crosswalk_state == "braking":
+                self.crosswalk_state = "idle"
+                self.crosswalk_stop_confirm_count = 0
+                self.crosswalk_pending_sign = None
+                self.crosswalk_started_at = None
+            self.crosswalk_reason = (
+                "classified as DEADLOCK toward {}; that side ROI is clear; "
+                "crosswalk brake suppressed"
+            ).format(deadlock_direction.upper())
+            return
+
         enabled = bool(
             self.is_city
             and getattr(self.config, "SIMULATOR_CROSSWALK_HARDCODE_ENABLED", True)
@@ -2611,8 +2671,10 @@ class AVISBehaviorCoordinator:
             return command
         now = time.monotonic() if now is None else float(now)
         self._observe_road_rules(frame, now)
-        self._observe_crosswalk(perception, now)
+        # Resolve the three-ROI deadlock pattern before the generic crosswalk
+        # observer can turn the same CW-like image into a provisional stop.
         self._observe_deadlock(frame, command, now)
+        self._observe_crosswalk(perception, now)
 
         # Keep the crosswalk stop/dwell/green-wait state machine running even
         # while the independent signal or stop-line gate is holding the car.
