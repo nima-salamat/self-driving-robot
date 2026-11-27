@@ -21,6 +21,11 @@ class AvisAdapter(SimulatorAdapter):
     backend = "avis"
     supports_lidar = False
     PARKING_BRAKE_SPEED_KMH = 1.0
+    # AVIS's stock Unity controller treats negative speed as service braking
+    # only above 5 mph (8.05 km/h); below that it applies reverse motor torque.
+    # Use a margin above that split and never send negative speed near a stop.
+    NEGATIVE_SPEED_BRAKE_MIN_KMH = 9.0
+    NEGATIVE_SPEED_BRAKE_PERCENT = 40
     SPEED_FEEDBACK_MAX_AGE_S = 1.0
 
     def __init__(self, config):
@@ -433,9 +438,6 @@ class AvisAdapter(SimulatorAdapter):
             handbrake = 0.0
             footbrake = 0.0
             if brake > 0.0:
-                # Use Unity's independent service-brake input, not negative
-                # throttle (which the stock controller may interpret as reverse).
-                speed = 0
                 footbrake = brake
                 now = time.monotonic()
                 speed_is_fresh = (
@@ -444,15 +446,33 @@ class AvisAdapter(SimulatorAdapter):
                     and now - self._last_speed_at <= self.SPEED_FEEDBACK_MAX_AGE_S
                 )
                 measured_speed = self._last_speed_kmh if speed_is_fresh else None
+
+                # Keep the legacy negative-speed braking behavior for higher
+                # speeds, while the explicit FootBrake channel provides full
+                # braking force and protects the low-speed transition. In the
+                # stock Unity controller, negative input becomes reverse torque
+                # below 5 mph, so stop sending it before the 9 km/h safety margin.
+                speed = 0
+                if (
+                    brake >= 0.5
+                    and measured_speed is not None
+                    and measured_speed > self.NEGATIVE_SPEED_BRAKE_MIN_KMH
+                ):
+                    speed = -self.NEGATIVE_SPEED_BRAKE_PERCENT
+
                 if (
                     brake >= 0.5
                     and measured_speed is not None
                     and measured_speed <= self.PARKING_BRAKE_SPEED_KMH
                 ):
                     handbrake = 1.0
-                self._last_brake_mode = (
-                    "FOOT BRAKE + HANDBRAKE" if handbrake >= 0.5 else "FOOT BRAKE"
-                )
+
+                if handbrake >= 0.5:
+                    self._last_brake_mode = "FOOT BRAKE + HANDBRAKE"
+                elif speed < 0:
+                    self._last_brake_mode = "NEGATIVE SPEED + FOOT BRAKE"
+                else:
+                    self._last_brake_mode = "FOOT BRAKE"
             else:
                 try:
                     throttle = float(command.throttle)
