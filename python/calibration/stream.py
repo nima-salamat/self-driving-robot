@@ -31,6 +31,7 @@ from .capture import CalibrationImageStore
 from .config import create_camera_config
 from .template import CALIBRATION_HTML
 from vision.camera import Camera
+from utils.logging_setup import configure_logging
 
 
 logger = logging.getLogger(__name__)
@@ -2224,6 +2225,11 @@ def build_parser():
         description="Live Flask camera calibration stream.",
     )
     parser.add_argument(
+        "--log-level", type=str.upper,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="INFO", help="Severity for the shared output/robot.log file and console.",
+    )
+    parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="Bind address. Use 0.0.0.0 for LAN access.",
@@ -2297,10 +2303,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(levelname)s] %(message)s",
-    )
+    configure_logging(level=args.log_level, log_dir="output")
 
     if args.camera_index is not None and args.camera_index < 0:
         raise SystemExit(
