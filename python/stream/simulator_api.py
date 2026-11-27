@@ -303,7 +303,7 @@ def register_simulator_routes(app, streamer):
         if backend != "avis" and (set(patch) & avis_only_keys):
             return jsonify(success=False, message="Obstacle avoidance and traffic-sign actions are available only in AVIS Engine modes"), 400
         if profile != "city" and (set(patch) & avis_city_keys):
-            return jsonify(success=False, message="Stop-line and traffic-light settings are available only for AVIS City"), 400
+            return jsonify(success=False, message="Stop-line, traffic-light and HSV STOP-sign settings are available only for AVIS City"), 400
         if patch.get("WITH_SIGN") and patch.get("WITH_APRILTAG"):
             return jsonify(success=False, message="Choose traffic signs or AprilTags, not both"), 400
         try:
