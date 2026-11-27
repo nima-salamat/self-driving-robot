@@ -149,11 +149,13 @@ class LoggingSetupTests(unittest.TestCase):
         self.assertIn(marker, file_text)
         with stream._STREAM_LOG_LOCK:
             buffered = list(stream._STREAM_LOGS)
-        self.assertTrue(any(
-            marker in item.get("message", "")
-            and item.get("logger") == "traffic_sign_detector.worker_test"
-            for item in buffered
-        ))
+        worker_entry = next((item for item in buffered
+                             if marker in item.get("message", "")
+                             and item.get("logger") == "traffic_sign_detector.worker_test"), None)
+        self.assertIsNotNone(worker_entry)
+        self.assertTrue(worker_entry["process"].startswith("SpawnProcess"))
+        self.assertGreater(worker_entry["process_id"], 0)
+        self.assertTrue(worker_entry["thread"])
 
     def test_different_log_directory_cannot_silently_split_an_active_session(self):
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
