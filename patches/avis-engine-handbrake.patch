@@ -1,0 +1,105 @@
+# AVIS Engine Unity brake-protocol patch
+# Target repository: AVISEngine/AVISEngine-Simulator
+# Target revision: 4e14fdb24aead8feab5c50d08c36276a0f89b4f4
+# Apply from the Unity project root:
+#   git apply /path/to/avis-engine-handbrake.patch
+#
+# Adds backward-compatible FootBrake and Handbrake fields. Older six-field
+# clients default both brake inputs to zero.
+
+diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs b/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs
+--- a/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs
++++ b/Assets/Standard Assets/Vehicles/Car/Scripts/CarServer.cs
+@@ -42,3 +42,5 @@
+     public float get_speed = 0;
+     public float sensor_angle = 30;
++    public float Handbrake = 0;
++    public float FootBrake = 0;
+ 
+@@ -67,1 +69,1 @@
+-    string[] responseArray = {"0","0","0","0","0","0"};
++    string[] responseArray = {"0","0","0","0","0","0","0","0"};
+@@ -122,2 +124,4 @@
+             float.TryParse(responseArray[4], out get_speed);
+             float.TryParse(responseArray[5], out sensor_angle);
++            float.TryParse(responseArray[6], out Handbrake);
++            float.TryParse(responseArray[7], out FootBrake);
+@@ -221,2 +225,4 @@
+                     float.TryParse(responseArray[4], out get_speed);
+                     float.TryParse(responseArray[5], out sensor_angle);
++                    float.TryParse(responseArray[6], out Handbrake);
++                    float.TryParse(responseArray[7], out FootBrake);
+@@ -280,5 +286,13 @@
+             string[] arr = Regex.Matches(response, @"-?[0-9]\d*(.\d+)?")
+                 .OfType<Match>()
+                 .Select(m => m.Groups[0].Value)
+                 .ToArray();
++            // Backward compatibility for six-field clients and early extensions.
++            if (arr.Length < 8)
++            {
++                int oldLength = arr.Length;
++                Array.Resize(ref arr, 8);
++                for (int i = oldLength; i < 8; i++)
++                    arr[i] = "0";
++            }
+             return arr;
+@@ -286,1 +300,1 @@
+-            string[] arr = {"0","0","0","0","0","0"};
++            string[] arr = {"0","0","0","0","0","0","0","0"};
+diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs b/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs
+--- a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs
++++ b/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs
+@@ -173,4 +173,38 @@
+         }
+ 
+ 
++        // Apply the simulator's service and parking brakes independently from throttle.
++        public void ApplyBrakeInputs(float footbrake, float handbrake)
++        {
++            footbrake = Mathf.Clamp01(footbrake);
++            handbrake = Mathf.Clamp01(handbrake);
++            BrakeInput = footbrake;
++
++            if (footbrake <= 0f && handbrake <= 0f)
++            {
++                for (int i = 0; i < m_WheelColliders.Length; i++)
++                {
++                    if (m_WheelColliders[i] != null)
++                        m_WheelColliders[i].brakeTorque = 0f;
++                }
++                return;
++            }
++
++            AccelInput = 0f;
++            for (int i = 0; i < m_WheelColliders.Length; i++)
++            {
++                if (m_WheelColliders[i] == null) continue;
++                m_WheelColliders[i].motorTorque = 0f;
++                m_WheelColliders[i].brakeTorque = m_BrakeTorque * footbrake;
++            }
++            if (handbrake > 0f && m_WheelColliders.Length >= 4)
++            {
++                float torque = handbrake * m_MaxHandbrakeTorque;
++                if (m_WheelColliders[2] != null)
++                    m_WheelColliders[2].brakeTorque = Mathf.Max(m_WheelColliders[2].brakeTorque, torque);
++                if (m_WheelColliders[3] != null)
++                    m_WheelColliders[3].brakeTorque = Mathf.Max(m_WheelColliders[3].brakeTorque, torque);
++            }
++        }
++
+         private void CapSpeed()
+diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs b/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs
+--- a/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs
++++ b/Assets/Standard Assets/Vehicles/Car/Scripts/CarUserControl.cs
+@@ -112,6 +112,7 @@ public class CarUserControl : MonoBehaviour
+                 float vSpeed = map(-100F, 100F, -1F, 1F, m_server.Speed);
+                 m_Car.m_Topspeed = userTopSpeed;
+-                if(vSpeed < 0){
+-                    m_Car.Move(m_steer / 100, 0.1F, 0.1F, m_handbrake);
+-                }
+-                m_Car.Move(m_steer / 100, vSpeed, vSpeed, m_handbrake);
++                float automaticFootBrake = Mathf.Clamp(m_server.FootBrake, 0F, 1F);
++                float automaticHandbrake = Mathf.Clamp(m_server.Handbrake, 0F, 1F);
++                if (automaticFootBrake > 0.001F) vSpeed = 0F;
++                m_Car.Move(m_steer / 100, vSpeed, vSpeed, 0F);
++                m_Car.ApplyBrakeInputs(automaticFootBrake, automaticHandbrake);
