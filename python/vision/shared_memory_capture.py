@@ -12,6 +12,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from utils.logging_setup import configure_worker_logging, get_logging_context
+
 logger = logging.getLogger(__name__)
 
 _SEQ, _CAPTURE_AT, _MEASURED_FPS, _VALID, _FAILURES = range(5)
@@ -47,8 +49,10 @@ def _queue_replace(target, item):
 
 def _capture_process(config_values, shared_name, frame_shape, resized_shape,
                      raw_nbytes, lock, stop_event, frame_event, ready_event,
-                     metadata, errors, commands, responses, capabilities):
+                     metadata, errors, commands, responses, capabilities,
+                     log_queue=None, log_level="INFO"):
     """The sole camera owner; publishes frame bytes only through shared memory."""
+    configure_worker_logging(log_queue, level=log_level)
     # Let the owning runtime handle Ctrl+C and stop this worker through its
     # event, rather than interrupting OpenCV resize/capture mid-call.
     try:
@@ -221,6 +225,7 @@ class SharedMemoryCapture:
         # shared buffer need not store identical pixels twice.
         self._same_shape = self.frame_shape == self.resized_shape
         self._context = mp.get_context("spawn")
+        self._log_queue, self._log_level = get_logging_context()
         self._lock = self._context.Lock()
         self._stop_event = self._context.Event()
         self._frame_event = self._context.Event()
@@ -263,6 +268,7 @@ class SharedMemoryCapture:
                 self._raw_nbytes, self._lock, self._stop_event, self._frame_event,
                 self._ready_event, self._metadata, self._errors, self._commands,
                 self._responses, self._capabilities,
+                self._log_queue, self._log_level,
             ),
             daemon=True,
         )
