@@ -444,9 +444,10 @@ class AvisAdapter(SimulatorAdapter):
                     and now - self._last_speed_at <= self.SPEED_FEEDBACK_MAX_AGE_S
                 )
                 measured_speed = self._last_speed_kmh if speed_is_fresh else None
-                if brake >= 0.5 and (
-                    measured_speed is None
-                    or measured_speed <= self.PARKING_BRAKE_SPEED_KMH
+                if (
+                    brake >= 0.5
+                    and measured_speed is not None
+                    and measured_speed <= self.PARKING_BRAKE_SPEED_KMH
                 ):
                     handbrake = 1.0
                 self._last_brake_mode = (
