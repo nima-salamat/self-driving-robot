@@ -395,7 +395,6 @@ function populate(s){
     "deadlock-confirm-frames":"SIMULATOR_DEADLOCK_CONFIRM_FRAMES",
     "deadlock-step-timeout":"SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS",
     "deadlock-route-chains":"SIMULATOR_DEADLOCK_ROUTE_CHAINS",
-    "deadlock-cw-min-lines":"SIMULATOR_DEADLOCK_CW_HORIZONTAL_MIN_LINES",
     "deadlock-cw-threshold":"SIMULATOR_DEADLOCK_CW_THRESHOLD",
     "deadlock-cw-canny-low":"SIMULATOR_DEADLOCK_CW_CANNY_LOW_THRESHOLD",
     "deadlock-cw-canny-high":"SIMULATOR_DEADLOCK_CW_CANNY_HIGH_THRESHOLD",
