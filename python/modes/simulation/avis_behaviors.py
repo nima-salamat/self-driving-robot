@@ -1854,6 +1854,18 @@ class AVISBehaviorCoordinator:
         self._observe_road_rules(frame, now)
         self._observe_crosswalk(perception, now)
 
+        # Keep the crosswalk stop/dwell/green-wait state machine running even
+        # while the independent signal or stop-line gate is holding the car.
+        # A red light must not pause the 3-second dwell after a confirmed stop.
+        if self.crosswalk_state in {"stopping", "holding", "waiting_for_green"}:
+            crosswalk_command = self._crosswalk_route_command(
+                frame, command, distance_delta_cm, now
+            )
+            if crosswalk_command is not None:
+                return crosswalk_command
+
+        # During an already-running route, a new red/stop-line hold still has
+        # priority and immediately brakes the vehicle.
         if self.traffic_light_hold or self.stop_line_waiting:
             reason = (
                 "AVIS City stop line: waiting for confirmed green signal"
