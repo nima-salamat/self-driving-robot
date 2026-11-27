@@ -161,13 +161,16 @@ def _draw_avis_road_rule_debug(
             speed_text, stop_count, stop_required
         )
     elif route_state == "WAITING_FOR_GREEN":
-        green_count = int(behavior.get("crosswalk_green_count", 0) or 0)
-        green_required = int(behavior.get("crosswalk_green_required", 0) or 0)
-        observations = int(behavior.get("crosswalk_green_observations", 0) or 0)
-        window = int(behavior.get("crosswalk_green_window", 0) or 0)
-        route_text += " · green {}/{} ({}/{})".format(
-            green_count, green_required, observations, window
-        )
+        if not behavior.get("traffic_light_enabled"):
+            route_text += " · traffic-light detector DISABLED"
+        else:
+            green_count = int(behavior.get("crosswalk_green_count", 0) or 0)
+            green_required = int(behavior.get("crosswalk_green_required", 0) or 0)
+            observations = int(behavior.get("crosswalk_green_observations", 0) or 0)
+            window = int(behavior.get("crosswalk_green_window", 0) or 0)
+            route_text += " · green {}/{} ({}/{})".format(
+                green_count, green_required, observations, window
+            )
     if route_state == "BLOCKED":
         route_text = "BLOCKED · " + str(behavior.get("crosswalk_reason") or "route unavailable")
 
