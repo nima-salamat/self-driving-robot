@@ -44,7 +44,9 @@ SIMULATOR_KEYS = {
     "SIMULATOR_OBSTACLE_RETURN_STEERING_MIN_PERCENT",
     "SIMULATOR_OBSTACLE_RETURN_STEERING_MAX_PERCENT",
     "ML_TOP_ROI", "ML_BOTTOM_ROI", "ML_LEFT_ROI", "ML_RIGHT_ROI",
-    "MR_TOP_ROI", "MR_BOTTOM_ROI", "MR_LEFT_ROI", "MR_RIGHT_ROI", "SIMULATOR_STOP_LINE_ENABLED",
+    "MR_TOP_ROI", "MR_BOTTOM_ROI", "MR_LEFT_ROI", "MR_RIGHT_ROI",
+    "ST_TOP_ROI", "ST_BOTTOM_ROI", "ST_LEFT_ROI", "ST_RIGHT_ROI",
+    "SIMULATOR_STOP_LINE_ENABLED",
     "SIMULATOR_TRAFFIC_LIGHTS_ENABLED", "SIMULATOR_STOP_LINE_THRESHOLD",
     "SIMULATOR_STOP_LINE_MIN_WIDTH_RATIO", "SIMULATOR_STOP_LINE_MIN_AREA",
     "SIMULATOR_STOP_LINE_MAX_ANGLE_DEG", "SIMULATOR_STOP_LINE_CONFIRM_FRAMES",
@@ -149,6 +151,7 @@ ROI_KEYS = {"RL_TOP_ROI", "RL_BOTTOM_ROI", "RL_LEFT_ROI", "RL_RIGHT_ROI",
             "TL_TOP_ROI", "TL_BOTTOM_ROI", "TL_LEFT_ROI", "TL_RIGHT_ROI",
             "SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI",
             "SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI",
+            "ST_TOP_ROI", "ST_BOTTOM_ROI", "ST_LEFT_ROI", "ST_RIGHT_ROI",
             "ML_TOP_ROI", "ML_BOTTOM_ROI", "ML_LEFT_ROI", "ML_RIGHT_ROI",
             "MR_TOP_ROI", "MR_BOTTOM_ROI", "MR_LEFT_ROI", "MR_RIGHT_ROI"}
 BEV_KEYS = {
@@ -328,6 +331,11 @@ def _defaults(mode, backend):
         "SIMULATOR_SIGN_STOP_HOLD_SECONDS": 2.0,
         "SIMULATOR_SIGN_TURN_HOLD_SECONDS": 0.6,
         "SIMULATOR_SIGN_STEERING_OFFSET": 0.18,
+        # Full-frame defaults preserve the current AVIS sign-detector behavior.
+        "ST_TOP_ROI": 0.0,
+        "ST_BOTTOM_ROI": 1.0,
+        "ST_LEFT_ROI": 0.0,
+        "ST_RIGHT_ROI": 1.0,
         "CITY_LANE_DETECTOR": "default",
         "USE_ML_LANE_DETECTOR": False,
         "ML_LANE_MODEL": "unet_depthwise_nano",
@@ -627,7 +635,9 @@ def _validate_settings(data, backend=None, mode=None):
                         ("RL_LEFT_ROI", "RL_RIGHT_ROI"), ("LL_LEFT_ROI", "LL_RIGHT_ROI"), ("CW_LEFT_ROI", "CW_RIGHT_ROI"),
                         ("TL_TOP_ROI", "TL_BOTTOM_ROI"), ("TL_LEFT_ROI", "TL_RIGHT_ROI"),
                         ("SIMULATOR_STOP_LINE_TOP_ROI", "SIMULATOR_STOP_LINE_BOTTOM_ROI"),
-                        ("SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI")):
+                        ("SIMULATOR_STOP_LINE_LEFT_ROI", "SIMULATOR_STOP_LINE_RIGHT_ROI"),
+                        ("ST_TOP_ROI", "ST_BOTTOM_ROI"),
+                        ("ST_LEFT_ROI", "ST_RIGHT_ROI")):
         if left in clean and right in clean and clean[left] >= clean[right]:
             raise ValueError(f"{left} must be smaller than {right}")
     if all(key in clean for key in ("MIN_SERVO_ANGLE", "SERVO_CENTER", "MAX_SERVO_ANGLE")):
