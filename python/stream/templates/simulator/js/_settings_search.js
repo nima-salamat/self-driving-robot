@@ -19,7 +19,7 @@ function bindSettingsSearch(){
     entries.push({title:title,detail:detail,searchable:[title,detail,control.name,control.id,context].join(" ").toLowerCase(),target:control,kind:"field"});
    });
    block.querySelectorAll("button[data-settings-search]").forEach(function(control){
-    const title=control.textContent.trim().replace(/\\s+/g," ");
+    const title=control.textContent.trim().replace(/\s+/g," ");
     const searchable=[title,control.dataset.settingsSearch,section,block.textContent].join(" ").toLowerCase();
     entries.push({title:title,detail:section+" · Open editor",searchable:searchable,target:control,kind:"action"});
    });

@@ -86,7 +86,8 @@ SIMULATOR_KEYS = {
 }
 BOOL_KEYS = {
     "SIMULATOR_LIDAR_ENABLED", "SIMULATOR_STOP_ON_LOST_LANE", "RL_MIRRORED", "LL_MIRRORED",
-    "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_STEERING_INVERTED", "USE_BEV",
+    "SIMULATOR_STOP_ON_CROSSWALK", "SIMULATOR_CROSSWALK_HARDCODE_ENABLED",
+    "SIMULATOR_STEERING_INVERTED", "USE_BEV",
     "SIMULATOR_OBSTACLE_AVOIDANCE_ENABLED",
     "SIMULATOR_OBSTACLE_SPEED_LIMIT_LEFT_SENSOR_ENABLED",
     "SIMULATOR_OBSTACLE_SPEED_LIMIT_FRONT_SENSOR_ENABLED",
@@ -413,6 +414,8 @@ def _validate_settings(data, backend=None, mode=None):
                             raise ValueError(route_name + " step " + str(index + 1) + " direction must be forward or reverse")
                         if any(isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(float(item)) for item in (distance, speed, steering)):
                             raise ValueError(route_name + " step " + str(index + 1) + " values must be finite numbers")
+                        if not float(speed).is_integer() or not float(steering).is_integer():
+                            raise ValueError(route_name + " step " + str(index + 1) + " speed and steering must be integers")
                         distance, speed, steering = float(distance), int(speed), int(steering)
                         if not 0.05 <= distance <= 40:
                             raise ValueError(route_name + " step " + str(index + 1) + " distance must be 0.05 to 40 metres")
