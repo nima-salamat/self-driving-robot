@@ -183,6 +183,23 @@ class RobotController:
     @staticmethod
     def parse_status_line(line):
         fields = str(line).split()
+        # The City main_nonBlocking firmware reports six fields:
+        # lane, motor, right range, left range, loop FPS, pulse-active.
+        # Race/extended firmware adds side range before FPS (seven fields).
+        if len(fields) == 6:
+            try:
+                return {
+                    "lane": fields[0],
+                    "motor_status": fields[1],
+                    "right_ultrasonic_dist": float(fields[2]),
+                    "left_ultrasonic_dist": float(fields[3]),
+                    "side_ultrasonic_dist": None,
+                    "arduino_fps": int(fields[4]),
+                    "doing_hardcode": fields[5] == "1",
+                    "extended": False,
+                }
+            except (ValueError, OverflowError):
+                return None
         if len(fields) < 7:
             return None
         try:
@@ -200,8 +217,6 @@ class RobotController:
             base["extended"] = False
             return base
         if len(fields) == 8 and fields[7].startswith("ODOM"):
-            # Firmware transition/reply lines can be interleaved with status;
-            # only ODOM1 records are accepted as encoder samples.
             return None
         # ODOM1 fields: cumulative signed pulses, raw count, servo command,
         # epoch, front-valid, front-sequence, front-age-ms, rear-left-valid,
@@ -220,7 +235,6 @@ class RobotController:
             })
         except (ValueError, OverflowError):
             return None
-        # Encoder/path validity is independent of range-sensor echo validity.
         base["valid"] = True
         return base
 

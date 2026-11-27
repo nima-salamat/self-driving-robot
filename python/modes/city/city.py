@@ -192,6 +192,15 @@ class Robot:
         self.apriltag_detector = ApriltagDetector(config=config_city)
         self.crosswalk_time_start = 0
         self.crosswalk_last_seen = 0
+        self._crosswalk_last_stop_command_at = None
+        self._crosswalk_hardcode_sent = False
+        self._crosswalk_hardcode_sent_at = None
+        self._crosswalk_hardcode_observed_active = False
+        self._crosswalk_hardcode_failed = False
+        self._crosswalk_hardcode_failure_reason = None
+        self._crosswalk_hardcode_route_tag = None
+        self._crosswalk_hardcode_route_name = None
+        self._crosswalk_last_telemetry_at = 0.0
         self.traffic_light_detector = None
         self.traffic_light_window = None
         self._traffic_light_status = ""
@@ -641,117 +650,318 @@ class Robot:
         self._pace_control_loop()
 
 
-    def check_crosswalk(self, frame=None):
-        now = time.time()
-        if self.crosswalk_time_start == 0 and now - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
-            self.crosswalk_time_start = now
-            self.crosswalk_last_seen = now
+    def _begin_crosswalk_stop(self):
+        """Start the pedestrian hold only after Arduino accepted STOP."""
+        if getattr(self, "crosswalk_time_start", 0):
+            return True
+        if not self.control.stop():
+            return False
+
+        now = time.monotonic()
+        self.crosswalk_time_start = now
+        self.crosswalk_last_seen = now
+        self._crosswalk_last_stop_command_at = now
+        self._crosswalk_hardcode_sent = False
+        self._crosswalk_hardcode_sent_at = None
+        self._crosswalk_hardcode_observed_active = False
+        self._crosswalk_hardcode_failed = False
+        self._crosswalk_hardcode_failure_reason = None
+        self._crosswalk_hardcode_route_tag = None
+        self._crosswalk_hardcode_route_name = None
+        self._crosswalk_last_telemetry_at = now
+        self.control.record_event(
+            "crosswalk_stop_started",
+            {
+                "planned_duration_s": float(getattr(config_city, "CROSSWALK_SLEEP", 3.0)),
+                "last_tag": self.last_tag,
+                "stop_confirmed_by_serial_write": True,
+            },
+        )
+        logger.info(
+            "City crosswalk detected; STOP command sent, holding for %.1f seconds",
+            float(getattr(config_city, "CROSSWALK_SLEEP", 3.0)),
+        )
+        return True
+
+    def _maintain_crosswalk_stop(self):
+        """Refresh the stop command at a bounded rate while waiting or faulted."""
+        now = time.monotonic()
+        interval = max(
+            0.05,
+            float(getattr(config_city, "STOP_COMMAND_REFRESH_INTERVAL", 0.25)),
+        )
+        last_sent = getattr(self, "_crosswalk_last_stop_command_at", None)
+        if last_sent is not None and now - last_sent < interval:
+            return True
+        if not self.control.stop():
+            return False
+        self._crosswalk_last_stop_command_at = now
+        return True
+
+    def _fail_crosswalk_hardcode(self, reason):
+        """Latch a failed/unknown maneuver in STOP instead of resuming blindly."""
+        reason = str(reason)
+        already_failed = bool(getattr(self, "_crosswalk_hardcode_failed", False))
+        self._crosswalk_hardcode_failed = True
+        self._crosswalk_hardcode_failure_reason = reason
+        if not already_failed:
+            logger.error("City crosswalk hardcode failed; robot remains stopped: %s", reason)
             self.control.record_event(
-                "crosswalk_stop_started",
+                "crosswalk_maneuver_failed",
                 {
-                    "planned_duration_s": config_city.CROSSWALK_SLEEP,
-                    "last_tag": self.last_tag,
+                    "tag": getattr(self, "_crosswalk_hardcode_route_tag", None),
+                    "route": getattr(self, "_crosswalk_hardcode_route_name", None),
+                    "reason": reason,
                 },
             )
+        self._set_mode_runtime_fault(
+            "crosswalk_hardcode",
+            True,
+            "Crosswalk maneuver completion could not be confirmed; robot remains in STOP. "
+            + reason,
+        )
 
-        if self.crosswalk_time_start != 0:
-            elapsed = now - self.crosswalk_time_start
-            enabled = bool(getattr(config_city,"TRAFFIC_LIGHTS_ENABLED",False))
-            permitted = False
-            if enabled:
-                wait = bool(getattr(config_city,"TRAFFIC_LIGHT_WAIT_BEFORE_CHECK",False))
-                if wait and elapsed < float(config_city.CROSSWALK_SLEEP): self._traffic_light_status=f"Waiting before check ({elapsed:.1f}/{config_city.CROSSWALK_SLEEP:.1f}s)"
-                elif frame is None or not getattr(self.camera,"last_capture_valid",False): self._traffic_light_status="UNKNOWN camera frame; holding"
+    @staticmethod
+    def _crosswalk_route_for_tag(tag):
+        if tag == TURN_LEFT:
+            return (
+                "left",
+                config_city.CITY_CROSSWALK_TURN_LEFT_SEQUENCE,
+                "crosswalk_turn_left",
+            )
+        if tag == TURN_RIGHT:
+            return (
+                "right",
+                config_city.CITY_CROSSWALK_TURN_RIGHT_SEQUENCE,
+                "crosswalk_turn_right",
+            )
+        return (
+            "straight",
+            config_city.CITY_CROSSWALK_STRAIGHT_SEQUENCE,
+            "crosswalk_straight" if tag == STRAIGHT else "crosswalk_straight_fallback",
+        )
+
+    def _finish_crosswalk_hardcode(self, now):
+        """Confirm a final stop, then release the crosswalk state to lane control."""
+        if not self.control.stop():
+            self._crosswalk_last_stop_command_at = None
+            self._fail_crosswalk_hardcode(
+                "Arduino completed the pulse sequence but the final STOP write failed."
+            )
+            return False
+
+        route_tag = getattr(self, "_crosswalk_hardcode_route_tag", None)
+        route_name = getattr(self, "_crosswalk_hardcode_route_name", "unknown")
+        self.control.record_event(
+            "crosswalk_maneuver_completed",
+            {"tag": route_tag, "route": route_name},
+        )
+        logger.info(
+            "City crosswalk hardcode completed: route=%s tag=%s",
+            route_name,
+            route_tag,
+        )
+        self.crosswalk_time_start = 0
+        self.crosswalk_last_seen = now
+        self._crosswalk_last_stop_command_at = now
+        self._crosswalk_hardcode_sent = False
+        self._crosswalk_hardcode_sent_at = None
+        self._crosswalk_hardcode_observed_active = False
+        self._crosswalk_hardcode_failed = False
+        self._crosswalk_hardcode_failure_reason = None
+        self._crosswalk_hardcode_route_tag = None
+        self._crosswalk_hardcode_route_name = None
+        self._crosswalk_last_telemetry_at = now
+        self._set_mode_runtime_fault(
+            "crosswalk_hardcode",
+            False,
+            "Crosswalk hardcode completion confirmed; returning to lane following.",
+        )
+        return True
+
+    def _poll_crosswalk_hardcode(self, now):
+        """Observe the MCU pulse-busy bit; never infer completion from elapsed time."""
+        if getattr(self, "_crosswalk_hardcode_failed", False):
+            return False
+
+        sent_at = getattr(self, "_crosswalk_hardcode_sent_at", None)
+        connection = getattr(self.control, "connection", None)
+        telemetry_records = getattr(connection, "telemetry_records", None)
+        if sent_at is None or not callable(telemetry_records):
+            self._fail_crosswalk_hardcode(
+                "Arduino status telemetry is unavailable, so pulse completion is unknown."
+            )
+            return False
+
+        try:
+            records = telemetry_records(limit=100)
+        except Exception as exc:
+            self._fail_crosswalk_hardcode(
+                f"Could not read Arduino status telemetry ({type(exc).__name__}: {exc})."
+            )
+            return False
+
+        last_at = float(getattr(self, "_crosswalk_last_telemetry_at", sent_at))
+        saw_active = bool(getattr(self, "_crosswalk_hardcode_observed_active", False))
+        completed = False
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            received_at = record.get("received_at")
+            if received_at is None:
+                continue
+            try:
+                received_at = float(received_at)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if received_at <= max(last_at, sent_at):
+                continue
+            line = str(record.get("line", ""))
+            status = self.control.parse_status_line(line)
+            if status is None:
+                continue
+            last_at = max(last_at, received_at)
+            if status.get("doing_hardcode"):
+                saw_active = True
+            elif saw_active:
+                completed = True
+                break
+
+        self._crosswalk_last_telemetry_at = last_at
+        self._crosswalk_hardcode_observed_active = saw_active
+        if completed:
+            return self._finish_crosswalk_hardcode(now)
+
+        elapsed = max(0.0, now - sent_at)
+        start_timeout = max(
+            0.5,
+            float(getattr(config_city, "CROSSWALK_HARDCODE_START_TIMEOUT", 3.0)),
+        )
+        total_timeout = max(
+            start_timeout + 1.0,
+            float(getattr(config_city, "CROSSWALK_HARDCODE_TIMEOUT", 90.0)),
+        )
+        if not saw_active and elapsed >= start_timeout:
+            self._fail_crosswalk_hardcode(
+                "Firmware did not report an active pulse sequence after the command was sent."
+            )
+        elif elapsed >= total_timeout:
+            self._fail_crosswalk_hardcode(
+                f"Firmware did not report pulse completion within {total_timeout:.0f} seconds."
+            )
+        return False
+
+    def check_crosswalk(self, frame=None):
+        """Hold for the configured dwell, run the last-seen direction chain, then confirm MCU completion."""
+        now = time.monotonic()
+        if not getattr(self, "crosswalk_time_start", 0):
+            return False
+
+        if getattr(self, "_crosswalk_hardcode_sent", False):
+            return self._poll_crosswalk_hardcode(now)
+        if getattr(self, "_crosswalk_hardcode_failed", False):
+            return False
+
+        elapsed = max(0.0, now - self.crosswalk_time_start)
+        duration = max(0.0, float(getattr(config_city, "CROSSWALK_SLEEP", 3.0)))
+        enabled = bool(getattr(config_city, "TRAFFIC_LIGHTS_ENABLED", False))
+        permitted = False
+        if enabled:
+            wait = bool(getattr(config_city, "TRAFFIC_LIGHT_WAIT_BEFORE_CHECK", False))
+            if wait and elapsed < duration:
+                self._traffic_light_status = f"Waiting before check ({elapsed:.1f}/{duration:.1f}s)"
+            elif frame is None or not getattr(self.camera, "last_capture_valid", False):
+                self._traffic_light_status = "UNKNOWN camera frame; holding"
+            else:
+                traffic_started = time.monotonic()
+                try:
+                    color, _ = self.traffic_light_detector.detect(frame)
+                except Exception:
+                    logger.exception("Traffic-light detector failed; holding")
+                    color = None
+                finally:
+                    if getattr(self, "metrics", None) is not None:
+                        self.metrics.record_stage(
+                            "traffic_light",
+                            (time.monotonic() - traffic_started) * 1000.0,
+                        )
+                token = getattr(self.camera, "last_capture_at", None)
+                if token is None:
+                    token = id(frame)
+                permitted = self.traffic_light_window.observe(color, token)
+                if color == "RED":
+                    self._traffic_light_status = "RED detected; holding"
+                elif color != "GREEN":
+                    self._traffic_light_status = "UNKNOWN/ambiguous; holding"
+                elif permitted:
+                    self._traffic_light_status = "GREEN confirmed; crossing permitted"
                 else:
-                    traffic_started = time.monotonic()
-                    try:
-                        color, _ = self.traffic_light_detector.detect(frame)
-                    except Exception:
-                        logger.exception("Traffic-light detector failed; holding")
-                        color = None
-                    finally:
-                        if getattr(self, "metrics", None) is not None:
-                            self.metrics.record_stage(
-                                "traffic_light",
-                                (time.monotonic() - traffic_started) * 1000.0,
-                            )
-                    token=getattr(self.camera,"last_capture_at",None)
-                    if token is None:token=id(frame)
-                    permitted=self.traffic_light_window.observe(color,token)
-                    if color=="RED":self._traffic_light_status="RED detected; holding"
-                    elif color!="GREEN":self._traffic_light_status="UNKNOWN/ambiguous; holding"
-                    elif permitted:self._traffic_light_status="GREEN confirmed; crossing permitted"
-                    else:self._traffic_light_status=f"GREEN confirmation: {self.traffic_light_window.green_count}/{self.traffic_light_window.window_size}"
-                if self._traffic_light_status!=self._traffic_light_last_state:
-                    logger.info("City traffic-light gate: %s",self._traffic_light_status);self._traffic_light_last_state=self._traffic_light_status
-                if permitted and self._traffic_light_status=="GREEN confirmed; crossing permitted":self.control.record_event("traffic_light_green_confirmed",{"green_count":self.traffic_light_window.green_count,"window_size":self.traffic_light_window.window_size})
-            can_cross=permitted if enabled else elapsed>=config_city.CROSSWALK_SLEEP
-            if can_cross:
-                self.crosswalk_time_start = 0
-                if enabled and self.traffic_light_window is not None:
-                    self.control.record_event("traffic_light_crossing_released",{"tag":self.last_tag})
-                    self.traffic_light_window.reset()
-                logger.debug(f"navigate with tag: {self.last_tag}")
-                if self._shutdown_requested():
-                    return
+                    self._traffic_light_status = (
+                        f"GREEN confirmation: {self.traffic_light_window.green_count}/"
+                        f"{self.traffic_light_window.window_size}"
+                    )
+            if self._traffic_light_status != self._traffic_light_last_state:
+                logger.info("City traffic-light gate: %s", self._traffic_light_status)
+                self._traffic_light_last_state = self._traffic_light_status
+            if (
+                permitted
+                and self._traffic_light_status == "GREEN confirmed; crossing permitted"
+            ):
                 self.control.record_event(
-                    "crosswalk_maneuver_started",
-                    {"tag": self.last_tag},
+                    "traffic_light_green_confirmed",
+                    {
+                        "green_count": self.traffic_light_window.green_count,
+                        "window_size": self.traffic_light_window.window_size,
+                    },
                 )
-                self.control.set_angle(self.control.servo_center)
-                if self._sleep_interruptible(0.3):
-                    return
 
-                if self.last_tag == TURN_RIGHT:
-                    if self._shutdown_requested():
-                        return
-                    self.control.signal_right()
-                    if self._sleep_interruptible(0.1):
-                        return
-                    if self._shutdown_requested():
-                        return
-                    self.control.forward_pulse(
-                        config_city.CITY_CROSSWALK_TURN_RIGHT_SEQUENCE,
-                        event="crosswalk_turn_right",
-                        metadata={"tag": self.last_tag},
-                    )
-                    if self._sleep_interruptible(0.1):
-                        return
-                elif self.last_tag == TURN_LEFT:
-                    if self._shutdown_requested():
-                        return
-                    self.control.signal_left()
-                    if self._sleep_interruptible(0.1):
-                        return
-                    if self._shutdown_requested():
-                        return
-                    self.control.forward_pulse(
-                        config_city.CITY_CROSSWALK_TURN_LEFT_SEQUENCE,
-                        event="crosswalk_turn_left",
-                        metadata={"tag": self.last_tag},
-                    )
-                    if self._sleep_interruptible(0.1):
-                        return
-                elif self.last_tag == STRAIGHT:
-                    if self._sleep_interruptible(0.1):
-                        return
-                    if self._shutdown_requested():
-                        return
-                    self.control.forward_pulse(
-                        config_city.CITY_CROSSWALK_STRAIGHT_SEQUENCE,
-                        event="crosswalk_straight",
-                        metadata={"tag": self.last_tag},
-                    )
-                    if self._sleep_interruptible(0.1):
-                        return
-                else:
-                    if self._sleep_interruptible(0.1):
-                        return
-                    if self._shutdown_requested():
-                        return
-                    self.control.forward_pulse(config_city.CITY_CROSSWALK_STRAIGHT_SEQUENCE)
-                    if self._sleep_interruptible(0.1):
-                        return
+        can_cross = permitted if enabled else elapsed >= duration
+        if not can_cross or self._shutdown_requested():
+            return False
+
+        # Freeze the most recently observed direction before sending the chain.
+        route_tag = self.last_tag
+        route_name, sequence, event_name = self._crosswalk_route_for_tag(route_tag)
+        if enabled and self.traffic_light_window is not None:
+            self.control.record_event(
+                "traffic_light_crossing_released",
+                {"tag": route_tag},
+            )
+            self.traffic_light_window.reset()
+
+        if route_tag == TURN_RIGHT:
+            self.control.signal_right()
+        elif route_tag == TURN_LEFT:
+            self.control.signal_left()
+
+        self._crosswalk_hardcode_route_tag = route_tag
+        self._crosswalk_hardcode_route_name = route_name
+        self.control.record_event(
+            "crosswalk_maneuver_started",
+            {"tag": route_tag, "route": route_name, "hold_elapsed_s": round(elapsed, 3)},
+        )
+        if not self.control.forward_pulse(
+            sequence,
+            event=event_name,
+            metadata={"tag": route_tag, "route": route_name, "source": "crosswalk"},
+        ):
+            self._fail_crosswalk_hardcode(
+                f"Arduino rejected the {route_name} crosswalk pulse-chain write."
+            )
+            return False
+
+        sent_at = time.monotonic()
+        self._crosswalk_hardcode_sent = True
+        self._crosswalk_hardcode_sent_at = sent_at
+        self._crosswalk_hardcode_observed_active = False
+        self._crosswalk_last_telemetry_at = sent_at
+        logger.info(
+            "City crosswalk dwell complete (%.1fs); sent frozen %s route from latest tag %s",
+            elapsed,
+            route_name,
+            route_tag,
+        )
+        return False
 
     def _shutdown_requested(self):
         event = getattr(config_city, "SHUTDOWN_EVENT", None)
@@ -1000,21 +1210,23 @@ class Robot:
                         self.handle_detect_object(frame)
                     
                 else:
-                    if not self.control.stop():
-                        self._set_mode_runtime_fault(
-                            "crosswalk_stop_command",
-                            True,
-                            "Crosswalk STOP command failed; crossing remains blocked while sensing diagnostics continue.",
-                        )
-                        self._run_inhibited_diagnostic_cycle(update_sign=True)
-                        self._pace_control_loop()
-                        continue
-                    self._set_mode_runtime_fault(
-                        "crosswalk_stop_command",
-                        False,
-                        "Crosswalk STOP command recovered; crossing logic may resume.",
+                    hardcode_in_progress = bool(
+                        getattr(self, "_crosswalk_hardcode_sent", False)
+                        and not getattr(self, "_crosswalk_hardcode_failed", False)
                     )
-                    time.sleep(2*config_city.DELAY)
+                    if not hardcode_in_progress:
+                        if not self._maintain_crosswalk_stop():
+                            self._set_mode_runtime_fault(
+                                "crosswalk_stop_command", True,
+                                "Crosswalk STOP command failed; crossing remains blocked while sensing diagnostics continue.",
+                            )
+                            self._run_inhibited_diagnostic_cycle(update_sign=True)
+                            self._pace_control_loop()
+                            continue
+                        self._set_mode_runtime_fault(
+                            "crosswalk_stop_command", False,
+                            "Crosswalk STOP command recovered; holding at the crossing.",
+                        )
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
                         self.control.stop()
@@ -1076,6 +1288,10 @@ class Robot:
                         debug_frame,
                     )
                     if self.stop_hold.active:
+                        if hardcode_in_progress:
+                            self._fail_crosswalk_hardcode(
+                                "A new STOP marker took priority while the crosswalk chain was running."
+                            )
                         self._keep_stop_hold()
                         if config_city.DEBUG or config_city.STREAM:
                             self.handle_debug_stream(
@@ -1105,10 +1321,22 @@ class Robot:
                     self._pace_control_loop()
                     continue
                 
-                if crosswalk and time.time() - self.crosswalk_last_seen >= config_city.CROSSWALK_THRESH_SPEND:
-                    self.control.stop()
-                    time.sleep(2*config_city.DELAY)
-                    self.check_crosswalk()
+                crosswalk_cooldown = (
+                    self.crosswalk_last_seen <= 0
+                    or time.monotonic() - self.crosswalk_last_seen
+                    >= float(config_city.CROSSWALK_THRESH_SPEND)
+                )
+                if crosswalk and crosswalk_cooldown:
+                    if self._begin_crosswalk_stop():
+                        self._set_mode_runtime_fault(
+                            "crosswalk_stop_command", False,
+                            "Crosswalk STOP command accepted; beginning the pedestrian hold.",
+                        )
+                    else:
+                        self._set_mode_runtime_fault(
+                            "crosswalk_stop_command", True,
+                            "Crosswalk detected but Arduino STOP failed; no maneuver will run until STOP succeeds.",
+                        )
                     self._pace_control_loop()
                     continue
                 
