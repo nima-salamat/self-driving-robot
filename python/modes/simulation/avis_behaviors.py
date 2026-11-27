@@ -1403,6 +1403,7 @@ class AVISBehaviorCoordinator:
         self.crosswalk_reason = "crosswalk hardcode idle"
 
         self.deadlock_state = "idle"
+        self.deadlock_abort_stop_pending = False
         self.deadlock_candidate = None
         self.deadlock_confirm_count = 0
         self.deadlock_clear_count = 0
@@ -1720,11 +1721,18 @@ class AVISBehaviorCoordinator:
             self.deadlock_confirm_count = 0
             self.deadlock_clear_count = 0
             if self.deadlock_state == "running":
-                self.deadlock_state = "blocked"
-                self.deadlock_reason = "deadlock detection disabled during an active hardcode; holding brake"
+                # Disabling the feature aborts the configured maneuver. Apply
+                # one explicit brake cycle before returning to ordinary lane follow.
+                self.deadlock_abort_stop_pending = True
+                self.deadlock_reason = "deadlock maneuver aborted by operator; braking once before returning to lane follow"
                 logger.error("AVIS deadlock maneuver aborted because its enable setting was switched off")
-            elif self.deadlock_state not in {"blocked", "completed"}:
+            else:
                 self.deadlock_state = "idle"
+                self.deadlock_route = None
+                self.deadlock_steps = []
+                self.deadlock_step_index = 0
+                self.deadlock_step_progress_cm = 0.0
+                self.deadlock_step_started_at = None
                 self.deadlock_reason = "deadlock detection disabled"
             return
 
@@ -1805,6 +1813,15 @@ class AVISBehaviorCoordinator:
 
     def _deadlock_route_command(self, command, distance_delta_cm, now):
         """Run the configured distance-based deadlock maneuver after frame confirmation."""
+        if self.deadlock_abort_stop_pending:
+            self.deadlock_abort_stop_pending = False
+            self.deadlock_state = "idle"
+            self.deadlock_route = None
+            self.deadlock_steps = []
+            self.deadlock_step_index = 0
+            self.deadlock_step_progress_cm = 0.0
+            self.deadlock_step_started_at = None
+            return _brake(command, self.deadlock_reason)
         if self.deadlock_state == "blocked":
             return _brake(command, self.deadlock_reason)
         if self.deadlock_state != "running":
