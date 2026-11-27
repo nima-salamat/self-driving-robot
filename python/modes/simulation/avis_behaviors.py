@@ -1744,10 +1744,9 @@ class AVISBehaviorCoordinator:
             return
         self.deadlock_last_frame_token = token
 
-        candidate, diagnostics = self._inspect_deadlock_pattern(frame)
-        self.deadlock_diagnostics = diagnostics
-
         if self.deadlock_state == "running":
+            # Do not spend CPU extracting three ROI line sets while a configured
+            # maneuver is already active; only maintain its safety-pause timer.
             safety_hold = (
                 self.crosswalk_latched
                 or self.crosswalk_state in {"braking", "stopping", "holding", "waiting_for_green", "running"}
@@ -1760,6 +1759,10 @@ class AVISBehaviorCoordinator:
             )
             self._pause_deadlock_route_timer(now, safety_hold)
             return
+
+        candidate, diagnostics = self._inspect_deadlock_pattern(frame)
+        self.deadlock_diagnostics = diagnostics
+
         if self.deadlock_state in {"completed", "blocked"}:
             if candidate is None:
                 self.deadlock_clear_count += 1
