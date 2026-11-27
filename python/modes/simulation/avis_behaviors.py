@@ -1413,6 +1413,7 @@ class AVISBehaviorCoordinator:
         self.deadlock_step_index = 0
         self.deadlock_step_progress_cm = 0.0
         self.deadlock_step_started_at = None
+        self.deadlock_pause_started_at = None
         self.deadlock_reason = "deadlock detection disabled"
         self.deadlock_diagnostics = {
             "roi_valid": False,
@@ -1747,6 +1748,17 @@ class AVISBehaviorCoordinator:
         self.deadlock_diagnostics = diagnostics
 
         if self.deadlock_state == "running":
+            safety_hold = (
+                self.crosswalk_latched
+                or self.crosswalk_state in {"braking", "stopping", "holding", "waiting_for_green", "running"}
+                or self.traffic_light_hold
+                or self.stop_line_waiting
+                or self.park_latched
+                or now < self.stop_sign_until
+                or command.brake >= 0.5
+                or self.obstacles.state != RangeObstacleAvoidance.CLEAR
+            )
+            self._pause_deadlock_route_timer(now, safety_hold)
             return
         if self.deadlock_state in {"completed", "blocked"}:
             if candidate is None:
@@ -1811,6 +1823,21 @@ class AVISBehaviorCoordinator:
         if self.deadlock_confirm_count >= required:
             self._start_deadlock_route(candidate, now)
 
+    def _pause_deadlock_route_timer(self, now, paused):
+        """Exclude higher-priority safety holds from per-step maneuver timeouts."""
+        if self.deadlock_state != "running":
+            self.deadlock_pause_started_at = None
+            return
+        if paused:
+            if self.deadlock_pause_started_at is None:
+                self.deadlock_pause_started_at = now
+            return
+        if self.deadlock_pause_started_at is not None:
+            pause_duration = max(0.0, now - self.deadlock_pause_started_at)
+            if self.deadlock_step_started_at is not None:
+                self.deadlock_step_started_at += pause_duration
+            self.deadlock_pause_started_at = None
+
     def _deadlock_route_command(self, command, distance_delta_cm, now):
         """Run the configured distance-based deadlock maneuver after frame confirmation."""
         if self.deadlock_abort_stop_pending:
@@ -1821,7 +1848,9 @@ class AVISBehaviorCoordinator:
             self.deadlock_step_index = 0
             self.deadlock_step_progress_cm = 0.0
             self.deadlock_step_started_at = None
+            self.deadlock_pause_started_at = None
             return _brake(command, self.deadlock_reason)
+        self._pause_deadlock_route_timer(now, False)
         if self.deadlock_state == "blocked":
             return _brake(command, self.deadlock_reason)
         if self.deadlock_state != "running":
@@ -2632,7 +2661,9 @@ class AVISBehaviorCoordinator:
             now=now,
         )
         if self.obstacles.state != RangeObstacleAvoidance.CLEAR or obstacle_command is not command:
+            self._pause_deadlock_route_timer(now, True)
             return obstacle_command
+        self._pause_deadlock_route_timer(now, False)
 
         # Let current-frame range/ROI obstacle avoidance run before the deadlock
         # hardcode. A newly observed obstacle must be able to preempt the route.
