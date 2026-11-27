@@ -210,6 +210,8 @@ function populate(s){
     "tl-red-wrap-hue":"TL_RED_HUE_WRAP_MIN","tl-green-hue-min":"TL_GREEN_HUE_MIN",
     "tl-green-hue-max":"TL_GREEN_HUE_MAX","tl-window":"SIMULATOR_TL_CONFIRMATION_WINDOW",
     "tl-green-required":"SIMULATOR_TL_GREEN_REQUIRED",
+    "st-top":"ST_TOP_ROI","st-bottom":"ST_BOTTOM_ROI",
+    "st-left":"ST_LEFT_ROI","st-right":"ST_RIGHT_ROI",
     "sl-top":"SIMULATOR_STOP_LINE_TOP_ROI","sl-bottom":"SIMULATOR_STOP_LINE_BOTTOM_ROI",
     "sl-left":"SIMULATOR_STOP_LINE_LEFT_ROI","sl-right":"SIMULATOR_STOP_LINE_RIGHT_ROI",
     "tl-top":"TL_TOP_ROI","tl-bottom":"TL_BOTTOM_ROI","tl-left":"TL_LEFT_ROI","tl-right":"TL_RIGHT_ROI",
