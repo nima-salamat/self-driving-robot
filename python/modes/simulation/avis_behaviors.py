@@ -2188,6 +2188,11 @@ class AVISBehaviorCoordinator:
         ).format(str(source).upper())
         if isinstance(detection, dict):
             current = dict(detection)
+            if current.get("bbox") is None:
+                previous_bbox = self.last_stop_sign_detection.get("bbox")
+                if previous_bbox is not None:
+                    current["bbox"] = previous_bbox
+                    current["visible"] = bool(self.last_stop_sign_detection.get("visible"))
             current["detected"] = True
             current["latched"] = True
             current["source"] = str(source).upper()
@@ -2204,6 +2209,10 @@ class AVISBehaviorCoordinator:
         # A STOP sign cancels, rather than pauses, an in-progress autonomous
         # hardcode. No crosswalk or deadlock step may resume behind this latch.
         self.crosswalk_state = "idle"
+        self.crosswalk_detect_count = 0
+        self.crosswalk_stop_confirm_count = 0
+        self.crosswalk_measured_speed_kmh = None
+        self.crosswalk_absent_count = 0
         self.crosswalk_latched = False
         self.crosswalk_started_at = None
         self.crosswalk_route_name = None
@@ -2222,6 +2231,9 @@ class AVISBehaviorCoordinator:
         self.deadlock_candidate = None
         self.deadlock_confirm_count = 0
         self.deadlock_clear_count = 0
+        self.deadlock_last_frame_token = None
+        self.deadlock_check_count = 0
+        self.deadlock_first_check_logged = False
         self.deadlock_route = None
         self.deadlock_steps = []
         self.deadlock_step_index = 0
@@ -2230,6 +2242,18 @@ class AVISBehaviorCoordinator:
         self.deadlock_step_timeout_warned_index = None
         self.deadlock_pause_started_at = None
         self.deadlock_reason = self.stop_sign_reason
+        self.park_latched = False
+        self.turn_direction = 0.0
+        self.turn_until = 0.0
+        self.stop_sign_until = 0.0
+        self.obstacles._set_state(
+            RangeObstacleAvoidance.CLEAR,
+            time.monotonic(),
+            "STOP sign latch cancelled the obstacle maneuver",
+        )
+        self.approach_speed._pid.reset()
+        self.approach_speed._active = False
+        self.approach_speed._brake_active = False
         self.deadlock_diagnostics.update({
             "candidate": None,
             "checked": False,
