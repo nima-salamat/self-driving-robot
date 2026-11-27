@@ -398,24 +398,34 @@ class VisionProcessor:
         cw_lines = []
 
         if cw_frame is not None:
+            crosswalk_threshold = int(getattr(conf, "CROSSWALK_THRESHOLD", 180))
+            canny_low = int(getattr(conf, "CROSSWALK_CANNY_LOW_THRESHOLD", 100))
+            canny_high = int(getattr(conf, "CROSSWALK_CANNY_HIGH_THRESHOLD", 150))
             if bool(getattr(conf, "CW_OLD_METHOD", CW_OLD_METHOD)):
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
-                _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
-                edges = cv2.Canny(gray, 100, 150)
-
-                lines = self._lsd.detect(edges)[0] 
+                _, gray = cv2.threshold(gray, crosswalk_threshold, 255, cv2.THRESH_BINARY)
+                edges = cv2.Canny(gray, canny_low, canny_high)
+                lines = self._lsd.detect(edges)[0]
             else:
                 gray = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
-                _, gray = cv2.threshold(gray, conf.CROSSWALK_THRESHOLD, 255, cv2.THRESH_BINARY)
-                edges = cv2.Canny(gray, 100, 150)
-                lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=20,
-                                        minLineLength=5, maxLineGap=5)
-            
+                _, gray = cv2.threshold(gray, crosswalk_threshold, 255, cv2.THRESH_BINARY)
+                edges = cv2.Canny(gray, canny_low, canny_high)
+                lines = cv2.HoughLinesP(
+                    edges, 1, np.pi / 180,
+                    threshold=int(getattr(conf, "CROSSWALK_HOUGH_THRESHOLD", 20)),
+                    minLineLength=int(getattr(conf, "CROSSWALK_HOUGH_MIN_LINE_LENGTH", 5)),
+                    maxLineGap=int(getattr(conf, "CROSSWALK_HOUGH_MAX_LINE_GAP", 5)),
+                )
+
             vertical = 0
             horizontal = 0
-            cw_roi_diagonal = math.sqrt(math.pow(cw_right - cw_left, 2) + math.pow(cw_bottom - cw_top, 2))
-            crosswalk_pixel_dist = (0.7) * (cw_bottom - cw_top) 
-            line_min_length = max(cw_roi_diagonal / 10, 10)
+            cw_roi_diagonal = math.hypot(cw_right - cw_left, cw_bottom - cw_top)
+            min_line_ratio = float(getattr(conf, "CROSSWALK_MIN_LINE_LENGTH_RATIO", 0.10))
+            min_line_floor = int(getattr(conf, "CROSSWALK_MIN_LINE_LENGTH_PX", 10))
+            angle_tolerance = float(getattr(conf, "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", 30))
+            bottom_distance_ratio = float(getattr(conf, "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO", 0.70))
+            crosswalk_pixel_dist = bottom_distance_ratio * (cw_bottom - cw_top)
+            line_min_length = max(cw_roi_diagonal * min_line_ratio, min_line_floor)
             lowest_horizontal_line = None
             
             if lines is not None:
@@ -426,7 +436,7 @@ class VisionProcessor:
                     length = math.hypot(x1 - x0, y1 - y0)
                     
                     if length >= line_min_length:
-                        if angle <= 30:
+                        if angle <= angle_tolerance:
                             horizontal += 1
                             cw_lines.append(line)
                             if lowest_horizontal_line is not None:
@@ -436,7 +446,7 @@ class VisionProcessor:
                             else:
                                 lowest_horizontal_line = line
                                     
-                        elif angle >= 60:
+                        elif angle >= 90.0 - angle_tolerance:
                             vertical += 1
                             cw_lines.append(line)
                         
