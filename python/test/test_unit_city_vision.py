@@ -192,7 +192,7 @@ class CityVisionLineExtractionTests(unittest.TestCase):
             "CROSSWALK_VERTICAL_MIN_LINES": 2, "CROSSWALK_HORIZONTAL_MIN_LINES": 2,
             "CW_TOP_ROI": 0.2, "CW_BOTTOM_ROI": 1.0,
             "CW_LEFT_ROI": 0.1, "CW_RIGHT_ROI": 0.9,
-            "DEBUG": True, "STREAM": False, "HALL_LINE_TRACKING_ENABLED": False,
+            "DEBUG": False, "STREAM": False, "HALL_LINE_TRACKING_ENABLED": False,
         }
         fake_lsd = type(
             "FakeLineSegmentDetector", (),
