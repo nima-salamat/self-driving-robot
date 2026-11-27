@@ -1337,6 +1337,11 @@ class AVISBehaviorCoordinator:
         self.config = config
         self.vision_profile = str(vision_profile).lower()
         self.is_city = self.vision_profile == "city"
+        self.is_avis_city = (
+            self.is_city
+            and str(getattr(config, "SIMULATOR_BACKEND", "")).strip().lower() == "avis"
+            and str(getattr(config, "MODE", "")).strip().lower() == "avis"
+        )
         self.obstacles = RangeObstacleAvoidance(config)
         self.approach_speed = AVISObstacleApproachSpeedController(config)
         self.stop_line_detector = (
@@ -1397,6 +1402,27 @@ class AVISBehaviorCoordinator:
         self.crosswalk_step_started_at = None
         self.crosswalk_reason = "crosswalk hardcode idle"
 
+        self.deadlock_state = "idle"
+        self.deadlock_candidate = None
+        self.deadlock_confirm_count = 0
+        self.deadlock_clear_count = 0
+        self.deadlock_last_frame_token = None
+        self.deadlock_route = None
+        self.deadlock_steps = []
+        self.deadlock_step_index = 0
+        self.deadlock_step_progress_cm = 0.0
+        self.deadlock_step_started_at = None
+        self.deadlock_reason = "deadlock detection disabled"
+        self.deadlock_diagnostics = {
+            "roi_valid": False,
+            "reason": "waiting for the first AVIS City frame",
+            "crosswalk_horizontal_lines": 0,
+            "required_horizontal_lines": 1,
+            "left_lane_lines": 0,
+            "right_lane_lines": 0,
+            "candidate": None,
+        }
+
         if bool(getattr(config, "SIMULATOR_SIGN_ACTIONS_ENABLED", False)):
             self._start_sign_detector()
 
@@ -1413,6 +1439,485 @@ class AVISBehaviorCoordinator:
             self._sign_error = f"{type(exc).__name__}: {exc}"
             logger.exception("AVIS sign actions requested but detector initialization failed")
             raise RuntimeError("Could not initialize the optional AVIS traffic-sign detector: " + self._sign_error) from exc
+
+    @staticmethod
+    def _deadlock_crop_roi(image, prefix, config):
+        """Crop a normalized CW/ML/MR rectangle from the raw AVIS camera frame."""
+        if image is None or not hasattr(image, "shape") or len(image.shape) < 2:
+            return None, {"valid": False, "reason": "camera image is unavailable"}
+        height, width = image.shape[:2]
+        if height <= 0 or width <= 0:
+            return None, {"valid": False, "reason": "camera image has invalid dimensions"}
+        try:
+            top = float(getattr(config, prefix + "_TOP_ROI"))
+            bottom = float(getattr(config, prefix + "_BOTTOM_ROI"))
+            left = float(getattr(config, prefix + "_LEFT_ROI"))
+            right = float(getattr(config, prefix + "_RIGHT_ROI"))
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            return None, {"valid": False, "reason": prefix + " ROI coordinates are unavailable"}
+        if not all(math.isfinite(value) for value in (top, bottom, left, right)):
+            return None, {"valid": False, "reason": prefix + " ROI coordinates are not finite"}
+        if not (0.0 <= top < bottom <= 1.0 and 0.0 <= left < right <= 1.0):
+            return None, {"valid": False, "reason": prefix + " ROI bounds are invalid"}
+        x1, x2 = int(left * width), int(right * width)
+        y1, y2 = int(top * height), int(bottom * height)
+        crop = image[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None, {"valid": False, "reason": prefix + " ROI crop is empty"}
+        return crop, {
+            "valid": True, "top": top, "bottom": bottom, "left": left, "right": right,
+            "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+            "width": int(crop.shape[1]), "height": int(crop.shape[0]),
+        }
+
+    def _deadlock_horizontal_line_count(self, roi):
+        """Count horizontal CW segments with the City's configured detector thresholds."""
+        import cv2
+        import numpy as np
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        threshold = max(0, min(255, int(getattr(self.config, "CROSSWALK_THRESHOLD", 180))))
+        canny_low = max(0, min(255, int(getattr(self.config, "CROSSWALK_CANNY_LOW_THRESHOLD", 100))))
+        canny_high = max(canny_low + 1, min(255, int(getattr(self.config, "CROSSWALK_CANNY_HIGH_THRESHOLD", 150))))
+        _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+        edges = cv2.Canny(binary, canny_low, canny_high)
+
+        # Match the City crosswalk mask so the same CW editor settings affect
+        # both the normal crosswalk detector and this deadlock condition.
+        if bool(getattr(self.config, "CW_TRAPEZOID_MODE", False)):
+            height, width = roi.shape[:2]
+            factor = max(0.0, min(
+                1.0, float(getattr(self.config, "CW_TOP_WIDTH_FACTOR", 0.90))
+            ))
+            inset = int(width * (1.0 - factor) / 2.0)
+            mask = np.zeros((height, width), dtype=np.uint8)
+            polygon = np.array(
+                [[inset, 0], [width - inset, 0], [width - 1, height - 1], [0, height - 1]],
+                dtype=np.int32,
+            )
+            cv2.fillPoly(mask, [polygon], 255)
+            edges = cv2.bitwise_and(edges, edges, mask=mask)
+
+        if bool(getattr(self.config, "CW_OLD_METHOD", False)):
+            lines = cv2.createLineSegmentDetector(0).detect(edges)[0]
+        else:
+            lines = cv2.HoughLinesP(
+                edges,
+                1,
+                np.pi / 180,
+                threshold=max(1, int(getattr(self.config, "CROSSWALK_HOUGH_THRESHOLD", 20))),
+                minLineLength=max(1, int(getattr(self.config, "CROSSWALK_HOUGH_MIN_LINE_LENGTH", 5))),
+                maxLineGap=max(0, int(getattr(self.config, "CROSSWALK_HOUGH_MAX_LINE_GAP", 5))),
+            )
+
+        height, width = roi.shape[:2]
+        minimum_length = max(
+            math.hypot(width, height) * max(
+                0.01, min(1.0, float(getattr(self.config, "CROSSWALK_MIN_LINE_LENGTH_RATIO", 0.10)))
+            ),
+            max(1, int(getattr(self.config, "CROSSWALK_MIN_LINE_LENGTH_PX", 10))),
+        )
+        angle_tolerance = max(
+            1.0,
+            min(44.0, float(getattr(self.config, "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG", 30))),
+        )
+        horizontal_count = 0
+        if lines is not None:
+            for line in lines:
+                coordinates = np.asarray(line).reshape(-1)
+                if coordinates.size != 4:
+                    continue
+                x1, y1, x2, y2 = [float(value) for value in coordinates]
+                length = math.hypot(x2 - x1, y2 - y1)
+                if length < minimum_length:
+                    continue
+                angle = abs(math.degrees(math.atan((y2 - y1) / (x2 - x1 + 1e-6))))
+                if angle <= angle_tolerance:
+                    horizontal_count += 1
+        return horizontal_count
+
+    def _deadlock_lane_line_count(self, roi):
+        """Use the City's lane ROI preprocessing and Hough settings on ML or MR."""
+        import cv2
+        import numpy as np
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        if bool(getattr(self.config, "OLD_METHOD", False)):
+            _, binary = cv2.threshold(
+                gray, max(0, min(255, int(getattr(self.config, "LANE_THRESHOLD", 180)))),
+                255, cv2.THRESH_BINARY,
+            )
+            edges = cv2.Canny(binary, 100, 150)
+        else:
+            blur_kernel = max(1, min(15, int(getattr(self.config, "HOUGH_BLUR_KERNEL", 3))))
+            if blur_kernel > 1 and blur_kernel % 2 == 0:
+                blur_kernel += 1
+            if blur_kernel > 1:
+                gray = cv2.GaussianBlur(gray, (blur_kernel, blur_kernel), 0)
+            sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+            sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+            magnitude = cv2.convertScaleAbs(cv2.magnitude(sobel_x, sobel_y))
+            _, edges = cv2.threshold(
+                magnitude, max(0, min(255, int(getattr(self.config, "LANE_THRESHOLD", 180)))),
+                255, cv2.THRESH_BINARY,
+            )
+            if bool(getattr(self.config, "HOUGH_MORPH_CLOSE", True)):
+                edges = cv2.morphologyEx(
+                    edges, cv2.MORPH_CLOSE, np.ones((3, 3), dtype=np.uint8), iterations=1
+                )
+
+        lines = cv2.HoughLinesP(
+            edges,
+            1,
+            np.pi / 180,
+            threshold=max(1, int(getattr(self.config, "HOUGH_THRESHOLD", 15))),
+            minLineLength=max(1, int(getattr(self.config, "HOUGH_MIN_LINE_LENGTH", 5))),
+            maxLineGap=max(0, int(getattr(self.config, "HOUGH_MAX_LINE_GAP", 20))),
+        )
+        if lines is None:
+            return 0
+
+        height, width = roi.shape[:2]
+        minimum_length = max(
+            5.0,
+            math.hypot(width, height) * 0.06,
+            float(max(1, int(getattr(self.config, "HOUGH_MIN_LINE_LENGTH", 5)))),
+        )
+        count = 0
+        for line in lines:
+            coordinates = np.asarray(line).reshape(-1)
+            if coordinates.size != 4:
+                continue
+            x1, y1, x2, y2 = [float(value) for value in coordinates]
+            length = math.hypot(x2 - x1, y2 - y1)
+            angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
+            angle = min(angle, abs(180.0 - angle))
+            # Ignore nearly-horizontal crosswalk stripes in the side ROIs;
+            # lane-boundary evidence must be meaningfully slanted/vertical.
+            if length >= minimum_length and angle >= 25.0:
+                count += 1
+        return count
+
+    def _inspect_deadlock_pattern(self, frame):
+        image = getattr(frame, "image", None) if frame is not None else None
+        cw_roi, cw_status = self._deadlock_crop_roi(image, "CW", self.config)
+        ml_roi, ml_status = self._deadlock_crop_roi(image, "ML", self.config)
+        mr_roi, mr_status = self._deadlock_crop_roi(image, "MR", self.config)
+        diagnostics = {
+            "roi_valid": bool(cw_roi is not None and ml_roi is not None and mr_roi is not None),
+            "cw_roi": cw_status,
+            "ml_roi": ml_status,
+            "mr_roi": mr_status,
+            "crosswalk_horizontal_lines": 0,
+            "required_horizontal_lines": max(
+                1, int(getattr(self.config, "CROSSWALK_HORIZONTAL_MIN_LINES", 3))
+            ),
+            "left_lane_lines": 0,
+            "right_lane_lines": 0,
+            "left_has_line": False,
+            "right_has_line": False,
+            "candidate": None,
+            "reason": "one or more deadlock ROIs are invalid",
+        }
+        if cw_roi is None or ml_roi is None or mr_roi is None:
+            return None, diagnostics
+        try:
+            horizontal = self._deadlock_horizontal_line_count(cw_roi)
+            left_lines = self._deadlock_lane_line_count(ml_roi)
+            right_lines = self._deadlock_lane_line_count(mr_roi)
+        except Exception as exc:
+            diagnostics["reason"] = "ROI line extraction failed: {}: {}".format(
+                type(exc).__name__, exc
+            )
+            return None, diagnostics
+
+        required_horizontal = diagnostics["required_horizontal_lines"]
+        left_present = left_lines >= 1
+        right_present = right_lines >= 1
+        candidate = None
+        if horizontal >= required_horizontal:
+            # A boundary found only on the right means the left side is the
+            # available escape direction; the inverse pattern selects right.
+            if right_present and not left_present:
+                candidate = "left"
+            elif left_present and not right_present:
+                candidate = "right"
+
+        diagnostics.update({
+            "roi_valid": True,
+            "crosswalk_horizontal_lines": int(horizontal),
+            "left_lane_lines": int(left_lines),
+            "right_lane_lines": int(right_lines),
+            "left_has_line": bool(left_present),
+            "right_has_line": bool(right_present),
+            "candidate": candidate,
+            "reason": (
+                "right ROI has a lane line and left ROI is clear"
+                if candidate == "left" else
+                "left ROI has a lane line and right ROI is clear"
+                if candidate == "right" else
+                "crosswalk horizontal threshold or one-sided lane-line condition is not met"
+            ),
+        })
+        return candidate, diagnostics
+
+    def _start_deadlock_route(self, direction, now):
+        self.deadlock_route = direction
+        try:
+            route_data = json.loads(str(getattr(
+                self.config,
+                "SIMULATOR_DEADLOCK_ROUTE_CHAINS",
+                '{"left":[],"right":[]}',
+            )))
+            if not isinstance(route_data, dict):
+                raise ValueError("route configuration must be an object")
+            steps = route_data.get(direction, [])
+            if not isinstance(steps, list):
+                raise ValueError("route steps must be a list")
+            self.deadlock_steps = list(steps)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            self.deadlock_steps = []
+            self.deadlock_state = "blocked"
+            self.deadlock_reason = "deadlock route configuration is invalid: " + str(exc)
+            logger.exception("AVIS deadlock route configuration failed")
+            return
+
+        self.deadlock_step_index = 0
+        self.deadlock_step_progress_cm = 0.0
+        self.deadlock_step_started_at = now
+        self.deadlock_clear_count = 0
+        if not self.deadlock_steps:
+            self.deadlock_state = "blocked"
+            self.deadlock_reason = (
+                "deadlock detected toward {}; no hardcode steps are configured"
+            ).format(direction.upper())
+            logger.error(
+                "AVIS DEADLOCK CONFIRMED: maneuver=%s but its hardcode route is empty; holding brake",
+                direction.upper(),
+            )
+            return
+
+        self.deadlock_state = "running"
+        first = self.deadlock_steps[0]
+        self.deadlock_reason = "deadlock {} maneuver started".format(direction)
+        logger.warning(
+            "AVIS DEADLOCK CONFIRMED: maneuver=%s steps=%d confirmation=%d/%d; "
+            "first_step=%s direction=%s distance_m=%s speed_percent=%s steering_percent=%s",
+            direction.upper(), len(self.deadlock_steps), self.deadlock_confirm_count,
+            max(1, min(20, int(getattr(self.config, "SIMULATOR_DEADLOCK_CONFIRM_FRAMES", 4)))),
+            1, first.get("direction"), first.get("distance_m"),
+            first.get("speed_percent"), first.get("steering_percent"),
+        )
+
+    def _observe_deadlock(self, frame, command, now):
+        """Confirm the CW + one-sided ML/MR line pattern on consecutive AVIS City frames."""
+        enabled = bool(
+            self.is_avis_city
+            and getattr(self.config, "SIMULATOR_DEADLOCK_ENABLED", False)
+        )
+        if not enabled:
+            self.deadlock_candidate = None
+            self.deadlock_confirm_count = 0
+            self.deadlock_clear_count = 0
+            if self.deadlock_state == "running":
+                self.deadlock_state = "blocked"
+                self.deadlock_reason = "deadlock detection disabled during an active hardcode; holding brake"
+                logger.error("AVIS deadlock maneuver aborted because its enable setting was switched off")
+            elif self.deadlock_state not in {"blocked", "completed"}:
+                self.deadlock_state = "idle"
+                self.deadlock_reason = "deadlock detection disabled"
+            return
+
+        if frame is None:
+            return
+        token = getattr(frame, "sequence", None) or getattr(frame, "captured_at", None)
+        if token == self.deadlock_last_frame_token:
+            return
+        self.deadlock_last_frame_token = token
+
+        candidate, diagnostics = self._inspect_deadlock_pattern(frame)
+        self.deadlock_diagnostics = diagnostics
+
+        if self.deadlock_state == "running":
+            return
+        if self.deadlock_state in {"completed", "blocked"}:
+            if candidate is None:
+                self.deadlock_clear_count += 1
+                if self.deadlock_clear_count >= 8:
+                    previous = self.deadlock_state
+                    self.deadlock_state = "idle"
+                    self.deadlock_route = None
+                    self.deadlock_steps = []
+                    self.deadlock_step_index = 0
+                    self.deadlock_step_progress_cm = 0.0
+                    self.deadlock_step_started_at = None
+                    self.deadlock_candidate = None
+                    self.deadlock_confirm_count = 0
+                    self.deadlock_clear_count = 0
+                    self.deadlock_reason = "deadlock pattern cleared; detector re-armed"
+                    logger.info("AVIS deadlock detector re-armed after %d clear frames (previous=%s)", 8, previous)
+            else:
+                self.deadlock_clear_count = 0
+            return
+
+        safety_hold = (
+            self.crosswalk_latched
+            or self.crosswalk_state in {"braking", "stopping", "holding", "waiting_for_green", "running"}
+            or self.traffic_light_hold
+            or self.stop_line_waiting
+            or self.park_latched
+            or now < self.stop_sign_until
+            or command.brake >= 0.5
+            or self.obstacles.state != RangeObstacleAvoidance.CLEAR
+        )
+        if safety_hold:
+            self.deadlock_candidate = None
+            self.deadlock_confirm_count = 0
+            self.deadlock_clear_count = 0
+            diagnostics["reason"] = "deadlock confirmation paused by a higher-priority safety behavior"
+            return
+
+        required = max(
+            1, min(20, int(getattr(self.config, "SIMULATOR_DEADLOCK_CONFIRM_FRAMES", 4)))
+        )
+        if candidate is None:
+            self.deadlock_candidate = None
+            self.deadlock_confirm_count = 0
+            self.deadlock_clear_count = 0
+            return
+
+        if candidate == self.deadlock_candidate:
+            self.deadlock_confirm_count += 1
+        else:
+            self.deadlock_candidate = candidate
+            self.deadlock_confirm_count = 1
+
+        logger.info(
+            "AVIS deadlock candidate: direction=%s confirmation=%d/%d "
+            "CW_horizontal=%d/%d ML_lines=%d MR_lines=%d",
+            candidate.upper(), self.deadlock_confirm_count, required,
+            diagnostics["crosswalk_horizontal_lines"],
+            diagnostics["required_horizontal_lines"],
+            diagnostics["left_lane_lines"], diagnostics["right_lane_lines"],
+        )
+        if self.deadlock_confirm_count >= required:
+            self._start_deadlock_route(candidate, now)
+
+    def _deadlock_route_command(self, command, distance_delta_cm, now):
+        """Run the configured distance-based deadlock maneuver after frame confirmation."""
+        if self.deadlock_state == "blocked":
+            return _brake(command, self.deadlock_reason)
+        if self.deadlock_state != "running":
+            return None
+        if self.deadlock_step_index >= len(self.deadlock_steps):
+            self.deadlock_state = "completed"
+            self.deadlock_reason = "deadlock {} maneuver completed".format(self.deadlock_route)
+            logger.info("%s", self.deadlock_reason)
+            return None
+
+        step = self.deadlock_steps[self.deadlock_step_index]
+        try:
+            target_cm = float(step["distance_m"]) * 100.0
+            speed = float(step["speed_percent"]) / 100.0
+            steering = float(step["steering_percent"]) / 100.0
+            direction = str(step["direction"]).lower()
+        except (KeyError, TypeError, ValueError, OverflowError):
+            self.deadlock_state = "blocked"
+            self.deadlock_reason = "deadlock hardcode blocked: route step values are invalid"
+            logger.exception("AVIS deadlock route step is invalid")
+            return _brake(command, self.deadlock_reason)
+
+        if (
+            direction not in {"forward", "reverse"}
+            or not all(math.isfinite(value) for value in (target_cm, speed, steering))
+            or target_cm <= 0
+            or not 0 < speed <= 1
+            or not -1 <= steering <= 1
+        ):
+            self.deadlock_state = "blocked"
+            self.deadlock_reason = "deadlock hardcode blocked: route step is outside allowed limits"
+            logger.error("%s", self.deadlock_reason)
+            return _brake(command, self.deadlock_reason)
+
+        try:
+            delta = float(distance_delta_cm or 0.0)
+        except (TypeError, ValueError, OverflowError):
+            delta = 0.0
+        if math.isfinite(delta) and delta > 0:
+            self.deadlock_step_progress_cm += delta
+
+        if self.deadlock_step_progress_cm >= target_cm:
+            completed_step = self.deadlock_step_index + 1
+            self.deadlock_step_index += 1
+            self.deadlock_step_progress_cm = 0.0
+            self.deadlock_step_started_at = now
+            if self.deadlock_step_index >= len(self.deadlock_steps):
+                self.deadlock_state = "completed"
+                self.deadlock_reason = "deadlock {} maneuver completed".format(self.deadlock_route)
+                logger.info(
+                    "AVIS deadlock maneuver completed: direction=%s steps=%d",
+                    self.deadlock_route, completed_step,
+                )
+                return None
+            step = self.deadlock_steps[self.deadlock_step_index]
+            target_cm = float(step["distance_m"]) * 100.0
+            speed = float(step["speed_percent"]) / 100.0
+            steering = float(step["steering_percent"]) / 100.0
+            direction = str(step["direction"]).lower()
+            logger.info(
+                "AVIS deadlock maneuver step started: direction=%s step=%d/%d "
+                "travel=%s distance_m=%s speed_percent=%s steering_percent=%s",
+                self.deadlock_route, self.deadlock_step_index + 1, len(self.deadlock_steps),
+                direction, step.get("distance_m"), step.get("speed_percent"),
+                step.get("steering_percent"),
+            )
+
+        timeout = max(
+            1.0, float(getattr(self.config, "SIMULATOR_DEADLOCK_STEP_TIMEOUT_SECONDS", 15.0))
+        )
+        elapsed = max(0.0, now - float(self.deadlock_step_started_at or now))
+        if elapsed >= timeout and self.deadlock_step_progress_cm < target_cm:
+            self.deadlock_state = "blocked"
+            self.deadlock_reason = (
+                "deadlock hardcode blocked: step {} did not reach its distance within {:.1f}s"
+            ).format(self.deadlock_step_index + 1, elapsed)
+            logger.error("%s", self.deadlock_reason)
+            return _brake(command, self.deadlock_reason)
+
+        throttle_limit = max(
+            0.0, min(1.0, float(getattr(self.config, "SIMULATOR_THROTTLE_LIMIT", 0.35)))
+        )
+        throttle = min(speed, throttle_limit)
+        if throttle <= 0:
+            self.deadlock_state = "blocked"
+            self.deadlock_reason = "deadlock hardcode blocked: global throttle limit is zero"
+            logger.error("%s", self.deadlock_reason)
+            return _brake(command, self.deadlock_reason)
+
+        steering_limit = max(
+            0.05, min(1.0, float(getattr(self.config, "SIMULATOR_STEERING_LIMIT", 1.0)))
+        )
+        steering = max(-steering_limit, min(steering_limit, steering))
+        if bool(getattr(self.config, "SIMULATOR_STEERING_INVERTED", False)):
+            steering = -steering
+        servo_min = float(getattr(self.config, "MIN_SERVO_ANGLE", 55.0))
+        servo_center = float(getattr(self.config, "SERVO_CENTER", 95.0))
+        servo_max = float(getattr(self.config, "MAX_SERVO_ANGLE", 125.0))
+        servo_angle = (
+            servo_center + steering * (servo_max - servo_center)
+            if steering >= 0 else servo_center + steering * (servo_center - servo_min)
+        )
+        signed_throttle = throttle if direction == "forward" else -throttle
+        self.deadlock_reason = (
+            "deadlock {} maneuver step {}/{} · {:.0f}/{:.0f}cm"
+        ).format(
+            self.deadlock_route, self.deadlock_step_index + 1,
+            len(self.deadlock_steps), self.deadlock_step_progress_cm, target_cm,
+        )
+        return VehicleCommand(
+            steering=steering, throttle=signed_throttle, brake=0.0,
+            servo_angle=servo_angle, target_speed=0.0, reason=self.deadlock_reason,
+        )
 
     def _crop_sign_roi(self, image):
         """Crop the configured normalized ST rectangle before AVIS YOLO inference."""
@@ -2061,6 +2566,7 @@ class AVISBehaviorCoordinator:
         now = time.monotonic() if now is None else float(now)
         self._observe_road_rules(frame, now)
         self._observe_crosswalk(perception, now)
+        self._observe_deadlock(frame, command, now)
 
         # Keep the crosswalk stop/dwell/green-wait state machine running even
         # while the independent signal or stop-line gate is holding the car.
@@ -2090,6 +2596,10 @@ class AVISBehaviorCoordinator:
             return _brake(command, "PARK sign latched; waiting for a confirmed STRAIGHT sign")
         if now < self.stop_sign_until:
             return _brake(command, "STOP sign hold")
+
+        deadlock_command = self._deadlock_route_command(command, distance_delta_cm, now)
+        if deadlock_command is not None:
+            return deadlock_command
 
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
@@ -2198,6 +2708,23 @@ class AVISBehaviorCoordinator:
             "crosswalk_steps": len(self.crosswalk_steps),
             "crosswalk_progress_cm": round(self.crosswalk_step_progress_cm, 1),
             "crosswalk_reason": self.crosswalk_reason,
+            "deadlock_enabled": bool(
+                self.is_avis_city and getattr(self.config, "SIMULATOR_DEADLOCK_ENABLED", False)
+            ),
+            "deadlock_state": self.deadlock_state,
+            "deadlock_candidate": self.deadlock_candidate,
+            "deadlock_confirmation_frames": int(self.deadlock_confirm_count),
+            "deadlock_confirmation_required": max(
+                1, min(20, int(getattr(self.config, "SIMULATOR_DEADLOCK_CONFIRM_FRAMES", 4)))
+            ),
+            "deadlock_route": self.deadlock_route,
+            "deadlock_route_steps": len(self.deadlock_steps),
+            "deadlock_step": (
+                self.deadlock_step_index + 1 if self.deadlock_state == "running" else 0
+            ),
+            "deadlock_step_progress_cm": round(self.deadlock_step_progress_cm, 1),
+            "deadlock_reason": self.deadlock_reason,
+            "deadlock_diagnostics": dict(self.deadlock_diagnostics),
         }
 
     def close(self):
