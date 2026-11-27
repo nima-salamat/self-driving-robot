@@ -48,7 +48,9 @@ async function saveManeuverConfigDialog(){
   });
   if(isCity){
     [['maneuver_crosswalk_vertical_min','CROSSWALK_VERTICAL_MIN_LINES'],['maneuver_crosswalk_horizontal_min','CROSSWALK_HORIZONTAL_MIN_LINES']].forEach(function(pair){
-      const value=Number($(pair[0]).value);
+      const raw=$(pair[0]).value.trim();
+      if(!raw)throw new Error(pair[1]+' is required.');
+      const value=Number(raw);
       if(!Number.isInteger(value)||value<0||value>1000)throw new Error(pair[1]+' must be an integer from 0 to 1000.');
       body.advanced[pair[1]]=value;
     });

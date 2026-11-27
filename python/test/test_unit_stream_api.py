@@ -108,6 +108,18 @@ class StreamApiTests(unittest.TestCase):
         self.assertIn('id="crosswalk-min-vertical" type="number" min="0" max="1000" step="1"', settings_template)
         self.assertIn('id="crosswalk-min-horizontal" type="number" min="0" max="1000" step="1"', settings_template)
         self.assertIn('name="CROSSWALK_THRESHOLD"', settings_template)
+        workspace_overlay_template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "stream" / "partials" / "_workspace_overlays.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="maneuver_crosswalk_vertical_min" type="number" min="0" max="1000" step="1"', workspace_overlay_template)
+        self.assertIn('id="maneuver_crosswalk_horizontal_min" type="number" min="0" max="1000" step="1"', workspace_overlay_template)
+        maneuver_validator = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "stream" / "js" / "_config_dialogs.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("value<0||value>1000", maneuver_validator)
+        self.assertIn("const raw=$(pair[0]).value.trim()", maneuver_validator)
         overlay_response = client.post(
             "/api/simulation/settings",
             json={"settings": {
@@ -229,8 +241,8 @@ class StreamApiTests(unittest.TestCase):
         config.STREAM_ALLOW_CONTROL = True
         client = WebStreamer(config).app.test_client()
         payload = client.get("/api/config/full").get_json()
-        payload["values"]["CROSSWALK_VERTICAL_MIN_LINES"] = 0
-        payload["values"]["CROSSWALK_HORIZONTAL_MIN_LINES"] = 0
+        payload["advanced"]["CROSSWALK_VERTICAL_MIN_LINES"] = 0
+        payload["advanced"]["CROSSWALK_HORIZONTAL_MIN_LINES"] = 0
 
         response = client.post("/api/config/full", json=payload)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
