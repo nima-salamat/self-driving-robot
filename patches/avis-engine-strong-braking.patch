@@ -1,0 +1,26 @@
+# AVIS Engine stronger-braking follow-up patch
+# Apply ONLY if avis-engine-handbrake.patch was already applied to the Unity project.
+# From the AVIS Engine Unity project root:
+#   git apply /path/to/avis-engine-strong-braking.patch
+#
+# Raises service-brake torque to 2x the serialized m_BrakeTorque for both
+# legacy negative-speed braking and the added FootBrake protocol channel.
+
+diff --git a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs b/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs
+--- a/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs
++++ b/Assets/Standard Assets/Vehicles/Car/Scripts/CarController.cs
+@@ -177,7 +177,7 @@
+             for (int i = 0; i < m_WheelColliders.Length; i++)
+             {
+                 if (m_WheelColliders[i] == null) continue;
+                 m_WheelColliders[i].motorTorque = 0f;
+-                m_WheelColliders[i].brakeTorque = m_BrakeTorque * footbrake;
++                m_WheelColliders[i].brakeTorque = m_BrakeTorque * footbrake * 2.0f;
+             }
+@@ -225,7 +225,7 @@
+                 if (CurrentSpeed > 5 && Vector3.Angle(transform.forward, m_Rigidbody.velocity) < 50f)
+                 {
+-                    m_WheelColliders[i].brakeTorque = m_BrakeTorque*footbrake;
++                    m_WheelColliders[i].brakeTorque = m_BrakeTorque*footbrake*2.0f;
+                 }
+                 else if (footbrake > 0)
