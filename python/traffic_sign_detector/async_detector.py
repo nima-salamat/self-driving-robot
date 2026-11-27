@@ -173,43 +173,6 @@ class AsyncSignDetector:
                     )
                 completed_at = time.monotonic()
                 inference_ms = (completed_at - started) * 1000.0
-                result_data = result if isinstance(result, dict) else {}
-                raw_label = str(result_data.get("text", "") or "").strip().upper()
-                label = raw_label or "NO SIGN"
-                confidence = result_data.get("confidence")
-                try:
-                    confidence_text = (
-                        "{:.3f}".format(float(confidence))
-                        if confidence is not None and math.isfinite(float(confidence))
-                        else "n/a"
-                    )
-                except (TypeError, ValueError, OverflowError):
-                    confidence_text = "n/a"
-                coordinate = result_data.get("coordinate")
-                sign_type = result_data.get("sign_type", "n/a")
-                frame_shape = getattr(frame, "shape", ())
-                if len(frame_shape) >= 2:
-                    input_size = "{}x{}".format(frame_shape[1], frame_shape[0])
-                else:
-                    input_size = "unknown"
-                queue_wait_ms = max(0.0, (started - submitted_at) * 1000.0)
-                frame_age_ms = max(
-                    0.0, (completed_at - frame_captured_at) * 1000.0
-                )
-                logger.info(
-                    "Sign inference result: request_id=%d label=%s "
-                    "sign_type=%s confidence=%s bbox=%s input=%s "
-                    "queue_wait_ms=%.1f inference_ms=%.1f frame_age_ms=%.1f",
-                    request_id,
-                    label,
-                    sign_type,
-                    confidence_text,
-                    coordinate,
-                    input_size,
-                    queue_wait_ms,
-                    inference_ms,
-                    frame_age_ms,
-                )
                 with self._lock:
                     self._latest = (
                         request_id,
