@@ -201,7 +201,7 @@
               <div class="field"><label for="sign-turn-hold">TURN nudge duration (s)</label><input id="sign-turn-hold" type="number" min=".1" max="10" step=".1" name="SIMULATOR_SIGN_TURN_HOLD_SECONDS"></div>
               <div class="field"><label for="sign-steering-offset">TURN steering nudge (0.05–0.35)</label><input id="sign-steering-offset" type="number" min=".05" max=".35" step=".01" name="SIMULATOR_SIGN_STEERING_OFFSET"></div>
             </div>
-            <p class="note">STOP applies a timed brake hold, PARK remains latched until STRAIGHT, and TURN signs make a short low-throttle steering nudge. Verify camera placement and detector confidence before enabling this feature.</p>
+            <p class="note">A YOLO STOP result latches braking until the AVIS runtime is restarted. PARK remains latched until STRAIGHT, and TURN signs make a short low-throttle steering nudge. HSV STOP detection is configured separately below in AVIS City.</p>
           </div>
           {% endif %}
           {% if caps.supports_stop_line %}
@@ -361,7 +361,7 @@
               </button>
               <span class="note">TURN LEFT / TURN RIGHT signs select their route; without a recognised turn sign the STRAIGHT route is used. Empty or invalid routes remain stopped instead of moving on an unconfigured path.</span>
             </div>
-            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. Before the route starts, the full-stop dwell and optional GREEN confirmation still apply. Once a route enters RUNNING, lane/crosswalk/sign/traffic-light/stop-line and range-based automatic stop logic are bypassed; only the configured hardcode steps control motion until their distances are reached. The per-step time is a warning threshold, not a route cancellation timeout. Fresh speed telemetry and a connected actuator link are still required. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track. Enable “AVIS · Traffic-sign actions” above to use YOLO sign detections.</p>
+            <p class="note">AVIS uses signed speed and measured travel distance, not the Arduino pulse queue. Each step defines forward/reverse, metres, speed (0–100%) and signed steering (−100% left to +100% right). The global throttle limit caps route speed. Before the route starts, the full-stop dwell and optional GREEN confirmation still apply. Once a route enters RUNNING, lane/crosswalk/traffic-light/stop-line and range-based automatic stop logic are bypassed; the dedicated HSV STOP-sign detector above still scans the same ST ROI and can cancel the hardcode with a permanent brake latch. Other sign actions and optional YOLO inference are bypassed while the hardcode runs. The per-step time is a warning threshold, not a route cancellation timeout. Fresh speed telemetry and a connected actuator link are still required. Reverse has no rear range sensor, so use it only on a clear, supervised simulator track.</p>
           </div>
           {% endif %}
           {% if caps.simulator_backend == 'avis' and caps.mode == 'avis' %}
@@ -393,7 +393,7 @@
               </button>
               <span class="note">The CW ROI uses the independent Deadlock-only horizontal-line settings above. ML and MR are checked with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route skips the escape maneuver and leaves normal lane following in control. Invalid route steps block the maneuver; exceeding the per-step warning time does not cancel it.</span>
             </div>
-            <p class="note">The Debug HUD now reports the number and sequence of frames inspected, the CW/ML/MR line counts and the exact reason a frame did or did not form a candidate. After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. Before it starts, existing holds may prevent route release. Once RUNNING, vision-based detections and automatic stop/avoidance logic are bypassed until the configured hardcode distance is complete. It does not run in AVIS Race or physical modes.</p>
+            <p class="note">The Debug HUD reports the number and sequence of frames inspected, the CW/ML/MR line counts and the exact reason a frame did or did not form a candidate. After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. Before it starts, existing holds may prevent route release. Once RUNNING, vision-based detections and automatic stop/avoidance logic are bypassed until the configured hardcode distance is complete, except the dedicated HSV STOP-sign check in the shared ST ROI; a qualifying STOP sign cancels the route and keeps the vehicle braked until runtime reset.</p>
           </div>
           {% endif %}
           <div class="setting-block {% if not caps.supports_lane_roi %}section-hide{% endif %}" id="sim-lane-roi-settings">
