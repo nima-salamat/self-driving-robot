@@ -1547,6 +1547,10 @@ class AVISBehaviorCoordinator:
         )
         if not enabled:
             self.crosswalk_detect_count = 0
+            if not self.crosswalk_latched and self.crosswalk_state == "braking":
+                self.crosswalk_state = "idle"
+                self.crosswalk_stop_confirm_count = 0
+                self.crosswalk_reason = "crosswalk hardcode disabled before route confirmation"
             if self.crosswalk_latched and self.crosswalk_state in {"stopping", "holding", "running"}:
                 self.crosswalk_state = "blocked"
                 self.crosswalk_reason = (
@@ -1575,6 +1579,8 @@ class AVISBehaviorCoordinator:
                     self.crosswalk_step_index = 0
                     self.crosswalk_step_progress_cm = 0.0
                     self.crosswalk_step_started_at = None
+                    self.crosswalk_stop_confirm_count = 0
+                    self.crosswalk_measured_speed_kmh = None
                     self.crosswalk_reason = "crosswalk hardcode idle"
                     self.crosswalk_absent_count = 0
             return
