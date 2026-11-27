@@ -281,8 +281,8 @@
             {% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}
             <div class="grid-two" style="margin-top:10px">
               <div class="field"><label for="crosswalk-threshold">Crosswalk grayscale threshold (0–255)</label><input id="crosswalk-threshold" type="number" min="0" max="255" step="1" name="CROSSWALK_THRESHOLD"></div>
-              <div class="field"><label for="crosswalk-min-vertical">Minimum vertical crosswalk lines</label><input id="crosswalk-min-vertical" type="number" min="1" max="1000" step="1" name="CROSSWALK_VERTICAL_MIN_LINES"></div>
-              <div class="field"><label for="crosswalk-min-horizontal">Minimum horizontal crosswalk lines</label><input id="crosswalk-min-horizontal" type="number" min="1" max="1000" step="1" name="CROSSWALK_HORIZONTAL_MIN_LINES"></div>
+              <div class="field"><label for="crosswalk-min-vertical">Minimum vertical crosswalk lines</label><input id="crosswalk-min-vertical" type="number" min="0" max="1000" step="1" name="CROSSWALK_VERTICAL_MIN_LINES"></div>
+              <div class="field"><label for="crosswalk-min-horizontal">Minimum horizontal crosswalk lines</label><input id="crosswalk-min-horizontal" type="number" min="0" max="1000" step="1" name="CROSSWALK_HORIZONTAL_MIN_LINES"></div>
               <div class="field"><label for="cw-top-factor">Crosswalk trapezoid top width (0–1)</label><input id="cw-top-factor" type="number" min="0" max="1" step="any" name="CW_TOP_WIDTH_FACTOR"></div>
               <div class="field"><label for="crosswalk-canny-low">Canny low threshold</label><input id="crosswalk-canny-low" type="number" min="0" max="254" step="1" name="CROSSWALK_CANNY_LOW_THRESHOLD"></div>
               <div class="field"><label for="crosswalk-canny-high">Canny high threshold</label><input id="crosswalk-canny-high" type="number" min="1" max="255" step="1" name="CROSSWALK_CANNY_HIGH_THRESHOLD"></div>

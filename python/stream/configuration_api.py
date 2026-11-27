@@ -284,8 +284,8 @@ class StreamConfigurationMixin:
             }
             if key in numeric_ranges and not numeric_ranges[key][0] <= normalized <= numeric_ranges[key][1]:
                 raise ValueError(f"{key} must be between {numeric_ranges[key][0]} and {numeric_ranges[key][1]}")
-            if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 1 <= normalized <= 1000:
-                raise ValueError(f"{key} must be between 1 and 1000")
+            if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 0 <= normalized <= 1000:
+                raise ValueError(f"{key} must be between 0 and 1000")
             if key == "LANE_ROI_MODE" and normalized not in {"rectangle", "trapezoid"}:
                 raise ValueError("LANE_ROI_MODE must be rectangle or trapezoid")
             if key == "RUN_LVL" and normalized not in {"MOVE", "STOP"}:

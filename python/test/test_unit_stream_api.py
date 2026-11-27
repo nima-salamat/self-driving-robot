@@ -105,7 +105,8 @@ class StreamApiTests(unittest.TestCase):
             "{% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}",
             settings_template,
         )
-        self.assertIn('name="CROSSWALK_VERTICAL_MIN_LINES"', settings_template)
+        self.assertIn('id="crosswalk-min-vertical" type="number" min="0" max="1000" step="1"', settings_template)
+        self.assertIn('id="crosswalk-min-horizontal" type="number" min="0" max="1000" step="1"', settings_template)
         self.assertIn('name="CROSSWALK_THRESHOLD"', settings_template)
         overlay_response = client.post(
             "/api/simulation/settings",
@@ -119,8 +120,8 @@ class StreamApiTests(unittest.TestCase):
                 "TL_TOP_ROI": 0.04, "TL_BOTTOM_ROI": 0.48,
                 "TL_LEFT_ROI": 0.31, "TL_RIGHT_ROI": 0.69,
                 "CROSSWALK_THRESHOLD": 165,
-                "CROSSWALK_VERTICAL_MIN_LINES": 8,
-                "CROSSWALK_HORIZONTAL_MIN_LINES": 4,
+                "CROSSWALK_VERTICAL_MIN_LINES": 0,
+                "CROSSWALK_HORIZONTAL_MIN_LINES": 0,
                 "CROSSWALK_CANNY_LOW_THRESHOLD": 90,
                 "CROSSWALK_CANNY_HIGH_THRESHOLD": 175,
                 "CROSSWALK_HOUGH_THRESHOLD": 24,
@@ -148,8 +149,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(verified["TL_TOP_ROI"], 0.04)
         self.assertEqual(verified["TL_RIGHT_ROI"], 0.69)
         self.assertEqual(verified["CROSSWALK_THRESHOLD"], 165)
-        self.assertEqual(verified["CROSSWALK_VERTICAL_MIN_LINES"], 8)
-        self.assertEqual(verified["CROSSWALK_HORIZONTAL_MIN_LINES"], 4)
+        self.assertEqual(verified["CROSSWALK_VERTICAL_MIN_LINES"], 0)
+        self.assertEqual(verified["CROSSWALK_HORIZONTAL_MIN_LINES"], 0)
         self.assertEqual(verified["CROSSWALK_CANNY_LOW_THRESHOLD"], 90)
         self.assertEqual(verified["CROSSWALK_CANNY_HIGH_THRESHOLD"], 175)
         self.assertEqual(verified["CROSSWALK_HOUGH_THRESHOLD"], 24)
@@ -167,7 +168,7 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(config.SIMULATOR_STOP_LINE_TOP_ROI, 0.70)
         self.assertEqual(config.TL_TOP_ROI, 0.04)
         self.assertEqual(config.CROSSWALK_THRESHOLD, 165)
-        self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 8)
+        self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 0)
         self.assertEqual(config.CROSSWALK_HOUGH_THRESHOLD, 24)
 
         reloaded = self.make_config()
@@ -179,8 +180,8 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(reloaded.SIMULATOR_STOP_LINE_TOP_ROI, 0.70)
         self.assertEqual(reloaded.SIMULATOR_STOP_LINE_RIGHT_ROI, 0.89)
         self.assertEqual(reloaded.CROSSWALK_THRESHOLD, 165)
-        self.assertEqual(reloaded.CROSSWALK_VERTICAL_MIN_LINES, 8)
-        self.assertEqual(reloaded.CROSSWALK_HORIZONTAL_MIN_LINES, 4)
+        self.assertEqual(reloaded.CROSSWALK_VERTICAL_MIN_LINES, 0)
+        self.assertEqual(reloaded.CROSSWALK_HORIZONTAL_MIN_LINES, 0)
         self.assertEqual(reloaded.CROSSWALK_CANNY_LOW_THRESHOLD, 90)
         self.assertEqual(reloaded.CROSSWALK_CANNY_HIGH_THRESHOLD, 175)
         self.assertEqual(reloaded.CROSSWALK_HOUGH_THRESHOLD, 24)
@@ -223,6 +224,19 @@ class StreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("TOP_ROI < BOTTOM_ROI", response.get_json()["message"])
         self.assertNotEqual(getattr(config, "RL_TOP_ROI", None), 0.9)
+    def test_full_config_accepts_zero_crosswalk_line_count_thresholds(self):
+        config = self.make_config()
+        config.STREAM_ALLOW_CONTROL = True
+        client = WebStreamer(config).app.test_client()
+        payload = client.get("/api/config/full").get_json()
+        payload["values"]["CROSSWALK_VERTICAL_MIN_LINES"] = 0
+        payload["values"]["CROSSWALK_HORIZONTAL_MIN_LINES"] = 0
+
+        response = client.post("/api/config/full", json=payload)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()["success"])
+        self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 0)
+        self.assertEqual(config.CROSSWALK_HORIZONTAL_MIN_LINES, 0)
 
     def test_roi_updates_reject_inverted_horizontal_edges(self):
         config = self.make_config()

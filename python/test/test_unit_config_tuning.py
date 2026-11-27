@@ -9,10 +9,17 @@ if str(PYTHON_ROOT) not in sys.path:
 
 from modes.city import config_city
 from modes.race import config_race
-from utils.json_config import validate_pulse_sequence
+from utils.json_config import _validate, validate_pulse_sequence
 
 
 class ConfigTuningTests(unittest.TestCase):
+    def test_crosswalk_line_count_settings_allow_zero(self):
+        for key in ("CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"):
+            with self.subTest(key=key):
+                self.assertEqual(_validate(key, 0), 0)
+                self.assertEqual(_validate(key, 1000), 1000)
+                with self.assertRaises(ValueError):
+                    _validate(key, -1)
     def test_default_sequences_are_valid_for_each_mode(self):
         city_sequences = (
             config_city.OBSTACLE_LANE_LEFT_SEQUENCE,

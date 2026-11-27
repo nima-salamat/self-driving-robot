@@ -417,8 +417,8 @@ def _validate_settings(data, backend=None, mode=None):
                 raise ValueError("CROSSWALK_LINE_ANGLE_TOLERANCE_DEG must be between 1 and 44 degrees")
             if key == "CROSSWALK_MIN_LINE_LENGTH_PX" and not 1 <= value <= 500:
                 raise ValueError("CROSSWALK_MIN_LINE_LENGTH_PX must be between 1 and 500")
-            if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 1 <= value <= 1000:
-                raise ValueError(f"{key} must be between 1 and 1000")
+            if key in {"CROSSWALK_VERTICAL_MIN_LINES", "CROSSWALK_HORIZONTAL_MIN_LINES"} and not 0 <= value <= 1000:
+                raise ValueError(f"{key} must be between 0 and 1000")
             if key == "SIMULATOR_STOP_LINE_THRESHOLD" and not 0 <= value <= 255:
                 raise ValueError("SIMULATOR_STOP_LINE_THRESHOLD must be between 0 and 255")
             if key == "SIMULATOR_STOP_LINE_CONFIRM_FRAMES" and not 1 <= value <= 20:
