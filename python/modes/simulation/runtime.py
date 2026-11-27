@@ -120,6 +120,30 @@ def _draw_avis_road_rule_debug(
             except (TypeError, ValueError, IndexError, OverflowError):
                 pass
 
+        stop_sign = behavior.get("stop_sign_detection")
+        if isinstance(stop_sign, dict) and stop_sign.get("visible"):
+            bbox = stop_sign.get("bbox")
+            try:
+                x, y, box_width, box_height = [
+                    int(round(float(value))) for value in bbox
+                ]
+                if box_width > 0 and box_height > 0:
+                    x1 = max(0, min(image.shape[1] - 1, x))
+                    y1 = max(0, min(image.shape[0] - 1, y))
+                    x2 = max(0, min(image.shape[1] - 1, x + box_width))
+                    y2 = max(0, min(image.shape[0] - 1, y + box_height))
+                    latched = bool(stop_sign.get("latched") or behavior.get("stop_sign_latched"))
+                    color = (0, 0, 255) if latched else (0, 165, 255)
+                    cv2.rectangle(image, (x1, y1), (x2, y2), color, 3, cv2.LINE_AA)
+                    cv2.putText(
+                        image,
+                        "STOP SIGN" + (" · LATCHED" if latched else " · CANDIDATE"),
+                        (x1, max(18, y1 - 7)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA,
+                    )
+            except (TypeError, ValueError, IndexError, OverflowError):
+                pass
+
     lane_type = str(perception.get("lane_type", "none")).upper()
     lane_valid = bool(perception.get("perception_valid", False))
     speed = getattr(sensor_frame, "speed_kmh", None) if sensor_frame is not None else None
@@ -244,6 +268,20 @@ def _draw_avis_road_rule_debug(
         ("ROUTE", route_text,
          (0, 205, 240) if route_state in {"BRAKING", "STOPPING", "HOLDING", "WAITING_FOR_GREEN", "RUNNING"} else
          (0, 165, 255) if route_state == "BLOCKED" else (105, 120, 138)),
+        ("STOP SIGN", (
+            "LATCHED · STOP UNTIL RESET"
+            if behavior.get("stop_sign_latched") else
+            "CANDIDATE {}/{}".format(
+                int(behavior.get("stop_sign_candidate_frames", 0) or 0),
+                int(behavior.get("stop_sign_detection", {}).get("confirmation_required", 2) or 2),
+            )
+            if isinstance(behavior.get("stop_sign_detection"), dict)
+            and behavior.get("stop_sign_detection", {}).get("detected") else
+            "HSV DISABLED"
+            if not behavior.get("stop_sign_hsv_enabled", False) else "SEARCHING IN ST ROI"
+        ), (0, 0, 255) if behavior.get("stop_sign_latched") else
+            (0, 165, 255) if isinstance(behavior.get("stop_sign_detection"), dict)
+            and behavior.get("stop_sign_detection", {}).get("detected") else (105, 120, 138)),
         ("TRAFFIC LIGHT", light_text,
          (0, 0, 220) if light_color == "RED" else
          (40, 190, 80) if light_color == "GREEN" else (105, 120, 138)),
@@ -1086,7 +1124,15 @@ class SimulationRuntime:
                     self.shutdown_event.wait(0.05)
                     continue
                 with self._behavior_lock:
+                    if self.avis_behaviors is not None:
+                        # The HSV STOP-sign detector always inspects the same ST
+                        # rectangle, including while a hardcode route is active.
+                        self.avis_behaviors.observe_stop_sign_hsv(frame)
                     frame_behavior_generation = self._behavior_generation
+                    stop_sign_latched = bool(
+                        self.avis_behaviors is not None
+                        and self.avis_behaviors.stop_sign_latched
+                    )
                     hardcode_active = bool(
                         self.avis_behaviors is not None
                         and self.avis_behaviors.hardcode_route_active()
@@ -1146,21 +1192,30 @@ class SimulationRuntime:
                         and self.avis_behaviors.hardcode_route_active()
                     )
                 )
-                if hardcode_active:
-                    # A configured hardcode route owns every motion command.
-                    # Do not read lane/crosswalk/sign/traffic-light/stop-line
-                    # vision while it is running.
+                if hardcode_active or stop_sign_latched:
+                    # Hardcode routes own motion; a latched STOP sign owns the
+                    # opposite: it cancels motion and keeps perception bypassed.
+                    stopped_for_sign = bool(stop_sign_latched)
                     result = {
-                        "lane_type": "hardcode route (vision bypassed)",
+                        "lane_type": (
+                            "STOP sign latched (vision bypassed)"
+                            if stopped_for_sign else "hardcode route (vision bypassed)"
+                        ),
                         "perception_valid": True,
                         "crosswalk": False,
                         "vision_bypassed": True,
                     }
                     command = VehicleCommand(
                         steering=float(getattr(self._last_command, "steering", 0.0)),
-                        throttle=0.0, brake=0.0,
+                        throttle=0.0,
+                        brake=1.0 if stopped_for_sign else 0.0,
                         servo_angle=float(getattr(self._last_command, "servo_angle", self.controller.last_servo)),
-                        target_speed=0.0, reason="hardcode route command base",
+                        target_speed=0.0,
+                        reason=(
+                            self.avis_behaviors.stop_sign_reason
+                            if stopped_for_sign and self.avis_behaviors is not None
+                            else "hardcode route command base"
+                        ),
                     )
                     detection_ms = 0.0
                 else:
@@ -1184,11 +1239,15 @@ class SimulationRuntime:
                             distance_delta_cm=getattr(frame, "distance_delta_cm", 0.0),
                             now=now,
                         )
+                        stop_sign_latched = bool(self.avis_behaviors.stop_sign_latched)
                         hardcode_cycle = bool(
-                            hardcode_active
-                            or self.avis_behaviors.hardcode_route_active()
-                            or str(getattr(command, "reason", "")).lower().startswith(
-                                ("crosswalk hardcode", "deadlock ")
+                            not stop_sign_latched
+                            and (
+                                hardcode_active
+                                or self.avis_behaviors.hardcode_route_active()
+                                or str(getattr(command, "reason", "")).lower().startswith(
+                                    ("crosswalk hardcode", "deadlock ")
+                                )
                             )
                         )
                         if not hardcode_cycle:
