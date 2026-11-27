@@ -176,6 +176,14 @@ network, or put it behind an HTTPS reverse proxy; for local-only access, bind to
 `127.0.0.1`. An optional `STREAM_COOKIE_SECURE=1` environment setting marks the
 session cookie Secure when HTTPS is available.
 
+## Central logging and retention
+
+All Python application modules use the root logger and the shared `utils.logging_setup` sink. The main process writes to the console and `output/robot.log`; spawned camera and sign-inference workers send records through a multiprocessing queue to that same main-process collector. A single process owns the rotating file, preventing concurrent worker processes from racing each other during writes or rotation. Records include the process name/PID and logger name so the source remains identifiable.
+
+`robot.log` is append-only between rotations. The current file is capped at 5 MiB and up to 10 rotated files are retained (about 55 MiB total); older rotations are removed only after this configured retention limit is reached. Stream exposes a recent in-memory tail (up to 1,000 records) for live filtering and diagnostics, but that tail is not a substitute for the durable file.
+
+The standalone camera-calibration tools and manual controller now use the same central logger instead of independent `basicConfig` handlers.
+
 ## Log verbosity
 
 Logging defaults to `INFO`, so `DEBUG` records are hidden from both the terminal
