@@ -97,13 +97,42 @@ class StreamApiTests(unittest.TestCase):
 
         capabilities = client.get("/api/simulation/settings").get_json()["capabilities"]
         self.assertTrue(capabilities["supports_crosswalk_roi"])
+        settings_template = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator" / "partials" / "_settings_stack.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "{% if caps.supports_crosswalk_roi or caps.supports_crosswalk %}",
+            settings_template,
+        )
+        self.assertIn('name="CROSSWALK_VERTICAL_MIN_LINES"', settings_template)
+        self.assertIn('name="CROSSWALK_THRESHOLD"', settings_template)
         overlay_response = client.post(
             "/api/simulation/settings",
             json={"settings": {
                 "CW_TOP_ROI": 0.62, "CW_BOTTOM_ROI": 0.96,
                 "CW_LEFT_ROI": 0.12, "CW_RIGHT_ROI": 0.88,
+                "SIMULATOR_STOP_LINE_TOP_ROI": 0.70,
+                "SIMULATOR_STOP_LINE_BOTTOM_ROI": 0.97,
+                "SIMULATOR_STOP_LINE_LEFT_ROI": 0.11,
+                "SIMULATOR_STOP_LINE_RIGHT_ROI": 0.89,
                 "TL_TOP_ROI": 0.04, "TL_BOTTOM_ROI": 0.48,
                 "TL_LEFT_ROI": 0.31, "TL_RIGHT_ROI": 0.69,
+                "CROSSWALK_THRESHOLD": 165,
+                "CROSSWALK_VERTICAL_MIN_LINES": 8,
+                "CROSSWALK_HORIZONTAL_MIN_LINES": 4,
+                "CROSSWALK_CANNY_LOW_THRESHOLD": 90,
+                "CROSSWALK_CANNY_HIGH_THRESHOLD": 175,
+                "CROSSWALK_HOUGH_THRESHOLD": 24,
+                "CROSSWALK_HOUGH_MIN_LINE_LENGTH": 7,
+                "CROSSWALK_HOUGH_MAX_LINE_GAP": 6,
+                "CROSSWALK_LINE_ANGLE_TOLERANCE_DEG": 25,
+                "CROSSWALK_MIN_LINE_LENGTH_RATIO": 0.12,
+                "CROSSWALK_MIN_LINE_LENGTH_PX": 12,
+                "CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO": 0.72,
+                "CW_TOP_WIDTH_FACTOR": 0.82,
+                "CW_TRAPEZOID_MODE": True,
+                "CW_OLD_METHOD": False,
                 "SIMULATOR_OBSTACLE_THROTTLE_LIMIT": 0.5,
             }},
         )
@@ -112,11 +141,43 @@ class StreamApiTests(unittest.TestCase):
         verified = client.get("/api/simulation/settings").get_json()["settings"]
         self.assertEqual(verified["CW_TOP_ROI"], 0.62)
         self.assertEqual(verified["CW_RIGHT_ROI"], 0.88)
+        self.assertEqual(verified["SIMULATOR_STOP_LINE_TOP_ROI"], 0.70)
+        self.assertEqual(verified["SIMULATOR_STOP_LINE_BOTTOM_ROI"], 0.97)
+        self.assertEqual(verified["SIMULATOR_STOP_LINE_LEFT_ROI"], 0.11)
+        self.assertEqual(verified["SIMULATOR_STOP_LINE_RIGHT_ROI"], 0.89)
         self.assertEqual(verified["TL_TOP_ROI"], 0.04)
         self.assertEqual(verified["TL_RIGHT_ROI"], 0.69)
+        self.assertEqual(verified["CROSSWALK_THRESHOLD"], 165)
+        self.assertEqual(verified["CROSSWALK_VERTICAL_MIN_LINES"], 8)
+        self.assertEqual(verified["CROSSWALK_HORIZONTAL_MIN_LINES"], 4)
+        self.assertEqual(verified["CROSSWALK_CANNY_LOW_THRESHOLD"], 90)
+        self.assertEqual(verified["CROSSWALK_CANNY_HIGH_THRESHOLD"], 175)
+        self.assertEqual(verified["CROSSWALK_HOUGH_THRESHOLD"], 24)
+        self.assertEqual(verified["CROSSWALK_HOUGH_MIN_LINE_LENGTH"], 7)
+        self.assertEqual(verified["CROSSWALK_HOUGH_MAX_LINE_GAP"], 6)
+        self.assertEqual(verified["CROSSWALK_LINE_ANGLE_TOLERANCE_DEG"], 25)
+        self.assertEqual(verified["CROSSWALK_MIN_LINE_LENGTH_RATIO"], 0.12)
+        self.assertEqual(verified["CROSSWALK_MIN_LINE_LENGTH_PX"], 12)
+        self.assertEqual(verified["CROSSWALK_MIN_BOTTOM_DISTANCE_RATIO"], 0.72)
+        self.assertEqual(verified["CW_TOP_WIDTH_FACTOR"], 0.82)
+        self.assertTrue(verified["CW_TRAPEZOID_MODE"])
+        self.assertFalse(verified["CW_OLD_METHOD"])
         self.assertEqual(verified["SIMULATOR_OBSTACLE_THROTTLE_LIMIT"], 0.5)
         self.assertEqual(config.CW_TOP_ROI, 0.62)
+        self.assertEqual(config.SIMULATOR_STOP_LINE_TOP_ROI, 0.70)
         self.assertEqual(config.TL_TOP_ROI, 0.04)
+        self.assertEqual(config.CROSSWALK_THRESHOLD, 165)
+        self.assertEqual(config.CROSSWALK_VERTICAL_MIN_LINES, 8)
+        self.assertEqual(config.CROSSWALK_HOUGH_THRESHOLD, 24)
+
+        roi_editor_js = (
+            Path(__file__).resolve().parents[1]
+            / "stream" / "templates" / "simulator" / "js" / "_avis_roi.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'const prefix=def.id==="SL"?"SIMULATOR_STOP_LINE_":def.id+"_"',
+            roi_editor_js,
+        )
 
     def test_roi_updates_reject_inverted_rectangles_before_mutation(self):
         config = self.make_config()
