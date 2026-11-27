@@ -919,7 +919,8 @@ class Robot:
                     },
                 )
 
-        can_cross = permitted if enabled else elapsed >= duration
+        # A green light grants permission but never bypasses the configured dwell.
+        can_cross = elapsed >= duration and (permitted if enabled else True)
         if not can_cross or self._shutdown_requested():
             return False
 
@@ -1256,10 +1257,19 @@ class Robot:
                         )
                     frame, frame_resized = self.camera.capture_frame(with_resize=True)
                     if not self.camera.last_capture_valid or frame_resized is None:
+                        if hardcode_in_progress:
+                            self._fail_crosswalk_hardcode(
+                                "Camera frame became unavailable while the pulse chain was running."
+                            )
                         self.control.stop()
                         self._pace_control_loop()
                         continue
                     if is_camera_frame_obscured(frame):
+                        if hardcode_in_progress:
+                            self._fail_crosswalk_hardcode(
+                                "Camera view became obscured while the pulse chain was running."
+                            )
+                            self.control.stop()
                         self._handle_camera_obscured_frame(frame_resized)
                         self._pace_control_loop()
                         continue
@@ -1319,6 +1329,7 @@ class Robot:
                             self._fail_crosswalk_hardcode(
                                 "A new STOP marker took priority while the crosswalk chain was running."
                             )
+                            self.control.stop()
                         self._keep_stop_hold()
                         if config_city.DEBUG or config_city.STREAM:
                             self.handle_debug_stream(
