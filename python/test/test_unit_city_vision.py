@@ -208,7 +208,10 @@ class CityVisionLineExtractionTests(unittest.TestCase):
         self.assertTrue(result["crosswalk"])
         self.assertEqual(result["crosswalk_color"], "WHITE")
         self.assertIsNotNone(result["crosswalk_geometry"])
-        self.assertGreater(result["crosswalk_geometry"]["radius"], 0)
+        bbox = result["crosswalk_geometry"]["bbox"]
+        self.assertEqual(len(bbox), 4)
+        self.assertLess(bbox[0], bbox[2])
+        self.assertLess(bbox[1], bbox[3])
         self.assertEqual(
             result["debug"]["draw_data"]["crosswalk_geometry"],
             result["crosswalk_geometry"],

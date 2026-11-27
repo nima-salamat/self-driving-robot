@@ -436,21 +436,25 @@ def _draw_classical(canvas, data, config):
 
     crosswalk_geometry = data.get("crosswalk_geometry")
     if isinstance(crosswalk_geometry, dict):
-        center = crosswalk_geometry.get("center")
+        bbox = crosswalk_geometry.get("bbox")
         try:
-            center_x, center_y = float(center[0]), float(center[1])
-            radius = float(crosswalk_geometry.get("radius", 0.0))
-            if all(np.isfinite(value) for value in (center_x, center_y, radius)) and radius > 0:
-                point = _scaled_point(center_x, center_y, sx, sy)
-                circle_radius = max(8, int(round(radius * min(sx, sy) * 1.08)))
-                cv2.circle(canvas, point, circle_radius, (0, 235, 255), 3, cv2.LINE_AA)
-                cv2.circle(canvas, point, 4, (255, 255, 255), -1, cv2.LINE_AA)
-                label = "CROSSWALK · " + str(crosswalk_geometry.get("color", "UNKNOWN"))
-                text_y = max(18, point[1] - circle_radius - 8)
-                cv2.putText(canvas, label, (max(4, point[0] - circle_radius), text_y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(canvas, label, (max(4, point[0] - circle_radius), text_y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 235, 255), 1, cv2.LINE_AA)
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                raise ValueError("crosswalk bbox must contain left, top, right, bottom")
+            left, top, right, bottom = (float(value) for value in bbox)
+            if not all(np.isfinite(value) for value in (left, top, right, bottom)):
+                raise ValueError("crosswalk bbox must be finite")
+            if right <= left or bottom <= top:
+                raise ValueError("crosswalk bbox must have positive area")
+            first = _scaled_point(left, top, sx, sy)
+            second = _scaled_point(right, bottom, sx, sy)
+            cv2.rectangle(canvas, first, second, (0, 235, 255), 2, cv2.LINE_AA)
+            label = "CROSSWALK · " + str(crosswalk_geometry.get("color", "UNKNOWN"))
+            text_x = max(4, min(width - 4, first[0] + 3))
+            text_y = first[1] - 8 if first[1] > 24 else min(height - 4, second[1] + 18)
+            cv2.putText(canvas, label, (text_x, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(canvas, label, (text_x, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 235, 255), 1, cv2.LINE_AA)
         except (TypeError, ValueError, IndexError, OverflowError):
             pass
 

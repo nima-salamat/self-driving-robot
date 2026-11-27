@@ -469,7 +469,18 @@ class VisionProcessor:
                     continue
             if detected_points:
                 points = np.asarray(detected_points, dtype=np.float32)
-                (center_x, center_y), radius = cv2.minEnclosingCircle(points)
+                min_x = float(np.min(points[:, 0]))
+                max_x = float(np.max(points[:, 0]))
+                min_y = float(np.min(points[:, 1]))
+                max_y = float(np.max(points[:, 1]))
+                pad_x = max(4, int(round((max_x - min_x) * 0.06)))
+                pad_y = max(4, int(round((max_y - min_y) * 0.06)))
+                crosswalk_bbox = [
+                    max(0, int(np.floor(min_x + cw_left)) - pad_x),
+                    max(0, int(np.floor(min_y + cw_top)) - pad_y),
+                    min(width - 1, int(np.ceil(max_x + cw_left)) + pad_x),
+                    min(height - 1, int(np.ceil(max_y + cw_top)) + pad_y),
+                ]
                 hsv_crosswalk = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2HSV)
                 gray_crosswalk = cv2.cvtColor(cw_frame, cv2.COLOR_BGR2GRAY)
                 _, bright_mask = cv2.threshold(
@@ -492,8 +503,7 @@ class VisionProcessor:
                 else:
                     crosswalk_color = "BRIGHT"
                 crosswalk_geometry = {
-                    "center": [float(center_x + cw_left), float(center_y + cw_top)],
-                    "radius": float(radius),
+                    "bbox": crosswalk_bbox,
                     "color": crosswalk_color,
                     "point_count": len(detected_points),
                 }
