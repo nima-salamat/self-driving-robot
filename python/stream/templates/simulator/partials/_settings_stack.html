@@ -359,7 +359,7 @@
                 data-settings-search="AVIS deadlock dead lock escape maneuver hardcode LEFT RIGHT route sequence distance speed steering configure">
                 Configure deadlock LEFT / RIGHT hardcodes
               </button>
-              <span class="note">The detector requires the CW ROI to contain at least the configured CROSSWALK_HORIZONTAL_MIN_LINES. It then checks ML and MR with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route holds the vehicle stopped.</span>
+              <span class="note">The CW ROI must contain at least the configured CROSSWALK_HORIZONTAL_MIN_LINES (minimum one); adjust that value in the Crosswalk detector tuning section. ML and MR are checked with the City lane-line detector: a line only in MR selects LEFT; a line only in ML selects RIGHT. The same CW, ML and MR rectangles can be moved/resized in the Camera ROI editor. An empty route holds the vehicle stopped.</span>
             </div>
             <p class="note">After the selected pattern is present for the configured number of consecutive AVIS City frames, the matching distance-based hardcode starts. It does not run in AVIS Race or physical modes, and crosswalk, traffic-light, stop-line and obstacle safety holds retain priority.</p>
           </div>
@@ -472,7 +472,7 @@
           <div id="avis-deadlock-step-list" class="avis-crosswalk-step-list" aria-live="polite"></div>
           <div class="avis-crosswalk-preview"><strong>Maneuver preview</strong><span id="avis-deadlock-route-preview">No steps configured. When the corresponding deadlock pattern is confirmed, AVIS will remain stopped until this route is configured.</span></div>
           <div class="avis-crosswalk-help">
-            Each step defines Forward/Reverse, travelled metres, speed percentage and signed steering percentage (−100 left to +100 right). Distance comes from AVIS motion telemetry; the global throttle and steering limits still apply. Apply the route edits here, then press the main “Save settings” button. Saving a route does not trigger a maneuver.
+            Each step defines Forward/Reverse, travelled metres, speed percentage and signed steering percentage (−100 left to +100 right). Distance comes from AVIS motion telemetry; the global throttle and steering limits still apply. Reverse has no rear range sensor, so use it only on a known-clear, supervised simulator track. Apply the route edits here, then press the main “Save settings” button. Saving a route does not trigger a maneuver.
           </div>
         </div>
         <footer class="avis-crosswalk-foot">
