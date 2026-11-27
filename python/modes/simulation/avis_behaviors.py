@@ -2614,10 +2614,6 @@ class AVISBehaviorCoordinator:
         if now < self.stop_sign_until:
             return _brake(command, "STOP sign hold")
 
-        deadlock_command = self._deadlock_route_command(command, distance_delta_cm, now)
-        if deadlock_command is not None:
-            return deadlock_command
-
         perception_valid = bool((perception or {}).get("perception_valid", False))
         ranges = getattr(frame, "ranges_cm", {}) if frame is not None else {}
         lane_quality = (perception or {}).get("perception_quality")
@@ -2637,6 +2633,14 @@ class AVISBehaviorCoordinator:
         )
         if self.obstacles.state != RangeObstacleAvoidance.CLEAR or obstacle_command is not command:
             return obstacle_command
+
+        # Let current-frame range/ROI obstacle avoidance run before the deadlock
+        # hardcode. A newly observed obstacle must be able to preempt the route.
+        deadlock_command = self._deadlock_route_command(
+            obstacle_command, distance_delta_cm, now
+        )
+        if deadlock_command is not None:
+            return deadlock_command
 
         if self.turn_direction and now < self.turn_until and command.brake < 0.5 and perception_valid:
             offset = max(0.05, min(0.35, float(getattr(
